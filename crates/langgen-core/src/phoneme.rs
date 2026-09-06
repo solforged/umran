@@ -226,10 +226,10 @@ impl Catalog {
     }
 
     pub fn consonants(&self) -> impl Iterator<Item = (PhonemeId, Consonant)> + '_ {
-        self.segments.iter().enumerate().filter_map(|(i, s)| {
-            s.consonant()
-                .map(|c| (PhonemeId(i as u16), c))
-        })
+        self.segments
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| s.consonant().map(|c| (PhonemeId(i as u16), c)))
     }
 
     pub fn vowels(&self) -> impl Iterator<Item = (PhonemeId, Vowel)> + '_ {
@@ -241,7 +241,10 @@ impl Catalog {
 
     /// Greedy longest-match parse of an IPA string into catalog ids.
     pub fn parse_ipa(&self, raw: &str) -> Option<Vec<PhonemeId>> {
-        let s: String = raw.chars().filter(|c| !c.is_whitespace() && *c != '.').collect();
+        let s: String = raw
+            .chars()
+            .filter(|c| !c.is_whitespace() && *c != '.')
+            .collect();
         let mut rest = s.as_str();
         let mut out = Vec::new();
         let mut ranked: Vec<(PhonemeId, &str)> = self

@@ -91,7 +91,10 @@ fn lengthen(roman: &str, style: LongVowel) -> String {
 }
 
 fn hiatus(prev: &Syllable, next: &Syllable) -> bool {
-    !prev.nucleus.is_empty() && prev.coda.is_empty() && next.onset.is_empty() && !next.nucleus.is_empty()
+    !prev.nucleus.is_empty()
+        && prev.coda.is_empty()
+        && next.onset.is_empty()
+        && !next.nucleus.is_empty()
 }
 
 fn tidy(s: &str) -> String {

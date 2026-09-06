@@ -1,12 +1,25 @@
 mod aesthetic;
+mod change;
+mod change_packs;
+mod contact;
+mod family;
 mod generate;
 mod inventory;
+mod lexicon;
 mod ortho;
 mod phoneme;
 
-pub use aesthetic::{Aesthetic, ClusterPolicy, InventoryPrior, LongVowel, NameStyle, OrthoStyle, Signature, WordShape};
+pub use aesthetic::{
+    Aesthetic, ClusterPolicy, InventoryPrior, LongVowel, NameStyle, OrthoStyle, Signature,
+    WordShape,
+};
+pub use change::{apply_changes, Env, Matcher, Rewrite, SoundChange};
+pub use change_packs::{conservative, radical};
+pub use contact::{apply_contact, ContactEvent, Transfer};
+pub use family::{Branch, BranchSpec, Family};
 pub use generate::{Generator, NameKind, Syllable, Word};
 pub use inventory::Inventory;
+pub use lexicon::{glosses, mint_roots, Root};
 pub use phoneme::{Catalog, PhonemeId, Segment, CATALOG};
 
 use generate::NameKind as NK;
@@ -54,7 +67,13 @@ impl Language {
     }
 
     pub fn word(&self, rng: &mut impl rand::Rng) -> Word {
-        Word::generate(&self.aesthetic, &self.generator, &self.inventory, rng, NK::Word)
+        Word::generate(
+            &self.aesthetic,
+            &self.generator,
+            &self.inventory,
+            rng,
+            NK::Word,
+        )
     }
 
     pub fn person_name(&self, rng: &mut impl rand::Rng) -> String {
@@ -102,7 +121,9 @@ impl Language {
 
     pub fn sample_words(&self, n: usize) -> Vec<String> {
         let mut rng = StdRng::seed_from_u64(self.seed.wrapping_add(3));
-        (0..n).map(|_| self.romanize(&self.word(&mut rng))).collect()
+        (0..n)
+            .map(|_| self.romanize(&self.word(&mut rng)))
+            .collect()
     }
 
     pub fn snapshot(&self, n: usize) -> Snapshot {

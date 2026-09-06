@@ -91,10 +91,12 @@ impl Aesthetic {
 }
 
 fn ugly() -> Vec<String> {
-    ["q", "ɓ", "ɗ", "pʼ", "tʼ", "kʼ", "ɨ", "ø", "æ", "ʊ", "y", "ə", "ɪ", "ɬ", "ʎ"]
-        .into_iter()
-        .map(str::to_string)
-        .collect()
+    [
+        "q", "ɓ", "ɗ", "pʼ", "tʼ", "kʼ", "ɨ", "ø", "æ", "ʊ", "y", "ə", "ɪ", "ɬ", "ʎ",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
 }
 
 fn elvish() -> Aesthetic {
@@ -104,15 +106,16 @@ fn elvish() -> Aesthetic {
     use Place::*;
     let mut forbidden = ugly();
     forbidden.extend(
-        ["ʔ", "ŋ", "dz", "ts", "dʒ", "ʒ", "ɣ", "ɛ", "ɔ", "ɑ", "ɲ", "z"]
-            .into_iter()
-            .map(str::to_string),
+        [
+            "ʔ", "ŋ", "dz", "ts", "dʒ", "ʒ", "ɣ", "ɛ", "ɔ", "ɑ", "ɲ", "z",
+        ]
+        .into_iter()
+        .map(str::to_string),
     );
     Aesthetic {
         id: "elvish".into(),
         name: "Elvish".into(),
-        description: "Open, liquid, and palatal; Tolkienic rather than a reconstruction."
-            .into(),
+        description: "Open, liquid, and palatal; Tolkienic rather than a reconstruction.".into(),
         inventory: InventoryPrior {
             consonant_count: (13, 16),
             vowel_count: (5, 5),
@@ -211,8 +214,20 @@ fn elvish() -> Aesthetic {
         names: NameStyle {
             person_syllables: (2, 3),
             place_syllables: (2, 3),
-            person_endings: vec!["iel".into(), "ion".into(), "wen".into(), "el".into(), "ar".into()],
-            place_endings: vec!["dor".into(), "ond".into(), "aθ".into(), "del".into(), "ian".into()],
+            person_endings: vec![
+                "iel".into(),
+                "ion".into(),
+                "wen".into(),
+                "el".into(),
+                "ar".into(),
+            ],
+            place_endings: vec![
+                "dor".into(),
+                "ond".into(),
+                "aθ".into(),
+                "del".into(),
+                "ian".into(),
+            ],
             compound_place: 0.4,
         },
         ortho: OrthoStyle {
@@ -236,9 +251,12 @@ fn kuo_toa() -> Aesthetic {
     use Place::*;
     let mut forbidden = ugly();
     forbidden.extend(
-        ["θ", "ð", "ʃ", "ʒ", "tʃ", "dʒ", "ts", "dz", "ʔ", "j", "ɣ", "f", "v", "x", "ɛ", "ɔ", "ɑ", "ɲ", "h"]
-            .into_iter()
-            .map(str::to_string),
+        [
+            "θ", "ð", "ʃ", "ʒ", "tʃ", "dʒ", "ts", "dz", "ʔ", "j", "ɣ", "f", "v", "x", "ɛ", "ɔ",
+            "ɑ", "ɲ", "h",
+        ]
+        .into_iter()
+        .map(str::to_string),
     );
     Aesthetic {
         id: "kuo-toa".into(),
@@ -317,7 +335,14 @@ fn kuo_toa() -> Aesthetic {
                 "l".into(),
                 "n".into(),
             ],
-            preferred_codas: vec!["p".into(), "b".into(), "l".into(), "m".into(), "ŋ".into(), "lp".into()],
+            preferred_codas: vec![
+                "p".into(),
+                "b".into(),
+                "l".into(),
+                "m".into(),
+                "ŋ".into(),
+                "lp".into(),
+            ],
         },
         shape: WordShape { syllables: (2, 3) },
         names: NameStyle {
@@ -351,9 +376,11 @@ fn illithid() -> Aesthetic {
     use Place::*;
     let mut forbidden = ugly();
     forbidden.extend(
-        ["ɲ", "ŋ", "ɾ", "ts", "ɛ", "ɔ", "b", "p", "m", "w", "ɣ", "dz", "dʒ", "ɑ"]
-            .into_iter()
-            .map(str::to_string),
+        [
+            "ɲ", "ŋ", "ɾ", "ts", "ɛ", "ɔ", "b", "p", "m", "w", "ɣ", "dz", "dʒ", "ɑ",
+        ]
+        .into_iter()
+        .map(str::to_string),
     );
     Aesthetic {
         id: "illithid".into(),
@@ -436,7 +463,14 @@ fn illithid() -> Aesthetic {
                 "ʃ".into(),
                 "v".into(),
             ],
-            preferred_codas: vec!["θ".into(), "n".into(), "k".into(), "l".into(), "s".into(), "d".into()],
+            preferred_codas: vec![
+                "θ".into(),
+                "n".into(),
+                "k".into(),
+                "l".into(),
+                "s".into(),
+                "d".into(),
+            ],
         },
         shape: WordShape { syllables: (2, 3) },
         names: NameStyle {
@@ -467,9 +501,11 @@ fn neutral() -> Aesthetic {
     use Place::*;
     let mut forbidden = ugly();
     forbidden.extend(
-        ["ð", "ʃ", "ʒ", "tʃ", "dʒ", "θ", "ŋ", "ɲ", "ʔ", "ɛ", "ɔ", "ɑ", "ɣ", "x"]
-            .into_iter()
-            .map(str::to_string),
+        [
+            "ð", "ʃ", "ʒ", "tʃ", "dʒ", "θ", "ŋ", "ɲ", "ʔ", "ɛ", "ɔ", "ɑ", "ɣ", "x",
+        ]
+        .into_iter()
+        .map(str::to_string),
     );
     Aesthetic {
         id: "neutral".into(),

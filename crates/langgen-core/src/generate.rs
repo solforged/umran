@@ -19,6 +19,7 @@ pub struct Syllable {
     pub long: bool,
 }
 
+#[derive(Clone, Debug)]
 pub struct Word {
     pub syllables: Vec<Syllable>,
     pub join_at: Option<usize>,
@@ -48,12 +49,9 @@ impl Generator {
         boost_preferred(&mut codas, inventory, &aesthetic.clusters.preferred_codas);
 
         onsets.retain(|(ids, w)| {
-            *w > 0.0
-                && ids.len() <= aesthetic.clusters.max_onset as usize
-                && !banned_onset(ids, *w)
+            *w > 0.0 && ids.len() <= aesthetic.clusters.max_onset as usize && !banned_onset(ids, *w)
         });
         codas.retain(|(ids, w)| *w > 0.0 && ids.len() <= aesthetic.clusters.max_coda as usize);
-
 
         if onsets.is_empty() {
             onsets = singles(inventory, true);
@@ -110,7 +108,6 @@ impl Generator {
     }
 }
 
-
 impl Word {
     pub fn generate(
         aesthetic: &Aesthetic,
@@ -130,8 +127,7 @@ impl Word {
             .signatures
             .iter()
             .any(|s| matches!(s, Signature::OpenNonfinal));
-        let compound =
-            kind == NameKind::Place && rng.gen::<f32>() < aesthetic.names.compound_place;
+        let compound = kind == NameKind::Place && rng.gen::<f32>() < aesthetic.names.compound_place;
         let (mut syllables, join_at) = if compound {
             let n1 = rng.gen_range(1..=2) as usize;
             let n2 = rng.gen_range(1..=2) as usize;
@@ -146,10 +142,7 @@ impl Word {
 
         apply_signatures(&mut syllables, aesthetic, join_at, rng);
         apply_ending(&mut syllables, aesthetic, inventory, rng, kind, max);
-        Word {
-            syllables,
-            join_at,
-        }
+        Word { syllables, join_at }
     }
 
     pub fn phonemes(&self) -> impl Iterator<Item = PhonemeId> + '_ {
@@ -291,12 +284,7 @@ fn segs_to_syllable(ids: &[PhonemeId]) -> Option<Syllable> {
     })
 }
 
-fn stem(
-    generator: &Generator,
-    n: usize,
-    open_nonfinal: bool,
-    rng: &mut impl Rng,
-) -> Vec<Syllable> {
+fn stem(generator: &Generator, n: usize, open_nonfinal: bool, rng: &mut impl Rng) -> Vec<Syllable> {
     let n = n.max(1);
     (0..n)
         .map(|i| generator.syllable(rng, i + 1 == n, open_nonfinal))
@@ -321,8 +309,11 @@ fn singles(inventory: &Inventory, consonants: bool) -> Vec<(Vec<PhonemeId>, f32)
         .collect()
 }
 
-
-fn boost_preferred(dest: &mut Vec<(Vec<PhonemeId>, f32)>, inventory: &Inventory, preferred: &[String]) {
+fn boost_preferred(
+    dest: &mut Vec<(Vec<PhonemeId>, f32)>,
+    inventory: &Inventory,
+    preferred: &[String],
+) {
     for raw in preferred {
         let Some(ids) = CATALOG.parse_ipa(raw) else {
             continue;

@@ -37,7 +37,8 @@ impl Inventory {
 
         let n_c = (rng.gen_range(prior.consonant_count.0..=prior.consonant_count.1) as usize)
             .max(consonants.len());
-        let n_v = (rng.gen_range(prior.vowel_count.0..=prior.vowel_count.1) as usize).max(vowels.len());
+        let n_v =
+            (rng.gen_range(prior.vowel_count.0..=prior.vowel_count.1) as usize).max(vowels.len());
         while consonants.len() < n_c && !c_pool.is_empty() {
             let i = weighted_index(rng, &c_pool);
             consonants.push(c_pool.swap_remove(i).0);
@@ -57,6 +58,45 @@ impl Inventory {
         consonants.sort_by_key(|id| CATALOG.get(*id).ipa());
         vowels.sort_by_key(|id| CATALOG.get(*id).ipa());
 
+        Self {
+            consonants,
+            vowels,
+            scores,
+        }
+    }
+
+    pub fn from_ids(ids: impl IntoIterator<Item = PhonemeId>) -> Self {
+        let mut consonants = Vec::new();
+        let mut vowels = Vec::new();
+        for id in ids {
+            if (id.0 as usize) >= CATALOG.segments.len() {
+                continue;
+            }
+            if consonants.contains(&id) || vowels.contains(&id) {
+                continue;
+            }
+            if CATALOG.get(id).is_vowel() {
+                vowels.push(id);
+            } else {
+                consonants.push(id);
+            }
+        }
+        if vowels.is_empty() {
+            for ipa in ["i", "a", "u"] {
+                if let Some(id) = CATALOG.id_by_ipa(ipa) {
+                    if !vowels.contains(&id) {
+                        vowels.push(id);
+                    }
+                }
+            }
+        }
+        consonants.sort_by_key(|id| CATALOG.get(*id).ipa());
+        vowels.sort_by_key(|id| CATALOG.get(*id).ipa());
+        let scores = consonants
+            .iter()
+            .chain(vowels.iter())
+            .map(|&id| (id, 1.0))
+            .collect();
         Self {
             consonants,
             vowels,
@@ -124,9 +164,7 @@ fn take_required(required: &[String], consonants: bool) -> Vec<PhonemeId> {
 
 fn repair_universals(consonants: &mut Vec<PhonemeId>, vowels: &mut Vec<PhonemeId>) {
     let cat: &Catalog = &CATALOG;
-    let has = |ipa: &str, set: &[PhonemeId]| {
-        set.iter().any(|id| cat.get(*id).ipa() == ipa)
-    };
+    let has = |ipa: &str, set: &[PhonemeId]| set.iter().any(|id| cat.get(*id).ipa() == ipa);
     let add_if = |ipa: &str, set: &mut Vec<PhonemeId>| {
         if let Some(id) = cat.id_by_ipa(ipa) {
             if !set.contains(&id) {
