@@ -1,0 +1,27 @@
+[workspace]
+members = [".", "crates/langgen-core"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+langgen-core = { path = "crates/langgen-core" }
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[package]
+name = "langgen"
+version.workspace = true
+edition.workspace = true
+description = "Seeded language generator with aesthetic packs"
+
+[dependencies]
+langgen-core.workspace = true
+rand.workspace = true
+serde_json.workspace = true
+clap = { version = "4", features = ["derive"] }
+crossterm = "0.28"
+ratatui = "0.29"

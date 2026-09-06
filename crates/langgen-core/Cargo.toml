@@ -1,0 +1,9 @@
+[package]
+name = "langgen-core"
+version.workspace = true
+edition.workspace = true
+description = "Aesthetic-driven phonology and word generation"
+
+[dependencies]
+rand.workspace = true
+serde.workspace = true
