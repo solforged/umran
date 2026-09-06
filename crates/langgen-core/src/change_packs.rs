@@ -115,3 +115,46 @@ pub fn radical() -> Vec<SoundChange> {
         },
     ]
 }
+
+pub fn journey(aesthetic_id: &str) -> Vec<SoundChange> {
+    match aesthetic_id {
+        "elvish" => {
+            let mut rules = conservative();
+            rules.extend(radical());
+            rules
+        }
+        "kuo-toa" => {
+            let mut rules = radical();
+            rules.extend(conservative());
+            rules
+        }
+        "illithid" => radical(),
+        _ => conservative(),
+    }
+}
+
+pub fn rule_label(id: &str) -> String {
+    match id {
+        "t_to_s_before_i" => "t → s before i".into(),
+        "p_lenite_v_v" => "p → f between vowels".into(),
+        "apocope" => "final vowel drops".into(),
+        "lenite_stop_v_v" => "stops voice between vowels".into(),
+        "s_to_h_initial" => "initial s → h".into(),
+        "kw_to_p" => "kw → p".into(),
+        "w_drop_after_p" => "w drops after p".into(),
+        other => other.into(),
+    }
+}
+
+pub fn rule_detail(id: &str) -> String {
+    match id {
+        "t_to_s_before_i" => "t becomes s before a front close unrounded vowel".into(),
+        "p_lenite_v_v" => "p becomes f between vowels".into(),
+        "apocope" => "a later vowel at the word edge is lost; a word's only vowel stays".into(),
+        "lenite_stop_v_v" => "voiceless stops become voiced between vowels".into(),
+        "s_to_h_initial" => "s becomes h at the start of a word".into(),
+        "kw_to_p" => "k becomes p before w".into(),
+        "w_drop_after_p" => "w is lost after p".into(),
+        other => other.into(),
+    }
+}

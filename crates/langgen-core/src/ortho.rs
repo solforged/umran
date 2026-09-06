@@ -1,6 +1,6 @@
 use crate::aesthetic::{Aesthetic, LongVowel, OrthoStyle, Signature};
 use crate::generate::{Syllable, Word};
-use crate::phoneme::{PhonemeId, CATALOG};
+use crate::phoneme::{CATALOG, PhonemeId};
 
 pub fn romanize(word: &Word, aesthetic: &Aesthetic) -> String {
     let mut out = String::new();

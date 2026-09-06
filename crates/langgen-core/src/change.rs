@@ -1,5 +1,5 @@
 use crate::generate::{Syllable, Word};
-use crate::phoneme::{Backness, Height, Manner, PhonemeId, Place, Segment, CATALOG};
+use crate::phoneme::{Backness, CATALOG, Height, Manner, PhonemeId, Place, Segment};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -166,6 +166,15 @@ fn apply_rule(segs: &mut Vec<PhonemeId>, rule: &SoundChange) {
         {
             match rewrite(segs[i], &rule.result) {
                 None => {
+                    let deleting_vowel = CATALOG.get(segs[i]).is_vowel();
+                    let vowels = segs
+                        .iter()
+                        .filter(|id| CATALOG.get(**id).is_vowel())
+                        .count();
+                    if deleting_vowel && vowels <= 1 {
+                        i += 1;
+                        continue;
+                    }
                     segs.remove(i);
                 }
                 Some(new_id) => {
@@ -207,7 +216,7 @@ fn resyllabify(segs: &[PhonemeId], input_empty: bool) -> Vec<Syllable> {
     let nuclei: Vec<usize> = segs
         .iter()
         .enumerate()
-        .filter(|(_, &id)| CATALOG.get(id).is_vowel())
+        .filter(|&(_, &id)| CATALOG.get(id).is_vowel())
         .map(|(i, _)| i)
         .collect();
 
@@ -336,7 +345,7 @@ mod tests {
         assert_eq!(ipa(&out), "kat");
 
         let out = apply_changes(&word(vec![cv("t", "a")]), &[apocope()]);
-        assert_eq!(ipa(&out), "t");
+        assert_eq!(ipa(&out), "ta");
     }
 
     #[test]

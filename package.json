@@ -1,0 +1,30 @@
+{
+  "name": "langgen",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.2",
+  "scripts": {
+    "dev": "bun run build:wasm && vite --host 127.0.0.1",
+    "build:wasm": "wasm-pack build crates/langgen-web --target web --out-dir ../../web/src/wasm --out-name langgen_web",
+    "check": "tsc --noEmit",
+    "build": "bun run build:wasm && bun run check && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test:core": "cargo test --workspace"
+  },
+  "dependencies": {
+    "lucide-react": "1.41.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "26.4.1",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
+    "@vitejs/plugin-react": "6.1.1",
+    "typescript": "7.0.2",
+    "vite": "8.2.2",
+    "wasm-pack": "0.15.0"
+  },
+  "trustedDependencies": ["wasm-pack"]
+}

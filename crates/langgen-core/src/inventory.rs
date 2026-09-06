@@ -1,5 +1,5 @@
 use crate::aesthetic::Aesthetic;
-use crate::phoneme::{Catalog, PhonemeId, Segment, CATALOG};
+use crate::phoneme::{CATALOG, Catalog, PhonemeId, Segment};
 use rand::Rng;
 
 #[derive(Clone, Debug)]
@@ -199,7 +199,7 @@ pub fn weighted_index(rng: &mut impl Rng, items: &[(PhonemeId, f32)]) -> usize {
     if total <= 0.0 {
         return rng.gen_range(0..items.len());
     }
-    let mut x = rng.gen::<f32>() * total;
+    let mut x = rng.r#gen::<f32>() * total;
     for (i, (_, w)) in items.iter().enumerate() {
         x -= w.max(0.0);
         if x <= 0.0 {

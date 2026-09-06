@@ -1,7 +1,7 @@
 use crate::family::{Branch, Family};
 use crate::generate::{Generator, Word};
 use crate::inventory::Inventory;
-use crate::phoneme::{PhonemeId, Segment, CATALOG};
+use crate::phoneme::{CATALOG, PhonemeId, Segment};
 
 #[derive(Clone, Debug)]
 pub enum Transfer {
@@ -155,7 +155,7 @@ fn push_unique(
     out.push((pair.0.clone(), nativize_word(&pair.1, inventory)));
 }
 
-fn nativize_word(word: &Word, inventory: &Inventory) -> Word {
+pub(crate) fn nativize_word(word: &Word, inventory: &Inventory) -> Word {
     let mut out = word.clone();
     for syl in &mut out.syllables {
         nativize_ids(&mut syl.onset, inventory);
@@ -211,8 +211,8 @@ fn disc_abs(a: i32, b: i32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::family::BranchSpec;
     use crate::Aesthetic;
+    use crate::family::BranchSpec;
 
     fn two_branch_elvish() -> Family {
         let aesthetic = Aesthetic::by_id("elvish").unwrap();

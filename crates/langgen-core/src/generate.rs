@@ -1,8 +1,9 @@
 use crate::aesthetic::{Aesthetic, Signature};
 use crate::inventory::Inventory;
-use crate::phoneme::{PhonemeId, CATALOG};
-use rand::seq::SliceRandom;
+use crate::phoneme::{CATALOG, PhonemeId};
 use rand::Rng;
+use rand::seq::SliceRandom;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NameKind {
@@ -11,7 +12,7 @@ pub enum NameKind {
     Place,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Syllable {
     pub onset: Vec<PhonemeId>,
     pub nucleus: Vec<PhonemeId>,
@@ -19,7 +20,7 @@ pub struct Syllable {
     pub long: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Word {
     pub syllables: Vec<Syllable>,
     pub join_at: Option<usize>,
@@ -68,7 +69,7 @@ impl Generator {
     }
 
     pub fn syllable(&self, rng: &mut impl Rng, word_final: bool, open_nonfinal: bool) -> Syllable {
-        let onset = if self.onsets.is_empty() || rng.gen::<f32>() < self.empty_onset {
+        let onset = if self.onsets.is_empty() || rng.r#gen::<f32>() < self.empty_onset {
             Vec::new()
         } else {
             pick(rng, &self.onsets).clone()
@@ -84,10 +85,56 @@ impl Generator {
         } else {
             self.empty_coda_nonfinal
         };
-        let coda = if force_open || self.codas.is_empty() || rng.gen::<f32>() < empty_p {
+        let coda = if force_open || self.codas.is_empty() || rng.r#gen::<f32>() < empty_p {
             Vec::new()
         } else {
             pick(rng, &self.codas).clone()
+        };
+        Syllable {
+            onset,
+            nucleus,
+            coda,
+            long: false,
+        }
+    }
+
+    pub fn root_syllable(&self, rng: &mut impl Rng) -> Syllable {
+        let simple_onsets: Vec<_> = self
+            .onsets
+            .iter()
+            .filter(|(ids, _)| ids.len() == 1)
+            .cloned()
+            .collect();
+        let onsets = if simple_onsets.is_empty() {
+            &self.onsets
+        } else {
+            &simple_onsets
+        };
+        let simple_codas: Vec<_> = self
+            .codas
+            .iter()
+            .filter(|(ids, _)| ids.len() == 1)
+            .cloned()
+            .collect();
+        let codas = if simple_codas.is_empty() {
+            &self.codas
+        } else {
+            &simple_codas
+        };
+        let onset = if onsets.is_empty() || rng.r#gen::<f32>() < 0.12 {
+            Vec::new()
+        } else {
+            pick(rng, onsets).clone()
+        };
+        let nucleus = if self.nuclei.is_empty() {
+            Vec::new()
+        } else {
+            pick(rng, &self.nuclei).clone()
+        };
+        let coda = if codas.is_empty() || rng.r#gen::<f32>() < 0.62 {
+            Vec::new()
+        } else {
+            pick(rng, codas).clone()
         };
         Syllable {
             onset,
@@ -127,7 +174,8 @@ impl Word {
             .signatures
             .iter()
             .any(|s| matches!(s, Signature::OpenNonfinal));
-        let compound = kind == NameKind::Place && rng.gen::<f32>() < aesthetic.names.compound_place;
+        let compound =
+            kind == NameKind::Place && rng.r#gen::<f32>() < aesthetic.names.compound_place;
         let (mut syllables, join_at) = if compound {
             let n1 = rng.gen_range(1..=2) as usize;
             let n2 = rng.gen_range(1..=2) as usize;
@@ -154,6 +202,67 @@ impl Word {
                 .chain(s.coda.iter().copied())
         })
     }
+
+    pub fn first_syllable(&self) -> Self {
+        Self {
+            syllables: self.syllables.iter().take(1).cloned().collect(),
+            join_at: None,
+        }
+    }
+
+    pub fn redup_first(&self) -> Self {
+        let mut syllables = self.syllables.clone();
+        if let Some(first) = syllables.first().cloned() {
+            syllables.insert(0, first);
+        }
+        Self {
+            syllables,
+            join_at: None,
+        }
+    }
+
+    pub fn compound(&self, other: &Self) -> Self {
+        let mut syllables = self.syllables.clone();
+        let join_at = Some(syllables.len());
+        syllables.extend(other.syllables.iter().cloned());
+        Self { syllables, join_at }
+    }
+
+    pub fn attach_ipa(&self, raw: &str, inventory: &Inventory) -> Self {
+        let Some(ids) = CATALOG.parse_ipa(raw) else {
+            return self.clone();
+        };
+        if ids.iter().any(|id| !inventory.contains(*id)) {
+            return self.clone();
+        }
+        let Some(mut syl) = segs_to_syllable(&ids) else {
+            return self.clone();
+        };
+        let mut syllables = self.syllables.clone();
+        if syl.nucleus.is_empty() {
+            if let Some(last) = syllables.last_mut() {
+                last.coda.extend(syl.coda);
+            }
+            return Self {
+                syllables,
+                join_at: self.join_at,
+            };
+        }
+        if syl.onset.is_empty() {
+            if let Some(last) = syllables.last() {
+                syl.onset.clone_from(&last.onset);
+            }
+        }
+        syllables.push(syl);
+        Self {
+            syllables,
+            join_at: self.join_at,
+        }
+    }
+
+    pub fn phones(&self) -> Vec<PhonemeId> {
+        self.phonemes().collect()
+    }
 }
 
 fn apply_signatures(
@@ -173,7 +282,7 @@ fn apply_signatures(
                 }
             }
             Signature::PenultimateLength { probability } => {
-                if rng.gen::<f32>() < *probability && !syllables.is_empty() {
+                if rng.r#gen::<f32>() < *probability && !syllables.is_empty() {
                     let i = syllables.len().saturating_sub(2);
                     syllables[i].long = true;
                 }
@@ -184,7 +293,7 @@ fn apply_signatures(
             } => {
                 if join_at.is_none()
                     && syllables.len() <= 2
-                    && rng.gen::<f32>() < *probability
+                    && rng.r#gen::<f32>() < *probability
                     && !syllables.is_empty()
                 {
                     let mut echo = syllables[0].clone();
@@ -212,7 +321,7 @@ fn apply_ending(
         NameKind::Place => &aesthetic.names.place_endings,
         NameKind::Word => return,
     };
-    if endings.is_empty() || rng.gen::<f32>() > 0.55 {
+    if endings.is_empty() || rng.r#gen::<f32>() > 0.55 {
         return;
     }
     let Some(raw) = endings.choose(rng) else {
@@ -334,7 +443,7 @@ fn pick<'a>(rng: &mut impl Rng, items: &'a [(Vec<PhonemeId>, f32)]) -> &'a Vec<P
     if total <= 0.0 {
         return &items[rng.gen_range(0..items.len())].0;
     }
-    let mut x = rng.gen::<f32>() * total;
+    let mut x = rng.r#gen::<f32>() * total;
     for (item, w) in items {
         x -= w.max(0.0);
         if x <= 0.0 {

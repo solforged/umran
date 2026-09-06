@@ -1,9 +1,9 @@
+use crate::Language;
 use crate::aesthetic::Aesthetic;
-use crate::change::{apply_changes, SoundChange};
+use crate::change::{SoundChange, apply_changes};
 use crate::generate::{Generator, Word};
 use crate::inventory::Inventory;
-use crate::lexicon::{mint_roots, Root};
-use crate::Language;
+use crate::lexicon::{Root, mint_roots};
 
 #[derive(Clone, Debug)]
 pub struct BranchSpec {
@@ -111,10 +111,10 @@ fn autonym_from(language: &Language, cognates: &[(String, Word)]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Aesthetic;
     use crate::change::{Env, Matcher, Rewrite};
     use crate::generate::Syllable;
-    use crate::phoneme::{PhonemeId, CATALOG};
-    use crate::Aesthetic;
+    use crate::phoneme::{CATALOG, PhonemeId};
 
     fn flattened_ipa(word: &Word) -> String {
         let ids: Vec<_> = word.phonemes().collect();

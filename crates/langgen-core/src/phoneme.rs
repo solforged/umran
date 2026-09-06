@@ -4,6 +4,26 @@ use std::sync::LazyLock;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct PhonemeId(pub u16);
 
+// Persist symbols, not catalog offsets: adding a segment must not rewrite history.
+impl Serialize for PhonemeId {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let segment = CATALOG
+            .segments
+            .get(self.0 as usize)
+            .ok_or_else(|| serde::ser::Error::custom("unknown phoneme id"))?;
+        serializer.serialize_str(segment.ipa())
+    }
+}
+
+impl<'de> Deserialize<'de> for PhonemeId {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let ipa = String::deserialize(deserializer)?;
+        CATALOG
+            .id_by_ipa(&ipa)
+            .ok_or_else(|| serde::de::Error::custom(format!("unknown phoneme '{ipa}'")))
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Place {
     Bilabial,
