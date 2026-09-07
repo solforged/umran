@@ -1,7 +1,7 @@
 use crate::phoneme::{Backness, Height, Manner, Place};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Aesthetic {
     pub id: String,
     pub name: String,
@@ -14,7 +14,7 @@ pub struct Aesthetic {
     pub signatures: Vec<Signature>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct InventoryPrior {
     pub consonant_count: (u8, u8),
     pub vowel_count: (u8, u8),
@@ -29,7 +29,7 @@ pub struct InventoryPrior {
     pub forbidden: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ClusterPolicy {
     pub max_onset: u8,
     pub max_coda: u8,
@@ -42,12 +42,12 @@ pub struct ClusterPolicy {
     pub preferred_codas: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WordShape {
     pub syllables: (u8, u8),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct NameStyle {
     pub person_syllables: (u8, u8),
     pub place_syllables: (u8, u8),
@@ -56,7 +56,7 @@ pub struct NameStyle {
     pub compound_place: f32,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct OrthoStyle {
     pub overrides: Vec<(String, String)>,
     pub long_vowels: LongVowel,
@@ -65,14 +65,14 @@ pub struct OrthoStyle {
     pub compound_joiner: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum LongVowel {
     Acute,
     Double,
     None,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Signature {
     Reduplicate { probability: f32, partial: bool },
     PenultimateLength { probability: f32 },

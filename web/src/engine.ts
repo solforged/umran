@@ -26,8 +26,8 @@ export async function createEngine(
   return {
     snapshot: (checkpoint = workbench.latest()) =>
       JSON.parse(workbench.snapshot(checkpoint)) as Snapshot,
-    options: (checkpoint, community, base) =>
-      JSON.parse(workbench.options(checkpoint, community, base)) as FormationOption[],
+    options: (checkpoint, variety, base, sense) =>
+      JSON.parse(workbench.options(checkpoint, variety, base, sense)) as FormationOption[],
     preview: (event) => JSON.parse(workbench.preview(JSON.stringify(event))) as Snapshot,
     commit: (event) => JSON.parse(workbench.commit(JSON.stringify(event))) as Snapshot,
     save: () => workbench.save(),

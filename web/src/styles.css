@@ -209,7 +209,7 @@ button {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 14rem minmax(0, 1fr) minmax(20rem, 24rem);
+  grid-template-columns: 16rem minmax(0, 1fr) minmax(20rem, 24rem);
   overflow: hidden;
 }
 
@@ -296,6 +296,16 @@ button {
   font-size: 1.05rem;
 }
 
+.community-meta,
+.community-ancestry {
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+}
+
+.community-ancestry {
+  font-size: 0.72rem;
+}
+
 .badges {
   display: flex;
   flex-wrap: wrap;
@@ -311,8 +321,15 @@ button {
   letter-spacing: 0.02em;
 }
 
-.found-btn {
+.community-actions {
   margin: auto 0.75rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.found-btn {
+  margin: 0;
 }
 
 .lexicon-toolbar {
@@ -411,12 +428,45 @@ tbody tr.selected {
   text-transform: uppercase;
 }
 
-.origin-derived {
+.origin-loan {
+  color: var(--loan);
+}
+
+.origin-formed {
   color: var(--accent);
 }
 
-.origin-loan {
+.origin-borrowed {
   color: var(--loan);
+}
+
+.origin-inherited,
+.origin-unrecorded {
+  color: var(--ink-soft);
+}
+
+tr.retired {
+  color: var(--ink-soft);
+}
+
+tr.retired .form {
+  text-decoration: line-through;
+}
+
+.frame-explain {
+  margin: 0.15rem 0 0.7rem;
+  color: var(--ink-soft);
+}
+
+.authoring {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.75rem 0 0.4rem;
+}
+
+.hidden-selection {
+  padding: 0.35rem 1rem 0;
 }
 
 .empty-block,
@@ -489,6 +539,12 @@ tbody tr.selected {
 .ipa-line {
   font-family: var(--mono);
   font-size: 0.92rem;
+  color: var(--ink-soft);
+}
+
+.formation-in-lexicon {
+  font-size: 0.75rem;
+  color: var(--accent);
 }
 
 .display-ipa,
@@ -711,15 +767,26 @@ fieldset.field {
     min-width: 9rem;
   }
 
-  .found-btn {
+  .community-actions {
     margin: 0 0.75rem 0.75rem auto;
+    flex-direction: row;
+  }
+
+  .found-btn {
+    margin: 0;
   }
 }
 
 @media (max-width: 900px) {
+  .workbench {
+    height: auto;
+    min-height: 100dvh;
+  }
+
   .workspace {
     grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr) minmax(14rem, 42%);
+    grid-template-rows: auto minmax(20rem, 65dvh) auto;
+    overflow: visible;
   }
 
   .communities,
@@ -731,6 +798,10 @@ fieldset.field {
 
   .inspector {
     border-bottom: 0;
+  }
+
+  .inspector-scroll {
+    overflow: visible;
   }
 }
 

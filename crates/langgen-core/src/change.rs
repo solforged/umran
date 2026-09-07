@@ -157,7 +157,12 @@ fn rewrite(id: PhonemeId, result: &Rewrite) -> Option<PhonemeId> {
     }
 }
 
-fn apply_rule(segs: &mut Vec<PhonemeId>, rule: &SoundChange) {
+fn apply_rule_tracked(
+    segs: &mut Vec<PhonemeId>,
+    long: &mut Vec<bool>,
+    ancestry: &mut Vec<usize>,
+    rule: &SoundChange,
+) {
     let mut i = 0;
     while i < segs.len() {
         if rule.target.matches(segs[i])
@@ -176,9 +181,14 @@ fn apply_rule(segs: &mut Vec<PhonemeId>, rule: &SoundChange) {
                         continue;
                     }
                     segs.remove(i);
+                    long.remove(i);
+                    ancestry.remove(i);
                 }
                 Some(new_id) => {
                     segs[i] = new_id;
+                    if !CATALOG.get(new_id).is_vowel() {
+                        long[i] = false;
+                    }
                     i += 1;
                 }
             }
@@ -186,6 +196,93 @@ fn apply_rule(segs: &mut Vec<PhonemeId>, rule: &SoundChange) {
             i += 1;
         }
     }
+}
+
+pub(crate) struct AppliedForm {
+    pub phones: Vec<PhonemeId>,
+    pub long: Vec<bool>,
+    pub ancestry: Vec<usize>,
+}
+
+pub(crate) fn word_length_flags(word: &Word) -> Vec<bool> {
+    let mut flags = Vec::new();
+    for syl in &word.syllables {
+        flags.extend(std::iter::repeat(false).take(syl.onset.len()));
+        flags.extend(std::iter::repeat(syl.long).take(syl.nucleus.len()));
+        flags.extend(std::iter::repeat(false).take(syl.coda.len()));
+    }
+    flags
+}
+
+pub(crate) fn map_offset(ancestry: &[usize], orig_offset: usize) -> usize {
+    ancestry
+        .iter()
+        .position(|&i| i >= orig_offset)
+        .unwrap_or(ancestry.len())
+}
+
+pub(crate) fn apply_changes_tracked(
+    phones: &[PhonemeId],
+    long: &[bool],
+    rules: &[SoundChange],
+) -> AppliedForm {
+    let mut segs = phones.to_vec();
+    let mut long = if long.len() == segs.len() {
+        long.to_vec()
+    } else {
+        vec![false; segs.len()]
+    };
+    let mut ancestry: Vec<usize> = (0..segs.len()).collect();
+    for rule in rules {
+        apply_rule_tracked(&mut segs, &mut long, &mut ancestry, rule);
+    }
+    AppliedForm {
+        phones: segs,
+        long,
+        ancestry,
+    }
+}
+
+pub(crate) fn realize_phones(segs: &[PhonemeId]) -> Word {
+    realize_phones_long(segs, &vec![false; segs.len()])
+}
+
+pub(crate) fn realize_phones_long(segs: &[PhonemeId], long: &[bool]) -> Word {
+    let mut syllables = resyllabify(segs, segs.is_empty());
+    let mut i = 0;
+    for syl in &mut syllables {
+        let nuc_from = i + syl.onset.len();
+        let nuc_to = nuc_from + syl.nucleus.len();
+        syl.long = long
+            .get(nuc_from..nuc_to)
+            .map(|slice| slice.iter().any(|flag| *flag))
+            .unwrap_or(false);
+        i += syl.onset.len() + syl.nucleus.len() + syl.coda.len();
+    }
+    Word {
+        syllables,
+        join_at: None,
+    }
+}
+
+fn join_phone_offset(word: &Word, join_at: usize) -> usize {
+    word.syllables
+        .iter()
+        .take(join_at)
+        .map(|s| s.onset.len() + s.nucleus.len() + s.coda.len())
+        .sum()
+}
+
+fn syllable_at_phone(syllables: &[Syllable], offset: usize) -> Option<usize> {
+    let mut i = 0;
+    for (idx, syl) in syllables.iter().enumerate() {
+        let n = syl.onset.len() + syl.nucleus.len() + syl.coda.len();
+        if offset < i + n {
+            return Some(idx);
+        }
+        i += n;
+    }
+    None
 }
 
 fn rising_sonority(ids: &[PhonemeId]) -> bool {
@@ -262,14 +359,25 @@ fn resyllabify(segs: &[PhonemeId], input_empty: bool) -> Vec<Syllable> {
 }
 
 pub fn apply_changes(word: &Word, rules: &[SoundChange]) -> Word {
-    let mut segs: Vec<PhonemeId> = word.phonemes().collect();
-    let input_empty = segs.is_empty();
-    for rule in rules {
-        apply_rule(&mut segs, rule);
+    let phones: Vec<PhonemeId> = word.phonemes().collect();
+    let long = word_length_flags(word);
+    let applied = apply_changes_tracked(&phones, &long, rules);
+    if applied.phones == phones {
+        return word.clone();
     }
-    let syllables = resyllabify(&segs, input_empty);
-    let join_at = word.join_at.filter(|&j| j < syllables.len());
-    Word { syllables, join_at }
+    let mut next = realize_phones_long(&applied.phones, &applied.long);
+    next.join_at = word.join_at.and_then(|j| {
+        if j == 0 {
+            return None;
+        }
+        let orig = join_phone_offset(word, j);
+        let mapped = map_offset(&applied.ancestry, orig);
+        if mapped == 0 || mapped >= applied.phones.len() {
+            return None;
+        }
+        syllable_at_phone(&next.syllables, mapped).filter(|&s| s > 0 && s < next.syllables.len())
+    });
+    next
 }
 
 #[cfg(test)]
@@ -375,5 +483,27 @@ mod tests {
         assert_eq!(format!("{a:?}"), format!("{b:?}"));
         assert_eq!(ipa(&a), ipa(&b));
         assert_eq!(ipa(&a), "sik");
+    }
+
+    #[test]
+    fn unmatched_rule_preserves_vowel_length() {
+        let mut w = word(vec![cv("k", "a"), cv("t", "a")]);
+        w.syllables[0].long = true;
+        w.join_at = Some(1);
+        let out = apply_changes(&w, &[t_to_s_before_i()]);
+        assert_eq!(ipa(&out), "kata");
+        assert!(out.syllables[0].long);
+        assert_eq!(out.join_at, Some(1));
+    }
+
+    #[test]
+    fn surviving_length_and_join_follow_phone_ancestry() {
+        let mut w = word(vec![cv("k", "a"), cv("t", "i")]);
+        w.syllables[0].long = true;
+        w.join_at = Some(1);
+        let out = apply_changes(&w, &[t_to_s_before_i()]);
+        assert_eq!(ipa(&out), "kasi");
+        assert!(out.syllables[0].long);
+        assert_eq!(out.join_at, Some(1));
     }
 }

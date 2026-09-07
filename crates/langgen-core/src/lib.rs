@@ -7,6 +7,7 @@ mod generate;
 mod history;
 mod inventory;
 mod lexicon;
+pub mod linguistics;
 mod ortho;
 mod phoneme;
 mod session;
@@ -21,11 +22,15 @@ pub use contact::{ContactEvent, Transfer, apply_contact};
 pub use family::{Branch, BranchSpec, Family};
 pub use generate::{Generator, NameKind, Syllable, Word};
 pub use history::{
-    Community, ContactDomain, FormationKind, FormationOption, FormationRule, History,
-    HistoryCheckpoint, HistoryEffect, HistoryEvent, HistoryLexeme, WordTrace,
+    Community, ContactDomain, FoundLanguage, History, HistoryCheckpoint, HistoryEffect,
+    HistoryEvent, LanguageUse, UseDomain, Variety,
 };
 pub use inventory::Inventory;
 pub use lexicon::{Root, glosses, mint_roots};
+pub use linguistics::{
+    Analysis, ClassKind, Construction, FormationOption, Grammar, Lexeme, LexemeRef, LexicalClass,
+    Meaning, Origin, Role, SemanticFrame, SemanticOperation, Sense, StressPattern, WordTrace,
+};
 pub use phoneme::{CATALOG, Catalog, PhonemeId, Segment};
 pub use session::{LexRow, Session, SessionSnapshot};
 

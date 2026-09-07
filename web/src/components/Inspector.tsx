@@ -1,47 +1,92 @@
 import { useMemo, useState } from "react";
-import type { Community, FormationOption, Lexeme, Snapshot } from "../model";
+import type { Community, FormationOption, Lexeme, Sense, Snapshot, Variety } from "../model";
 
 export function Inspector({
   snapshot,
   community,
+  variety,
   lexeme,
+  sense,
   options,
   readOnly,
-  onSelectLexeme,
+  onSelectSense,
+  onOpenLexeme,
   onSelectCommunity,
   onPreviewDerive,
+  onCompose,
+  onPreviewLexicalize,
 }: {
   snapshot: Snapshot;
   community: Community | null;
+  variety: Variety | null;
   lexeme: Lexeme | null;
+  sense: Sense | null;
   options: FormationOption[];
   readOnly: boolean;
-  onSelectLexeme: (id: string) => void;
+  onSelectSense: (id: number) => void;
+  onOpenLexeme: (args: { variety: number; lexeme: string; sense?: number; checkpoint?: number }) => void;
   onSelectCommunity: (id: number) => void;
   onPreviewDerive: (option: FormationOption) => void;
+  onCompose: (kind: "Sense" | "Replace" | "Remodel") => void;
+  onPreviewLexicalize: () => void;
 }) {
   const [tab, setTab] = useState<"word" | "sound">("word");
 
   const relatives = useMemo(() => {
-    if (!community || !lexeme) {
+    if (!variety || !lexeme) {
       return { base: null as Lexeme | null, children: [] as Lexeme[], siblings: [] as Lexeme[] };
     }
-    const base = lexeme.baseLexeme ? (community.lexicon.find((item) => item.id === lexeme.baseLexeme) ?? null) : null;
-    const children = community.lexicon.filter((item) => item.baseLexeme === lexeme.id);
-    const siblings = lexeme.baseLexeme
-      ? community.lexicon.filter(
-          (item) => item.baseLexeme === lexeme.baseLexeme && item.id !== lexeme.id,
+    const base = lexeme.analysis
+      ? (variety.lexicon.find((item) => item.id === lexeme.analysis?.base) ?? null)
+      : null;
+    const children = variety.lexicon.filter((item) => item.analysis?.base === lexeme.id);
+    const siblings = lexeme.analysis
+      ? variety.lexicon.filter(
+          (item) => item.analysis?.base === lexeme.analysis?.base && item.id !== lexeme.id,
         )
       : [];
     return { base, children, siblings };
-  }, [community, lexeme]);
+  }, [variety, lexeme]);
+
+  const speakers = variety
+    ? snapshot.communities.filter((item) => item.uses.some((use) => use.variety === variety.id))
+    : [];
+  const lexicalClass =
+    variety && lexeme ? (variety.classes.find((item) => item.id === lexeme.classId) ?? null) : null;
+  const compatible =
+    variety && lexeme
+      ? variety.lexicon.filter(
+          (item) => !item.retired && item.id !== lexeme.id && item.classId === lexeme.classId,
+        )
+      : [];
+  const canAuthor = Boolean(variety && lexeme && !readOnly && !lexeme.retired);
+  const frameExplain = !sense
+    ? ""
+    : "Entity" in sense.frame
+      ? sense.frame.Entity.countable
+        ? "Countable entity"
+        : "Mass entity"
+      : sense.frame.Event.roles.length > 0
+        ? `Event with ${sense.frame.Event.roles.join(", ")}`
+        : "Event";
 
   if (!community) {
     return (
       <aside className="inspector" aria-label="Inspector">
         <div className="empty-block">
           <p>No community at this checkpoint.</p>
-          <p className="muted">Found a speech community to mint a lexicon.</p>
+          <p className="muted">Found a community to start a lexicon.</p>
+        </div>
+      </aside>
+    );
+  }
+
+  if (!variety) {
+    return (
+      <aside className="inspector" aria-label="Inspector">
+        <div className="empty-block">
+          <p>{community.name} has no language use yet.</p>
+          <p className="muted">Attach a language, or found one with this community.</p>
         </div>
       </aside>
     );
@@ -50,47 +95,78 @@ export function Inspector({
   return (
     <aside className="inspector" aria-label="Inspector">
       <div className="inspector-tabs" role="tablist" aria-label="Inspector views">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "word"}
-          onClick={() => setTab("word")}
-        >
+        <button type="button" role="tab" aria-selected={tab === "word"} onClick={() => setTab("word")}>
           Word
         </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "sound"}
-          onClick={() => setTab("sound")}
-        >
+        <button type="button" role="tab" aria-selected={tab === "sound"} onClick={() => setTab("sound")}>
           Sound
         </button>
       </div>
 
       {tab === "sound" ? (
         <div className="inspector-scroll" role="tabpanel">
-          <h3 className="inspect-kicker">{community.name}</h3>
+          <h3 className="inspect-kicker">{variety.name}</h3>
           <p className="lead">
-            {community.aesthetic.name}. {community.aesthetic.description}
+            {variety.aesthetic.name}. {variety.aesthetic.description}
           </p>
+          <p className="muted">Stress {variety.stress}.</p>
+          <h4>Spoken by</h4>
+          {speakers.length === 0 ? (
+            <p className="muted">No community uses this language yet.</p>
+          ) : (
+            <ul className="relatives">
+              {speakers.map((item) => (
+                <li key={item.id}>
+                  {item.id === community.id ? (
+                    <strong>{item.name}</strong>
+                  ) : (
+                    <button type="button" className="text-link" onClick={() => onSelectCommunity(item.id)}>
+                      {item.name}
+                    </button>
+                  )}
+                  <span className="muted">
+                    {" "}
+                    {item.uses
+                      .filter((use) => use.variety === variety.id)
+                      .map((use) => use.domain)
+                      .join(", ")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
           <h4>Inventory</h4>
           <p className="ipa-line">
-            <span className="muted">C</span> {community.inventory.consonants.join(" ") || "—"}
+            <span className="muted">C</span> {variety.inventory.consonants.join(" ") || "—"}
           </p>
           <p className="ipa-line">
-            <span className="muted">V</span> {community.inventory.vowels.join(" ") || "—"}
+            <span className="muted">V</span> {variety.inventory.vowels.join(" ") || "—"}
           </p>
-          <h4>Productive suffixes</h4>
-          {community.formations.length === 0 ? (
-            <p className="muted">No productive suffixes at this checkpoint.</p>
+          <h4>Lexical classes</h4>
+          {variety.classes.length === 0 ? (
+            <p className="muted">No classes at this checkpoint.</p>
           ) : (
             <ul className="suffix-list">
-              {community.formations.map((rule) => (
-                <li key={rule.kind}>
+              {variety.classes.map((item) => (
+                <li key={item.id}>
+                  <strong>{item.label}</strong>
+                  <span className="muted">{item.kind}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <h4>Constructions</h4>
+          {variety.constructions.length === 0 ? (
+            <p className="muted">No constructions at this checkpoint.</p>
+          ) : (
+            <ul className="suffix-list">
+              {variety.constructions.map((rule) => (
+                <li key={rule.id}>
                   <strong>{rule.label}</strong>
-                  <span className="form">{rule.form}</span>
-                  <span className="ipa">/{rule.ipa}/</span>
+                  <span className="muted">
+                    {rule.inputClass} → {rule.outputClass} · {rule.operation}
+                  </span>
+                  <span className="form">{rule.exponents.join(" ") || "—"}</span>
                 </li>
               ))}
             </ul>
@@ -98,58 +174,116 @@ export function Inspector({
         </div>
       ) : lexeme ? (
         <div className="inspector-scroll" role="tabpanel">
-          <p className="inspect-kicker">{lexeme.gloss}</p>
+          <p className="inspect-kicker">
+            {sense?.gloss ?? "No sense"}
+            {lexeme.retired ? " · archived" : ""}
+          </p>
           <p className="display-form">{lexeme.form}</p>
           <p className="display-ipa">/{lexeme.ipa}/</p>
+          <p className="muted">
+            {lexeme.classLabel}
+            {lexicalClass ? ` · ${lexicalClass.kind}` : ""}
+          </p>
 
-          <Lineage snapshot={snapshot} community={community} lexeme={lexeme} onSelectCommunity={onSelectCommunity} />
+          <h4>Senses</h4>
+          {lexeme.senses.length === 0 ? (
+            <p className="muted">This word has no senses.</p>
+          ) : (
+            <div className="filters senses" role="radiogroup" aria-label="Selected sense">
+              {lexeme.senses.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={item.id === sense?.id ? "chip selected" : "chip"}
+                  aria-pressed={item.id === sense?.id}
+                  onClick={() => onSelectSense(item.id)}
+                >
+                  {item.gloss}
+                </button>
+              ))}
+            </div>
+          )}
+          {sense ? <p className="frame-explain">{frameExplain}</p> : null}
+
+          <OriginBlock
+            snapshot={snapshot}
+            community={community}
+            variety={variety}
+            lexeme={lexeme}
+            onOpenLexeme={onOpenLexeme}
+          />
 
           <h4>Relatives</h4>
           {relatives.base || relatives.children.length || relatives.siblings.length ? (
             <ul className="relatives">
-              {relatives.base ? (
+              {relatives.base && lexeme.analysis ? (
                 <li>
-                  <button type="button" className="text-link" onClick={() => onSelectLexeme(relatives.base!.id)}>
+                  <button
+                    type="button"
+                    className="text-link"
+                    onClick={() =>
+                      onOpenLexeme({
+                        variety: variety.id,
+                        lexeme: relatives.base!.id,
+                        sense: lexeme.analysis?.sense,
+                      })
+                    }
+                  >
                     Base {relatives.base.form}
-                    <span className="muted"> {relatives.base.gloss}</span>
+                    <span className="muted">
+                      {" "}
+                      {relatives.base.senses.find((item) => item.id === lexeme.analysis?.sense)?.gloss ??
+                        relatives.base.senses[0]?.gloss ??
+                        relatives.base.id}
+                    </span>
                   </button>
                 </li>
               ) : null}
               {relatives.siblings.map((item) => (
                 <li key={item.id}>
-                  <button type="button" className="text-link" onClick={() => onSelectLexeme(item.id)}>
-                    {item.formation ?? "Related"} {item.form}
-                    <span className="muted"> {item.gloss}</span>
+                  <button
+                    type="button"
+                    className="text-link"
+                    onClick={() => onOpenLexeme({ variety: variety.id, lexeme: item.id })}
+                  >
+                    {item.analysis?.label ?? "Related"} {item.form}
+                    <span className="muted"> {item.senses[0]?.gloss ?? item.id}</span>
+                    {item.retired ? <span className="muted"> · archived</span> : null}
                   </button>
                 </li>
               ))}
               {relatives.children.map((item) => (
                 <li key={item.id}>
-                  <button type="button" className="text-link" onClick={() => onSelectLexeme(item.id)}>
-                    {item.formation ?? "Derived"} {item.form}
-                    <span className="muted"> {item.gloss}</span>
+                  <button
+                    type="button"
+                    className="text-link"
+                    onClick={() => onOpenLexeme({ variety: variety.id, lexeme: item.id })}
+                  >
+                    {item.analysis?.label ?? "Derived"} {item.form}
+                    <span className="muted"> {item.senses[0]?.gloss ?? item.id}</span>
+                    {item.retired ? <span className="muted"> · archived</span> : null}
                   </button>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="muted">No linked relatives yet.</p>
+            <p className="muted">No current analysis relatives.</p>
           )}
 
           <h4>Formations</h4>
-          {options.length === 0 ? (
-            <p className="muted">No formation options for this word.</p>
+          {!sense ? (
+            <p className="muted">Select a sense to see eligible constructions.</p>
+          ) : options.length === 0 ? (
+            <p className="muted">No formation options for this sense.</p>
           ) : (
             <ul className="formation-cards">
               {options.map((option) =>
                 option.existing ? (
-                  <li key={option.kind}>
+                  <li key={`${option.construction}-${option.existing}`}>
                     <button
                       type="button"
                       className="formation-card existing"
-                      onClick={() => {
-                        if (option.existing) onSelectLexeme(option.existing);
-                      }}
+                      onClick={() => onOpenLexeme({ variety: variety.id, lexeme: option.existing as string })}
                     >
                       <span className="formation-kind">{option.label}</span>
                       <span className="formation-gloss">{option.gloss}</span>
@@ -161,18 +295,19 @@ export function Inspector({
                     </button>
                   </li>
                 ) : (
-                  <li key={option.kind}>
+                  <li key={option.construction}>
                     <button
                       type="button"
                       className="formation-card"
-                      disabled={readOnly}
+                      disabled={readOnly || lexeme.retired}
                       onClick={() => onPreviewDerive(option)}
                     >
                       <span className="formation-kind">{option.label}</span>
                       <span className="formation-gloss">{option.gloss}</span>
                       <span className="formation-shape">
-                        {lexeme.form} + {option.exponent} → <em>{option.form}</em>
+                        <em>{option.form}</em>
                       </span>
+                      <span className="muted">Base {lexeme.form}; marker {option.exponent || "∅"}</span>
                       <span className="ipa">/{option.ipa}/</span>
                       {readOnly ? <span className="muted">Return to latest to form words</span> : null}
                     </button>
@@ -182,15 +317,44 @@ export function Inspector({
             </ul>
           )}
 
+          {canAuthor ? (
+            <div className="authoring" role="group" aria-label="Lexicon events">
+              <button type="button" className="btn" onClick={() => onCompose("Sense")}>
+                Change sense
+              </button>
+              {compatible.length > 0 ? (
+                <button type="button" className="btn" onClick={() => onCompose("Replace")}>
+                  Replace
+                </button>
+              ) : null}
+              {lexeme.analysis ? (
+                <button type="button" className="btn" onClick={onPreviewLexicalize}>
+                  Lexicalize
+                </button>
+              ) : null}
+              <button type="button" className="btn" onClick={() => onCompose("Remodel")}>
+                Remodel
+              </button>
+            </div>
+          ) : lexeme.retired ? (
+            <p className="muted">Archived words stay inspectable but cannot be used in new events.</p>
+          ) : null}
+
           <h4>History of this word</h4>
           {lexeme.traces.length === 0 ? (
             <p className="muted">No traces recorded.</p>
           ) : (
             <ol className="traces">
               {lexeme.traces.map((trace, index) => (
-                <li key={`${trace.checkpoint}-${index}`} className={trace.checkpoint === snapshot.checkpoint ? "current" : undefined}>
+                <li
+                  key={`${trace.checkpoint}-${index}`}
+                  className={trace.checkpoint === snapshot.checkpoint ? "current" : undefined}
+                >
                   <span className="trace-head">
-                    ck{trace.checkpoint} {snapshot.communities.find((item) => item.id === trace.community)?.name ?? `Community ${trace.community}`} · {trace.before ?? "—"} → {trace.after}
+                    ck{trace.checkpoint}{" "}
+                    {snapshot.varieties.find((item) => item.id === trace.variety)?.name ??
+                      `Variety ${trace.variety}`}{" "}
+                    · {trace.before ?? "—"} → {trace.after}
                   </span>
                   <span className="muted">{trace.explanation}</span>
                 </li>
@@ -200,61 +364,138 @@ export function Inspector({
         </div>
       ) : (
         <div className="inspector-scroll empty-block" role="tabpanel">
-          <p>Select a word to inspect its form, relatives, and formations.</p>
+          <p>Select a word to inspect its senses, analysis, and origin.</p>
         </div>
       )}
     </aside>
   );
 }
 
-function Lineage({
+function OriginBlock({
   snapshot,
   community,
+  variety,
   lexeme,
-  onSelectCommunity,
+  onOpenLexeme,
 }: {
   snapshot: Snapshot;
   community: Community;
+  variety: Variety;
   lexeme: Lexeme;
-  onSelectCommunity: (id: number) => void;
+  onOpenLexeme: (args: { variety: number; lexeme: string; sense?: number; checkpoint?: number }) => void;
 }) {
-  const chain: Community[] = [];
-  let cursor: Community | undefined = community;
+  const chain: Variety[] = [];
+  let cursor: Variety | undefined = variety;
   const guard = new Set<number>();
   while (cursor && !guard.has(cursor.id)) {
     guard.add(cursor.id);
     chain.push(cursor);
-    cursor = cursor.parent == null ? undefined : snapshot.communities.find((item) => item.id === cursor!.parent);
+    cursor = cursor.parent == null ? undefined : snapshot.varieties.find((item) => item.id === cursor!.parent);
   }
   chain.reverse();
-  const source = lexeme.originCommunity !== community.id
-    ? snapshot.communities.find((item) => item.id === lexeme.originCommunity)
+
+  const analyzed = lexeme.analysis
+    ? (variety.lexicon.find((item) => item.id === lexeme.analysis?.base) ?? null)
     : null;
-  const sourceWord = source?.lexicon.find((item) => item.id === lexeme.originLexeme);
+  const sourceRef = lexeme.origin.source;
+  const sourceVariety = sourceRef
+    ? (snapshot.varieties.find((item) => item.id === sourceRef.variety) ?? null)
+    : null;
 
   return (
-    <section className="lineage" aria-label="Source and community lineage">
-      <h4>Lineage</h4>
+    <section className="lineage" aria-label="Analysis and origin">
+      <h4>Current analysis</h4>
+      {lexeme.analysis ? (
+        <p>
+          {lexeme.analysis.label}
+          {analyzed ? (
+            <>
+              {" · "}
+              <button
+                type="button"
+                className="text-link"
+                onClick={() =>
+                  onOpenLexeme({
+                    variety: variety.id,
+                    lexeme: lexeme.analysis!.base,
+                    sense: lexeme.analysis!.sense,
+                  })
+                }
+              >
+                {analyzed.form}
+              </button>
+              <span className="muted">
+                {" "}
+                {analyzed.senses.find((item) => item.id === lexeme.analysis?.sense)?.gloss ??
+                  analyzed.senses[0]?.gloss ??
+                  analyzed.id}
+              </span>
+            </>
+          ) : (
+            <span className="muted"> · {lexeme.analysis.base}</span>
+          )}
+        </p>
+      ) : (
+        <p className="muted">No current analysis.</p>
+      )}
+
+      <h4>Historical origin</h4>
+      <p>{lexeme.origin.label}</p>
+      <p className="muted">
+        {lexeme.origin.kind} · ck{lexeme.origin.checkpoint}
+      </p>
+      {sourceRef ? (
+        <p>
+          <button
+            type="button"
+            className="text-link"
+            onClick={() =>
+              onOpenLexeme({
+                variety: sourceRef.variety,
+                lexeme: sourceRef.lexeme,
+                sense: lexeme.origin.sense ?? undefined,
+                checkpoint: sourceRef.checkpoint,
+              })
+            }
+          >
+            Open source at ck{sourceRef.checkpoint} · {sourceVariety?.name ?? `Variety ${sourceRef.variety}`}
+          </button>
+        </p>
+      ) : null}
+
+      <h4>Language lineage</h4>
       <p>
         {chain.map((item, index) => (
           <span key={item.id}>
             {index > 0 ? <span className="muted"> → </span> : null}
-            {item.id === community.id ? (
+            {item.id === variety.id ? (
               <strong>{item.name}</strong>
             ) : (
-              <button type="button" className="text-link" onClick={() => onSelectCommunity(item.id)}>
+              <button
+                type="button"
+                className="text-link"
+                disabled={
+                  !item.lexicon.length ||
+                  !snapshot.communities.some((host) => host.uses.some((use) => use.variety === item.id))
+                }
+                onClick={() =>
+                  onOpenLexeme({
+                    variety: item.id,
+                    lexeme: item.lexicon.find((word) => !word.retired)?.id ?? item.lexicon[0]?.id ?? "",
+                  })
+                }
+              >
                 {item.name}
               </button>
             )}
           </span>
         ))}
       </p>
-      {lexeme.originCommunity !== community.id ? (
-        <p className="muted">
-          Ultimate source {source?.name ?? `Community ${lexeme.originCommunity}`}
-          {sourceWord ? ` · ${sourceWord.form} (${sourceWord.gloss})` : ""}
-        </p>
-      ) : null}
+      <p className="muted">
+        Spoken here by {community.name}
+        {community.group ? ` · ${community.group}` : ""}
+        {community.location ? ` · ${community.location}` : ""}
+      </p>
     </section>
   );
 }

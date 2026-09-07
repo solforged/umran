@@ -7,3 +7,4 @@ description = "Aesthetic-driven phonology and word generation"
 [dependencies]
 rand.workspace = true
 serde.workspace = true
+serde_json.workspace = true
