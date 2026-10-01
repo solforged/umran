@@ -2,7 +2,7 @@
 // key, plus an index of titles. The older single-world save is copied onto
 // the shelf once and otherwise left untouched.
 
-import type { Overview } from "./model";
+import type { MapSize, Overview } from "./model";
 import { YEARS } from "./model";
 
 export interface BookEntry {
@@ -12,6 +12,18 @@ export interface BookEntry {
   subtitle: string;
   generation: number;
   updated: number;
+  /// The living peoples at the last save, largest first, for the chart on
+  /// the shelf. Missing from books last saved before charts were drawn.
+  peoples?: ShelfPeople[];
+}
+
+/// A people as the shelf's chart shows it: its name at its heart land, in
+/// its family's hand, over the lands it holds.
+export interface ShelfPeople {
+  name: string;
+  family: number;
+  region: number;
+  lands: number[];
 }
 
 export interface Shelf {
@@ -67,6 +79,18 @@ export function readBook(id: string): string | null {
   return get(bookKey(id));
 }
 
+/// The seed and size of the land a book plays out on, read from its save,
+/// or null if the save cannot be read.
+export function bookLand(id: string): { seed: number; size: MapSize } | null {
+  try {
+    const recipe = JSON.parse(get(bookKey(id)) ?? "null") as { seed?: unknown; map?: unknown } | null;
+    if (typeof recipe?.seed !== "number" || typeof recipe.map !== "string") return null;
+    return { seed: recipe.seed, size: recipe.map as MapSize };
+  } catch {
+    return null;
+  }
+}
+
 export function rawShelf(): string | null {
   return get(INDEX);
 }
@@ -106,11 +130,16 @@ export function newBookId(): string {
 export function describe(id: string, overview: Overview): BookEntry {
   const first = overview.communities[0];
   const spoken = overview.varieties.filter((v) => v.spoken).map((v) => v.name);
+  const peoples = overview.communities
+    .filter((c) => c.ended === null)
+    .sort((a, b) => b.size - a.size)
+    .map((c) => ({ name: c.name, family: overview.varieties[c.variety].family, region: c.region, lands: c.lands }));
   return {
     id,
     title: first ? `The world of the ${first.name}` : "An empty world",
     subtitle: `${spoken.join(", ")} · year ${overview.latest * YEARS}`,
     generation: overview.latest,
     updated: Date.now(),
+    peoples,
   };
 }

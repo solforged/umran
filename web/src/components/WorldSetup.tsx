@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-import { Dices, Play, Plus, SlidersHorizontal, Sparkles, X } from "lucide-react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { Feather, Plus } from "lucide-react";
 import { createEngine, message, presetDesign } from "../engine";
-import type { Catalog, Engine, Livelihood, MapSize, Naming, Overview, WorldMap } from "../model";
+import type { Catalog, Engine, Livelihood, MapSize, Naming, Overview, Terrain, WorldMap } from "../model";
 import { hue, LIVELIHOOD_NAME, TERRAIN_NAME } from "../lore";
 import { Designer, randomSeed, type Founding } from "./Designer";
 import { MapView } from "./MapView";
@@ -10,10 +10,29 @@ import { NamingSelect } from "./NamingSelect";
 import { Specimen } from "./Specimen";
 
 const SIZES: { id: MapSize; name: string; title: string }[] = [
-  { id: "small", name: "Small", title: "About forty lands; peoples soon meet." },
-  { id: "medium", name: "Middling", title: "About eighty lands." },
-  { id: "large", name: "Wide", title: "About a hundred and fifty lands; peoples keep apart longer." },
+  { id: "small", name: "small", title: "About forty lands; peoples soon meet." },
+  { id: "medium", name: "middling", title: "About eighty lands." },
+  { id: "large", name: "wide", title: "About a hundred and fifty lands; peoples keep apart longer." },
 ];
+
+/// Each account is numbered as a historian would: the first, the second.
+const ORDINAL = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth"];
+
+/// Whether a people lives on a land or in it.
+const AMID: Record<Terrain, string> = {
+  plains: "on the",
+  steppe: "on the",
+  forest: "in the",
+  hills: "in the",
+  mountains: "in the",
+  desert: "in the",
+  sea: "on the",
+};
+
+/// A choice's name as it reads mid-sentence.
+function lower(name: string): string {
+  return name.charAt(0).toLowerCase() + name.slice(1);
+}
 
 /// Peoples a new world starts with, and the most it can.
 const FIRST_PEOPLES = 3;
@@ -178,7 +197,6 @@ export function WorldSetup({
             <span className="brand">Umran</span>
           )}
         </nav>
-        <span className="stage-title">A new world</span>
       </header>
 
       <section className="stage-map" aria-label="Map">
@@ -197,37 +215,19 @@ export function WorldSetup({
             }}
           />
         ) : null}
-        <p className="map-hint">
-          Choose a people on the right, then click a land to move them there.
-        </p>
-      </section>
-
-      <aside className="pedia setup-panel" aria-label="Peoples">
-        <button
-          type="button"
-          className="sample-callout"
-          disabled={sampling}
-          onClick={() => {
-            setSampling(true);
-            // Let the button say it is working before the engine, which
-            // blocks the page while it plays the years, starts.
-            setTimeout(() => void onSample().finally(() => setSampling(false)), 30);
-          }}
-        >
-          <Sparkles size={20} aria-hidden="true" />
-          <span>
-            <strong>{sampling ? "Playing four thousand years…" : "Watch a sample world"}</strong>
-            <span>Three peoples, four thousand years on: their families spread, one rules another, and a people changes its language. Or make your own below.</span>
-          </span>
-        </button>
-        <section className="setup-world">
-          <h3>The world</h3>
-          <div className="row spread">
-            <div className="segmented" role="radiogroup" aria-label="How wide">
+        <div className="cartouche">
+          <div className="cartouche-kicker">A chart of</div>
+          <h1>The world before the chronicle</h1>
+          <p className="cartouche-note">
+            {lands} lands, as the first travellers drew them · seed {worldSeed}
+          </p>
+          <div className="cartouche-tools">
+            <span className="sizes" role="radiogroup" aria-label="How wide">
               {SIZES.map((s) => (
                 <button
                   key={s.id}
                   type="button"
+                  className="link"
                   role="radio"
                   aria-checked={s.id === size}
                   title={s.title}
@@ -239,105 +239,138 @@ export function WorldSetup({
                   {s.name}
                 </button>
               ))}
-            </div>
+            </span>
             <button
               type="button"
+              className="link"
               onClick={() => {
                 setWorldSeed(randomSeed());
                 rehome();
               }}
             >
-              <Dices size={16} aria-hidden="true" /> Another world
+              Redraw the coasts
             </button>
           </div>
-          <p className="muted small">
-            {lands} lands. Where peoples start and how they sound shapes everything after.
-          </p>
-        </section>
+        </div>
+        <p className="map-hint">Choose an account, then touch a land to set its people there.</p>
+      </section>
 
-        <h3>Peoples</h3>
-        <ol className="founders">
+      <aside className="pedia setup-panel" aria-label="Peoples">
+        <header className="book-head">
+          <div className="book-kicker">Book I</div>
+          <h2>Of the peoples at the beginning</h2>
+          <p>
+            What travellers report of those who live here before any year is counted: what they call themselves, how
+            they live, and how they speak.
+          </p>
+          <p className="sample-note">
+            Or{" "}
+            <button
+              type="button"
+              className="link"
+              disabled={sampling}
+              onClick={() => {
+                setSampling(true);
+                // Let the link say it is working before the engine, which
+                // blocks the page while it plays the years, starts.
+                setTimeout(() => void onSample().finally(() => setSampling(false)), 30);
+              }}
+            >
+              {sampling ? "playing four thousand years…" : "read a chronicle already written"}
+            </button>
+            : three peoples, four thousand years on, their families spread and one ruling another.
+          </p>
+        </header>
+
+        <ol className="accounts">
           {founders.map((f, i) => {
             const c = overview?.communities[i];
             const v = c ? overview?.varieties[c.variety] : undefined;
             const chosen = i === selected;
+            const where =
+              c && map
+                ? `${AMID[map.regions[c.region].terrain]} ${map.regions[c.region].coastal ? "coastal " : ""}${TERRAIN_NAME[map.regions[c.region].terrain].toLowerCase()} of `
+                : "";
             return (
-              <li key={f.key} className={chosen ? "founder chosen" : "founder"}>
-                <div className="founder-head">
-                  <button type="button" className="founder-name" onClick={() => setSelected(i)} aria-expanded={chosen}>
-                    {c && v ? (
-                      <>
-                        <strong style={{ color: hue(v.family) }}>{c.name}</strong>{" "}
-                        <span className="muted">“{c.meaning}”</span>
-                      </>
-                    ) : (
-                      <span className="muted">Settling…</span>
-                    )}
-                  </button>
+              <li
+                key={f.key}
+                className={chosen ? "account chosen" : "account"}
+                style={v ? ({ "--tone": hue(v.family) } as CSSProperties) : undefined}
+              >
+                <div className="account-top">
+                  <span className="account-number">The {ORDINAL[i]} account</span>
                   {founders.length > 1 ? (
-                    <button type="button" className="icon quiet" title="Leave them out" onClick={() => remove(i)}>
-                      <X size={15} />
+                    <button type="button" className="link strike" title="Leave this people out" onClick={() => remove(i)}>
+                      strike out
                     </button>
                   ) : null}
                 </div>
+                <button type="button" className="account-name" onClick={() => setSelected(i)} aria-expanded={chosen}>
+                  {c && v ? (
+                    <>
+                      <span className={`hand-${v.family % 5}`}>{c.name}</span> <span className="meaning">“{c.meaning}”</span>
+                    </>
+                  ) : (
+                    <span className="muted">Settling…</span>
+                  )}
+                </button>
                 {c && v && map ? (
-                  <>
-                    <p className="muted small">
-                      Speaking <i>{v.name}</i>, living as {LIVELIHOOD_NAME[c.livelihood].toLowerCase()}, on{" "}
-                      {map.regions[c.region].coastal ? "coastal " : ""}
-                      {TERRAIN_NAME[map.regions[c.region].terrain].toLowerCase()} in <i>{landName(c.region)}</i>.
-                    </p>
-                    <Specimen words={v.specimen} />
-                  </>
-                ) : null}
-                {chosen ? (
-                  <div className="founder-controls">
-                    <label>
-                      Sounds
+                  chosen ? (
+                    <p className="account-text">
+                      They call themselves <b>{c.name}</b>,{" "}
+                      <NamingSelect catalog={catalog} value={f.naming} onChange={(n) => n && update(i, { naming: n })} />.
+                      They live as{" "}
                       <select
+                        aria-label="Way of life"
+                        value={f.livelihood ?? ""}
+                        onChange={(e) => update(i, { livelihood: e.target.value === "" ? null : (e.target.value as Livelihood) })}
+                      >
+                        <option value="">{lower(LIVELIHOOD_NAME[c.livelihood])}, as the land suits</option>
+                        {(Object.keys(LIVELIHOOD_NAME) as Livelihood[]).map((livelihood) => (
+                          <option key={livelihood} value={livelihood}>
+                            {lower(LIVELIHOOD_NAME[livelihood])}
+                          </option>
+                        ))}
+                      </select>{" "}
+                      {where}
+                      <i>{landName(c.region)}</i>. Their speech, <i>{v.name}</i>, is{" "}
+                      <select
+                        aria-label="Sounds"
                         value={f.preset ?? ""}
                         onChange={(e) => update(i, { preset: e.target.value, design: presetDesign(e.target.value, f.seed) })}
                       >
-                        {f.preset === null ? <option value="">Their own, adjusted by hand</option> : null}
+                        {f.preset === null ? <option value="">their own, shaped by hand</option> : null}
                         {catalog.presets.map((p) => (
                           <option key={p.id} value={p.id} title={p.description}>
-                            {p.name}
+                            {lower(p.name)}
                           </option>
                         ))}
                       </select>
-                    </label>
-                    <label>
-                      They call themselves
-                      <NamingSelect catalog={catalog} value={f.naming} onChange={(n) => n && update(i, { naming: n })} />
-                    </label>
-                    <label>
-                      Way of life
-                      <select
-                        value={f.livelihood ?? ""}
-                        onChange={(e) => update(i, { livelihood: e.target.value === "" ? null : e.target.value as Livelihood })}
-                      >
-                        <option value="">As the land suits</option>
-                        {(Object.keys(LIVELIHOOD_NAME) as Livelihood[]).map((livelihood) => (
-                          <option key={livelihood} value={livelihood}>
-                            {LIVELIHOOD_NAME[livelihood]}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <div className="row">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const seed = randomSeed();
-                          update(i, { seed, design: f.preset === null ? f.design : presetDesign(f.preset, seed) });
-                        }}
-                      >
-                        <Dices size={16} aria-hidden="true" /> Other words
-                      </button>
-                      <button type="button" onClick={() => setAdjusting(true)}>
-                        <SlidersHorizontal size={16} aria-hidden="true" /> Adjust the sounds…
-                      </button>
-                    </div>
+                      .
+                    </p>
+                  ) : (
+                    <p className="account-text">
+                      {LIVELIHOOD_NAME[c.livelihood]} {where}
+                      <i>{landName(c.region)}</i>, speaking <i>{v.name}</i>.
+                    </p>
+                  )
+                ) : null}
+                {v ? <Specimen words={v.specimen} /> : null}
+                {chosen ? (
+                  <div className="account-acts">
+                    <button
+                      type="button"
+                      className="link"
+                      onClick={() => {
+                        const seed = randomSeed();
+                        update(i, { seed, design: f.preset === null ? f.design : presetDesign(f.preset, seed) });
+                      }}
+                    >
+                      Hear other words
+                    </button>
+                    <button type="button" className="link" onClick={() => setAdjusting(true)}>
+                      Adjust their sounds…
+                    </button>
                   </div>
                 ) : null}
               </li>
@@ -345,25 +378,31 @@ export function WorldSetup({
           })}
         </ol>
         {founders.length < MOST_PEOPLES ? (
-          <button type="button" className="add-founder" onClick={add}>
-            <Plus size={16} aria-hidden="true" /> Another people
+          <button type="button" className="link add-account" onClick={add}>
+            <Plus size={15} aria-hidden="true" /> Add an account of another people
           </button>
         ) : null}
       </aside>
 
       <footer className="timebar setup-foot">
-        <span className="muted">
-          {error ? <span className="error">{error}</span> : "Time begins in year 0. Once begun, press play and watch."}
+        <span className="year">
+          {error ? (
+            <span className="error">{error}</span>
+          ) : (
+            <>
+              <strong>Year 0.</strong> Nothing is written yet; once begun, the years run and the chronicle fills.
+            </>
+          )}
         </span>
         <span className="row">
           {onShelf ? (
-            <button type="button" onClick={onShelf}>
+            <button type="button" className="link" onClick={onShelf}>
               Back to the shelf
             </button>
           ) : null}
           <button
             type="button"
-            className="primary"
+            className="primary begin"
             disabled={!engine.current || !overview || overview.communities.length !== founders.length}
             onClick={() => {
               if (!engine.current) return;
@@ -371,13 +410,13 @@ export function WorldSetup({
               onBegin(engine.current);
             }}
           >
-            <Play size={16} aria-hidden="true" /> Begin
+            <Feather size={18} aria-hidden="true" /> Begin the chronicle
           </button>
         </span>
       </footer>
 
       {adjusting && current ? (
-        <Modal open wide title="Adjust the sounds" onClose={() => setAdjusting(false)}>
+        <Modal open wide title="Adjust their sounds" onClose={() => setAdjusting(false)}>
           <Designer
             catalog={catalog}
             submit="Use these sounds"

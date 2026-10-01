@@ -61,8 +61,8 @@ is lost: abandoned histories stay readable, struck through.
 
 | | |
 |---|---|
-| ![World setup: a generated map with three founding peoples and their first words](docs/images/setup.png) | ![Words compared: a table of basic words across related languages, shaded by shared root](docs/images/cognates.png) |
-| **Setting up a world.** The map is drawn from a seed. Each founding people shows its first words, and its sounds can be tuned on a full sound chart. | **Words compared.** Basic words across the living languages, shaded alike when they come from one root (cognates). |
+| ![World setup: an old chart of the generated lands beside a book of accounts of the three founding peoples and their first words](docs/images/setup.png) | ![Words compared: a table of basic words across related languages, shaded by shared root](docs/images/cognates.png) |
+| **Setting up a world.** The map is drawn from a seed as an old chart. Each founding people gets an account: what it calls itself, how it lives, how its speech sounds, and its first words. Its sounds can be tuned on a full sound chart. | **Words compared.** Basic words across the living languages, shaded alike when they come from one root (cognates). |
 | ![A language's family tree, with its sounds and word-building patterns](docs/images/family.png) | ![A sound law's card: the peoples who have it and where it spread, with the isogloss drawn on the map](docs/images/law.png) |
 | **A family tree.** Every language card charts its family's descent, its sounds, and how it builds words, here by vowel patterns over consonant roots, as Arabic does. | **A sound law.** Who has a change, whether it arose among them or spread from a neighbour, and on the map, where it stopped. |
 

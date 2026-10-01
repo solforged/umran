@@ -6,12 +6,13 @@
 // shelf to continue.
 
 import { createEngine, presetDesign } from "./engine";
-import type { Action, Engine, Naming } from "./model";
+import type { Action, Engine, MapSize, Naming } from "./model";
 
-const WORLD = 21;
+/// The land the sample plays out on, for drawing it before it is opened.
+export const SAMPLE_LAND: { seed: number; size: MapSize } = { seed: 21, size: "medium" };
 
 export async function sampleWorld(): Promise<Engine> {
-  const engine = await createEngine(WORLD, "medium");
+  const engine = await createEngine(SAMPLE_LAND.seed, SAMPLE_LAND.size);
   const found = (preset: string, seed: number, naming: Naming, power: number): Action => ({
     kind: "found",
     naming,

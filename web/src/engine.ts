@@ -60,6 +60,28 @@ export async function loadEngine(json: string): Promise<Engine> {
   return wrap(Workbench.load(json));
 }
 
+// A map depends on its seed and size alone, so the shelf can draw a saved
+// world without replaying its history. Kept once drawn.
+const maps = new Map<string, Promise<WorldMap>>();
+
+export function landMap(seed: number, size: MapSize): Promise<WorldMap> {
+  const key = `${seed}:${size}`;
+  let map = maps.get(key);
+  if (!map) {
+    map = ready().then(() => {
+      const bench = new Workbench(seed, size);
+      try {
+        return JSON.parse(bench.map()) as WorldMap;
+      } finally {
+        bench.free();
+      }
+    });
+    maps.set(key, map);
+    map.catch(() => maps.delete(key));
+  }
+  return map;
+}
+
 export async function loadCatalog(): Promise<Catalog> {
   await ready();
   return JSON.parse(Workbench.catalog()) as Catalog;

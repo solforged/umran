@@ -25,10 +25,16 @@ Read further when the task touches it:
   JSON views; `engine.ts` adapts the WASM; `shelf.ts` stores the saved
   worlds (still keyed as books, so old saves open); `takeout.ts` formats
   exports; `lore.ts` holds shared names and the glossary of linguistic
-  terms; `App.tsx` holds view state and actions. `components/` holds the
-  shelf, the world setup (`WorldSetup`: map, size, and founding peoples
-  placed on their lands), the stage (the only world view: `MapView` with
-  its layers, the feed and time bar in `Stage`, and the encyclopedia
+  terms; `App.tsx` holds view state and actions. `styles.css` and
+  `chart.css` hold the one look, an explorer's chart of strange lands,
+  by day or by lamplight (`LightSwitch`). `components/` holds the
+  shelf (`Shelf`: the chart room, each saved world a miniature of its
+  map, drawn from its seed with the peoples saved in the shelf index),
+  the world setup (`WorldSetup`: a chart with its title box and a
+  book of accounts, one per founding people, its choices set as phrases
+  in the account's sentences), the stage (the only world view: `MapView`
+  with its layers and the chart's inked coast, compass lines, and terrain
+  marks, the feed and time bar in `Stage`, and the encyclopedia
   cards in `Pedia`, each opening with a head and a box of facts, with a
   trail of cards visited, a whole-history card, and `FamilyTree` charts),
   the export page (`Appendix`), and dialogs.

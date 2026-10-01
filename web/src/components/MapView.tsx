@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { Maximize, Minus, Plus } from "lucide-react";
 import type { Community, Overview, WordMap, WorldMap } from "../model";
+import type { ShelfPeople } from "../shelf";
 import { YEARS } from "../model";
 import { hue, TERRAIN_NAME } from "../lore";
 
@@ -54,6 +55,205 @@ function route([ax, ay]: [number, number], [bx, by]: [number, number]): string {
   const end: [number, number] = [bx - (dx / length) * 0.18, by - (dy / length) * 0.18];
   const bend: [number, number] = [ax + dx / 2 - dy * 0.2, ay + dy / 2 + dx * 0.2];
   return `M${ax},${ay} Q${bend[0]},${bend[1]} ${end[0]},${end[1]}`;
+}
+
+/// Rings of ripple lines off the coast, outermost first: how far each
+/// reaches into the sea, in map units, and how dark its line is.
+const RIPPLES: [number, number][] = [
+  [0.42, 0.1],
+  [0.3, 0.12],
+  [0.19, 0.16],
+  [0.1, 0.25],
+];
+/// Where the compass lines radiate from, as shares of the map's width and
+/// height, and how many lines each sends out.
+const ROSES: [number, number][] = [
+  [0.18, 0.36],
+  [0.7, 0.5],
+];
+const RHUMBS = 32;
+
+/// A small seeded stream for scattering the chart's marks. It is drawing
+/// only, so it keeps clear of the engine's streams.
+function scatter(seed: number): () => number {
+  let s = (Math.imul(seed + 1, 2654435761) >>> 0) || 1;
+  return () => {
+    s ^= s << 13;
+    s ^= s >>> 17;
+    s ^= s << 5;
+    return (s >>> 0) / 2 ** 32;
+  };
+}
+
+/// Whether a point lies inside an outline.
+function inside(outline: [number, number][], [x, y]: [number, number]): boolean {
+  let within = false;
+  for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
+    const [xi, yi] = outline[i];
+    const [xj, yj] = outline[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) within = !within;
+  }
+  return within;
+}
+
+/// What an old chart draws besides the lands' colours: compass lines over
+/// the sea, ripples off the coast, an inked coastline, and small marks for
+/// each land's terrain (styled in chart.css). It depends on the map alone,
+/// so it is built once per map.
+function chartDress(map: WorldMap) {
+  const land = map.regions.filter((r) => r.terrain !== "sea");
+  const coast = land.map((r) => `M${r.outline.map(([x, y]) => `${x},${y}`).join("L")}Z`).join("");
+  const reach = Math.hypot(map.width, map.height);
+  const rhumbs = ["", "", ""];
+  for (const [sx, sy] of ROSES) {
+    const [cx, cy] = [sx * map.width, sy * map.height];
+    for (let i = 0; i < RHUMBS; i++) {
+      const a = (i * 2 * Math.PI) / RHUMBS;
+      rhumbs[i % 4 === 0 ? 0 : i % 2 === 0 ? 1 : 2] += `M${cx},${cy}L${cx + Math.cos(a) * reach},${cy + Math.sin(a) * reach}`;
+    }
+  }
+  // Marks by kind; each kind is one path, so the chart stays light.
+  const marks = { peak: "", shade: "", hill: "", tree: "", sand: "", grass: "", field: "" };
+  for (const r of land) {
+    const next = scatter(r.id);
+    const [cx, cy] = r.site;
+    const spots = (count: number, place: (x: number, y: number) => void) => {
+      for (let placed = 0, tries = 0; placed < count && tries < 60; tries++) {
+        const [x, y] = [cx + (next() - 0.5) * 0.9, cy + (next() - 0.5) * 0.8];
+        // Keep the whole mark inside, not just its foot.
+        if (inside(r.outline, [x, y]) && inside(r.outline, [x + 0.13, y]) && inside(r.outline, [x - 0.13, y - 0.17])) {
+          place(x, y);
+          placed++;
+        }
+      }
+    };
+    switch (r.terrain) {
+      case "mountains":
+        spots(3, (x, y) => {
+          const s = 0.13 + next() * 0.05;
+          marks.peak += `M${x - s},${y}L${x},${y - s * 1.5}L${x + s},${y}`;
+          marks.shade += `M${x + s * 0.15},${y - s * 1.2}L${x + s * 0.65},${y}`;
+        });
+        break;
+      case "hills":
+        spots(3, (x, y) => (marks.hill += `M${x - 0.11},${y}Q${x},${y - 0.16} ${x + 0.11},${y}`));
+        break;
+      case "forest":
+        spots(6, (x, y) => {
+          marks.tree += `M${x - 0.045},${y - 0.07}a.045,.045 0 1,0 .09,0a.045,.045 0 1,0 -.09,0M${x},${y - 0.025}V${y + 0.03}`;
+        });
+        break;
+      case "desert":
+        spots(14, (x, y) => (marks.sand += `M${x - 0.008},${y}a.008,.008 0 1,0 .016,0a.008,.008 0 1,0 -.016,0`));
+        break;
+      case "steppe":
+        spots(6, (x, y) => (marks.grass += `M${x - 0.04},${y}l.02,-.05M${x},${y}v-.06M${x + 0.04},${y}l-.02,-.05`));
+        break;
+      case "plains":
+        spots(3, (x, y) => (marks.field += `M${x - 0.06},${y}h.12`));
+        break;
+    }
+  }
+  return {
+    under: (
+      <g className="chart-dress" aria-hidden="true">
+        <g className="chart-rhumbs">
+          {rhumbs.map((d, i) => (
+            <path key={i} className={`rhumb rhumb-${i}`} d={d} />
+          ))}
+        </g>
+        <g className="chart-ripples">
+          {RIPPLES.map(([width, dark]) => (
+            <g key={width}>
+              <path className="ripple" d={coast} style={{ strokeWidth: width, strokeOpacity: dark }} />
+              <path className="ripple-gap" d={coast} style={{ strokeWidth: width - 0.035 }} />
+            </g>
+          ))}
+        </g>
+        <path className="chart-coast" d={coast} />
+      </g>
+    ),
+    over: (
+      <g className="chart-dress chart-marks" aria-hidden="true">
+        {Object.entries(marks).map(([kind, d]) => (d ? <path key={kind} className={`mark-${kind}`} d={d} /> : null))}
+      </g>
+    ),
+  };
+}
+
+/// A compass rose for the chart's corner, north in the rubric.
+const ROSE = (
+  <svg className="chart-rose" viewBox="-1 -1.15 2 2.2" aria-hidden="true">
+    <circle r={0.82} className="rose-ring" />
+    <circle r={0.72} className="rose-ring thin" />
+    {Array.from({ length: 8 }, (_, i) => {
+      const a = (i * Math.PI) / 4;
+      const long = i % 2 === 0 ? 0.92 : 0.5;
+      const [x, y, px, py] = [Math.sin(a) * long, -Math.cos(a) * long, Math.cos(a) * 0.1, Math.sin(a) * 0.1];
+      return (
+        <g key={i}>
+          <path className={i === 0 ? "rose-point north" : "rose-point"} d={`M0,0L${px},${py}L${x},${y}Z`} />
+          <path className="rose-point light" d={`M0,0L${-px},${-py}L${x},${y}Z`} />
+        </g>
+      );
+    })}
+    <text y={-0.98} className="rose-north">
+      N
+    </text>
+  </svg>
+);
+
+/// How many peoples a miniature names; the rest only colour their lands.
+const NAMED = 6;
+
+/// A world drawn small, for the shelf: the chart's dress, each people's
+/// lands in its family's colour, and the largest peoples named in their
+/// hands. A map without regions is a blank sheet of compass lines.
+export function Miniature({ map, peoples = [] }: { map: WorldMap; peoples?: readonly ShelfPeople[] }) {
+  const dress = useMemo(() => chartDress(map), [map]);
+  const points = useMemo(() => map.regions.map((r) => r.outline.map(([x, y]) => `${x},${y}`).join(" ")), [map]);
+  // Largest first, so where two peoples share a land the largest colours it.
+  const holder = useMemo(() => {
+    const out = new Map<number, number>();
+    for (const p of peoples) for (const land of p.lands) if (!out.has(land)) out.set(land, p.family);
+    return out;
+  }, [peoples]);
+  const named = peoples.slice(0, NAMED);
+  const shape = (r: WorldMap["regions"][number]) => {
+    const family = holder.get(r.id);
+    return (
+      <g key={r.id}>
+        <polygon className={`land terrain-${r.terrain}`} points={points[r.id]} />
+        {family === undefined ? null : <polygon className="claim" points={points[r.id]} style={{ fill: hue(family) }} />}
+      </g>
+    );
+  };
+  return (
+    <div className="mapview miniature">
+      <svg viewBox={`0 0 ${map.width} ${map.height}`} aria-hidden="true">
+        <g className="lands">
+          {map.regions.filter((r) => r.terrain === "sea").map(shape)}
+          {dress.under}
+          {map.regions.filter((r) => r.terrain !== "sea").map(shape)}
+        </g>
+        {dress.over}
+        <g className="peoples">
+          {named.map((p, i) => {
+            const [x, y] = map.regions[p.region].site;
+            const above = named.slice(0, i).filter((q) => q.region === p.region).length;
+            return (
+              <g key={i} className="people">
+                <text x={x} y={y + above * LINE * 2} className={`hand-${p.family % 5}`} style={{ fill: hue(p.family) }}>
+                  {p.name}
+                </text>
+              </g>
+            );
+          })}
+        </g>
+      </svg>
+      {ROSE}
+    </div>
+  );
 }
 
 /// The world's map: every people where it lives, the dealings between
@@ -191,6 +391,12 @@ export function MapView({
   const dragged = () => drag.current?.moved === true;
 
   const byRegion = useMemo(() => peoplesByRegion(overview), [overview]);
+  const dress = useMemo(() => chartDress(map), [map]);
+  // Seas first, so the chart can ink the coast between them and the lands.
+  const [seas, grounds] = useMemo(
+    () => [map.regions.filter((r) => r.terrain === "sea"), map.regions.filter((r) => r.terrain !== "sea")],
+    [map],
+  );
   const hearts = useMemo(
     () => new Map([...byRegion].map(([region, here]) => [region, here.filter((c) => c.region === region)])),
     [byRegion],
@@ -293,6 +499,22 @@ export function MapView({
   // Labels grow more slowly than the land as the view closes in.
   const label = Math.sqrt(box[2] / map.width);
 
+  const shape = (r: WorldMap["regions"][number]) => {
+    const colour = colourOf(r.id);
+    const points = r.outline.map(([x, y]) => `${x},${y}`).join(" ");
+    const sea = r.terrain === "sea";
+    return (
+      <g key={r.id} onClick={sea ? undefined : () => dragged() || onLand(r.id)}>
+        <title>{sea ? "Sea" : (nameOf(r.id) ?? `Unnamed ${TERRAIN_NAME[r.terrain].toLowerCase()}`)}</title>
+        <polygon
+          className={`land terrain-${r.terrain}${sea ? "" : " open"}${lands.has(r.id) ? " shown" : ""}`}
+          points={points}
+        />
+        {colour ? <polygon className="claim" points={points} style={{ fill: colour }} /> : null}
+      </g>
+    );
+  };
+
   return (
     <div className={zoomable ? "mapview zoomable" : "mapview"}>
       <svg
@@ -320,22 +542,11 @@ export function MapView({
           </marker>
         </defs>
         <g className="lands">
-          {map.regions.map((r) => {
-            const colour = colourOf(r.id);
-            const points = r.outline.map(([x, y]) => `${x},${y}`).join(" ");
-            const sea = r.terrain === "sea";
-            return (
-              <g key={r.id} onClick={sea ? undefined : () => dragged() || onLand(r.id)}>
-                <title>{sea ? "Sea" : (nameOf(r.id) ?? `Unnamed ${TERRAIN_NAME[r.terrain].toLowerCase()}`)}</title>
-                <polygon
-                  className={`land terrain-${r.terrain}${sea ? "" : " open"}${lands.has(r.id) ? " shown" : ""}`}
-                  points={points}
-                />
-                {colour ? <polygon className="claim" points={points} style={{ fill: colour }} /> : null}
-              </g>
-            );
-          })}
+          {seas.map(shape)}
+          {dress.under}
+          {grounds.map(shape)}
         </g>
+        {dress.over}
         <g className="isoglosses">
           {isoglosses.map(({ a, b, ends: [[x1, y1], [x2, y2]] }) => (
             <line key={`${a}-${b}`} className="isogloss" x1={x1} y1={y1} x2={x2} y2={y2} />
@@ -490,6 +701,7 @@ export function MapView({
           </button>
         </div>
       ) : null}
+      {ROSE}
     </div>
   );
 }

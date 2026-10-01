@@ -1,11 +1,38 @@
-import { useState } from "react";
-import { FileUp, Globe, Plus, Sparkles, Trash2 } from "lucide-react";
-import type { BookEntry } from "../shelf";
-import { YEARS } from "../model";
+import { useEffect, useMemo, useState } from "react";
+import { FileUp, X } from "lucide-react";
+import { landMap } from "../engine";
+import type { MapSize, WorldMap } from "../model";
+import { SAMPLE_LAND } from "../sample";
+import { bookLand, type BookEntry, type ShelfPeople } from "../shelf";
+import { Miniature } from "./MapView";
 import { Modal } from "./Modal";
 
-/// The saved worlds, most recently opened first, with ways to begin a new
-/// one, watch the sample, or open a save file.
+/// A sheet with no land on it yet: compass lines over open sea, the size
+/// of a middling world.
+const UNKNOWN: WorldMap = { size: "medium", width: 13.5, height: 8.794229, regions: [] };
+
+/// A world's chart, drawn once its map is ready; a blank sheet until then
+/// or if its save cannot be read.
+function Chart({ land, peoples }: { land: { seed: number; size: MapSize } | null; peoples?: ShelfPeople[] }) {
+  const [map, setMap] = useState<WorldMap | null>(null);
+  const [seed, size] = [land?.seed, land?.size];
+  useEffect(() => {
+    if (seed === undefined || size === undefined) return;
+    let live = true;
+    landMap(seed, size).then(
+      (next) => live && setMap(next),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [seed, size]);
+  return <Miniature map={map ?? UNKNOWN} peoples={map ? peoples : []} />;
+}
+
+/// The chart room: every saved world as a sheet of its own chart, most
+/// recently opened first, beside a blank sheet for a new world and the
+/// sample chronicle.
 export function Shelf({
   revision,
   books,
@@ -25,39 +52,48 @@ export function Shelf({
   onRemove: (id: string) => void;
 }) {
   const [removing, setRemoving] = useState<BookEntry | null>(null);
-  const worlds = [...books].sort((a, b) => b.updated - a.updated);
+  const worlds = useMemo(
+    () => [...books].sort((a, b) => b.updated - a.updated).map((book) => ({ book, land: bookLand(book.id) })),
+    [books],
+  );
   return (
     <main className="shelf">
-      <header>
-        <h1>Umran</h1>
-        <p className="muted">Worlds of peoples and their languages, and how both change over the years.</p>
+      <header className="shelf-head">
+        <span className="brand">Umran</span>
+        <h1>The chart room</h1>
+        <p>Every world charted so far, the last one opened on top.</p>
       </header>
 
-      <ul className="worlds">
-        <li>
-          <button type="button" className="world-card begin" onClick={onBegin}>
-            <Plus size={20} aria-hidden="true" />
-            <strong>A new world</strong>
-            <span>Draw a map and choose who lives in it.</span>
+      <ul className="sheets">
+        <li className="sheet blank">
+          <Chart land={null} />
+          <button type="button" className="sheet-open" onClick={onBegin}>
+            <span className="sheet-title">
+              <strong>Unknown waters</strong>
+              <span>Chart a new world: draw its coasts and choose who lives there.</span>
+            </span>
           </button>
         </li>
-        <li>
-          <button type="button" className="world-card" onClick={onSample}>
-            <Sparkles size={20} aria-hidden="true" />
-            <strong>A sample world</strong>
-            <span>Four thousand years already played, to watch and go on with.</span>
+        <li className="sheet">
+          <Chart land={SAMPLE_LAND} />
+          <button type="button" className="sheet-open" onClick={onSample}>
+            <span className="sheet-title">
+              <strong>A chronicle already written</strong>
+              <span>Four thousand years of three peoples, one ruling another.</span>
+            </span>
           </button>
         </li>
-        {worlds.map((book) => (
-          <li key={book.id}>
-            <button type="button" className="world-card" onClick={() => onOpen(book.id)}>
-              <Globe size={20} aria-hidden="true" />
-              <strong>{book.title}</strong>
-              <span>{book.subtitle}</span>
-              <small className="muted">
-                {book.generation > 0 ? `${book.generation * YEARS} years played · ` : ""}opened{" "}
-                {new Date(book.updated).toLocaleDateString()}
-              </small>
+        {worlds.map(({ book, land }) => (
+          <li key={book.id} className="sheet">
+            <Chart land={land} peoples={book.peoples} />
+            <button type="button" className="sheet-open" onClick={() => onOpen(book.id)}>
+              <span className="sheet-title">
+                <strong>{book.title}</strong>
+                <span>{book.subtitle}</span>
+                <small>
+                  opened {new Date(book.updated).toLocaleDateString(undefined, { day: "numeric", month: "long" })}
+                </small>
+              </span>
             </button>
             <button
               type="button"
@@ -66,27 +102,26 @@ export function Shelf({
               aria-label={`Remove ${book.title}`}
               onClick={() => setRemoving(book)}
             >
-              <Trash2 size={15} />
+              <X size={15} />
             </button>
           </li>
         ))}
       </ul>
 
-      <label className="file-link">
-        <FileUp size={16} aria-hidden="true" /> Open a save file…
-        <input
-          type="file"
-          accept="application/json,.json"
-          hidden
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) onImport(file);
-            e.target.value = "";
-          }}
-        />
-      </label>
-
       <footer className="colophon">
+        <label className="file-link">
+          <FileUp size={16} aria-hidden="true" /> Open a save file…
+          <input
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) onImport(file);
+              e.target.value = "";
+            }}
+          />
+        </label>
         <p>
           Worlds are kept in this browser only. To keep one safe or move it elsewhere, open it and choose Export, then
           “As a save file”. A save opened on the same engine revision (now {revision}) replays the same history word
@@ -118,7 +153,7 @@ export function Shelf({
       >
         <p>
           {removing?.title} will be deleted from this browser. If you might want it again, open it and choose Export,
-          then “As a save file”, first.
+          then "As a save file", first.
         </p>
       </Modal>
     </main>

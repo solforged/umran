@@ -1,0 +1,521 @@
+/* The chart's dress over the base styles: old type and rubrics on every
+   page, the map inked as an old chart, and the setup laid out on a desk
+   as a chart and a notebook. The palette is in styles.css. Rules start at
+   :root so they outrank the base rules they dress. */
+
+:root body {
+  font-size: 17px;
+  background-color: var(--paper);
+  background-image:
+    radial-gradient(ellipse at 50% 40%, transparent 55%, var(--vignette) 100%),
+    var(--grain);
+  background-attachment: fixed;
+}
+
+:root h1,
+:root h2,
+:root h3 {
+  color: var(--accent);
+  font-weight: 500;
+  font-variant: small-caps;
+  letter-spacing: 0.04em;
+}
+
+/* Pane titles open with a boxed, gilded initial. */
+:root h2::first-letter {
+  font-family: var(--initial);
+  font-variant: normal;
+  font-size: 1.45em;
+  line-height: 1;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border: 2px solid var(--gold);
+  padding: 0.02em 0.14em 0.06em;
+  margin-right: 0.08em;
+}
+
+:root th,
+:root .modal {
+  background: transparent;
+}
+
+:root .tick {
+  width: 7px;
+  height: 7px;
+  border-radius: 0;
+  transform: translateX(-3px) rotate(45deg);
+}
+
+:root button {
+  border-radius: 2px;
+  border-color: var(--ink-soft);
+  background: transparent;
+  font-variant: small-caps;
+  letter-spacing: 0.04em;
+}
+
+:root button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+:root th {
+  font-style: italic;
+  text-transform: none;
+  font-variant: small-caps;
+  font-size: 0.95rem;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--ink-soft);
+  background: var(--paper);
+}
+
+:root td {
+  border-bottom: 1px dotted var(--line);
+}
+
+:root tbody tr.selected {
+  background: rgb(155 44 28 / 0.08);
+}
+
+:root .word {
+  font-style: italic;
+  font-size: 1.15rem;
+}
+
+:root .word.big {
+  font-size: 2.6rem;
+  color: var(--accent);
+}
+
+:root .ipa,
+:root .segments {
+  font-size: 0.95rem;
+}
+
+:root .modal {
+  background: var(--paper-raised);
+  border: 3px double var(--ink-soft);
+  border-radius: 0;
+}
+
+:root .chip {
+  border-radius: 0;
+}
+
+/* Ticks and inline links are buttons too; keep them out of the button
+   styling above. */
+:root .tick {
+  background: var(--accent);
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+:root .tick-event {
+  background: var(--event);
+}
+
+:root button.link {
+  border: none;
+  background: none;
+  box-shadow: none;
+  padding: 0;
+  border-radius: 0;
+}
+
+/* The light switch, kept quiet. */
+.light-switch {
+  position: fixed;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 50;
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.15);
+}
+
+.light-switch select {
+  border: none;
+  background: transparent;
+  font-size: 0.85rem;
+}
+
+/* Each language family writes in its own hand, as Pentiment marks a
+   speaker's station by script. */
+:root .hand-0 {
+  font-family: "Grenze Gotisch", var(--serif);
+}
+:root .hand-1 {
+  font-family: "Uncial Antiqua", var(--serif);
+}
+:root .hand-2 {
+  font-family: "IM Fell English", var(--serif);
+  font-style: italic;
+}
+:root .hand-3 {
+  font-family: "UnifrakturCook", var(--serif);
+}
+:root .hand-4 {
+  font-family: "Almendra", var(--serif);
+}
+
+:root [class*="hand-"] {
+  font-variant: normal;
+  letter-spacing: 0.01em;
+}
+/* The ribbon bookmark marks the year being read. */
+:root .track input[type="range"] {
+  appearance: none;
+  background: transparent;
+  height: 1.8rem;
+}
+:root .track input[type="range"]::-webkit-slider-runnable-track {
+  height: 2px;
+  background: var(--line);
+}
+:root .track input[type="range"]::-moz-range-track {
+  height: 2px;
+  background: var(--line);
+}
+:root .track input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 28px;
+  margin-top: -6px;
+  background: var(--accent);
+  border: none;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 78%, 0 100%);
+  cursor: grab;
+}
+:root .track input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 28px;
+  background: var(--accent);
+  border: none;
+  border-radius: 0;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 78%, 0 100%);
+  cursor: grab;
+}
+
+:root .struck-note {
+  font-family: var(--initial);
+  font-style: normal;
+  font-size: 0.85rem;
+  color: var(--accent);
+}
+:root .struck-note button.link {
+  font-family: var(--serif);
+  font-style: italic;
+  font-variant: normal;
+  letter-spacing: 0;
+  color: var(--ink-soft);
+  text-decoration: underline dotted;
+}
+
+/* The apparatus, in a smaller hand. */
+:root .apparatus {
+  font-style: italic;
+}
+:root .apparatus li::before {
+  color: var(--accent);
+  font-style: normal;
+}
+/* The stage, the shelf, and the export page are working surfaces rather
+   than pages: one face throughout, no boxed initials, words at the size of
+   the text around them, and the family hands kept for card titles and
+   for the setup, where a name is read slowly, not for map labels and
+   lists on the stage, where it is scanned. */
+:root :is(.stage, .shelf, .appendix) :is(button, select, label) {
+  font-variant: normal;
+  letter-spacing: normal;
+}
+:root :is(.stage, .shelf, .appendix) :is(h1, h2) {
+  font-variant: normal;
+  letter-spacing: 0;
+}
+:root :is(.stage, .shelf, .appendix) :is(h1, h2)::first-letter {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+:root :is(.stage, .shelf, .appendix) h3 {
+  font-variant: normal;
+  color: var(--ink-soft);
+}
+:root :is(.stage:not(.setup), .appendix) :not(h2)[class*="hand-"] {
+  font-family: var(--serif);
+}
+:root :is(.stage, .appendix) .word:not(.big) {
+  font-size: 1em;
+}
+:root .stage .card-head h2 {
+  color: var(--tone, var(--accent));
+}
+
+/* On the stage the switch sits quietly in the head's right-hand cell
+   instead of floating over the time bar. */
+.app:has(> .stage) ~ .light-switch {
+  top: 0.4rem;
+  bottom: auto;
+  right: 0.8rem;
+  padding: 0.1rem 0.3rem;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* ---------- The map as an old chart ---------- */
+
+.chart-dress path {
+  fill: none;
+  pointer-events: none;
+}
+/* Compass lines: black on the eight winds, red and green between. */
+.chart-rhumbs path {
+  stroke-width: 0.5;
+  vector-effect: non-scaling-stroke;
+}
+.rhumb-0 {
+  stroke: color-mix(in srgb, var(--ink) 30%, transparent);
+}
+.rhumb-1 {
+  stroke: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.rhumb-2 {
+  stroke: color-mix(in srgb, #3d6b3a 30%, transparent);
+}
+/* Each ripple is a dark ring with a sea-coloured ring just inside it, so
+   only a thin line of each shows. */
+.chart-ripples path {
+  stroke-linejoin: round;
+}
+.ripple {
+  stroke: var(--ink);
+}
+.ripple-gap {
+  stroke: var(--sea);
+}
+/* Drawn under the lands, so only its outer half shows: on the coast. */
+.chart-coast {
+  stroke: var(--ink);
+  stroke-width: 0.07;
+  stroke-linejoin: round;
+}
+.chart-marks path {
+  stroke: var(--ink);
+  stroke-width: 0.014;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.7;
+}
+.chart-marks .mark-shade,
+.chart-marks .mark-field {
+  opacity: 0.35;
+}
+.chart-marks .mark-sand {
+  fill: var(--ink);
+  stroke: none;
+}
+
+/* Sized here, over the map's own full-size svg rule. */
+.mapview svg.chart-rose {
+  position: absolute;
+  right: 1.4rem;
+  bottom: 1.2rem;
+  width: 5.5rem;
+  height: 6rem;
+  pointer-events: none;
+}
+.rose-ring {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 0.02;
+}
+.rose-ring.thin {
+  stroke-width: 0.01;
+}
+.rose-point {
+  fill: var(--ink);
+}
+.rose-point.north {
+  fill: var(--accent);
+}
+.rose-point.light {
+  fill: var(--paper);
+  stroke: var(--ink);
+  stroke-width: 0.012;
+}
+.rose-north {
+  font-family: var(--display);
+  font-size: 0.32px;
+  text-anchor: middle;
+  fill: var(--ink);
+}
+
+/* ---------- The setup as a desk ---------- */
+
+/* The chart and the notebook lie on a dark desk, each a sheet of its own. */
+:root .setup {
+  background: var(--desk);
+}
+:root .setup .stage-head,
+:root .setup .timebar {
+  border: 0;
+  background: transparent;
+  color: var(--desk-ink);
+}
+:root .app:has(> .setup) ~ .light-switch {
+  color: var(--desk-ink);
+}
+:root .app:has(> .setup) ~ .light-switch select {
+  color: var(--desk-ink);
+  background: var(--desk);
+}
+:root :is(.setup, .shelf) .brand {
+  font-family: var(--caps);
+  letter-spacing: 0.3em;
+  color: var(--desk-ink);
+  text-decoration: none;
+}
+:root .setup .stage-map {
+  margin: 0 0 0 0.9rem;
+  box-shadow: 0 2px 0 rgb(0 0 0 / 0.2), 0 10px 30px rgb(0 0 0 / 0.5);
+}
+/* A double rule just inside the edge of the sheet. */
+:root .setup .stage-map::after {
+  content: "";
+  position: absolute;
+  inset: 0.6rem;
+  border: 1.5px solid var(--ink);
+  outline: 1px solid var(--ink);
+  outline-offset: 4px;
+  opacity: 0.6;
+  pointer-events: none;
+}
+:root .setup .map-zoom {
+  top: 1.6rem;
+  right: 1.6rem;
+}
+:root .setup .map-zoom button {
+  background: var(--paper);
+}
+:root .setup .setup-panel {
+  margin: 0 0.9rem 0 1.1rem;
+  border: 0;
+  background: var(--paper-raised);
+  background-image: linear-gradient(90deg, rgb(80 50 20 / 0.16), transparent 1.4rem);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.5);
+}
+:root .setup .timebar button.link {
+  color: var(--desk-ink);
+}
+:root .setup .begin {
+  font-family: var(--display);
+  font-size: 1.15rem;
+  font-variant: normal;
+  letter-spacing: 0;
+  padding: 0.45rem 1.2rem 0.5rem 1rem;
+  box-shadow: inset 0 0 0 2px rgb(255 240 210 / 0.3), 0 3px 0 rgb(0 0 0 / 0.45);
+}
+
+/* ---------- The chart room on the same desk ---------- */
+
+:root .shelf {
+  background: var(--desk);
+  color: var(--desk-ink);
+}
+:root:has(main.shelf) .light-switch,
+:root:has(main.shelf) .light-switch select {
+  color: var(--desk-ink);
+  background: var(--desk);
+}
+:root .shelf-head h1 {
+  font-family: var(--display);
+  font-weight: 400;
+  color: var(--desk-ink);
+}
+:root .sheet-title strong {
+  font-family: var(--display);
+}
+/* Sheets lie a little askew, as charts dropped on a desk do, and lift
+   when the hand goes to them. */
+:root .sheet {
+  box-shadow: 0 2px 0 rgb(0 0 0 / 0.2), 0 10px 26px rgb(0 0 0 / 0.5);
+  transform: rotate(var(--askew, 0deg));
+}
+:root .sheet:nth-child(3n + 1) {
+  --askew: -0.5deg;
+}
+:root .sheet:nth-child(3n + 2) {
+  --askew: 0.35deg;
+}
+:root .sheet:nth-child(4n) {
+  --askew: -0.2deg;
+}
+:root .sheet:is(:hover, :focus-within) {
+  transform: translateY(-4px) rotate(0deg);
+  box-shadow: 0 2px 0 rgb(0 0 0 / 0.2), 0 18px 36px rgb(0 0 0 / 0.6);
+}
+:root .sheet::after {
+  content: "";
+  position: absolute;
+  inset: 0.45rem;
+  border: 1.5px solid var(--ink);
+  outline: 1px solid var(--ink);
+  outline-offset: 3px;
+  opacity: 0.55;
+  pointer-events: none;
+}
+:root .sheet.blank .sheet-title {
+  background: transparent;
+  border-style: dashed;
+  outline: 0;
+}
+:root .shelf .sheet-open:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 4px;
+}
+:root .shelf .colophon {
+  max-width: 44rem;
+  margin-top: 3rem;
+  border-top-color: color-mix(in srgb, var(--desk-ink) 25%, transparent);
+  color: var(--desk-ink);
+  opacity: 0.85;
+}
+:root .shelf .file-link {
+  color: var(--desk-ink);
+}
+
+/* Lettering: the chart's titles in old type, its labels in small caps. */
+:root .cartouche h1,
+:root .book-head h2,
+:root .setup-foot .year {
+  font-family: var(--display);
+}
+:root :is(.cartouche-kicker, .book-kicker, .account-number, .specimen dt) {
+  font-family: var(--caps);
+  text-transform: none;
+  letter-spacing: 0.15em;
+}
+:root .setup .specimen dt {
+  font-size: 0.78rem;
+}
+:root .account.chosen .account-text::first-letter {
+  float: left;
+  font-family: var(--display);
+  font-size: 2.3em;
+  line-height: 0.85;
+  margin: 0.08em 0.08em 0 0;
+  color: var(--tone);
+}
