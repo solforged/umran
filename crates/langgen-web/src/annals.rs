@@ -334,6 +334,7 @@ fn sound_changes(world: &World) -> Vec<Annal> {
             .find(|l| l.id == id)
             .map_or_else(|| substrate_label(id), |l| l.label.to_string())
     };
+    let shifts = Shifts::of(world);
     let mut out = Vec::new();
     for (v, variety) in world.varieties.iter().enumerate() {
         // A daughter's inherited laws are told in its parent's annals.
@@ -343,7 +344,7 @@ fn sound_changes(world: &World) -> Vec<Annal> {
             by_generation.entry(generation).or_default().push(id);
         }
         for (generation, ids) in by_generation {
-            let people = speakers(world, v, generation);
+            let people = speakers(world, &shifts, v, generation);
             let keys = [key("law"), u64::from(generation), v as u64];
             let text = match example(variety, generation) {
                 Some((before, after, gloss)) => tell(
@@ -364,7 +365,7 @@ fn sound_changes(world: &World) -> Vec<Annal> {
                 Some(&(_, source)) => format!(
                     "{}, spreading from {}",
                     label(id),
-                    speakers(world, source, generation)
+                    speakers(world, &shifts, source, generation)
                 ),
                 None => label(id),
             };
@@ -389,9 +390,9 @@ fn sound_changes(world: &World) -> Vec<Annal> {
 /// Who spoke variety `v` in `generation`: its people if one people spoke
 /// it then, otherwise its speakers, named by the language as it was then
 /// called.
-fn speakers(world: &World, v: usize, generation: u32) -> String {
+fn speakers(world: &World, shifts: &Shifts, v: usize, generation: u32) -> String {
     let mut speaking =
-        (0..world.communities.len()).filter(|&c| spoken_by(world, c, generation) == v);
+        (0..world.communities.len()).filter(|&c| shifts.spoken_by(world, c, generation) == v);
     match (speaking.next(), speaking.next()) {
         // Named as they were called going into the year's changes.
         (Some(c), None) => format!(
@@ -405,22 +406,34 @@ fn speakers(world: &World, v: usize, generation: u32) -> String {
     }
 }
 
-/// The variety community `c` spoke during `generation`'s changes: the
-/// one it later shifted away from, if it shifted then or afterwards, or
-/// the one it speaks now.
-fn spoken_by(world: &World, c: usize, generation: u32) -> usize {
-    world
-        .events
-        .iter()
-        .filter_map(|(g, event)| match *event {
-            WorldEvent::Shift {
+/// Each community's language shifts, oldest first, gathered once so that
+/// asking who spoke what in a year does not search the whole history.
+struct Shifts(Vec<Vec<(u32, usize)>>);
+
+impl Shifts {
+    fn of(world: &World) -> Shifts {
+        let mut by = vec![Vec::new(); world.communities.len()];
+        for &(g, ref event) in &world.events {
+            if let WorldEvent::Shift {
                 community, from, ..
-            // A year's sound changes come before anything done that year.
-            } if community == c && *g >= generation => Some((*g, from)),
-            _ => None,
-        })
-        .min_by_key(|(g, _)| *g)
-        .map_or(world.communities[c].variety, |(_, from)| from)
+            } = *event
+            {
+                by[community].push((g, from));
+            }
+        }
+        Shifts(by)
+    }
+
+    /// The variety community `c` spoke during `generation`'s changes: the
+    /// one it later shifted away from, if it shifted then or afterwards, or
+    /// the one it speaks now. A year's sound changes come before anything
+    /// done that year.
+    fn spoken_by(&self, world: &World, c: usize, generation: u32) -> usize {
+        self.0[c]
+            .iter()
+            .find(|(g, _)| *g >= generation)
+            .map_or(world.communities[c].variety, |&(_, from)| from)
+    }
 }
 
 /// A word that changed audibly in `generation`, spelled before and after,

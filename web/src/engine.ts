@@ -4,6 +4,7 @@ import type {
   Action,
   Catalog,
   Engine,
+  Kin,
   LanguageDesign,
   LexiconRow,
   MapSize,
@@ -36,6 +37,7 @@ function wrap(bench: Workbench): Engine {
     latest: () => bench.latest(),
     overview: (generation) => JSON.parse(bench.overview(generation)) as Overview,
     lexicon: (generation, variety) => JSON.parse(bench.lexicon(generation, variety)) as LexiconRow[],
+    kin: (generation, variety) => JSON.parse(bench.kin(generation, variety)) as Kin[],
     word: (generation, variety, concept) =>
       JSON.parse(bench.word(generation, variety, concept)) as WordDetail,
     map: () => JSON.parse(bench.map()) as WorldMap,

@@ -147,7 +147,11 @@ export interface Variety {
   forkedAt: number | null;
   family: number;
   spoken: boolean;
-  profile: string;
+  /// The generation it arose: founded, parted from its parent, or taken up
+  /// in a shift.
+  born: number;
+  /// When its last speakers took up another language, if they have.
+  silentSince: number | null;
   consonants: string[];
   vowels: string[];
   laws: Law[];
@@ -170,6 +174,12 @@ export interface SpecimenWord {
   was: string | null;
 }
 
+/// Another spoken language and the share of core words it shares with one.
+export interface Kin {
+  other: number;
+  score: number;
+}
+
 export interface Contact {
   a: number;
   b: number;
@@ -187,7 +197,6 @@ export interface Overview {
   communities: Community[];
   varieties: Variety[];
   contacts: Contact[];
-  intelligibility: { a: number; b: number; score: number }[];
   /// What each land that has been held is called, through history.
   places: Place[];
   /// Peoples going to new land: migrations, and split-offs settling away.
@@ -347,6 +356,9 @@ export interface Engine {
   latest(): number;
   overview(generation: number): Overview;
   lexicon(generation: number, variety: number): LexiconRow[];
+  /// The share of core words `variety` shares with each other spoken
+  /// language, the closest first.
+  kin(generation: number, variety: number): Kin[];
   word(generation: number, variety: number, concept: string): WordDetail;
   map(): WorldMap;
   wordMap(generation: number, concept: string): WordMap;

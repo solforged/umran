@@ -4,18 +4,13 @@ import type { Action, Catalog, Engine, WorldMap } from "./model";
 import { YEARS } from "./model";
 import { ActionDialog, type DialogKind } from "./components/ActionDialog";
 import { Appendix } from "./components/Appendix";
-import { Atlas } from "./components/Atlas";
 import { Designer, type Founding } from "./components/Designer";
 import { Modal } from "./components/Modal";
-import { Recto } from "./components/Recto";
 import { Shelf } from "./components/Shelf";
-import { Timeline } from "./components/Timeline";
 import { Stage } from "./components/Stage";
 import { WorldSetup } from "./components/WorldSetup";
-import { Verso } from "./components/Verso";
 import { sampleBook } from "./sample";
 import { download } from "./takeout";
-import { era } from "./words";
 import {
   describe,
   loadShelf,
@@ -38,7 +33,8 @@ type View =
   | { kind: "book"; id: string }
   | { kind: "recovery"; what: string; raw: string; error: string };
 
-type Page = "stage" | "chronicle" | "atlas" | "appendix";
+/// The stage, or the page for taking things out of the world.
+type Page = "stage" | "export";
 
 function foundingAction(f: Founding): Action {
   return { kind: "found", naming: f.naming, design: f.design, seed: f.seed, power: f.power, openness: f.openness };
@@ -52,7 +48,6 @@ export default function App() {
   const [version, setVersion] = useState(0);
   const [viewing, setViewing] = useState<number | null>(null); // null = latest
   const [community, setCommunity] = useState(0);
-  const [concept, setConcept] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogKind | null>(null);
   const [page, setPage] = useState<Page>("stage");
   const [worldMap, setWorldMap] = useState<WorldMap | null>(null);
@@ -87,7 +82,6 @@ export default function App() {
     setWorldMap(next.map());
     setViewing(null);
     setCommunity(0);
-    setConcept(null);
     setDialog(null);
     setPage("stage");
     setError(null);
@@ -101,7 +95,7 @@ export default function App() {
     (id: string) => {
       const raw = readBook(id);
       if (raw === null) {
-        setError("That book could not be found in this browser.");
+        setError("That world could not be found in this browser.");
         setView({ kind: "shelf" });
         return;
       }
@@ -110,7 +104,7 @@ export default function App() {
         (e) => {
           // Open the shelf next time rather than this book again.
           setShelf((current) => setLast(current, null));
-          setView({ kind: "recovery", what: "This book", raw, error: message(e) });
+          setView({ kind: "recovery", what: "This world", raw, error: message(e) });
         },
       );
     },
@@ -345,28 +339,18 @@ export default function App() {
       />
     ) : null;
 
-  if (page === "stage" && worldMap) {
+  if (page === "export" || !worldMap) {
     return (
       <div className="app">
-        <Stage
+        {notices}
+        <Appendix
           engine={engine.current}
-          map={worldMap}
           version={version}
           generation={generation}
           overview={overview}
           title={title}
-          notices={notices}
-          canUndo={overview.timeline.length > 1}
-          selected={selected}
-          onSelect={setCommunity}
-          onShelf={toShelf}
-          onBook={() => setPage("chronicle")}
-          onScrub={scrub}
-          onTick={tick}
-          onStop={persist}
-          onNextEvent={() => nextEvent(EVENT_LIMIT)}
-          onUndo={strike}
-          onDialog={setDialog}
+          variety={overview.communities[selected].variety}
+          onBack={() => setPage("stage")}
         />
         {dialogs}
       </div>
@@ -375,103 +359,28 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="running-head">
-        <button type="button" className="link brand" onClick={toShelf} title="Back to the shelf">
-          Langgen
-        </button>
-        <span className="book-title">{title}</span>
-        <span className="folio">
-          {era(overview, generation)}
-          {generation < latest ? (
-            <>
-              {" · "}
-              <button type="button" className="link" onClick={() => setViewing(null)}>
-                to the present
-              </button>
-            </>
-          ) : null}
-        </span>
-      </header>
-
-      <nav className="thumbs" aria-label="Sections of the book">
-        <button type="button" onClick={() => setPage("stage")}>
-          Stage
-        </button>
-        <button type="button" aria-current={page === "chronicle"} onClick={() => setPage("chronicle")}>
-          Chronicle
-        </button>
-        <button type="button" aria-current={page === "atlas"} onClick={() => setPage("atlas")}>
-          Atlas
-        </button>
-        <button type="button" aria-current={page === "appendix"} onClick={() => setPage("appendix")}>
-          Appendix
-        </button>
-      </nav>
-
-      <Timeline overview={overview} generation={generation} onScrub={scrub} />
-
-      {notices}
-
-      {page === "appendix" ? (
-        <Appendix
-          engine={engine.current}
-          version={version}
-          generation={generation}
-          overview={overview}
-          title={title}
-          variety={overview.communities[selected].variety}
-          onBack={() => setPage("chronicle")}
-        />
-      ) : page === "atlas" && worldMap ? (
-        <Atlas
-          engine={engine.current}
-          map={worldMap}
-          version={version}
-          generation={generation}
-          overview={overview}
-          selected={selected}
-          onSelect={setCommunity}
-          onRead={(id) => {
-            setCommunity(id);
-            setPage("chronicle");
-          }}
-        />
-      ) : (
-        <main className="book">
-          <Verso
-            overview={overview}
-            selected={selected}
-            atPresent={generation === latest}
-            onSelect={(id) => setCommunity(id)}
-            onScrub={scrub}
-            onRestore={restore}
-            onDialog={setDialog}
-            canStrike={overview.timeline.length > 1}
-            onRun={(generations) => perform({ kind: "run", generations })}
-            onTick={tick}
-            onStop={persist}
-            onNextEvent={() => nextEvent(EVENT_LIMIT)}
-            onStrike={strike}
-          />
-          <Recto
-            engine={engine.current}
-            version={version}
-            generation={generation}
-            overview={overview}
-            selected={selected}
-            concept={concept}
-            onConcept={setConcept}
-            onScrub={scrub}
-            onOpenVariety={(v) => {
-              const owner = overview.communities.find((c) => c.variety === v);
-              if (owner) setCommunity(owner.id);
-            }}
-          />
-        </main>
-      )}
-
+      <Stage
+        engine={engine.current}
+        map={worldMap}
+        version={version}
+        generation={generation}
+        overview={overview}
+        title={title}
+        notices={notices}
+        canUndo={overview.timeline.length > 1}
+        selected={selected}
+        onSelect={setCommunity}
+        onShelf={toShelf}
+        onExport={() => setPage("export")}
+        onRestore={restore}
+        onScrub={scrub}
+        onTick={tick}
+        onStop={persist}
+        onNextEvent={() => nextEvent(EVENT_LIMIT)}
+        onUndo={strike}
+        onDialog={setDialog}
+      />
       {dialogs}
-
     </div>
   );
 }

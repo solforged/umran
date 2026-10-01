@@ -1,8 +1,7 @@
-// How the book words time and relations. The chronicle counts years from
-// its first people, as annals count from a founding, and describes ties
-// between peoples in words, keeping the figures for the apparatus.
+// How time and ties between peoples are put in words: years counted from
+// the founding, and dealings described rather than given as figures.
 
-import type { ContactKind, Overview } from "./model";
+import type { ContactKind } from "./model";
 import { YEARS } from "./model";
 
 export function ordinal(n: number): string {
@@ -14,17 +13,6 @@ export function ordinal(n: number): string {
 /// "the 50th year", or the year of the founding.
 export function year(generation: number): string {
   return generation === 0 ? "the year of the founding" : `the ${ordinal(generation * YEARS)} year`;
-}
-
-/// A chronicle heading for a year.
-export function yearHeading(generation: number): string {
-  return generation === 0 ? "In the beginning" : `In the ${ordinal(generation * YEARS)} year`;
-}
-
-/// The year in the book's own era, counted from its first people.
-export function era(overview: Overview, generation: number): string {
-  const founders = overview.communities[0]?.name;
-  return founders ? `${year(generation)} of the ${founders}` : year(generation);
 }
 
 /// Speeds for letting the years pass, as generations per second.

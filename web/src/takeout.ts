@@ -1,4 +1,4 @@
-// Formats for taking a book's contents elsewhere. These only arrange what
+// Formats for taking a world's contents elsewhere. These only arrange what
 // the engine reports; they never make or change words.
 
 import type { LexiconRow, Overview } from "./model";
@@ -61,12 +61,12 @@ export function peopleLines(overview: Overview): string[] {
   });
 }
 
-/// The whole book as Markdown: the peoples, the chronicle, and a glossary
-/// for every tongue still spoken.
+/// The whole world as Markdown: the peoples, everything that happened, and
+/// a glossary for every language still spoken.
 export function bookMarkdown(title: string, overview: Overview, glossaries: [string, LexiconRow[]][]): string {
   const out = [`# ${title}`, "", `As it stands in year ${overview.generation * YEARS}.`, "", "## The peoples", ""];
   for (const line of peopleLines(overview)) out.push(`- ${line}`);
-  out.push("", "## Chronicle");
+  out.push("", "## History");
   let year = -1;
   for (const a of overview.annals) {
     if (a.generation !== year) {

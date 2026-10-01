@@ -18,10 +18,10 @@ set the abandoned actions aside as a `Telling` (every action from the
 founding on, marked undone or rewritten); consecutive undos extend one
 telling, and a telling the present history already holds is dropped. The
 facade replays each telling once (cached) and lists what it told that the
-present does not, from the generation where the two diverge; the chronicle
-shows those entries struck through, and `restore` takes a telling up again,
-setting the present aside in its place. Tellings travel in the recipe but
-never affect its replay.
+present does not, from the generation where the two diverge; the history
+card shows those entries struck through, and `restore` takes a telling up
+again, setting the present aside in its place. Tellings travel in the
+recipe but never affect its replay.
 
 Saves are recipes (`Recipe`: format, `ENGINE_REVISION`, seed, map size,
 actions), not resolved states; recipes from before maps had a size get
@@ -30,13 +30,14 @@ existing recipe replay differently; loading a recipe from another revision
 still works but the UI warns that its words may differ. Resolved-state saves
 remain possible later work if exact preservation across versions matters.
 
-The browser keeps a shelf of books (`web/src/shelf.ts`): each book's
-history autosaves under localStorage key `langgen.book.<id>`, and
-`langgen.shelf.v1` lists the books with their titles and the one last open.
+The browser keeps a shelf of saved worlds (`web/src/shelf.ts`): each
+world's history autosaves under localStorage key `langgen.book.<id>` (the
+key predates worlds and stays, so older saves open), and
+`langgen.shelf.v1` lists them with their titles and the one last open.
 The single-world save `langgen.sim.v1` is copied onto the shelf once as "An
 earlier history" and left in place, as is the older `langgen.workbench.v2`.
-Books leave the shelf only when the reader removes one and confirms.
-Unreadable books or an unreadable shelf open recovery without being
+Worlds leave the shelf only when the reader removes one and confirms.
+Unreadable saves or an unreadable shelf open recovery without being
 overwritten; save failures stay visible and export still works. Storage is
-local to the browser, not synced. The sample chronicle (`web/src/sample.ts`)
+local to the browser, not synced. The sample world (`web/src/sample.ts`)
 is a fixed recipe; opening it puts a fresh copy on the shelf.

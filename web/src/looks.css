@@ -88,10 +88,7 @@
 }
 
 /* Pane titles open with a boxed, gilded initial. */
-[data-look="scriptorium"] h2::first-letter,
-[data-look="scriptorium"] .splash h1::first-letter,
-[data-look="scriptorium"] .shelf h1::first-letter,
-[data-look="scriptorium"] .cast::first-letter {
+[data-look="scriptorium"] h2::first-letter {
   font-family: var(--initial);
   font-variant: normal;
   font-size: 1.45em;
@@ -103,14 +100,9 @@
   margin-right: 0.08em;
 }
 
-[data-look="scriptorium"] .timeline,
 [data-look="scriptorium"] th,
 [data-look="scriptorium"] .modal {
   background: transparent;
-}
-
-[data-look="scriptorium"] .timeline {
-  border-bottom: 3px double var(--line);
 }
 
 [data-look="scriptorium"] .tick {
@@ -118,15 +110,6 @@
   height: 7px;
   border-radius: 0;
   transform: translateX(-3px) rotate(45deg);
-}
-
-/* The gutter between the pages. */
-[data-look="scriptorium"] .verso {
-  border-right: 3px double var(--line);
-  box-shadow: inset -18px 0 22px -20px var(--vignette);
-}
-[data-look="scriptorium"] .recto {
-  box-shadow: inset 18px 0 22px -20px var(--vignette);
 }
 
 [data-look="scriptorium"] button {
@@ -249,103 +232,10 @@
   font-family: "Almendra", var(--serif);
 }
 
-/* The chronicle: dated entries, sound changes as marginal notes. */
-.annals {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.annals .year {
-  margin: 1rem 0 0.25rem;
-  font-weight: 600;
-}
-/* Changes of speech are the annalist's too now, marked with a leaf; the
-   linguist's account sits beneath in the apparatus. */
-.annals .entry-law > p::before {
-  content: "☙ ";
-  color: var(--accent);
-}
-.annals .fresh {
-  animation: write-on 1.6s steps(28, end) both;
-}
-@keyframes write-on {
-  from {
-    clip-path: inset(0 100% 0 0);
-  }
-  to {
-    clip-path: inset(0 0 0 0);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .annals .fresh {
-    animation: none;
-  }
-}
-[data-look="scriptorium"] .annals .year {
-  font-family: var(--initial);
-  color: var(--accent);
-  font-size: 1.15rem;
-}
-[data-look="scriptorium"] .annals .entry:not(.entry-law)::first-letter {
-  color: var(--accent);
-  font-weight: 600;
-}
 [data-look="scriptorium"] [class*="hand-"] {
   font-variant: normal;
   letter-spacing: 0.01em;
 }
-[data-look="scriptorium"] .annals .year button {
-  font-variant: normal;
-  text-decoration: none;
-  color: inherit;
-}
-
-/* The book. */
-[data-look="scriptorium"] .cast {
-  font-size: 1.15rem;
-}
-[data-look="scriptorium"] .cast::first-letter {
-  float: left;
-  font-size: 2.6em;
-  margin: 0.08em 0.12em 0 0;
-}
-[data-look="scriptorium"] .and-then {
-  border-top: none;
-}
-[data-look="scriptorium"] .and-then-lead {
-  font-family: var(--initial);
-  font-style: normal;
-  color: var(--accent);
-  font-size: 1.3rem;
-}
-[data-look="scriptorium"] .and-then button.link,
-[data-look="scriptorium"] .cast button.link {
-  color: var(--ink);
-  font-variant: normal;
-  letter-spacing: 0;
-  font-size: inherit;
-  text-decoration: underline dotted var(--ink-soft);
-  text-underline-offset: 0.2em;
-}
-[data-look="scriptorium"] .and-then button.link:hover:not(:disabled) {
-  color: var(--accent);
-}
-[data-look="scriptorium"] .and-then button.link:disabled {
-  text-decoration: none;
-}
-[data-look="scriptorium"] .cast .person.chosen {
-  color: var(--accent);
-  text-decoration: underline solid var(--gold);
-}
-[data-look="scriptorium"] .margin {
-  border-left: 1px solid var(--line);
-  font-size: 0.95rem;
-}
-[data-look="scriptorium"] .margin h3 {
-  font-variant: normal;
-  font-style: italic;
-}
-
 /* The ribbon bookmark marks the year being read. */
 [data-look="scriptorium"] .track input[type="range"] {
   appearance: none;
@@ -380,36 +270,6 @@
   cursor: grab;
 }
 
-/* The shelf: books stand with their spines out. */
-[data-look="scriptorium"] .book-card {
-  border: 1px solid var(--line);
-  border-left: 8px solid var(--accent);
-  background: var(--paper-raised);
-  box-shadow: 2px 3px 0 var(--line);
-  font-variant: normal;
-  letter-spacing: 0;
-}
-[data-look="scriptorium"] .book-card strong {
-  font-family: var(--initial);
-  font-weight: 400;
-  color: var(--accent);
-  font-size: 1.35rem;
-}
-[data-look="scriptorium"] .book-card.begin {
-  border-left-style: dashed;
-  border-left-color: var(--gold);
-  background: transparent;
-  box-shadow: none;
-}
-[data-look="scriptorium"] .book-card.sample {
-  border-left-color: var(--gold);
-}
-
-/* Struck lines: a scribe's single stroke of red through the ink. */
-[data-look="scriptorium"] .annals .struck del {
-  text-decoration-thickness: 1.5px;
-  text-decoration-color: var(--accent);
-}
 [data-look="scriptorium"] .struck-note {
   font-family: var(--initial);
   font-style: normal;
@@ -425,52 +285,6 @@
   text-decoration: underline dotted;
 }
 
-/* The running head, set like a manuscript's: a rubricated title between
-   a quiet mark of the house and the year. */
-[data-look="scriptorium"] .running-head {
-  border-bottom: 3px double var(--line);
-}
-[data-look="scriptorium"] .running-head .brand {
-  font-family: var(--initial);
-  font-variant: normal;
-  letter-spacing: 0.02em;
-  color: var(--accent);
-}
-[data-look="scriptorium"] .running-head .brand::before {
-  content: "❦ ";
-  color: var(--gold);
-}
-[data-look="scriptorium"] .running-head .book-title {
-  font-variant: small-caps;
-  font-style: normal;
-  letter-spacing: 0.08em;
-  color: var(--accent);
-}
-[data-look="scriptorium"] .running-head .folio {
-  font-style: italic;
-}
-[data-look="scriptorium"] .running-head .folio button.link {
-  font-variant: normal;
-  letter-spacing: 0;
-  color: var(--accent);
-}
-
-/* Thumb tabs as leather tabs glued to the fore-edge. */
-[data-look="scriptorium"] .thumbs button {
-  font-family: var(--initial);
-  font-variant: normal;
-  letter-spacing: 0.04em;
-  font-size: 0.95rem;
-  border-color: var(--line);
-  background: var(--paper-raised);
-  box-shadow: -2px 2px 0 var(--line);
-}
-[data-look="scriptorium"] .thumbs button[aria-current="true"] {
-  background: var(--accent);
-  color: var(--accent-ink);
-  border-color: var(--gold);
-}
-
 /* The apparatus, in a smaller hand. */
 [data-look="scriptorium"] .apparatus {
   font-style: italic;
@@ -479,34 +293,20 @@
   color: var(--accent);
   font-style: normal;
 }
-[data-look="scriptorium"] .annals .entry i.word {
-  font-size: 1em;
-  color: var(--accent);
-}
-[data-look="scriptorium"] select.inline {
-  font-variant: normal;
-  color: var(--ink);
-}
-[data-look="scriptorium"] .and-then .strike button.link {
-  font-style: italic;
-  color: var(--accent);
-  text-decoration-color: var(--accent);
-}
-
-/* The stage is a working surface rather than a page: one face throughout,
-   no boxed initials, words at the size of the text around them, and the
-   family hands kept for card titles, where a name is read slowly, not
-   for map labels and lists, where it is scanned. */
-[data-look="scriptorium"] .stage button,
-[data-look="scriptorium"] .stage select {
+/* The stage, the shelf, and the export page are working surfaces rather
+   than pages: one face throughout, no boxed initials, words at the size of
+   the text around them, and the family hands kept for card titles, where
+   a name is read slowly, not for map labels and lists, where it is
+   scanned. */
+[data-look="scriptorium"] :is(.stage, .shelf, .appendix) :is(button, select, label) {
   font-variant: normal;
   letter-spacing: normal;
 }
-[data-look="scriptorium"] .stage h2 {
+[data-look="scriptorium"] :is(.stage, .shelf, .appendix) :is(h1, h2) {
   font-variant: normal;
   letter-spacing: 0;
 }
-[data-look="scriptorium"] .stage h2::first-letter {
+[data-look="scriptorium"] :is(.stage, .shelf, .appendix) :is(h1, h2)::first-letter {
   font-family: inherit;
   font-size: inherit;
   color: inherit;
@@ -515,14 +315,14 @@
   padding: 0;
   margin: 0;
 }
-[data-look="scriptorium"] .stage h3 {
+[data-look="scriptorium"] :is(.stage, .shelf, .appendix) h3 {
   font-variant: normal;
   color: var(--ink-soft);
 }
-[data-look="scriptorium"] .stage :not(h2)[class*="hand-"] {
+[data-look="scriptorium"] :is(.stage, .appendix) :not(h2)[class*="hand-"] {
   font-family: var(--serif);
 }
-[data-look="scriptorium"] .stage .word:not(.big) {
+[data-look="scriptorium"] :is(.stage, .appendix) .word:not(.big) {
   font-size: 1em;
 }
 [data-look="scriptorium"] .stage .card-head h2 {

@@ -68,7 +68,7 @@ export function WordGloss({
       ))}
       {detail.cognates.length > 0 ? (
         <>
-          <h4>In related tongues</h4>
+          <h4>In related languages</h4>
           <ul className="cognates">
             {detail.cognates.map((c) => (
               <li key={c.variety}>

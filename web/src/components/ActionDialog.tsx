@@ -9,7 +9,7 @@ export type DialogKind = "found" | "split" | "connect" | "shift";
 const TITLES: Record<"split" | "connect" | "shift", string> = {
   split: "A people parts ways",
   connect: "Two peoples meet",
-  shift: "A people changes its tongue",
+  shift: "A people takes up another language",
 };
 
 /// Forms for splitting, connecting, and shifting. Each validates the

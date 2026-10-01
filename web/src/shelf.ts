@@ -38,7 +38,7 @@ export function loadShelf(): Shelf {
   const raw = get(INDEX);
   if (raw !== null) {
     const parsed = JSON.parse(raw) as Partial<Shelf>;
-    if (!Array.isArray(parsed.books)) throw new Error("The shelf index is not a list of books.");
+    if (!Array.isArray(parsed.books)) throw new Error("The list of saved worlds is not a list.");
     return { books: parsed.books, last: parsed.last ?? null };
   }
   const legacy = get(LEGACY);

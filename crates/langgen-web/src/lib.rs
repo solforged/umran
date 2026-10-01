@@ -99,6 +99,10 @@ impl Workbench {
         self.bench.lexicon(generation, variety).map_err(fail)
     }
 
+    pub fn kin(&mut self, generation: u32, variety: usize) -> Result<String, JsValue> {
+        self.bench.kin(generation, variety).map_err(fail)
+    }
+
     pub fn word(
         &mut self,
         generation: u32,
@@ -393,12 +397,46 @@ impl Bench {
         let world = self.world(generation);
         let annals = annals(world);
         let spoken = world.spoken();
+        // When each language arose: a daughter when it parted, a founding
+        // language when its people was founded. A people's first language
+        // is the one its first shift left, or the one it speaks if none.
+        let mut born: Vec<u32> = world
+            .varieties
+            .iter()
+            .map(|v| v.parent.map_or(0, |f| f.generation))
+            .collect();
+        for (g, event) in &world.events {
+            if let WorldEvent::Found { community } = event {
+                let first = world
+                    .events
+                    .iter()
+                    .find_map(|(_, e)| match e {
+                        WorldEvent::Shift {
+                            community: c, from, ..
+                        } if c == community => Some(*from),
+                        _ => None,
+                    })
+                    .unwrap_or(world.communities[*community].variety);
+                born[first] = *g;
+            }
+        }
         let laws = catalog();
         let law_label = |id: &str| {
             laws.iter()
                 .find(|l| l.id == id)
                 .map_or_else(|| substrate_label(id), |l| l.label.to_string())
         };
+        // Every language that hears another people's name, built once:
+        // building an ear reads its whole lexicon.
+        let mut ears: Vec<Option<langgen_sim::adapt::Adapter>> = vec![None; world.varieties.len()];
+        for k in &world.contacts {
+            for c in [k.a, k.b] {
+                let v = world.communities[c].variety;
+                if ears[v].is_none() {
+                    ears[v] = Some(world.ear(v));
+                }
+            }
+        }
         let view = Overview {
             seed,
             generation: world.generation,
@@ -438,7 +476,13 @@ impl Bench {
                         })
                         .map(|by| Exonym {
                             by,
-                            name: world.exonym(id, by),
+                            name: world.exonym_heard(
+                                ears[world.communities[by].variety]
+                                    .as_ref()
+                                    .expect("every contact's languages have ears"),
+                                id,
+                                by,
+                            ),
                         })
                         // A neighbour that says the name as they do adds nothing.
                         .filter(|e| e.name != world.community_name(id))
@@ -465,7 +509,15 @@ impl Bench {
                         forked_at: v.parent.map(|f| f.generation),
                         family: world.family(id),
                         spoken: spoken[id],
-                        profile: v.profile.name.clone(),
+                        born: born[id],
+                        silent_since: (!spoken[id])
+                            .then(|| {
+                                world.events.iter().rev().find_map(|(g, e)| match e {
+                                    WorldEvent::Shift { from, .. } if *from == id => Some(*g),
+                                    _ => None,
+                                })
+                            })
+                            .flatten(),
                         consonants: ipas(&consonants),
                         vowels: ipas(&vowels),
                         laws: v
@@ -496,13 +548,35 @@ impl Bench {
                     kind: kebab(&format!("{:?}", c.kind)),
                 })
                 .collect(),
-            intelligibility: spoken_pairs(world),
             places: place_views(world),
             moves: move_views(world),
             annals,
             tellings,
         };
         to_json(&view)
+    }
+
+    /// How much of its core vocabulary `variety` shares with each other
+    /// spoken language at `generation`, the closest first. One language's
+    /// row rather than the whole table, which grows with the square of the
+    /// languages and would slow every year of a long history.
+    pub fn kin(&mut self, generation: u32, variety: usize) -> Result<String, String> {
+        let world = self.world(generation);
+        let own = &world
+            .varieties
+            .get(variety)
+            .ok_or("No such language variety.")?
+            .lexicon;
+        let spoken = world.spoken();
+        let mut rows: Vec<KinView> = (0..world.varieties.len())
+            .filter(|&v| v != variety && spoken[v])
+            .map(|other| KinView {
+                other,
+                score: intelligibility(own, &world.varieties[other].lexicon),
+            })
+            .collect();
+        rows.sort_by(|a, b| b.score.total_cmp(&a.score));
+        to_json(&rows)
     }
 
     /// Every concept's current word in `variety` at `generation`.
@@ -659,6 +733,10 @@ impl Bench {
 impl Bench {
     fn world(&mut self, generation: u32) -> &World {
         let target = generation.min(self.latest());
+        // The present is always at hand; only the past is replayed.
+        if target == self.latest() {
+            return self.chronicle.latest();
+        }
         if self.cached.as_ref().is_none_or(|w| w.generation != target) {
             self.cached = Some(self.chronicle.world_at(target));
         }
@@ -969,23 +1047,6 @@ fn move_views(world: &World) -> Vec<MoveView> {
             })
         })
         .collect()
-}
-
-fn spoken_pairs(world: &World) -> Vec<Pair> {
-    let spoken: Vec<usize> = (0..world.varieties.len())
-        .filter(|&v| world.spoken()[v])
-        .collect();
-    let mut out = Vec::new();
-    for (i, &a) in spoken.iter().enumerate() {
-        for &b in &spoken[i + 1..] {
-            out.push(Pair {
-                a,
-                b,
-                score: intelligibility(&world.varieties[a].lexicon, &world.varieties[b].lexicon),
-            });
-        }
-    }
-    out
 }
 
 /// Whether a "borrowed" word was really kept from the speakers' old
@@ -1381,7 +1442,6 @@ struct Overview {
     communities: Vec<CommunityView>,
     varieties: Vec<VarietyView>,
     contacts: Vec<ContactView>,
-    intelligibility: Vec<Pair>,
     /// What each land that has been held is called, through history.
     places: Vec<PlaceView>,
     /// Peoples going to new land: migrations, and split-offs settling
@@ -1482,7 +1542,11 @@ struct VarietyView {
     forked_at: Option<u32>,
     family: usize,
     spoken: bool,
-    profile: String,
+    /// The generation it arose: founded, parted from its parent, or taken
+    /// up in a shift.
+    born: u32,
+    /// When its last speakers took up another language, if they have.
+    silent_since: Option<u32>,
     consonants: Vec<&'static str>,
     vowels: Vec<&'static str>,
     laws: Vec<LawView>,
@@ -1522,10 +1586,10 @@ struct ContactView {
     kind: String,
 }
 
+/// Another language and the share of core words it shares with one.
 #[derive(Serialize)]
-struct Pair {
-    a: usize,
-    b: usize,
+struct KinView {
+    other: usize,
     score: f32,
 }
 

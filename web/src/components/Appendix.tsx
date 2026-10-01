@@ -3,8 +3,8 @@ import type { Engine, Overview } from "../model";
 import { YEARS } from "../model";
 import { bookMarkdown, download, fileName, glossaryCsv, peopleLines } from "../takeout";
 
-/// The back of the book, for taking things out: who is called what, a
-/// glossary of any tongue, and the book in forms other tools can read.
+/// The export page, for taking things out of a world: who is called what,
+/// a glossary of any language, and the world in forms other tools read.
 export function Appendix({
   engine,
   version,
@@ -61,11 +61,11 @@ export function Appendix({
     <main className="appendix">
       <header className="appendix-head">
         <button type="button" className="link" onClick={onBack}>
-          ← Back to the book
+          ← Back to the map
         </button>
-        <h2>Appendix</h2>
+        <h2>Export</h2>
         <p className="muted">
-          As the book stands in year {generation * YEARS}. Copy or download anything here to use it elsewhere.
+          As the world stands in year {generation * YEARS}. Copy or download anything here to use it elsewhere.
         </p>
       </header>
 
@@ -81,7 +81,7 @@ export function Appendix({
             <tr>
               <th>People</th>
               <th>Meaning</th>
-              <th>Tongue</th>
+              <th>Language</th>
               <th>Once</th>
               <th>Called by others</th>
             </tr>
@@ -112,7 +112,7 @@ export function Appendix({
         <div className="row spread">
           <h3>Glossary</h3>
           <div className="row">
-            <select aria-label="Tongue" value={chosen.id} onChange={(e) => setTongue(Number(e.target.value))}>
+            <select aria-label="Language" value={chosen.id} onChange={(e) => setTongue(Number(e.target.value))}>
               {overview.varieties.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.name}
@@ -153,23 +153,25 @@ export function Appendix({
       </section>
 
       <section>
-        <h3>Take the book with you</h3>
+        <h3>The whole world</h3>
         <ul className="takeout">
           <li>
             <button type="button" onClick={whole}>
-              The whole book as text
+              As text
             </button>{" "}
-            <span className="muted">Markdown: the peoples, the chronicle, and a glossary for every living tongue.</span>
+            <span className="muted">
+              Markdown: the peoples, everything that happened, and a glossary for every living language.
+            </span>
           </li>
           <li>
             <button
               type="button"
               onClick={() => download(fileName(title, "json"), engine.save(), "application/json")}
             >
-              The book itself
+              As a save file
             </button>{" "}
             <span className="muted">
-              A file to bring back in from the shelf later, on this or another browser. It holds every telling.
+              To bring back in from the shelf later, in this or another browser. It holds every telling.
             </span>
           </li>
         </ul>

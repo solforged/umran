@@ -1,14 +1,26 @@
-import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import { ArrowLeft, AudioLines, Globe, Languages, MapPin, Play, Users, WholeWord, type LucideIcon } from "lucide-react";
-import type { Annal, Community, Engine, Overview, Variety, WordMap, WorldMap } from "../model";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  ArrowLeft,
+  AudioLines,
+  Globe,
+  Languages,
+  MapPin,
+  Play,
+  ScrollText,
+  Users,
+  WholeWord,
+  type LucideIcon,
+} from "lucide-react";
+import type { Annal, Community, Engine, Overview, TellingView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { CONTACT_NAME, EVENT_KIND, howCame, howNamed, hue, TERMS, TERRAIN_NAME, type Term } from "../lore";
 import { bond } from "../words";
 import type { DialogKind } from "./ActionDialog";
-import { Told } from "./Chronicle";
+import { Told } from "./Told";
 import { Dictionary } from "./Dictionary";
 import { peoplesByRegion } from "./MapView";
 import { Specimen } from "./Specimen";
+import { FamilyTree } from "./FamilyTree";
 import { WordGloss } from "./WordGloss";
 
 /// What the encyclopedia is open at.
@@ -19,7 +31,8 @@ export type Focus =
   | { kind: "word"; variety: number; concept: string }
   | { kind: "law"; id: string }
   | { kind: "land"; region: number }
-  | { kind: "event"; annal: Annal };
+  | { kind: "event"; annal: Annal }
+  | { kind: "history" };
 
 /// Most of a people's story the card lists, newest first.
 const STORY_LENGTH = 12;
@@ -43,33 +56,89 @@ interface Context {
   onScrub: (generation: number) => void;
   onPlay: () => void;
   onDialog: (kind: DialogKind, community: number) => void;
+  /// Tell the history again as a telling set aside told it.
+  onRestore: (telling: number) => void;
 }
+
+/// Most cards the trail names before the one open.
+const TRAIL_SHOWN = 3;
 
 /// The encyclopedia: one card at a time about whatever is in focus, with
 /// every name in it leading to that thing's own card. Each card opens the
 /// same way: what kind of thing it is, its name, a box of facts, and its
-/// specimen words where it has a language, then sections to read on.
+/// specimen words where it has a language, then sections to read on. The
+/// last few cards visited stay named above it, to step back to.
 export function Pedia({
-  focus,
-  canBack,
-  onBack,
+  trail,
+  onReturn,
   ...context
-}: Context & { focus: Focus; canBack: boolean; onBack: () => void }) {
+}: Context & { trail: Focus[]; onReturn: (index: number) => void }) {
+  const focus = trail.at(-1)!;
+  const first = Math.max(0, trail.length - 1 - TRAIL_SHOWN);
   return (
     <aside className="pedia" aria-label="Encyclopedia">
       <nav className="pedia-nav">
-        <button type="button" className="icon" disabled={!canBack} onClick={onBack} title="Back">
+        <button
+          type="button"
+          className="icon"
+          disabled={trail.length < 2}
+          onClick={() => onReturn(trail.length - 2)}
+          title="Back"
+        >
           <ArrowLeft size={16} />
         </button>
         <button type="button" className="icon" onClick={() => context.go({ kind: "world" })} title="The world">
           <Globe size={16} />
         </button>
+        <button
+          type="button"
+          className="icon"
+          onClick={() => context.go({ kind: "history" })}
+          title="Everything that has happened"
+        >
+          <ScrollText size={16} />
+        </button>
+        {trail.length > 1 ? (
+          <ol className="trail" aria-label="Cards visited">
+            {first > 0 ? <li aria-hidden="true">…</li> : null}
+            {trail.slice(first, -1).map((f, i) => (
+              <li key={first + i}>
+                <button type="button" className="link" onClick={() => onReturn(first + i)}>
+                  {focusLabel(f, context)}
+                </button>
+              </li>
+            ))}
+          </ol>
+        ) : null}
       </nav>
       <article className="card">
         <Card focus={focus} context={context} />
       </article>
     </aside>
   );
+}
+
+/// A card's name in a few words, for the trail.
+function focusLabel(focus: Focus, context: Context): string {
+  const { overview } = context;
+  switch (focus.kind) {
+    case "world":
+      return "The world";
+    case "people":
+      return overview.communities[focus.id]?.name ?? "A people";
+    case "language":
+      return overview.varieties[focus.variety]?.name ?? "A language";
+    case "word":
+      return `“${focus.concept.replaceAll("_", " ")}”`;
+    case "law":
+      return overview.varieties.flatMap((v) => v.laws).find((l) => l.id === focus.id)?.label ?? "A sound change";
+    case "land":
+      return landName(focus.region, context);
+    case "event":
+      return `Year ${focus.annal.generation * YEARS}`;
+    case "history":
+      return "History";
+  }
 }
 
 function Card({ focus, context }: { focus: Focus; context: Context }) {
@@ -97,6 +166,8 @@ function Card({ focus, context }: { focus: Focus; context: Context }) {
       return <LandCard region={focus.region} context={context} />;
     case "event":
       return <EventCard annal={focus.annal} context={context} />;
+    case "history":
+      return <HistoryCard context={context} />;
   }
 }
 
@@ -145,15 +216,51 @@ function Facts({ rows }: { rows: [string, ReactNode][] }) {
   );
 }
 
-/// A linguist's term, explained in place when clicked.
+/// A linguist's term: clicking it floats a short explanation under it, so
+/// the sentence it sits in stays whole. Clicking anywhere, scrolling, or
+/// Escape puts it away.
 function Explained({ term, children }: { term: Term; children: ReactNode }) {
-  const [open, setOpen] = useState(false);
+  const [at, setAt] = useState<CSSProperties | null>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!at) return;
+    const close = () => setAt(null);
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    const press = (e: PointerEvent) => {
+      if (!button.current?.contains(e.target as Node)) close();
+    };
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    window.addEventListener("keydown", key);
+    window.addEventListener("pointerdown", press);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("keydown", key);
+      window.removeEventListener("pointerdown", press);
+    };
+  }, [at]);
+  const toggle = () => {
+    if (at || !button.current) return setAt(null);
+    const r = button.current.getBoundingClientRect();
+    const width = Math.min(320, window.innerWidth - 16);
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
+    // Under the term, or over it when the term is near the foot of the window.
+    const below = r.bottom + 160 < window.innerHeight;
+    setAt(below ? { left, top: r.bottom + 4 } : { left, top: r.top - 4, transform: "translateY(-100%)" });
+  };
   return (
     <>
-      <button type="button" className="term" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <button ref={button} type="button" className="term" aria-expanded={at !== null} onClick={toggle}>
         {children}
       </button>
-      {open ? <span className="term-note">{TERMS[term]}</span> : null}
+      {at ? (
+        <span className="term-note" role="note" style={at}>
+          {TERMS[term]}
+        </span>
+      ) : null}
     </>
   );
 }
@@ -323,7 +430,7 @@ function Welcome({ context }: { context: Context }) {
           chooses what.
         </li>
         <li>Click a people or a land on the map, or an entry as it appears, to read about it here.</li>
-        <li>A people’s card lets you shape their history: part them, bring them to meet others, or have them take up another tongue.</li>
+        <li>A people’s card lets you shape their history: part them, bring them to meet others, or have them take up another language.</li>
       </ol>
     </section>
   );
@@ -349,6 +456,13 @@ function WorldCard({ context }: { context: Context }) {
           ["Lands held", `${held} of ${land}`],
         ]}
       />
+      {overview.latest > 0 ? (
+        <p>
+          <button type="button" className="link" onClick={() => context.go({ kind: "history" })}>
+            Everything that has happened, year by year
+          </button>
+        </p>
+      ) : null}
       <h3>Peoples</h3>
       <table className="peoples">
         <tbody>
@@ -374,6 +488,7 @@ function WorldCard({ context }: { context: Context }) {
           <WordsCompared spoken={spoken} context={context} />
         </>
       ) : null}
+      <FamilyTrees context={context} />
       {silent.length > 0 ? (
         <>
           <h3>No longer spoken</h3>
@@ -382,6 +497,118 @@ function WorldCard({ context }: { context: Context }) {
           </p>
         </>
       ) : null}
+    </>
+  );
+}
+
+/// Every family of more than one language, each as a chart of descent.
+function FamilyTrees({ context }: { context: Context }) {
+  const { overview } = context;
+  const families = [...new Set(overview.varieties.map((v) => v.family))].filter(
+    (f) => overview.varieties.filter((v) => v.family === f && v.born <= overview.generation).length > 1,
+  );
+  if (families.length === 0) return null;
+  return (
+    <>
+      <h3>
+        <Explained term="family">Families</Explained>
+      </h3>
+      {families.map((f) => (
+        <FamilyTree
+          key={f}
+          overview={overview}
+          family={f}
+          chosen={-1}
+          onOpen={(id) => context.go({ kind: "language", variety: id })}
+        />
+      ))}
+    </>
+  );
+}
+
+/// One line of the whole history: written, or struck out from a telling
+/// set aside.
+interface Line {
+  annal: Annal;
+  telling: TellingView | null;
+  /// The first struck line of its telling, which carries the note.
+  opens: boolean;
+}
+
+/// Everything that has happened, oldest first. Nothing written is erased:
+/// what was undone or told otherwise stays where it was, struck through,
+/// and can be told that way again. Sound changes are many, so only one
+/// language's are shown, with its ancestors' before it parted from them.
+function HistoryCard({ context }: { context: Context }) {
+  const { overview } = context;
+  const [variety, setVariety] = useState<number | null>(null);
+  const lines = useMemo(() => {
+    const lineage: [number, number][] = [];
+    for (let v = variety, until = Infinity; v !== null; ) {
+      lineage.push([v, until]);
+      until = overview.varieties[v].forkedAt ?? 0;
+      v = overview.varieties[v].parent;
+    }
+    const relevant = (a: Annal) =>
+      a.kind !== "law" || lineage.some(([v, until]) => a.variety === v && a.generation <= until);
+    const written: Line[] = overview.annals.filter(relevant).map((annal) => ({ annal, telling: null, opens: false }));
+    const struck: Line[] = overview.tellings.flatMap((telling) =>
+      telling.struck.filter(relevant).map((annal, i) => ({ annal, telling, opens: i === 0 })),
+    );
+    // Struck lines follow what was written in the same year.
+    return [...written, ...struck].sort((a, b) => a.annal.generation - b.annal.generation);
+  }, [overview, variety]);
+  const spoken = overview.varieties.filter((v) => v.spoken);
+  return (
+    <>
+      <CardHead icon={ScrollText} kind="History" title="Everything that has happened" />
+      <label className="history-laws">
+        <span>
+          <Explained term="sound law">Sound changes</Explained> in
+        </span>
+        <select
+          value={variety ?? ""}
+          onChange={(e) => setVariety(e.target.value === "" ? null : Number(e.target.value))}
+        >
+          <option value="">no language</option>
+          {spoken.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      {lines.length === 0 ? (
+        <p className="muted">Nothing has happened yet.</p>
+      ) : (
+        <ol className="history">
+          {lines.map(({ annal, telling, opens }, i) => (
+            <li key={i} className={telling ? "struck" : undefined}>
+              <Year generation={annal.generation} context={context} />
+              {telling ? (
+                <span>
+                  {opens ? (
+                    <span className="struck-note">
+                      {telling.why === "undone" ? "Struck out" : "In another telling"}
+                      {" · "}
+                      <button type="button" className="link" onClick={() => context.onRestore(telling.index)}>
+                        tell it this way
+                      </button>
+                    </span>
+                  ) : null}
+                  <del>
+                    <Told text={annal.text} />
+                  </del>
+                </span>
+              ) : (
+                <button type="button" className="moment" onClick={() => context.go({ kind: "event", annal })}>
+                  <Told text={annal.text} />
+                </button>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
     </>
   );
 }
@@ -484,7 +711,7 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
           They meet another people
         </button>
         <button type="button" onClick={() => context.onDialog("shift", c.id)}>
-          They take up another tongue
+          They take up another language
         </button>
       </div>
     </>
@@ -497,10 +724,11 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
   const [allLaws, setAllLaws] = useState(false);
   const speakers = overview.communities.filter((c) => c.variety === variety);
   const daughters = overview.varieties.filter((d) => d.parent === variety);
-  const kin = overview.intelligibility
-    .filter((p) => (p.a === variety || p.b === variety) && p.score >= KIN_FLOOR)
-    .map((p) => ({ other: p.a === variety ? p.b : p.a, score: p.score }))
-    .sort((a, b) => b.score - a.score);
+  const kin = useMemo(
+    () => engine.kin(generation, variety).filter((k) => k.score >= KIN_FLOOR),
+    // `version` changes whenever the history does.
+    [engine, generation, variety, version],
+  );
   const laws = [...v.laws].reverse();
   return (
     <>
@@ -552,12 +780,22 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
           </ul>
         </>
       ) : null}
+      <FamilyHead variety={v} context={context} />
       <h3>Sounds</h3>
       <p className="segments">
         {v.consonants.join(" ")}
         <br />
         {v.vowels.join(" ")}
       </p>
+      <h3>Word building</h3>
+      <dl className="builders">
+        {v.builders.map((b) => (
+          <div key={b.relation}>
+            <dt>{b.relation}</dt>
+            <dd className="ipa">{b.shape}</dd>
+          </div>
+        ))}
+      </dl>
       <h3>
         <Explained term="sound law">Sound laws</Explained>
       </h3>
@@ -601,6 +839,26 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
           onConcept={(concept) => context.go({ kind: "word", variety, concept })}
         />
       </details>
+    </>
+  );
+}
+
+/// A language's family drawn as a chart of descent, if it has kin.
+function FamilyHead({ variety, context }: { variety: Variety; context: Context }) {
+  const { overview } = context;
+  const size = overview.varieties.filter((v) => v.family === variety.family && v.born <= overview.generation).length;
+  if (size < 2) return null;
+  return (
+    <>
+      <h3>
+        Its <Explained term="family">family</Explained>
+      </h3>
+      <FamilyTree
+        overview={overview}
+        family={variety.family}
+        chosen={variety.id}
+        onOpen={(id) => context.go({ kind: "language", variety: id })}
+      />
     </>
   );
 }

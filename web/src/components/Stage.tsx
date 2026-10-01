@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Pause, Play, SkipForward } from "lucide-react";
+import { Layers, Pause, Play, SkipForward } from "lucide-react";
 import type { Annal, Engine, Overview, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { EVENT_KIND } from "../lore";
 import { PACES, year } from "../words";
 import type { DialogKind } from "./ActionDialog";
-import { Told } from "./Chronicle";
+import { Told } from "./Told";
 import { MapView, type Tint } from "./MapView";
 import { Pedia, type Focus } from "./Pedia";
 import { SpecimenChanges } from "./Specimen";
@@ -53,7 +53,8 @@ export function Stage({
   selected,
   onSelect,
   onShelf,
-  onBook,
+  onExport,
+  onRestore,
   onScrub,
   onTick,
   onStop,
@@ -72,8 +73,10 @@ export function Stage({
   selected: number;
   onSelect: (community: number) => void;
   onShelf: () => void;
-  /// Open the book view instead.
-  onBook: () => void;
+  /// Open the page for taking names, glossaries, and the world itself out.
+  onExport: () => void;
+  /// Tell the history again as a telling set aside told it.
+  onRestore: (telling: number) => void;
   onScrub: (generation: number) => void;
   /// One generation at the present, while the years pass on their own.
   onTick: () => boolean;
@@ -91,9 +94,12 @@ export function Stage({
   const focus = trail.at(-1)!;
   const go = (next: Focus) => {
     if (next.kind === "people") onSelect(next.id);
-    setTrail((t) => [...t.slice(-TRAIL_LENGTH), next]);
+    // Opening the card already open adds nothing to the trail.
+    setTrail((t) => (JSON.stringify(t.at(-1)) === JSON.stringify(next) ? t : [...t.slice(-TRAIL_LENGTH), next]));
   };
-  const back = () => setTrail((t) => (t.length > 1 ? t.slice(0, -1) : t));
+
+  // What the map draws beside the lands and peoples.
+  const [layers, setLayers] = useState({ names: true, routes: true, contacts: true });
 
   // Time passing on its own.
   const [playing, setPlaying] = useState(false);
@@ -189,8 +195,8 @@ export function Stage({
           <button type="button" className="link brand" onClick={onShelf} title="Back to the shelf">
             Langgen
           </button>
-          <button type="button" className="link" onClick={onBook}>
-            Book view
+          <button type="button" className="link" onClick={onExport}>
+            Export
           </button>
         </nav>
         <span className="stage-title">{title}</span>
@@ -203,6 +209,9 @@ export function Stage({
           overview={overview}
           generation={generation}
           tint={tint}
+          names={layers.names}
+          routes={layers.routes}
+          contacts={layers.contacts}
           chosen={new Set(highlight.chosen)}
           lands={new Set(highlight.lands)}
           beacons={beacons}
@@ -211,6 +220,27 @@ export function Stage({
           onPeople={(id) => go({ kind: "people", id })}
           onLand={(region) => go({ kind: "land", region })}
         />
+        <details className="map-layers">
+          <summary title="What the map shows">
+            <Layers size={16} aria-hidden="true" /> Show
+          </summary>
+          {(
+            [
+              ["names", "Names of lands"],
+              ["routes", "Roads peoples took"],
+              ["contacts", "Dealings between peoples"],
+            ] as const
+          ).map(([key, label]) => (
+            <label key={key}>
+              <input
+                type="checkbox"
+                checked={layers[key]}
+                onChange={(e) => setLayers({ ...layers, [key]: e.target.checked })}
+              />
+              {label}
+            </label>
+          ))}
+        </details>
         <Feed
           annals={overview.annals}
           generation={overview.generation}
@@ -223,9 +253,8 @@ export function Stage({
       </section>
 
       <Pedia
-        focus={focus}
-        canBack={trail.length > 1}
-        onBack={back}
+        trail={trail}
+        onReturn={(i) => setTrail((t) => t.slice(0, i + 1))}
         engine={engine}
         version={version}
         generation={generation}
@@ -235,6 +264,7 @@ export function Stage({
         go={go}
         onScrub={onScrub}
         onPlay={() => setPlaying(true)}
+        onRestore={onRestore}
         onDialog={(kind, community) => {
           onSelect(community);
           onDialog(kind);
@@ -330,7 +360,7 @@ export function Stage({
                   The {people.name} meet another people
                 </button>
                 <button type="button" onClick={() => onDialog("shift")}>
-                  The {people.name} take up another tongue
+                  The {people.name} take up another language
                 </button>
               </>
             ) : null}
