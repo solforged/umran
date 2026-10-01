@@ -12,9 +12,8 @@ Read further when the task touches it:
 - `docs/engine.md`: the engine model, module by module, the mechanism
   examples, and what is not yet modelled.
 - `docs/history.md`: actions, replay, branching, recipes, and autosave.
-- Design doc (plan, milestone status, calibration results):
-  https://claude.ai/code/artifact/965cab5c-8222-4277-8b9d-804394941e3c.
-  Record milestone progress there, not here.
+- `README.md`: the public face of the project, with screenshots in
+  `docs/images/`. Refresh it when the workbench changes visibly.
 
 ## Architecture
 
