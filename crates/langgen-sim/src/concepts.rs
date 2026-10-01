@@ -29,6 +29,38 @@ pub enum Field {
     Function,
 }
 
+impl Field {
+    /// The WOLD chapter name.
+    pub fn label(self) -> &'static str {
+        use Field::*;
+        match self {
+            PhysicalWorld => "The physical world",
+            Kinship => "Kinship",
+            Animals => "Animals",
+            Body => "The body",
+            FoodDrink => "Food and drink",
+            ClothingGrooming => "Clothing and grooming",
+            House => "The house",
+            Agriculture => "Agriculture and vegetation",
+            BasicActions => "Basic actions and technology",
+            Motion => "Motion",
+            Possession => "Possession",
+            Spatial => "Spatial relations",
+            Quantity => "Quantity",
+            Time => "Time",
+            SensePerception => "Sense perception",
+            Emotions => "Emotions and values",
+            Cognition => "Cognition",
+            Speech => "Speech and language",
+            Social => "Social and political relations",
+            Warfare => "Warfare and hunting",
+            Law => "Law",
+            Religion => "Religion and belief",
+            Function => "Function words",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum Class {
     Entity,

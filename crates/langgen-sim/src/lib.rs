@@ -1,11 +1,11 @@
-//! Contact-aware language change simulator.
-//!
-//! Replaces `langgen-core` milestone by milestone; see the design doc linked
-//! from AGENTS.md. Milestone 1 covers sounds, spelling, concepts, and
-//! founding roots.
+//! Contact-aware language change simulator: communities, their sound
+//! preferences, and their contacts drive sound change, borrowing, word
+//! competition, splits, and language shift. See AGENTS.md for the model
+//! and the design doc it links for plans and results.
 
 pub mod adapt;
 pub mod change;
+pub mod chronicle;
 pub mod compare;
 pub mod concepts;
 pub mod flavor;
@@ -24,6 +24,7 @@ pub mod wold;
 pub mod world;
 
 pub use change::{Env, Matcher, Rewrite, SoundChange, apply_all};
+pub use chronicle::{Action, Chronicle, ENGINE_REVISION, Recipe};
 pub use concepts::{CONCEPTS, Class, Concept, Field, Iconic, Tier};
 pub use flavor::Flavor;
 pub use form::{Form, Seg, Syllable};

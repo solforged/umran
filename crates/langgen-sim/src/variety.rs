@@ -13,6 +13,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 /// its words, and the sound laws it has undergone.
 #[derive(Clone, Debug)]
 pub struct Variety {
+    /// What people call it, e.g. "Hill speech".
+    pub name: String,
     pub profile: SoundProfile,
     /// Segments sampled at founding. The current inventory is whatever the
     /// living words use; see `inventory`.
@@ -43,6 +45,7 @@ impl Variety {
             Inventory::sample(&profile.inventory, &mut stream(seed, &[key("inventory")]));
         let phonotactics = Phonotactics::compile(&profile.phonotactics, &inventory);
         Self {
+            name: String::new(),
             profile: profile.clone(),
             lexicon: Lexicon::found(mint_roots(seed, &phonotactics)),
             founding_inventory: inventory,

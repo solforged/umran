@@ -8,3 +8,6 @@ description = "Contact-aware language change simulator"
 rand.workspace = true
 rand_chacha.workspace = true
 serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

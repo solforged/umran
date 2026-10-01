@@ -1,668 +1,798 @@
-use langgen_core::linguistics::{LexicalClass, SemanticFrame, StressPattern};
-use langgen_core::{
-    Aesthetic, CATALOG, Community, FoundLanguage, History, HistoryCheckpoint, HistoryEffect,
-    HistoryEvent, Lexeme, LexemeRef, Origin, PhonemeId, SemanticOperation, Syllable, Variety, Word,
-    WordTrace, rule_detail, rule_label,
+//! Browser facade over `langgen-sim`: the history lives here, and the
+//! browser asks for presentation-ready views of any generation as JSON.
+
+use langgen_sim::compare::intelligibility;
+use langgen_sim::concepts::related;
+use langgen_sim::{
+    Action, CATALOG, Chronicle, ENGINE_REVISION, Event, Flavor, Form, Lexeme, Origin, PhonemeId,
+    Recipe, SoundProfile, World, WorldEvent, catalog,
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
+/// The browser-facing history; `Bench` holds the logic so it can be tested
+/// natively, where `JsValue` is unavailable.
 #[wasm_bindgen]
 pub struct Workbench {
-    history: History,
+    bench: Bench,
 }
 
 #[wasm_bindgen]
 impl Workbench {
     #[wasm_bindgen(constructor)]
-    pub fn new(seed: u32, aesthetic: &str, empty: bool) -> Result<Workbench, JsValue> {
-        let aesthetic = Aesthetic::by_id(aesthetic)
-            .ok_or_else(|| fail(format!("Unknown aesthetic '{aesthetic}'.")))?;
-        let history = if empty {
-            History::new(u64::from(seed))
-        } else {
-            History::coastal_scenario(u64::from(seed), aesthetic).map_err(fail)?
-        };
-        Ok(Workbench { history })
+    pub fn new(seed: u32) -> Workbench {
+        Workbench {
+            bench: Bench::new(seed),
+        }
     }
 
-    pub fn latest(&self) -> u32 {
-        self.history
-            .checkpoints()
-            .last()
-            .map_or(0, |cp| cp.id as u32)
-    }
-
-    pub fn snapshot(&self, checkpoint: u32) -> Result<String, JsValue> {
-        to_json(&present(&self.history, Some(checkpoint), None).map_err(fail)?)
-    }
-
-    pub fn options(
-        &self,
-        checkpoint: u32,
-        variety: u32,
-        base: &str,
-        sense: u32,
-    ) -> Result<String, JsValue> {
-        let options = self
-            .history
-            .formations(checkpoint as usize, u64::from(variety), base, sense)
-            .map_err(fail)?;
-        let view = checkpoint_at(&self.history, checkpoint).map_err(fail)?;
-        let variety = view
-            .varieties
-            .iter()
-            .find(|item| item.id == u64::from(variety))
-            .ok_or_else(|| fail("The selected language variety is absent."))?;
-        let options: Vec<_> = options
-            .iter()
-            .map(|option| BrowserFormationOption {
-                construction: &option.construction,
-                label: &option.label,
-                gloss: &option.gloss,
-                form: variety.form(&option.word),
-                ipa: word_ipa(&option.word, option.stress),
-                base: &option.base,
-                sense: option.sense,
-                exponent: variety.form(&option.exponent),
-                existing: option.existing.as_deref(),
-            })
-            .collect();
-        to_json(&options)
-    }
-
-    pub fn preview(&self, event_json: &str) -> Result<String, JsValue> {
-        let projected = self
-            .history
-            .preview(read_event(event_json)?)
-            .map_err(fail)?;
-        to_json(&present(&self.history, None, Some(&projected)).map_err(fail)?)
-    }
-
-    pub fn commit(&mut self, event_json: &str) -> Result<String, JsValue> {
-        self.history.commit(read_event(event_json)?).map_err(fail)?;
-        self.snapshot(self.latest())
+    pub fn load(json: &str) -> Result<Workbench, JsValue> {
+        Ok(Workbench {
+            bench: Bench::load(json).map_err(fail)?,
+        })
     }
 
     pub fn save(&self) -> Result<String, JsValue> {
-        self.history.to_json().map_err(fail)
+        self.bench.save().map_err(fail)
     }
 
-    pub fn load(&mut self, json: &str) -> Result<(), JsValue> {
-        let history = History::from_json(json).map_err(fail)?;
-        constrain_history(&history).map_err(fail)?;
-        self.history = history;
+    pub fn catalog() -> Result<String, JsValue> {
+        Bench::catalog().map_err(fail)
+    }
+
+    pub fn act(&mut self, action: &str) -> Result<(), JsValue> {
+        self.bench.act(action).map_err(fail)
+    }
+
+    pub fn undo(&mut self) -> bool {
+        self.bench.undo()
+    }
+
+    pub fn branch(&mut self, generation: u32) {
+        self.bench.branch(generation)
+    }
+
+    pub fn latest(&self) -> u32 {
+        self.bench.latest()
+    }
+
+    pub fn overview(&mut self, generation: u32) -> Result<String, JsValue> {
+        self.bench.overview(generation).map_err(fail)
+    }
+
+    pub fn lexicon(&mut self, generation: u32, variety: usize) -> Result<String, JsValue> {
+        self.bench.lexicon(generation, variety).map_err(fail)
+    }
+
+    pub fn word(
+        &mut self,
+        generation: u32,
+        variety: usize,
+        concept: &str,
+    ) -> Result<String, JsValue> {
+        self.bench.word(generation, variety, concept).map_err(fail)
+    }
+}
+
+pub struct Bench {
+    chronicle: Chronicle,
+    /// The last world requested, so repeated views of one generation do not
+    /// replay it again.
+    cached: Option<World>,
+    /// Engine revision a loaded recipe was saved with, if it differs.
+    saved_revision: Option<u32>,
+}
+
+impl Bench {
+    pub fn new(seed: u32) -> Bench {
+        Bench {
+            chronicle: Chronicle::new(u64::from(seed)),
+            cached: None,
+            saved_revision: None,
+        }
+    }
+
+    /// Restores a saved recipe.
+    pub fn load(json: &str) -> Result<Bench, String> {
+        let recipe: Recipe =
+            serde_json::from_str(json).map_err(|e| format!("Not a langgen save: {e}"))?;
+        let chronicle = Chronicle::from_recipe(&recipe)?;
+        Ok(Bench {
+            chronicle,
+            cached: None,
+            saved_revision: (recipe.revision != ENGINE_REVISION).then_some(recipe.revision),
+        })
+    }
+
+    pub fn save(&self) -> Result<String, String> {
+        serde_json::to_string_pretty(&self.chronicle.recipe()).map_err(|e| e.to_string())
+    }
+
+    /// Sound profiles, flavors, and contact kinds to offer in forms.
+    pub fn catalog() -> Result<String, String> {
+        to_json(&CatalogView {
+            profiles: SoundProfile::examples()
+                .into_iter()
+                .map(|p| Choice {
+                    id: p.id,
+                    name: p.name,
+                    description: p.description,
+                })
+                .collect(),
+            flavors: Flavor::examples()
+                .into_iter()
+                .map(|f| Choice {
+                    id: f.id,
+                    name: f.name,
+                    description: f.brief,
+                })
+                .collect(),
+            contacts: [
+                (
+                    "neighbours",
+                    "Neighbours",
+                    "Plain proximity; every field equally exposed.",
+                ),
+                ("trade", "Trade", "Goods, tools, food, and seafaring."),
+                (
+                    "rule",
+                    "Rule",
+                    "Government, law, and war; can lead to language shift.",
+                ),
+                (
+                    "religion",
+                    "Religion",
+                    "Belief, ritual, and the vocabulary of thought.",
+                ),
+                (
+                    "intermarriage",
+                    "Intermarriage",
+                    "Households, kin, and food; can lead to shift.",
+                ),
+            ]
+            .into_iter()
+            .map(|(id, name, description)| Choice {
+                id: id.into(),
+                name: name.into(),
+                description: description.into(),
+            })
+            .collect(),
+        })
+    }
+
+    /// Applies an action (JSON, as `langgen_sim::Action`) at the latest
+    /// generation. Rejected actions change nothing.
+    pub fn act(&mut self, action: &str) -> Result<(), String> {
+        let action: Action =
+            serde_json::from_str(action).map_err(|e| format!("Malformed action: {e}"))?;
+        self.chronicle.act(action)?;
+        self.cached = None;
         Ok(())
     }
-}
 
-#[derive(Serialize)]
-struct BrowserSnapshot<'a> {
-    seed: u32,
-    checkpoint: u32,
-    latest: u32,
-    summary: &'a str,
-    event: &'a Option<HistoryEvent>,
-    checkpoints: Vec<BrowserTimelineEntry<'a>>,
-    communities: &'a [Community],
-    varieties: Vec<BrowserVariety<'a>>,
-    effects: &'a [HistoryEffect],
-    rules: Vec<BrowserRule<'a>>,
-}
-
-#[derive(Serialize)]
-struct BrowserTimelineEntry<'a> {
-    id: u32,
-    summary: &'a str,
-    event: &'a Option<HistoryEvent>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct BrowserVariety<'a> {
-    id: u32,
-    name: &'a str,
-    parent: Option<u32>,
-    founded_at: u32,
-    aesthetic: BrowserAesthetic<'a>,
-    inventory: BrowserInventory,
-    classes: &'a [LexicalClass],
-    stress: &'a StressPattern,
-    constructions: Vec<BrowserConstruction<'a>>,
-    lexicon: Vec<BrowserLexeme<'a>>,
-}
-
-#[derive(Serialize)]
-struct BrowserAesthetic<'a> {
-    id: &'a str,
-    name: &'a str,
-    description: &'a str,
-}
-
-#[derive(Serialize)]
-struct BrowserInventory {
-    consonants: Vec<&'static str>,
-    vowels: Vec<&'static str>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct BrowserConstruction<'a> {
-    id: &'a str,
-    label: &'a str,
-    input_class: &'a str,
-    output_class: &'a str,
-    operation: String,
-    exponents: Vec<String>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct BrowserLexeme<'a> {
-    id: &'a str,
-    class_id: &'a str,
-    class_label: &'a str,
-    senses: Vec<BrowserSense<'a>>,
-    form: String,
-    ipa: String,
-    stress: usize,
-    boundaries: &'a [usize],
-    analysis: Option<BrowserAnalysis<'a>>,
-    origin: BrowserOrigin<'a>,
-    retired: bool,
-    traces: &'a [WordTrace],
-}
-
-#[derive(Serialize)]
-struct BrowserSense<'a> {
-    id: u32,
-    gloss: String,
-    frame: &'a SemanticFrame,
-}
-
-#[derive(Serialize)]
-struct BrowserAnalysis<'a> {
-    base: &'a str,
-    sense: u32,
-    construction: &'a str,
-    label: &'a str,
-}
-
-#[derive(Serialize)]
-struct BrowserOrigin<'a> {
-    kind: &'static str,
-    label: String,
-    source: Option<&'a LexemeRef>,
-    construction: Option<&'a str>,
-    sense: Option<u32>,
-    checkpoint: u32,
-}
-
-#[derive(Serialize)]
-struct BrowserRule<'a> {
-    id: &'a str,
-    label: String,
-    detail: String,
-}
-
-#[derive(Serialize)]
-struct BrowserFormationOption<'a> {
-    construction: &'a str,
-    label: &'a str,
-    gloss: &'a str,
-    form: String,
-    ipa: String,
-    base: &'a str,
-    sense: u32,
-    exponent: String,
-    existing: Option<&'a str>,
-}
-
-fn present<'a>(
-    history: &'a History,
-    selected: Option<u32>,
-    projected: Option<&'a HistoryCheckpoint>,
-) -> Result<BrowserSnapshot<'a>, String> {
-    let accepted = history.checkpoints();
-    let accepted_latest = accepted.last().ok_or("This history has no checkpoints.")?;
-    let view = match projected {
-        Some(view) => view,
-        None => checkpoint_at(history, selected.ok_or("No checkpoint was selected.")?)?,
-    };
-    constrain_checkpoint(view)?;
-    let mut timeline = accepted
-        .iter()
-        .map(timeline_entry)
-        .collect::<Result<Vec<_>, _>>()?;
-    if projected.is_some() {
-        timeline.push(timeline_entry(view)?);
+    pub fn undo(&mut self) -> bool {
+        self.cached = None;
+        self.chronicle.undo().is_some()
     }
-    Ok(BrowserSnapshot {
-        seed: fit_u64(history.seed())?,
-        checkpoint: fit_usize(view.id)?,
-        latest: fit_usize(if projected.is_some() {
-            view.id
-        } else {
-            accepted_latest.id
-        })?,
-        summary: &view.summary,
-        event: &view.event,
-        checkpoints: timeline,
-        communities: &view.communities,
-        varieties: view
-            .varieties
-            .iter()
-            .map(|variety| browser_variety(history, view, variety))
-            .collect::<Result<_, _>>()?,
-        effects: &view.effects,
-        rules: view
-            .rules
-            .iter()
-            .map(|rule| BrowserRule {
-                id: &rule.id,
-                label: rule_label(&rule.id),
-                detail: rule_detail(&rule.id),
-            })
-            .collect(),
-    })
-}
 
-fn timeline_entry(checkpoint: &HistoryCheckpoint) -> Result<BrowserTimelineEntry<'_>, String> {
-    Ok(BrowserTimelineEntry {
-        id: fit_usize(checkpoint.id)?,
-        summary: &checkpoint.summary,
-        event: &checkpoint.event,
-    })
-}
+    /// Discards everything after `generation`.
+    pub fn branch(&mut self, generation: u32) {
+        self.cached = None;
+        self.chronicle.branch_at(generation);
+    }
 
-fn browser_variety<'a>(
-    history: &'a History,
-    view: &'a HistoryCheckpoint,
-    variety: &'a Variety,
-) -> Result<BrowserVariety<'a>, String> {
-    Ok(BrowserVariety {
-        id: fit_u64(variety.id)?,
-        name: &variety.name,
-        parent: variety.parent.map(fit_u64).transpose()?,
-        founded_at: fit_usize(variety.founded_at)?,
-        aesthetic: BrowserAesthetic {
-            id: &variety.aesthetic.id,
-            name: &variety.aesthetic.name,
-            description: &variety.aesthetic.description,
-        },
-        inventory: BrowserInventory {
-            consonants: ipa_list(&variety.consonants),
-            vowels: ipa_list(&variety.vowels),
-        },
-        classes: &variety.grammar.classes,
-        stress: &variety.grammar.stress,
-        constructions: variety
-            .grammar
-            .constructions
-            .iter()
-            .map(|construction| BrowserConstruction {
-                id: &construction.id,
-                label: &construction.label,
-                input_class: &construction.input_class,
-                output_class: &construction.output_class,
-                operation: match &construction.operation {
-                    SemanticOperation::Participant(role) => {
-                        format!("Names an event's {role:?} participant")
-                    }
-                    SemanticOperation::PlaceOf => "Names a place associated with an event".into(),
-                    SemanticOperation::Collective => "Names a group of countable entities".into(),
-                },
-                exponents: construction
-                    .exponents()
-                    .iter()
-                    .map(|word| variety.form(word))
-                    .collect(),
-            })
-            .collect(),
-        lexicon: variety
-            .lexicon
-            .iter()
-            .map(|lexeme| browser_lexeme(history, view, variety, lexeme))
-            .collect::<Result<_, _>>()?,
-    })
-}
+    pub fn latest(&self) -> u32 {
+        self.chronicle.latest().generation
+    }
 
-fn browser_lexeme<'a>(
-    history: &'a History,
-    view: &'a HistoryCheckpoint,
-    variety: &'a Variety,
-    lexeme: &'a Lexeme,
-) -> Result<BrowserLexeme<'a>, String> {
-    let class = variety
-        .grammar
-        .classes
-        .iter()
-        .find(|class| class.id == lexeme.class)
-        .ok_or("A word refers to an absent lexical class.")?;
-    let analysis = lexeme
-        .analysis
-        .as_ref()
-        .map(|analysis| {
-            let construction = variety
-                .grammar
-                .constructions
+    /// Communities, varieties, contacts, and the timeline at `generation`.
+    pub fn overview(&mut self, generation: u32) -> Result<String, String> {
+        let latest = self.latest();
+        let timeline = self.timeline();
+        let seed = self.chronicle.seed;
+        let saved_revision = self.saved_revision;
+        let world = self.world(generation);
+        let spoken = world.spoken();
+        let laws = catalog();
+        let law_label = |id: &str| {
+            laws.iter()
+                .find(|l| l.id == id)
+                .map_or_else(|| substrate_label(id), |l| l.label.to_string())
+        };
+        let view = Overview {
+            seed,
+            generation: world.generation,
+            latest,
+            revision: ENGINE_REVISION,
+            saved_revision,
+            timeline,
+            communities: world
+                .communities
                 .iter()
-                .find(|item| item.id == analysis.construction)
-                .ok_or("A word refers to an absent construction.")?;
-            Ok::<_, String>(BrowserAnalysis {
-                base: &analysis.base,
-                sense: analysis.sense,
-                construction: &analysis.construction,
-                label: &construction.label,
-            })
-        })
-        .transpose()?;
-    Ok(BrowserLexeme {
-        id: &lexeme.id,
-        class_id: &lexeme.class,
-        class_label: &class.label,
-        senses: lexeme
-            .senses
+                .enumerate()
+                .map(|(id, c)| CommunityView {
+                    id,
+                    name: c.name.clone(),
+                    variety: c.variety,
+                    size: c.size,
+                    prestige: c.prestige,
+                    power: c.power,
+                    openness: c.openness,
+                })
+                .collect(),
+            varieties: world
+                .varieties
+                .iter()
+                .enumerate()
+                .map(|(id, v)| {
+                    let (consonants, vowels) = v.inventory();
+                    VarietyView {
+                        id,
+                        name: v.name.clone(),
+                        parent: v.parent.map(|f| f.variety),
+                        forked_at: v.parent.map(|f| f.generation),
+                        family: world.family(id),
+                        spoken: spoken[id],
+                        profile: v.profile.name.clone(),
+                        consonants: ipas(&consonants),
+                        vowels: ipas(&vowels),
+                        laws: v
+                            .laws
+                            .iter()
+                            .map(|(generation, id)| LawView {
+                                generation: *generation,
+                                label: law_label(id),
+                            })
+                            .collect(),
+                        words: v.lexicon.living().count(),
+                    }
+                })
+                .collect(),
+            contacts: world
+                .contacts
+                .iter()
+                .map(|c| ContactView {
+                    a: c.a,
+                    b: c.b,
+                    intensity: c.intensity,
+                    kind: kebab(&format!("{:?}", c.kind)),
+                })
+                .collect(),
+            intelligibility: spoken_pairs(world),
+        };
+        to_json(&view)
+    }
+
+    /// Every concept's current word in `variety` at `generation`.
+    pub fn lexicon(&mut self, generation: u32, variety: usize) -> Result<String, String> {
+        let world = self.world(generation);
+        let v = world
+            .varieties
+            .get(variety)
+            .ok_or("No such language variety.")?;
+        let rows: Vec<LexiconRow> = v
+            .lexicon
+            .slots
             .iter()
-            .map(|sense| BrowserSense {
-                id: sense.id,
-                gloss: sense.meaning.label(),
-                frame: &sense.frame,
+            .filter_map(|slot| {
+                let word = v.lexicon.get(slot.dominant()?);
+                Some(LexiconRow {
+                    concept: slot.concept.id,
+                    gloss: slot.concept.gloss,
+                    field: slot.concept.field.label(),
+                    rank: slot.concept.stability,
+                    spelled: v.spell(&word.form),
+                    ipa: word.form.ipa(),
+                    origin: origin_view(world, variety, word),
+                    changes: word
+                        .log
+                        .iter()
+                        .filter(|e| matches!(e.event, Event::SoundLaw { .. }))
+                        .count(),
+                    competitors: slot.variants.len() - 1,
+                })
             })
-            .collect(),
-        form: variety.form(&lexeme.word),
-        ipa: word_ipa(&lexeme.word, lexeme.stress),
-        stress: lexeme.stress,
-        boundaries: &lexeme.boundaries,
-        analysis,
-        origin: browser_origin(history, view, &lexeme.origin)?,
-        retired: lexeme.retired,
-        traces: &lexeme.traces,
-    })
+            .collect();
+        to_json(&rows)
+    }
+
+    /// The words competing for `concept` in `variety`, their histories, and
+    /// cognates in related languages.
+    pub fn word(
+        &mut self,
+        generation: u32,
+        variety: usize,
+        concept: &str,
+    ) -> Result<String, String> {
+        let concept = langgen_sim::concepts::by_id(concept).ok_or("Unknown concept.")?;
+        let world = self.world(generation);
+        let v = world
+            .varieties
+            .get(variety)
+            .ok_or("No such language variety.")?;
+        let slot = v.lexicon.slot(concept);
+        let mut variants: Vec<VariantView> = slot
+            .variants
+            .iter()
+            .map(|var| {
+                let word = v.lexicon.get(var.lexeme);
+                VariantView {
+                    spelled: v.spell(&word.form),
+                    ipa: word.form.ipa(),
+                    share: var.weight,
+                    origin: origin_view(world, variety, word),
+                    senses: v.lexicon.senses(word.id).map(|c| c.gloss).collect(),
+                    history: history(world, variety, word),
+                }
+            })
+            .collect();
+        variants.sort_by(|a, b| b.share.total_cmp(&a.share));
+        let cognates = (0..world.varieties.len())
+            .filter(|&other| other != variety && world.spoken()[other])
+            .filter(|&other| world.cognate(variety, other, concept))
+            .filter_map(|other| {
+                let o = &world.varieties[other];
+                let word = o.lexicon.word_for(concept)?;
+                Some(Cognate {
+                    variety: other,
+                    name: o.name.clone(),
+                    spelled: o.spell(&word.form),
+                    ipa: word.form.ipa(),
+                })
+            })
+            .collect();
+        to_json(&WordView {
+            concept: concept.id,
+            gloss: concept.gloss,
+            field: concept.field.label(),
+            rank: concept.stability,
+            related: related(concept).map(|c| c.gloss).collect(),
+            variants,
+            cognates,
+        })
+    }
 }
 
-fn browser_origin<'a>(
-    history: &'a History,
-    view: &'a HistoryCheckpoint,
-    origin: &'a Origin,
-) -> Result<BrowserOrigin<'a>, String> {
-    let (kind, source, construction, sense, checkpoint) = match origin {
-        Origin::Unrecorded { checkpoint, .. } => ("Unrecorded", None, None, None, *checkpoint),
-        Origin::Formed {
-            source,
-            sense,
-            construction,
-            checkpoint,
-        } => (
-            "Formed",
-            Some(source),
-            Some(construction.as_str()),
-            Some(*sense),
-            *checkpoint,
-        ),
-        Origin::Borrowed { source, checkpoint } => {
-            ("Borrowed", Some(source), None, None, *checkpoint)
+impl Bench {
+    fn world(&mut self, generation: u32) -> &World {
+        let target = generation.min(self.latest());
+        if self.cached.as_ref().is_none_or(|w| w.generation != target) {
+            self.cached = Some(self.chronicle.world_at(target));
         }
-        Origin::Inherited { source, checkpoint } => {
-            ("Inherited", Some(source), None, None, *checkpoint)
+        self.cached.as_ref().expect("just cached")
+    }
+
+    /// Actions and world events, in order, with readable labels.
+    fn timeline(&self) -> Vec<Marker> {
+        let latest = self.chronicle.latest();
+        let name = |c: usize| {
+            latest
+                .communities
+                .get(c)
+                .map_or("?".into(), |c| c.name.clone())
+        };
+        let mut out: Vec<Marker> = Vec::new();
+        for (generation, action) in self.chronicle.timeline() {
+            let label = match action {
+                Action::Found {
+                    name,
+                    profile,
+                    flavors,
+                    ..
+                } => {
+                    let flavor = if flavors.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" + {}", flavors.join(", "))
+                    };
+                    format!("{name} founded ({profile}{flavor})")
+                }
+                Action::Connect {
+                    a,
+                    b,
+                    contact,
+                    intensity,
+                } => {
+                    format!(
+                        "{} and {} in {} contact ({:.0}%)",
+                        name(*a),
+                        name(*b),
+                        kebab(&format!("{contact:?}")),
+                        intensity * 100.0
+                    )
+                }
+                Action::Run { generations } => format!("Ran {generations} generations"),
+                // Splits and shifts appear as world events below.
+                Action::Split { .. } | Action::Shift { .. } => continue,
+            };
+            let kind = match action {
+                Action::Run { .. } => "run",
+                _ => "action",
+            };
+            out.push(Marker {
+                generation,
+                kind,
+                label,
+            });
         }
+        for (generation, event) in &latest.events {
+            let label = match event {
+                WorldEvent::Split {
+                    community,
+                    daughter,
+                } => {
+                    format!("{} split from {}", name(*daughter), name(*community))
+                }
+                WorldEvent::Shift {
+                    community, toward, ..
+                } => {
+                    format!(
+                        "{} shifted to {}'s language",
+                        name(*community),
+                        name(*toward)
+                    )
+                }
+            };
+            out.push(Marker {
+                generation: *generation,
+                kind: "event",
+                label,
+            });
+        }
+        out.sort_by_key(|m| m.generation);
+        out
+    }
+}
+
+fn spoken_pairs(world: &World) -> Vec<Pair> {
+    let spoken: Vec<usize> = (0..world.varieties.len())
+        .filter(|&v| world.spoken()[v])
+        .collect();
+    let mut out = Vec::new();
+    for (i, &a) in spoken.iter().enumerate() {
+        for &b in &spoken[i + 1..] {
+            out.push(Pair {
+                a,
+                b,
+                score: intelligibility(&world.varieties[a].lexicon, &world.varieties[b].lexicon),
+            });
+        }
+    }
+    out
+}
+
+/// Whether a "borrowed" word was really kept from the speakers' old
+/// language when their community shifted (a substrate word), judged in the
+/// variety where the word entered.
+fn kept_through_shift(world: &World, variety: usize, word: &Lexeme) -> bool {
+    let Origin::Borrowed { from, .. } = word.origin else {
+        return false;
     };
-    let label = if let Some(source) = source {
-        let source_view = history
-            .checkpoints()
-            .get(source.checkpoint)
-            .or_else(|| (view.id == source.checkpoint).then_some(view))
-            .ok_or("A historical source checkpoint is absent.")?;
-        let source_variety = source_view
-            .varieties
-            .iter()
-            .find(|item| item.id == source.variety)
-            .ok_or("A historical source language is absent.")?;
-        let source_word = source_variety
-            .lexicon
-            .iter()
-            .find(|item| item.id == source.lexeme)
-            .ok_or("A historical source word is absent.")?;
-        let source_meaning = source_word
-            .senses
-            .iter()
-            .find(|item| sense.is_none_or(|id| item.id == id))
-            .ok_or("A historical source sense is absent.")?
-            .meaning
-            .label();
-        let source_form = source_variety.form(&source_word.word);
-        match construction {
-            Some(id) => {
-                let construction = source_variety
-                    .grammar
-                    .constructions
+    let (owner, _) = world.root_of(variety, word.id);
+    world.varieties[owner]
+        .parent
+        .is_some_and(|fork| fork.generation == word.born && fork.variety != from)
+}
+
+fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
+    if kept_through_shift(world, variety, word) {
+        let Origin::Borrowed { from, .. } = word.origin else {
+            unreachable!()
+        };
+        return OriginView {
+            kind: "kept",
+            from: Some(world.varieties[from].name.clone()),
+            generation: word.born,
+        };
+    }
+    match word.origin {
+        Origin::Founding => OriginView {
+            kind: "inherited",
+            from: None,
+            generation: word.born,
+        },
+        Origin::Expressive => OriginView {
+            kind: "coined",
+            from: None,
+            generation: word.born,
+        },
+        Origin::Borrowed { from, .. } => OriginView {
+            kind: "borrowed",
+            from: Some(world.varieties[from].name.clone()),
+            generation: word.born,
+        },
+    }
+}
+
+/// The form a word had just after log entry `i`.
+fn form_after(word: &Lexeme, i: usize) -> &Form {
+    word.log[i + 1..]
+        .iter()
+        .find_map(|e| match &e.event {
+            Event::SoundLaw { before, .. } => Some(before),
+            _ => None,
+        })
+        .unwrap_or(&word.form)
+}
+
+fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
+    let laws = catalog();
+    let mut out = vec![HistoryLine {
+        generation: word.born,
+        text: match word.origin {
+            Origin::Founding => format!(
+                "A root of the founding language, for '{}'",
+                word.first_sense.gloss
+            ),
+            Origin::Expressive => format!("Coined for '{}'", word.first_sense.gloss),
+            Origin::Borrowed { from, .. } if kept_through_shift(world, variety, word) => format!(
+                "Kept from {} when its speakers changed language, for '{}'",
+                world.varieties[from].name, word.first_sense.gloss
+            ),
+            Origin::Borrowed { from, .. } => format!(
+                "Borrowed from {} for '{}'",
+                world.varieties[from].name, word.first_sense.gloss
+            ),
+        },
+    }];
+    let kept = kept_through_shift(world, variety, word);
+    for (i, entry) in word.log.iter().enumerate() {
+        let text = match &entry.event {
+            // A kept word was never heard as foreign.
+            Event::Borrowed { .. } if kept => continue,
+            Event::Borrowed { source, .. } => format!(
+                "Heard as /{}/, adapted to /{}/",
+                source.ipa(),
+                form_after(word, i).ipa()
+            ),
+            Event::SoundLaw { law, before } => {
+                let label = laws
                     .iter()
-                    .find(|item| item.id == id)
-                    .ok_or("A historical source construction is absent.")?;
+                    .find(|l| l.id == *law)
+                    .map_or_else(|| substrate_label(law), |l| l.label.to_string());
                 format!(
-                    "Formed with {} from {source_form} ‘{source_meaning}’ in {}.",
-                    construction.label, source_variety.name
+                    "{label}: /{}/ → /{}/",
+                    before.ipa(),
+                    form_after(word, i).ipa()
                 )
             }
-            None => format!(
-                "{kind} from {source_form} ‘{source_meaning}’ in {}.",
-                source_variety.name
-            ),
-        }
+            Event::Extended { to } => format!("Also came to mean '{}'", to.gloss),
+            Event::Lost { sense } => format!("No longer used for '{}'", sense.gloss),
+            Event::Obsolete => "Fell out of use".into(),
+        };
+        out.push(HistoryLine {
+            generation: entry.generation,
+            text,
+        });
+    }
+    out
+}
+
+fn substrate_label(id: &str) -> String {
+    if id == "substrate" {
+        "Speakers' old accent merged a sound".into()
     } else {
-        "Earlier history unrecorded; not a claim that the word was coined here.".into()
-    };
-    Ok(BrowserOrigin {
-        kind,
-        label,
-        source,
-        construction,
-        sense,
-        checkpoint: fit_usize(checkpoint)?,
-    })
-}
-
-fn checkpoint_at(history: &History, id: u32) -> Result<&HistoryCheckpoint, String> {
-    history
-        .checkpoints()
-        .get(id as usize)
-        .ok_or_else(|| format!("There is no checkpoint {id} in this history."))
-}
-
-fn read_event(event_json: &str) -> Result<HistoryEvent, JsValue> {
-    let event = serde_json::from_str(event_json)
-        .map_err(|err| fail(format!("Could not read that event: {err}")))?;
-    constrain_event(&event).map_err(fail)?;
-    Ok(event)
-}
-
-fn constrain_history(history: &History) -> Result<(), String> {
-    fit_u64(history.seed())?;
-    for checkpoint in history.checkpoints() {
-        constrain_checkpoint(checkpoint)?;
-    }
-    Ok(())
-}
-
-fn constrain_checkpoint(checkpoint: &HistoryCheckpoint) -> Result<(), String> {
-    fit_usize(checkpoint.id)?;
-    if let Some(event) = &checkpoint.event {
-        constrain_event(event)?;
-    }
-    for community in &checkpoint.communities {
-        fit_u64(community.id)?;
-        for usage in &community.uses {
-            fit_u64(usage.variety)?;
-        }
-    }
-    for variety in &checkpoint.varieties {
-        fit_u64(variety.id)?;
-        if let Some(parent) = variety.parent {
-            fit_u64(parent)?;
-        }
-        fit_usize(variety.founded_at)?;
-        for lexeme in &variety.lexicon {
-            fit_usize(lexeme.stress)?;
-            for boundary in &lexeme.boundaries {
-                fit_usize(*boundary)?;
-            }
-            match &lexeme.origin {
-                Origin::Unrecorded {
-                    variety,
-                    checkpoint,
-                } => {
-                    fit_u64(*variety)?;
-                    fit_usize(*checkpoint)?;
-                }
-                Origin::Formed {
-                    source, checkpoint, ..
-                }
-                | Origin::Borrowed { source, checkpoint }
-                | Origin::Inherited { source, checkpoint } => {
-                    constrain_source(source)?;
-                    fit_usize(*checkpoint)?;
-                }
-            }
-            for trace in &lexeme.traces {
-                fit_usize(trace.checkpoint)?;
-                fit_u64(trace.variety)?;
-            }
-        }
-    }
-    for effect in &checkpoint.effects {
-        fit_u64(effect.variety)?;
-    }
-    Ok(())
-}
-
-fn constrain_source(source: &LexemeRef) -> Result<(), String> {
-    fit_u64(source.variety)?;
-    fit_usize(source.checkpoint)?;
-    Ok(())
-}
-
-fn constrain_event(event: &HistoryEvent) -> Result<(), String> {
-    match event {
-        HistoryEvent::Found {
-            language: FoundLanguage::New { .. },
-            ..
-        } => {}
-        HistoryEvent::Found {
-            language: FoundLanguage::Existing { variety },
-            ..
-        }
-        | HistoryEvent::Derive { variety, .. }
-        | HistoryEvent::ExtendSense { variety, .. }
-        | HistoryEvent::ShiftSense { variety, .. }
-        | HistoryEvent::Replace { variety, .. }
-        | HistoryEvent::Lexicalize { variety, .. }
-        | HistoryEvent::Remodel { variety, .. } => {
-            fit_u64(*variety)?;
-        }
-        HistoryEvent::UseLanguage {
-            community, variety, ..
-        } => {
-            fit_u64(*community)?;
-            fit_u64(*variety)?;
-        }
-        HistoryEvent::Separate {
-            parent, community, ..
-        } => {
-            fit_u64(*parent)?;
-            fit_u64(*community)?;
-        }
-        HistoryEvent::Develop { variety, steps } => {
-            fit_u64(*variety)?;
-            fit_usize(*steps)?;
-        }
-        HistoryEvent::Contact {
-            donor,
-            recipient,
-            count,
-            ..
-        } => {
-            fit_u64(*donor)?;
-            fit_u64(*recipient)?;
-            fit_usize(*count)?;
-        }
-    }
-    Ok(())
-}
-
-fn word_ipa(word: &Word, stress: usize) -> String {
-    let mut ipa = String::new();
-    for (index, syllable) in word.syllables.iter().enumerate() {
-        if index > 0 {
-            ipa.push('.');
-        }
-        if index == stress {
-            ipa.push('ˈ');
-        }
-        append_syllable_ipa(&mut ipa, syllable);
-    }
-    ipa
-}
-
-fn append_syllable_ipa(ipa: &mut String, syllable: &Syllable) {
-    for id in syllable.onset.iter().chain(&syllable.nucleus) {
-        ipa.push_str(CATALOG.get(*id).ipa());
-    }
-    if syllable.long {
-        ipa.push('ː');
-    }
-    for id in &syllable.coda {
-        ipa.push_str(CATALOG.get(*id).ipa());
+        id.into()
     }
 }
 
-fn ipa_list(ids: &[PhonemeId]) -> Vec<&'static str> {
+fn ipas(ids: &[PhonemeId]) -> Vec<&'static str> {
     ids.iter().map(|id| CATALOG.get(*id).ipa()).collect()
 }
 
-fn to_json<T: Serialize>(value: &T) -> Result<String, JsValue> {
-    serde_json::to_string(value).map_err(|err| fail(format!("Could not prepare this view: {err}")))
+fn kebab(debug: &str) -> String {
+    let mut out = String::new();
+    for (i, ch) in debug.chars().enumerate() {
+        if ch.is_uppercase() && i > 0 {
+            out.push('-');
+        }
+        out.extend(ch.to_lowercase());
+    }
+    out
 }
 
-fn fit_u64(value: u64) -> Result<u32, String> {
-    u32::try_from(value).map_err(|_| too_big())
+fn fail(message: String) -> JsValue {
+    JsValue::from_str(&message)
 }
 
-fn fit_usize(value: usize) -> Result<u32, String> {
-    u32::try_from(value).map_err(|_| too_big())
+fn to_json<T: Serialize>(value: &T) -> Result<String, String> {
+    serde_json::to_string(value).map_err(|e| e.to_string())
 }
 
-fn too_big() -> String {
-    "This history has an identifier the browser cannot represent.".into()
+#[derive(Serialize)]
+struct Choice {
+    id: String,
+    name: String,
+    description: String,
 }
 
-fn fail(message: impl Into<String>) -> JsValue {
-    JsValue::from_str(&message.into())
+#[derive(Serialize)]
+struct CatalogView {
+    profiles: Vec<Choice>,
+    flavors: Vec<Choice>,
+    contacts: Vec<Choice>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Overview {
+    seed: u64,
+    generation: u32,
+    latest: u32,
+    revision: u32,
+    saved_revision: Option<u32>,
+    timeline: Vec<Marker>,
+    communities: Vec<CommunityView>,
+    varieties: Vec<VarietyView>,
+    contacts: Vec<ContactView>,
+    intelligibility: Vec<Pair>,
+}
+
+#[derive(Serialize)]
+struct Marker {
+    generation: u32,
+    kind: &'static str,
+    label: String,
+}
+
+#[derive(Serialize)]
+struct CommunityView {
+    id: usize,
+    name: String,
+    variety: usize,
+    size: f32,
+    prestige: f32,
+    power: f32,
+    openness: f32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VarietyView {
+    id: usize,
+    name: String,
+    parent: Option<usize>,
+    forked_at: Option<u32>,
+    family: usize,
+    spoken: bool,
+    profile: String,
+    consonants: Vec<&'static str>,
+    vowels: Vec<&'static str>,
+    laws: Vec<LawView>,
+    words: usize,
+}
+
+#[derive(Serialize)]
+struct LawView {
+    generation: u32,
+    label: String,
+}
+
+#[derive(Serialize)]
+struct ContactView {
+    a: usize,
+    b: usize,
+    intensity: f32,
+    kind: String,
+}
+
+#[derive(Serialize)]
+struct Pair {
+    a: usize,
+    b: usize,
+    score: f32,
+}
+
+#[derive(Serialize)]
+struct OriginView {
+    kind: &'static str,
+    from: Option<String>,
+    generation: u32,
+}
+
+#[derive(Serialize)]
+struct LexiconRow {
+    concept: &'static str,
+    gloss: &'static str,
+    field: &'static str,
+    rank: Option<u8>,
+    spelled: String,
+    ipa: String,
+    origin: OriginView,
+    changes: usize,
+    competitors: usize,
+}
+
+#[derive(Serialize)]
+struct HistoryLine {
+    generation: u32,
+    text: String,
+}
+
+#[derive(Serialize)]
+struct VariantView {
+    spelled: String,
+    ipa: String,
+    share: f32,
+    origin: OriginView,
+    senses: Vec<&'static str>,
+    history: Vec<HistoryLine>,
+}
+
+#[derive(Serialize)]
+struct Cognate {
+    variety: usize,
+    name: String,
+    spelled: String,
+    ipa: String,
+}
+
+#[derive(Serialize)]
+struct WordView {
+    concept: &'static str,
+    gloss: &'static str,
+    field: &'static str,
+    rank: Option<u8>,
+    related: Vec<&'static str>,
+    variants: Vec<VariantView>,
+    cognates: Vec<Cognate>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use langgen_sim::CONCEPTS;
+
+    fn bench() -> Bench {
+        let mut w = Bench::new(5);
+        w.act(r#"{"kind":"found","name":"Hill","profile":"neutral","power":0.5,"openness":0.5}"#)
+            .unwrap();
+        w.act(r#"{"kind":"found","name":"Coast","profile":"kuo-toa","flavors":["fish-mouthed"],"power":0.6,"openness":0.5}"#).unwrap();
+        w.act(r#"{"kind":"connect","a":0,"b":1,"intensity":0.6,"contact":"trade"}"#)
+            .unwrap();
+        w.act(r#"{"kind":"run","generations":12}"#).unwrap();
+        w.act(r#"{"kind":"split","community":0,"name":"Upland","intensity":0.3}"#)
+            .unwrap();
+        w.act(r#"{"kind":"run","generations":10}"#).unwrap();
+        w
+    }
 
     #[test]
-    fn ipa_keeps_stress_and_vowel_length_on_their_syllables() {
-        let phone = |ipa| CATALOG.id_by_ipa(ipa).unwrap();
-        let word = Word {
-            syllables: vec![
-                Syllable {
-                    onset: vec![phone("t")],
-                    nucleus: vec![phone("i")],
-                    coda: vec![phone("n")],
-                    long: true,
-                },
-                Syllable {
-                    onset: vec![phone("k")],
-                    nucleus: vec![phone("a")],
-                    coda: vec![],
-                    long: false,
-                },
-            ],
-            join_at: None,
-        };
-        assert_eq!(word_ipa(&word, 1), "tiːn.ˈka");
+    fn views_serialize_at_any_generation() {
+        let mut w = bench();
+        let latest: serde_json::Value = serde_json::from_str(&w.overview(22).unwrap()).unwrap();
+        assert_eq!(latest["generation"], 22);
+        assert_eq!(latest["communities"].as_array().unwrap().len(), 3);
+        let early: serde_json::Value = serde_json::from_str(&w.overview(5).unwrap()).unwrap();
+        assert_eq!(early["communities"].as_array().unwrap().len(), 2);
+        let rows: serde_json::Value = serde_json::from_str(&w.lexicon(22, 2).unwrap()).unwrap();
+        assert_eq!(rows.as_array().unwrap().len(), CONCEPTS.len());
+        let word: serde_json::Value =
+            serde_json::from_str(&w.word(22, 2, "water").unwrap()).unwrap();
+        assert!(!word["variants"].as_array().unwrap().is_empty());
+        assert!(
+            !word["cognates"].as_array().unwrap().is_empty(),
+            "Upland's water is cognate with Hill's"
+        );
+    }
+
+    #[test]
+    fn saves_round_trip_and_bad_input_is_rejected() {
+        let w = bench();
+        let mut loaded = Bench::load(&w.save().unwrap()).unwrap();
+        assert_eq!(loaded.latest(), 22);
+        assert!(
+            loaded
+                .overview(22)
+                .unwrap()
+                .contains(r#""savedRevision":null"#)
+        );
+        assert!(Bench::load("{}").is_err());
+        let mut w = bench();
+        assert!(
+            w.act(r#"{"kind":"split","community":9,"name":"X","intensity":0}"#)
+                .is_err()
+        );
+        assert!(w.act("not json").is_err());
     }
 }

@@ -69,21 +69,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "langgen-core"
-version = "0.1.0"
-dependencies = [
- "rand",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "langgen-sim"
 version = "0.1.0"
 dependencies = [
  "rand",
  "rand_chacha",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -91,7 +83,7 @@ name = "langgen-web"
 version = "0.1.0"
 dependencies = [
  "getrandom",
- "langgen-core",
+ "langgen-sim",
  "serde",
  "serde_json",
  "wasm-bindgen",

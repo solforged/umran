@@ -11,6 +11,7 @@ use crate::root::mint_one;
 use crate::variety::Variety;
 use rand::{Rng, RngCore};
 use rand_chacha::ChaCha8Rng;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 /// Effective Leipzig–Jakarta rank for cultural vocabulary when it comes to
@@ -163,7 +164,8 @@ pub struct Community {
 }
 
 /// What brings two communities together, which shapes what they borrow.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum ContactKind {
     /// Plain proximity: every semantic field equally exposed.
     Neighbours,
@@ -296,7 +298,9 @@ impl World {
     ) -> usize {
         let index = self.communities.len();
         let variety_seed = stream(self.seed, &[key("found"), index as u64]).next_u64();
-        self.varieties.push(Variety::found(variety_seed, profile));
+        let mut variety = Variety::found(variety_seed, profile);
+        variety.name = format!("{name} speech");
+        self.varieties.push(variety);
         self.communities.push(Community {
             name: name.into(),
             variety: self.varieties.len() - 1,
@@ -319,7 +323,8 @@ impl World {
     /// in contact at `intensity` (0 for none).
     pub fn split(&mut self, community: usize, name: &str, intensity: f32) -> usize {
         let parent = self.communities[community].variety;
-        let daughter = self.varieties[parent].fork(parent, self.generation);
+        let mut daughter = self.varieties[parent].fork(parent, self.generation);
+        daughter.name = format!("{name} speech");
         self.varieties.push(daughter);
         self.communities[community].size /= 2.0;
         let mut new = self.communities[community].clone();
@@ -540,6 +545,10 @@ impl World {
         let old_sounds = self.varieties[old].established();
         let mut new = self.varieties[source].fork(source, generation);
         new.profile = self.varieties[old].profile.clone();
+        new.name = format!(
+            "{} {}",
+            self.communities[community].name, self.varieties[source].name
+        );
         let mut rng = self.community_rng(community, "substrate");
 
         let mut foreign: Vec<PhonemeId> = new
