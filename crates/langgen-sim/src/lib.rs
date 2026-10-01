@@ -14,6 +14,7 @@ pub mod inventory;
 pub mod laws;
 pub mod lexicon;
 pub mod morphology;
+pub mod palettes;
 pub mod phoneme;
 pub mod phonotactics;
 pub mod profile;

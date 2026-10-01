@@ -38,7 +38,7 @@ impl Inventory {
     pub fn sample(prior: &InventoryPrior, rng: &mut impl Rng) -> Self {
         let mut consonants = pick_class(prior, false, prior.consonant_count, rng);
         let mut vowels = pick_class(prior, true, prior.vowel_count, rng);
-        repair_universals(&mut consonants, &mut vowels);
+        repair_universals(&mut consonants, &mut vowels, &prior.forbidden);
 
         consonants.sort_by_key(|id| CATALOG.get(*id).ipa());
         vowels.sort_by_key(|id| CATALOG.get(*id).ipa());
@@ -159,12 +159,18 @@ pub fn score(prior: &InventoryPrior, seg: Segment) -> f32 {
 }
 
 /// Voiced stops imply their voiceless partners and marked nasals imply /n/,
-/// as they nearly always do in attested inventories.
-fn repair_universals(consonants: &mut Vec<PhonemeId>, vowels: &mut Vec<PhonemeId>) {
+/// as they nearly always do in attested inventories, unless the culture
+/// forbids the partner.
+fn repair_universals(
+    consonants: &mut Vec<PhonemeId>,
+    vowels: &mut Vec<PhonemeId>,
+    forbidden: &[String],
+) {
     let has = |set: &[PhonemeId], ipa: &str| set.iter().any(|id| CATALOG.get(*id).ipa() == ipa);
+    // A culture's explicit dislike beats the tendency: Arabic has b, no p.
     let add = |set: &mut Vec<PhonemeId>, ipa: &str| {
         let id = CATALOG.id_by_ipa(ipa).expect("catalog segment");
-        if !set.contains(&id) {
+        if !set.contains(&id) && !forbidden.iter().any(|f| f == ipa) {
             set.push(id);
         }
     };

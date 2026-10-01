@@ -24,6 +24,7 @@ pub fn distance(a: PhonemeId, b: PhonemeId) -> f32 {
             manner_distance(x.manner, y.manner)
                 + 0.35 * (x.place as i32 - y.place as i32).abs() as f32
                 + if x.voiced == y.voiced { 0.0 } else { 0.6 }
+                + if x.secondary == y.secondary { 0.0 } else { 0.4 }
         }
         (Segment::Vowel(x), Segment::Vowel(y)) => {
             0.5 * (x.height as i32 - y.height as i32).abs() as f32

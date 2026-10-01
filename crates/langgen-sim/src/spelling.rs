@@ -61,6 +61,18 @@ impl Spelling {
                 Some(c) => format!("{base}{c}"),
                 None => String::new(),
             },
+            LongVowel::Macron => base
+                .chars()
+                .map(|c| match c {
+                    'a' => 'ā',
+                    'e' => 'ē',
+                    'i' => 'ī',
+                    'o' => 'ō',
+                    'u' => 'ū',
+                    'y' => 'ȳ',
+                    other => other,
+                })
+                .collect(),
             LongVowel::Acute => base
                 .chars()
                 .map(|c| match c {

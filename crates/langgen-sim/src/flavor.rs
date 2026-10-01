@@ -1,6 +1,6 @@
 use crate::inventory::{UNLISTED_PRIMARY, UNLISTED_SECONDARY};
 use crate::phoneme::{Backness, Height, Manner, Place};
-use crate::profile::{MorphologyKind, SoundProfile};
+use crate::profile::{LongVowel, MorphologyKind, SoundProfile};
 use serde::{Deserialize, Serialize};
 
 /// A phonetic vibe layered onto a profile, such as "slightly more plausible
@@ -33,9 +33,18 @@ pub struct Flavor {
     pub preferred_onsets: Vec<String>,
     pub preferred_codas: Vec<String>,
     pub identical_consonants: Option<f32>,
+    pub long_vowels: Option<f32>,
+    /// Word-internal syllables never take a coda (as in Bantu or
+    /// Polynesian).
+    pub open_medial: Option<bool>,
     pub morphology: Option<MorphologyKind>,
     pub suffixing: Option<f32>,
     pub derivation: Option<f32>,
+    /// How long vowels are written.
+    pub long_spelling: Option<LongVowel>,
+    /// Spelling conventions, IPA to letters: þ for θ in an Old English
+    /// style, tl and tz in a Nahuatl one.
+    pub spelling: Vec<(String, String)>,
 }
 
 impl SoundProfile {
@@ -65,6 +74,15 @@ impl SoundProfile {
         tac.identical_consonants = flavor
             .identical_consonants
             .unwrap_or(tac.identical_consonants);
+        tac.long_vowels = flavor.long_vowels.unwrap_or(tac.long_vowels);
+        tac.open_medial = flavor.open_medial.unwrap_or(tac.open_medial);
+
+        let spelling = &mut out.spelling;
+        spelling.long_vowels = flavor.long_spelling.unwrap_or(spelling.long_vowels);
+        for (from, to) in &flavor.spelling {
+            spelling.overrides.retain(|(f, _)| f != from);
+            spelling.overrides.push((from.clone(), to.clone()));
+        }
 
         let morph = &mut out.morphology;
         morph.kind = flavor.morphology.unwrap_or(morph.kind);
@@ -97,9 +115,12 @@ fn union(dest: &mut Vec<String>, add: &[String]) {
 }
 
 impl Flavor {
-    /// Example flavors written by Claude from Sol's briefs. Adjust freely.
+    /// Example flavors written by Claude from Sol's briefs, then the family
+    /// palettes (`palettes`). Adjust freely.
     pub fn examples() -> Vec<Flavor> {
-        vec![fish_mouthed(), pie_like(), familiar(), triconsonantal()]
+        let mut all = vec![fish_mouthed(), pie_like(), familiar(), triconsonantal()];
+        all.extend(crate::palettes::all());
+        all
     }
 
     pub fn by_id(id: &str) -> Option<Flavor> {

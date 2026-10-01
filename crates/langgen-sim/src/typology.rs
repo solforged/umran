@@ -4,7 +4,9 @@
 //! Counts of inventories containing the segment, out of 3,020, from PHOIBLE
 //! 2.0 (Moran and McCloy, eds., 2019), <https://phoible.org/parameters>,
 //! retrieved 2026-09-30. Where PHOIBLE splits a sound by detail (dental
-//! versus alveolar t, t̠ʃ for tʃ), the more common variant is used.
+//! versus alveolar t, t̠ʃ for tʃ), the more common variant is used, except
+//! for aspirated, breathy, and lateral-affricate sounds, where the variants
+//! are summed.
 
 use crate::phoneme::{CATALOG, PhonemeId};
 
@@ -66,6 +68,30 @@ const COUNTS: &[(&str, u32)] = &[
     ("æ", 223),
     ("a", 2600),
     ("ɑ", 225),
+    ("pʰ", 592),
+    ("tʰ", 582),
+    ("kʰ", 605),
+    ("tʃʰ", 229),
+    ("bʱ", 77),
+    ("dʱ", 42),
+    ("gʱ", 76),
+    ("ʈ", 481),
+    ("ɖ", 257),
+    ("ɳ", 399),
+    ("ʂ", 198),
+    ("ʐ", 91),
+    ("ɭ", 359),
+    ("kʷ", 372),
+    ("gʷ", 190),
+    ("qʷ", 50),
+    ("xʷ", 77),
+    ("tɬ", 16),
+    ("χ", 213),
+    ("ʁ", 156),
+    ("ħ", 81),
+    ("ʕ", 55),
+    ("β", 306),
+    ("ɸ", 153),
 ];
 
 /// Share of the world's inventories that have this segment, 0–1.

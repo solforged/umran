@@ -1,7 +1,7 @@
 use crate::change::{Env, Matcher, Rewrite, SoundChange, apply_all};
 use crate::form::Form;
 use crate::inventory::preference;
-use crate::phoneme::{Backness, Height, Manner, PhonemeId, Place};
+use crate::phoneme::{Backness, Height, Manner, PhonemeId, Place, Secondary};
 use crate::profile::InventoryPrior;
 use std::collections::HashSet;
 
@@ -92,6 +92,7 @@ fn cons(place: Option<Place>, manner: Option<Manner>, voiced: Option<bool>) -> M
         place,
         manner,
         voiced,
+        secondary: None,
     }
 }
 
@@ -108,6 +109,41 @@ fn into_cons(place: Option<Place>, manner: Option<Manner>, voiced: Option<bool>)
         place,
         manner,
         voiced,
+        secondary: None,
+    }
+}
+
+fn with_secondary(m: Matcher, s: Secondary) -> Matcher {
+    match m {
+        Matcher::Consonant {
+            place,
+            manner,
+            voiced,
+            ..
+        } => Matcher::Consonant {
+            place,
+            manner,
+            voiced,
+            secondary: Some(s),
+        },
+        other => other,
+    }
+}
+
+fn into_secondary(r: Rewrite, s: Secondary) -> Rewrite {
+    match r {
+        Rewrite::Consonant {
+            place,
+            manner,
+            voiced,
+            ..
+        } => Rewrite::Consonant {
+            place,
+            manner,
+            voiced,
+            secondary: Some(s),
+        },
+        other => other,
     }
 }
 
@@ -548,6 +584,142 @@ pub fn catalog() -> Vec<Law> {
                 v(),
             )],
         ),
+        law(
+            "deaspiration",
+            "Aspirated stops lose their aspiration: pʰ > p",
+            0.6,
+            vec![rule(
+                with_secondary(cons(None, None, None), Secondary::Aspirated),
+                into_secondary(into_cons(None, None, None), Secondary::Plain),
+                ANY,
+                ANY,
+            )],
+        ),
+        law(
+            "aspirate-spirantization",
+            "Aspirated stops become fricatives: pʰ > f, tʰ > θ, kʰ > x",
+            0.3,
+            vec![
+                rule(
+                    with_secondary(
+                        cons(Some(Bilabial), Some(Stop), Some(false)),
+                        Secondary::Aspirated,
+                    ),
+                    into_secondary(
+                        into_cons(Some(Labiodental), Some(Fricative), None),
+                        Secondary::Plain,
+                    ),
+                    ANY,
+                    ANY,
+                ),
+                rule(
+                    with_secondary(
+                        cons(Some(Alveolar), Some(Stop), Some(false)),
+                        Secondary::Aspirated,
+                    ),
+                    into_secondary(
+                        into_cons(Some(Dental), Some(Fricative), None),
+                        Secondary::Plain,
+                    ),
+                    ANY,
+                    ANY,
+                ),
+                rule(
+                    with_secondary(
+                        cons(Some(Velar), Some(Stop), Some(false)),
+                        Secondary::Aspirated,
+                    ),
+                    into_secondary(into_cons(None, Some(Fricative), None), Secondary::Plain),
+                    ANY,
+                    ANY,
+                ),
+            ],
+        ),
+        law(
+            "breathy-loss",
+            "Breathy-voiced stops become plain voiced: bʱ > b",
+            0.6,
+            vec![rule(
+                with_secondary(cons(None, None, None), Secondary::Breathy),
+                into_secondary(into_cons(None, None, None), Secondary::Plain),
+                ANY,
+                ANY,
+            )],
+        ),
+        law(
+            "labiovelar-to-labial",
+            "Labiovelars become labials: kʷ > p, gʷ > b",
+            0.3,
+            vec![rule(
+                with_secondary(cons(Some(Velar), Some(Stop), None), Secondary::Labialized),
+                into_secondary(into_cons(Some(Bilabial), None, None), Secondary::Plain),
+                ANY,
+                ANY,
+            )],
+        ),
+        law(
+            "delabialization",
+            "Labialized consonants lose their rounding: kʷ > k",
+            0.5,
+            vec![rule(
+                with_secondary(cons(None, None, None), Secondary::Labialized),
+                into_secondary(into_cons(None, None, None), Secondary::Plain),
+                ANY,
+                ANY,
+            )],
+        ),
+        law(
+            "retroflex-merger",
+            "Retroflex consonants merge with alveolars: ʈ > t",
+            0.4,
+            vec![rule(
+                cons(Some(Retroflex), None, None),
+                into_cons(Some(Alveolar), None, None),
+                ANY,
+                ANY,
+            )],
+        ),
+        law(
+            "pharyngeal-weakening",
+            "Pharyngeals weaken to glottals: ħ > h, ʕ > ʔ",
+            0.5,
+            vec![
+                rule(
+                    cons(Some(Pharyngeal), None, Some(false)),
+                    into_cons(Some(Glottal), None, None),
+                    ANY,
+                    ANY,
+                ),
+                rule(
+                    cons(Some(Pharyngeal), None, Some(true)),
+                    into_cons(Some(Glottal), Some(Stop), Some(false)),
+                    ANY,
+                    ANY,
+                ),
+            ],
+        ),
+        law(
+            "uvular-fronting",
+            "Uvulars move forward to velars: q > k, χ > x",
+            0.5,
+            vec![rule(
+                cons(Some(Uvular), None, None),
+                into_cons(Some(Velar), None, None),
+                ANY,
+                ANY,
+            )],
+        ),
+        law(
+            "lateral-affricate-loss",
+            "The lateral affricate simplifies: tɬ > t",
+            0.3,
+            vec![rule(
+                cons(None, Some(LateralAffricate), None),
+                into_cons(None, Some(Stop), None),
+                ANY,
+                ANY,
+            )],
+        ),
     ]
 }
 
@@ -581,6 +753,15 @@ mod tests {
         assert_eq!(run("spirantization", "pitak"), "fiθax");
         assert_eq!(run("l-vocalization", "kaltal"), "kawtaw");
         assert_eq!(run("flapping", "pata"), "paɾa");
+        assert_eq!(run("deaspiration", "pʰatʰa"), "pata");
+        assert_eq!(run("aspirate-spirantization", "kʰapʰa"), "xafa");
+        assert_eq!(run("breathy-loss", "bʱadʱa"), "bada");
+        assert_eq!(run("labiovelar-to-labial", "kʷigʷa"), "piba");
+        assert_eq!(run("delabialization", "kʷaxʷa"), "kaxa");
+        assert_eq!(run("retroflex-merger", "ʈaɳa"), "tana");
+        assert_eq!(run("pharyngeal-weakening", "ħaʕa"), "haʔa");
+        assert_eq!(run("uvular-fronting", "qaχa"), "kaxa");
+        assert_eq!(run("lateral-affricate-loss", "tɬatɬ"), "tat");
     }
 
     #[test]

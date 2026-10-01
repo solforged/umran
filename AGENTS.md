@@ -39,9 +39,18 @@ before development or production builds.
   `illithid`, `neutral`) are only examples, and `neutral` has flat tastes so
   world frequencies decide. A `Flavor` is stored adjustments written from a
   plain brief (`familiar` targets English readers), which the engine never
-  reads. One preference score, taste plus cross-linguistic frequency from
-  PHOIBLE (`typology.rs`), drives inventories, how often sounds are used,
-  sound-law odds, and acceptance of foreign sounds.
+  reads; `palettes.rs` holds family-inspired nudges (Indic, Iranian,
+  Germanic, Semitic, Nahuatl-like, Bantu-like, Polynesian-like, Finnic,
+  Caucasian) that require signature sounds and set word shape, vowel
+  length, word building, and spelling. Flavors stack. One preference
+  score, taste plus cross-linguistic frequency from PHOIBLE
+  (`typology.rs`), drives inventories, how often sounds are used, sound-law
+  odds, and acceptance of foreign sounds. A forbidden sound beats the
+  "voiced implies voiceless" repair (Arabic has b without p).
+- The catalog (`phoneme.rs`) describes consonants by place, manner,
+  voicing, and a `Secondary` articulation (aspirated, breathy,
+  labialized); new segments are appended, never inserted. Vowel length is
+  a per-segment flag that profiles can make contrastive.
 - Concepts (`concepts.rs`): the Leipzig–Jakarta 100 in rank order plus
   cultural concepts with a `Tier`. Word length follows `length_bias`
   (Zipf's law of abbreviation: basic meanings short, specialist long, one
@@ -129,7 +138,8 @@ development dependency. Deployment needs only `dist/`, not a server.
 
 Places and migration (territories stand in for a map), compounding and
 inflection, derivation as a source of new words after founding, stress,
-syntax and alignment, dialect levelling, and names.
+tone, vowel harmony, consonant length, prenasalized stops, syntax and
+alignment, dialect levelling, and names.
 
 ## Working with Sol
 

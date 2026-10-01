@@ -31,6 +31,7 @@ pub enum Place {
     Dental,
     Alveolar,
     Postalveolar,
+    Retroflex,
     Palatal,
     Velar,
     Uvular,
@@ -49,6 +50,7 @@ pub enum Manner {
     Approximant,
     Lateral,
     LateralFricative,
+    LateralAffricate,
     Implosive,
     Ejective,
 }
@@ -71,6 +73,19 @@ pub enum Backness {
     Back,
 }
 
+/// A second articulation layered on a consonant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+pub enum Secondary {
+    #[default]
+    Plain,
+    /// A puff of breath after release: pʰ, as in Hindi or Mandarin.
+    Aspirated,
+    /// Murmured voice: bʱ, as in Sanskrit and Hindi.
+    Breathy,
+    /// Rounded lips: kʷ, as in Latin qu-.
+    Labialized,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Consonant {
     pub ipa: &'static str,
@@ -78,6 +93,7 @@ pub struct Consonant {
     pub place: Place,
     pub manner: Manner,
     pub voiced: bool,
+    pub secondary: Secondary,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -133,7 +149,7 @@ impl Segment {
             Segment::Vowel(_) => 7,
             Segment::Consonant(c) => match c.manner {
                 Manner::Stop | Manner::Implosive | Manner::Ejective => 1,
-                Manner::Affricate => 2,
+                Manner::Affricate | Manner::LateralAffricate => 2,
                 Manner::Fricative | Manner::LateralFricative => 3,
                 Manner::Nasal => 4,
                 Manner::Lateral | Manner::Tap | Manner::Trill => 5,
@@ -162,6 +178,7 @@ impl Catalog {
                     place,
                     manner,
                     voiced,
+                    secondary: Secondary::Plain,
                 }));
             };
             c("p", "p", Bilabial, Stop, false);
@@ -229,6 +246,45 @@ impl Catalog {
             v("æ", "ä", NearOpen, Front, false);
             v("a", "a", Open, Front, false);
             v("ɑ", "a", Open, Back, false);
+        }
+        {
+            // Sounds that particular families rely on, appended so earlier
+            // segments keep their positions.
+            let mut c = |ipa, roman, place, manner, voiced, secondary| {
+                segments.push(Segment::Consonant(Consonant {
+                    ipa,
+                    roman,
+                    place,
+                    manner,
+                    voiced,
+                    secondary,
+                }));
+            };
+            use Secondary::*;
+            c("pʰ", "ph", Bilabial, Stop, false, Aspirated);
+            c("tʰ", "th", Alveolar, Stop, false, Aspirated);
+            c("kʰ", "kh", Velar, Stop, false, Aspirated);
+            c("tʃʰ", "chh", Postalveolar, Affricate, false, Aspirated);
+            c("bʱ", "bh", Bilabial, Stop, true, Breathy);
+            c("dʱ", "dh", Alveolar, Stop, true, Breathy);
+            c("gʱ", "gh", Velar, Stop, true, Breathy);
+            c("ʈ", "ṭ", Retroflex, Stop, false, Plain);
+            c("ɖ", "ḍ", Retroflex, Stop, true, Plain);
+            c("ɳ", "ṇ", Retroflex, Nasal, true, Plain);
+            c("ʂ", "ṣ", Retroflex, Fricative, false, Plain);
+            c("ʐ", "ẓ", Retroflex, Fricative, true, Plain);
+            c("ɭ", "ḷ", Retroflex, Lateral, true, Plain);
+            c("kʷ", "kw", Velar, Stop, false, Labialized);
+            c("gʷ", "gw", Velar, Stop, true, Labialized);
+            c("qʷ", "qw", Uvular, Stop, false, Labialized);
+            c("xʷ", "khw", Velar, Fricative, false, Labialized);
+            c("tɬ", "tl", Alveolar, LateralAffricate, false, Plain);
+            c("χ", "ḫ", Uvular, Fricative, false, Plain);
+            c("ʁ", "ġ", Uvular, Fricative, true, Plain);
+            c("ħ", "ḥ", Pharyngeal, Fricative, false, Plain);
+            c("ʕ", "ʿ", Pharyngeal, Fricative, true, Plain);
+            c("β", "bh", Bilabial, Fricative, true, Plain);
+            c("ɸ", "ph", Bilabial, Fricative, false, Plain);
         }
 
         Self { segments }

@@ -1,5 +1,5 @@
 use crate::form::{Form, Seg};
-use crate::phoneme::{Backness, CATALOG, Height, Manner, PhonemeId, Place, Segment};
+use crate::phoneme::{Backness, CATALOG, Height, Manner, PhonemeId, Place, Secondary, Segment};
 use serde::{Deserialize, Serialize};
 
 /// A natural class of segments; unset features match anything.
@@ -10,6 +10,8 @@ pub enum Matcher {
         place: Option<Place>,
         manner: Option<Manner>,
         voiced: Option<bool>,
+        #[serde(default)]
+        secondary: Option<Secondary>,
     },
     Vowel {
         height: Option<Height>,
@@ -25,10 +27,13 @@ pub enum Matcher {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Rewrite {
     Phone(PhonemeId),
+    /// Unset features, including the secondary articulation, are kept.
     Consonant {
         place: Option<Place>,
         manner: Option<Manner>,
         voiced: Option<bool>,
+        #[serde(default)]
+        secondary: Option<Secondary>,
     },
     Vowel {
         height: Option<Height>,
@@ -66,12 +71,14 @@ impl Matcher {
                     place,
                     manner,
                     voiced,
+                    secondary,
                 },
                 Segment::Consonant(c),
             ) => {
                 place.is_none_or(|p| p == c.place)
                     && manner.is_none_or(|m| m == c.manner)
                     && voiced.is_none_or(|v| v == c.voiced)
+                    && secondary.is_none_or(|s| s == c.secondary)
             }
             (
                 Matcher::Vowel {
@@ -119,18 +126,25 @@ impl Rewrite {
                     place,
                     manner,
                     voiced,
+                    secondary,
                 },
                 Segment::Consonant(c),
             ) => {
-                let (place, manner, voiced) = (
+                let (place, manner, voiced, secondary) = (
                     place.unwrap_or(c.place),
                     manner.unwrap_or(c.manner),
                     voiced.unwrap_or(c.voiced),
+                    secondary.unwrap_or(c.secondary),
                 );
                 Some(
                     CATALOG
                         .consonants()
-                        .find(|(_, k)| k.place == place && k.manner == manner && k.voiced == voiced)
+                        .find(|(_, k)| {
+                            k.place == place
+                                && k.manner == manner
+                                && k.voiced == voiced
+                                && k.secondary == secondary
+                        })
                         .map_or(id, |(cid, _)| cid),
                 )
             }
@@ -242,11 +256,13 @@ mod tests {
                 place: Some(Place::Alveolar),
                 manner: Some(Manner::Stop),
                 voiced: Some(false),
+                secondary: None,
             },
             result: Rewrite::Consonant {
                 place: None,
                 manner: Some(Manner::Fricative),
                 voiced: None,
+                secondary: None,
             },
             left: Env::Any,
             right: Env::Matcher(Matcher::Vowel {
@@ -287,6 +303,7 @@ mod tests {
                 place: Some(Place::Labiodental),
                 manner: Some(Manner::Stop),
                 voiced: Some(false),
+                secondary: None,
             },
             left: Env::Any,
             right: Env::Any,

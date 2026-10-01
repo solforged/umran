@@ -40,6 +40,8 @@ pub struct Phonotactics {
     pub disyllabic_roots: f32,
     /// Chance a root may repeat a consonant.
     pub identical_consonants: f32,
+    /// Chance each vowel of a new root is long.
+    pub long_vowels: f32,
 }
 
 impl Phonotactics {
@@ -74,6 +76,7 @@ impl Phonotactics {
             open_medial: prior.open_medial,
             disyllabic_roots: prior.disyllabic_roots.clamp(0.0, 1.0),
             identical_consonants: prior.identical_consonants.clamp(0.0, 1.0),
+            long_vowels: prior.long_vowels.clamp(0.0, 1.0),
         }
     }
 
@@ -134,7 +137,15 @@ impl Phonotactics {
                 break;
             }
         }
-        Form::from_phones(phones)
+        let mut form = Form::from_phones(phones);
+        if self.long_vowels > 0.0 {
+            for seg in &mut form.segs {
+                if CATALOG.get(seg.phone).is_vowel() {
+                    seg.long = rng.r#gen::<f32>() < self.long_vowels;
+                }
+            }
+        }
+        form
     }
 
     /// Jakobson's "mama" and "papa": the earliest babbled syllables, a
@@ -190,6 +201,7 @@ impl Phonotactics {
         let mut nuclei: BTreeMap<u16, f32> = BTreeMap::new();
         let mut codas: BTreeMap<u16, f32> = BTreeMap::new();
         let (mut words, mut closed, mut longer) = (0.0_f32, 0.0_f32, 0.0_f32);
+        let (mut vowels, mut long) = (0.0_f32, 0.0_f32);
         for form in forms {
             let syllables = form.syllables();
             let Some(last) = syllables.last() else {
@@ -199,6 +211,8 @@ impl Phonotactics {
             closed += f32::from(!last.coda.is_empty());
             longer += f32::from(syllables.len() > 1);
             for s in &syllables {
+                vowels += 1.0;
+                long += f32::from(form.segs[s.nucleus].long);
                 *nuclei.entry(form.segs[s.nucleus].phone.0).or_default() += 1.0;
                 if s.onset.len() == 1 {
                     *onsets.entry(form.segs[s.onset.start].phone.0).or_default() += 1.0;
@@ -217,6 +231,7 @@ impl Phonotactics {
             open_medial: false,
             disyllabic_roots: if words > 0.0 { longer / words } else { 0.0 },
             identical_consonants: OBSERVED_REPEATS,
+            long_vowels: if vowels > 0.0 { long / vowels } else { 0.0 },
         }
     }
 
@@ -232,7 +247,7 @@ impl Phonotactics {
             && syllables.last().is_some_and(|s| s.coda.len() <= 1);
         shape_ok
             && form.boundaries.is_empty()
-            && form.segs.iter().all(|s| !s.long)
+            && (self.long_vowels > 0.0 || form.segs.iter().all(|s| !s.long))
             && syllables.iter().all(|s| {
                 s.onset.len() == 1
                     && single(&self.onsets, form.segs[s.onset.start].phone)

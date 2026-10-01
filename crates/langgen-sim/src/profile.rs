@@ -70,6 +70,10 @@ pub struct PhonotacticPrior {
     /// Chance a root may repeat a consonant (as in "kika"). Most languages
     /// avoid it in roots; echoing, reduplicating styles tolerate it.
     pub identical_consonants: f32,
+    /// Chance each vowel of a new root is long, for languages where vowel
+    /// length distinguishes words (Sanskrit, Old English, Nahuatl).
+    #[serde(default)]
+    pub long_vowels: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -88,6 +92,9 @@ pub struct Spelling {
 pub enum LongVowel {
     Acute,
     Double,
+    /// ā ī ū, as scholarly romanizations of Sanskrit, Old Persian, Old
+    /// English, and Nahuatl write them.
+    Macron,
     Unmarked,
 }
 
@@ -197,6 +204,7 @@ fn elvish() -> SoundProfile {
             preferred_codas: ipas(&["n", "r", "l", "s", "θ"]),
             disyllabic_roots: 0.3,
             identical_consonants: 0.1,
+            long_vowels: 0.2,
         },
         morphology: MorphologyPrior {
             kind: MorphologyKind::Concatenative,
@@ -278,6 +286,7 @@ fn kuo_toa() -> SoundProfile {
             preferred_codas: ipas(&["p", "b", "l", "m", "ŋ", "lp"]),
             disyllabic_roots: 0.25,
             identical_consonants: 0.5,
+            long_vowels: 0.0,
         },
         morphology: MorphologyPrior {
             kind: MorphologyKind::Concatenative,
@@ -362,6 +371,7 @@ fn illithid() -> SoundProfile {
             preferred_codas: ipas(&["θ", "n", "k", "l", "s", "d"]),
             disyllabic_roots: 0.1,
             identical_consonants: 0.1,
+            long_vowels: 0.0,
         },
         morphology: MorphologyPrior {
             kind: MorphologyKind::Concatenative,
@@ -403,6 +413,7 @@ fn neutral() -> SoundProfile {
                 (Trill, 1.0),
                 (Tap, 1.0),
                 (LateralFricative, 0.6),
+                (LateralAffricate, 0.6),
                 (Ejective, 0.6),
                 (Implosive, 0.6),
             ],
@@ -412,6 +423,7 @@ fn neutral() -> SoundProfile {
                 (Dental, 1.0),
                 (Alveolar, 1.0),
                 (Postalveolar, 1.0),
+                (Retroflex, 1.0),
                 (Palatal, 1.0),
                 (Velar, 1.0),
                 (Uvular, 1.0),
@@ -443,6 +455,7 @@ fn neutral() -> SoundProfile {
             preferred_codas: ipas(&["n", "m", "ŋ", "l", "r", "s", "k", "t"]),
             disyllabic_roots: 0.25,
             identical_consonants: 0.1,
+            long_vowels: 0.0,
         },
         morphology: MorphologyPrior {
             kind: MorphologyKind::Concatenative,
