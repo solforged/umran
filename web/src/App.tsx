@@ -3,34 +3,39 @@ import { createEngine, loadCatalog, loadEngine, message } from "./engine";
 import type { Action, Catalog, Engine } from "./model";
 import { YEARS } from "./model";
 import { ActionDialog, type DialogKind } from "./components/ActionDialog";
-import { Communities } from "./components/Communities";
 import { Designer, type Founding } from "./components/Designer";
-import { Inspector } from "./components/Inspector";
-import { Lexicon } from "./components/Lexicon";
 import { Modal } from "./components/Modal";
+import { Recto } from "./components/Recto";
 import { RunControls } from "./components/RunControls";
+import { Shelf } from "./components/Shelf";
 import { Timeline } from "./components/Timeline";
+import { TitlePage } from "./components/TitlePage";
+import { Verso } from "./components/Verso";
+import { sampleBook } from "./sample";
+import {
+  describe,
+  loadShelf,
+  newBookId,
+  rawShelf,
+  readBook,
+  removeBook,
+  saveBook,
+  setLast,
+  type Shelf as ShelfIndex,
+} from "./shelf";
 
-// The previous workbench used `langgen.workbench.v2`; that data is left
-// untouched rather than silently deleted.
-const STORAGE_KEY = "langgen.sim.v1";
+/// Longest wait for something to happen before giving up.
+const EVENT_LIMIT = 400;
 
-type Boot =
-  | { status: "loading" }
-  | { status: "fresh" }
-  | { status: "ready" }
-  | { status: "recovery"; raw: string; error: string };
+type View =
+  | { kind: "loading" }
+  | { kind: "shelf" }
+  | { kind: "title" }
+  | { kind: "book"; id: string }
+  | { kind: "recovery"; what: string; raw: string; error: string };
 
 function foundingAction(f: Founding): Action {
   return { kind: "found", naming: f.naming, design: f.design, seed: f.seed, power: f.power, openness: f.openness };
-}
-
-function readSaved(): string | null {
-  try {
-    return localStorage.getItem(STORAGE_KEY);
-  } catch {
-    return null;
-  }
 }
 
 function download(name: string, text: string) {
@@ -43,8 +48,9 @@ function download(name: string, text: string) {
 }
 
 export default function App() {
-  const [boot, setBoot] = useState<Boot>({ status: "loading" });
+  const [view, setView] = useState<View>({ kind: "loading" });
   const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [shelf, setShelf] = useState<ShelfIndex>({ books: [], last: null });
   const engine = useRef<Engine | null>(null);
   const [version, setVersion] = useState(0);
   const [viewing, setViewing] = useState<number | null>(null); // null = latest
@@ -55,47 +61,91 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-  const importRef = useRef<HTMLInputElement>(null);
+  const bookId = view.kind === "book" ? view.id : null;
 
   const persist = useCallback(() => {
-    if (!engine.current) return;
+    if (!engine.current || bookId === null) return;
     try {
-      localStorage.setItem(STORAGE_KEY, engine.current.save());
+      const entry = describe(bookId, engine.current.overview(engine.current.latest()));
+      setShelf((current) => saveBook(current, entry, engine.current!.save()));
       setSaveError(null);
     } catch (e) {
       setSaveError(`Not saved in this browser: ${message(e)}. Export still works.`);
     }
-  }, []);
+  }, [bookId]);
 
-  const adopt = useCallback((next: Engine) => {
+  // Saving needs the book open first, so new books save on the next render.
+  const [unsaved, setUnsaved] = useState(false);
+  useEffect(() => {
+    if (unsaved && bookId !== null) {
+      persist();
+      setUnsaved(false);
+    }
+  }, [unsaved, bookId, persist]);
+
+  const adopt = useCallback((id: string, next: Engine, fresh: boolean) => {
     engine.current?.dispose();
     engine.current = next;
     setViewing(null);
     setCommunity(0);
     setConcept(null);
+    setDialog(null);
+    setError(null);
+    setInfo(null);
     setVersion((v) => v + 1);
-    setBoot({ status: "ready" });
+    setView({ kind: "book", id });
+    if (fresh) setUnsaved(true);
   }, []);
+
+  const openBook = useCallback(
+    (id: string) => {
+      const raw = readBook(id);
+      if (raw === null) {
+        setError("That book could not be found in this browser.");
+        setView({ kind: "shelf" });
+        return;
+      }
+      loadEngine(raw).then(
+        (next) => adopt(id, next, false),
+        (e) => {
+          // Open the shelf next time rather than this book again.
+          setShelf((current) => setLast(current, null));
+          setView({ kind: "recovery", what: "This book", raw, error: message(e) });
+        },
+      );
+    },
+    [adopt],
+  );
 
   useEffect(() => {
     loadCatalog().then(setCatalog, (e) => setError(message(e)));
-    const saved = readSaved();
-    if (saved === null) {
-      setBoot({ status: "fresh" });
+    let loaded: ShelfIndex;
+    try {
+      loaded = loadShelf();
+    } catch (e) {
+      setView({ kind: "recovery", what: "The shelf", raw: rawShelf() ?? "", error: message(e) });
       return;
     }
-    loadEngine(saved).then(adopt, (e) => setBoot({ status: "recovery", raw: saved, error: message(e) }));
-  }, [adopt]);
+    setShelf(loaded);
+    if (loaded.last !== null && loaded.books.some((b) => b.id === loaded.last)) openBook(loaded.last);
+    else setView({ kind: loaded.books.length === 0 ? "title" : "shelf" });
+  }, [openBook]);
+
+  const toShelf = useCallback(() => {
+    setShelf((current) => setLast(current, null));
+    setError(null);
+    setView({ kind: "shelf" });
+  }, []);
 
   const latest = engine.current?.latest() ?? 0;
   const generation = viewing === null ? latest : Math.min(viewing, latest);
   const overview = useMemo(
-    () => (boot.status === "ready" && engine.current ? engine.current.overview(generation) : null),
+    () => (view.kind === "book" && engine.current ? engine.current.overview(generation) : null),
     // `version` changes whenever the history does.
-    [boot.status, generation, version],
+    [view.kind, generation, version],
   );
-  const selected = overview?.communities[Math.min(community, (overview?.communities.length ?? 1) - 1)];
-  const variety = selected ? overview?.varieties[selected.variety] : undefined;
+  const selected = overview ? Math.min(community, overview.communities.length - 1) : 0;
+  const scrub = useCallback((g: number) => setViewing(g >= (engine.current?.latest() ?? 0) ? null : g), []);
 
   const run = useCallback(
     (action: Action) => {
@@ -143,87 +193,115 @@ export default function App() {
     (limit: number) => {
       const current = engine.current;
       if (!current) return;
-      const before = current.latest();
       const ran = current.runUntilEvent(limit);
       setViewing(null);
       setVersion((v) => v + 1);
       persist();
-      setInfo(
-        ran >= limit
-          ? `Nothing happened in ${limit} generations.`
-          : `Something happened after ${ran} generation${ran === 1 ? "" : "s"} (generation ${before + ran}).`,
-      );
+      setInfo(ran >= limit ? `Nothing happened in ${limit * YEARS} years.` : null);
     },
     [persist],
   );
 
-  const startWorld = useCallback(
+  const begin = useCallback(
     async (founding: Founding) => {
       try {
         const next = await createEngine(founding.worldSeed);
         next.act(foundingAction(founding));
-        adopt(next);
-        persist();
-        setDialog(null);
+        adopt(newBookId(), next, true);
       } catch (e) {
         setError(message(e));
       }
     },
-    [adopt, persist],
+    [adopt],
   );
 
-  const importFile = async (file: File) => {
+  const sample = async () => {
     try {
-      adopt(await loadEngine(await file.text()));
-      persist();
+      adopt(newBookId(), await sampleBook(), true);
     } catch (e) {
-      setError(`Could not import ${file.name}: ${message(e)}`);
+      setError(`The sample could not be written: ${message(e)}`);
     }
   };
 
-  if (boot.status === "loading" || !catalog) {
+  const importFile = async (file: File) => {
+    try {
+      adopt(newBookId(), await loadEngine(await file.text()), true);
+    } catch (e) {
+      setError(`Could not bring in ${file.name}: ${message(e)}`);
+    }
+  };
+
+  if (view.kind === "loading" || !catalog) {
     return <main className="splash">{error ?? "Loading the language engine…"}</main>;
   }
 
-  if (boot.status === "recovery") {
+  if (view.kind === "recovery") {
     return (
       <main className="splash">
-        <h1>Saved work could not be opened</h1>
-        <p>{boot.error}</p>
-        <p>It has not been changed or deleted. Download it before starting over.</p>
+        <h1>{view.what} could not be opened</h1>
+        <p>{view.error}</p>
+        <p>It has not been changed or deleted. Download it before going on.</p>
         <div className="row">
-          <button type="button" onClick={() => download("langgen-unreadable-save.json", boot.raw)}>
+          <button type="button" onClick={() => download("langgen-unreadable.json", view.raw)}>
             Download saved data
           </button>
-          <button type="button" onClick={() => setBoot({ status: "fresh" })}>
-            Start a new world
+          <button type="button" onClick={() => setView({ kind: "shelf" })}>
+            Go to the shelf
           </button>
         </div>
       </main>
     );
   }
 
-  if (boot.status === "fresh" || !overview || !selected || !variety) {
+  if (view.kind === "title") {
     return (
       <main className="splash">
-        <h1>Langgen</h1>
-        <p>Design a first language and the community that speaks it, then poke at its words and let history happen.</p>
-        <Designer catalog={catalog} newWorld onFound={(f) => void startWorld(f)} />
+        <TitlePage
+          catalog={catalog}
+          onBegin={(f) => void begin(f)}
+          onCancel={() => setView({ kind: "shelf" })}
+        />
         {error ? <p className="error">{error}</p> : null}
       </main>
     );
   }
 
+  if (view.kind === "shelf" || !overview || !engine.current) {
+    return (
+      <>
+        <Shelf
+          books={shelf.books}
+          onOpen={openBook}
+          onBegin={() => setView({ kind: "title" })}
+          onSample={() => void sample()}
+          onImport={(f) => void importFile(f)}
+          onRemove={(id) => {
+            try {
+              setShelf((current) => removeBook(current, id));
+            } catch (e) {
+              setError(`Could not remove it: ${message(e)}`);
+            }
+          }}
+        />
+        {error ? <p className="notice error">{error}</p> : null}
+      </>
+    );
+  }
+
+  const title = shelf.books.find((b) => b.id === view.id)?.title ?? "A new book";
+
   return (
     <div className="app">
       <header className="top">
         <div className="brand">
-          <strong>Langgen</strong>
-          <span>seed {overview.seed}</span>
+          <button type="button" className="link" onClick={toShelf} title="Back to the shelf">
+            <strong>Langgen</strong>
+          </button>
+          <span className="book-title">{title}</span>
         </div>
         <div className="clock">
-          Generation {generation}
-          <span> · about {generation * YEARS} years</span>
+          Year {generation * YEARS}
+          {generation < latest ? <span> of {latest * YEARS}</span> : null}
         </div>
         <div className="row">
           <RunControls
@@ -246,33 +324,16 @@ export default function App() {
           >
             Undo
           </button>
-          <button type="button" onClick={() => setDialog("world")}>
-            New world
-          </button>
-          <button type="button" onClick={() => importRef.current?.click()}>
-            Import
-          </button>
           <button
             type="button"
             onClick={() => engine.current && download(`langgen-${overview.seed}.json`, engine.current.save())}
           >
             Export
           </button>
-          <input
-            ref={importRef}
-            type="file"
-            accept="application/json,.json"
-            hidden
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) void importFile(file);
-              e.target.value = "";
-            }}
-          />
         </div>
       </header>
 
-      <Timeline overview={overview} generation={generation} onScrub={(g) => setViewing(g >= latest ? null : g)} />
+      <Timeline overview={overview} generation={generation} onScrub={scrub} />
 
       {overview.savedRevision !== null ? (
         <p className="notice">
@@ -292,30 +353,26 @@ export default function App() {
         </p>
       ) : null}
 
-      <main className="panes">
-        <Communities
+      <main className="book">
+        <Verso
           overview={overview}
-          selected={selected.id}
+          selected={selected}
+          atPresent={generation === latest}
           onSelect={(id) => setCommunity(id)}
+          onScrub={scrub}
           onDialog={setDialog}
+          onStep={() => perform({ kind: "run", generations: 1 })}
+          onNextEvent={() => nextEvent(EVENT_LIMIT)}
         />
-        <Lexicon
-          engine={engine.current!}
+        <Recto
+          engine={engine.current}
           version={version}
           generation={generation}
-          variety={variety}
-          community={selected}
+          overview={overview}
+          selected={selected}
           concept={concept}
           onConcept={setConcept}
-        />
-        <Inspector
-          engine={engine.current!}
-          version={version}
-          generation={generation}
-          variety={variety}
-          concept={concept}
-          annals={overview.annals}
-          onScrub={(g) => setViewing(g >= latest ? null : g)}
+          onScrub={scrub}
           onOpenVariety={(v) => {
             const owner = overview.communities.find((c) => c.variety === v);
             if (owner) setCommunity(owner.id);
@@ -323,19 +380,15 @@ export default function App() {
         />
       </main>
 
-      {dialog === "world" || dialog === "found" ? (
-        <Modal open wide title={dialog === "world" ? "A new world" : "A new people"} onClose={() => setDialog(null)}>
+      {dialog === "found" ? (
+        <Modal open wide title="A new people arrives" onClose={() => setDialog(null)}>
           <Designer
             catalog={catalog}
-            newWorld={dialog === "world"}
+            newWorld={false}
             onCancel={() => setDialog(null)}
             onFound={(f) => {
-              if (dialog === "world") {
-                void startWorld(f);
-              } else {
-                setDialog(null);
-                perform(foundingAction(f));
-              }
+              setDialog(null);
+              perform(foundingAction(f));
             }}
           />
         </Modal>
@@ -344,7 +397,7 @@ export default function App() {
           kind={dialog}
           catalog={catalog}
           overview={overview}
-          selected={selected.id}
+          selected={selected}
           onClose={() => setDialog(null)}
           onAction={(action) => {
             setDialog(null);
@@ -355,7 +408,7 @@ export default function App() {
 
       <Modal
         open={pending !== null}
-        title="Continue from here?"
+        title="Begin another telling?"
         onClose={() => setPending(null)}
         footer={
           <>
@@ -371,14 +424,14 @@ export default function App() {
                 if (action) run(action);
               }}
             >
-              Discard later history
+              Discard later years
             </button>
           </>
         }
       >
         <p>
-          You are viewing generation {generation} of {latest}. Acting here starts a new history from this point;
-          everything after it is discarded. Export first to keep it.
+          You are reading year {generation * YEARS} of {latest * YEARS}. Writing here begins the history again from
+          this year, and the later years are discarded. Export first to keep them.
         </p>
       </Modal>
     </div>

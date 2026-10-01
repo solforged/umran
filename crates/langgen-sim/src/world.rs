@@ -558,6 +558,13 @@ impl World {
             .title(&self.communities[community].name.form)
     }
 
+    /// A community's name as it was said at `generation`, spelled the way
+    /// its speech is spelled now.
+    pub fn community_name_at(&self, community: usize, generation: u32) -> String {
+        self.variety_of(community)
+            .title(self.communities[community].name.form_at(generation))
+    }
+
     /// What `by`'s people call `community`: its own name as they hear it,
     /// fitted to their sounds the way a loan is. Computed from the current
     /// names, so it is how they would say it now rather than a name with a
@@ -577,6 +584,12 @@ impl World {
     pub fn language_title(&self, variety: usize) -> String {
         let v = &self.varieties[variety];
         v.title(&v.name.form)
+    }
+
+    /// What a variety's speakers called it at `generation`, spelled.
+    pub fn language_title_at(&self, variety: usize, generation: u32) -> String {
+        let v = &self.varieties[variety];
+        v.title(v.name.form_at(generation))
     }
 
     /// The variety a lineage starts from: its ultimate ancestor.

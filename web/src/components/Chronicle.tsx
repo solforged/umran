@@ -1,4 +1,3 @@
-import { useEffect, useRef } from "react";
 import type { Annal } from "../model";
 import { YEARS } from "../model";
 
@@ -23,14 +22,9 @@ export function Chronicle({
     years.set(annal.generation, list);
   }
   const newest = shown.at(-1);
-  const end = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    end.current?.scrollIntoView({ block: "nearest" });
-  }, [shown.length]);
 
   return (
-    <div role="tabpanel">
-      <h2>Chronicle</h2>
+    <div className="chronicle">
       {shown.length === 0 ? <p className="muted">Nothing has happened yet.</p> : null}
       <ol className="annals">
         {[...years.entries()].map(([generation, entries]) => (
@@ -51,7 +45,6 @@ export function Chronicle({
           </li>
         ))}
       </ol>
-      <div ref={end} />
     </div>
   );
 }

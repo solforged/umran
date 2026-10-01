@@ -89,7 +89,9 @@
 
 /* Pane titles open with a boxed, gilded initial. */
 [data-look="scriptorium"] h2::first-letter,
-[data-look="scriptorium"] .splash h1::first-letter {
+[data-look="scriptorium"] .splash h1::first-letter,
+[data-look="scriptorium"] .shelf h1::first-letter,
+[data-look="scriptorium"] .cast::first-letter {
   font-family: var(--initial);
   font-variant: normal;
   font-size: 1.45em;
@@ -142,8 +144,13 @@
   transform: translateX(-3px) rotate(45deg);
 }
 
-[data-look="scriptorium"] .pane + .pane {
-  border-left: 3px double var(--line);
+/* The gutter between the pages. */
+[data-look="scriptorium"] .verso {
+  border-right: 3px double var(--line);
+  box-shadow: inset -18px 0 22px -20px var(--vignette);
+}
+[data-look="scriptorium"] .recto {
+  box-shadow: inset 18px 0 22px -20px var(--vignette);
 }
 
 [data-look="scriptorium"] button {
@@ -157,33 +164,6 @@
 [data-look="scriptorium"] button.primary {
   background: var(--accent);
   border-color: var(--accent);
-}
-
-[data-look="scriptorium"] .item {
-  border: none;
-  border-bottom: 1px solid var(--line);
-  border-radius: 0;
-  background: transparent;
-  font-variant: normal;
-  letter-spacing: 0;
-  padding-left: 1.2rem;
-}
-
-[data-look="scriptorium"] .item.selected {
-  background: transparent;
-  position: relative;
-}
-
-[data-look="scriptorium"] .item.selected::before {
-  content: "☞";
-  position: absolute;
-  left: 0;
-  top: 0.45rem;
-  color: var(--accent);
-}
-
-[data-look="scriptorium"] .item-title {
-  font-size: 1.15rem;
 }
 
 [data-look="scriptorium"] th {
@@ -350,4 +330,152 @@
   font-variant: normal;
   text-decoration: none;
   color: inherit;
+}
+
+/* The book. */
+[data-look="scriptorium"] .cast {
+  font-size: 1.15rem;
+}
+[data-look="scriptorium"] .cast::first-letter {
+  float: left;
+  font-size: 2.6em;
+  margin: 0.08em 0.12em 0 0;
+}
+[data-look="scriptorium"] .and-then {
+  border-top: none;
+}
+[data-look="scriptorium"] .and-then-lead {
+  font-family: var(--initial);
+  font-style: normal;
+  color: var(--accent);
+  font-size: 1.3rem;
+}
+[data-look="scriptorium"] .and-then button.link,
+[data-look="scriptorium"] .cast button.link {
+  color: var(--ink);
+  font-variant: normal;
+  letter-spacing: 0;
+  font-size: inherit;
+  text-decoration: underline dotted var(--ink-soft);
+  text-underline-offset: 0.2em;
+}
+[data-look="scriptorium"] .and-then button.link:hover:not(:disabled) {
+  color: var(--accent);
+}
+[data-look="scriptorium"] .and-then button.link:disabled {
+  text-decoration: none;
+}
+[data-look="scriptorium"] .cast .person.chosen {
+  color: var(--accent);
+  text-decoration: underline solid var(--gold);
+}
+[data-look="scriptorium"] .margin {
+  border-left: 1px solid var(--line);
+  font-size: 0.95rem;
+}
+[data-look="scriptorium"] .margin h3 {
+  font-variant: normal;
+  font-style: italic;
+}
+[data-look="scriptorium"] .brand button.link {
+  font-variant: normal;
+}
+[data-look="scriptorium"] .book-title {
+  font-style: italic;
+  margin-left: 0.6rem;
+}
+
+/* The ribbon bookmark marks the year being read. */
+[data-look="scriptorium"] .track input[type="range"] {
+  appearance: none;
+  background: transparent;
+  height: 1.8rem;
+}
+[data-look="scriptorium"] .track input[type="range"]::-webkit-slider-runnable-track {
+  height: 2px;
+  background: var(--line);
+}
+[data-look="scriptorium"] .track input[type="range"]::-moz-range-track {
+  height: 2px;
+  background: var(--line);
+}
+[data-look="scriptorium"] .track input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 28px;
+  margin-top: -6px;
+  background: var(--accent);
+  border: none;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 78%, 0 100%);
+  cursor: grab;
+}
+[data-look="scriptorium"] .track input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 28px;
+  background: var(--accent);
+  border: none;
+  border-radius: 0;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 78%, 0 100%);
+  cursor: grab;
+}
+
+/* The shelf: books stand with their spines out. */
+[data-look="scriptorium"] .book-card {
+  border: 1px solid var(--line);
+  border-left: 8px solid var(--accent);
+  background: var(--paper-raised);
+  box-shadow: 2px 3px 0 var(--line);
+  font-variant: normal;
+  letter-spacing: 0;
+}
+[data-look="scriptorium"] .book-card strong {
+  font-family: var(--initial);
+  font-weight: 400;
+  color: var(--accent);
+  font-size: 1.35rem;
+}
+[data-look="scriptorium"] .book-card.begin {
+  border-left-style: dashed;
+  border-left-color: var(--gold);
+  background: transparent;
+  box-shadow: none;
+}
+[data-look="scriptorium"] .book-card.sample {
+  border-left-color: var(--gold);
+}
+
+/* The title page. */
+[data-look="scriptorium"] .preset {
+  border-radius: 0;
+  background: transparent;
+  font-variant: normal;
+  letter-spacing: 0;
+}
+[data-look="scriptorium"] .preset.chosen {
+  border-color: var(--accent);
+  background: var(--accent-mute);
+}
+[data-look="scriptorium"] .preset strong {
+  color: var(--accent);
+  font-variant: small-caps;
+  letter-spacing: 0.04em;
+}
+[data-look="scriptorium"] .frontispiece {
+  border: 3px double var(--ink-soft);
+  border-radius: 0;
+  background: var(--paper-raised);
+}
+[data-look="scriptorium"] .frontispiece .endonym {
+  font-family: var(--initial);
+  font-weight: 400;
+  color: var(--accent);
+  font-size: 2.6rem;
+}
+[data-look="scriptorium"] .frontispiece .glottonym {
+  font-style: italic;
+}
+[data-look="scriptorium"] .title-page legend {
+  color: var(--accent);
+  font-variant: small-caps;
+  letter-spacing: 0.04em;
 }

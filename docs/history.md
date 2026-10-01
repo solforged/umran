@@ -18,7 +18,13 @@ existing recipe replay differently; loading a recipe from another revision
 still works but the UI warns that its words may differ. Resolved-state saves
 remain possible later work if exact preservation across versions matters.
 
-The browser autosaves under localStorage key `langgen.sim.v1`. The previous
-workbench's `langgen.workbench.v2` data is left untouched, never deleted.
-Unreadable saves open recovery without being overwritten; save failures stay
-visible and export still works. Storage is local to the browser, not synced.
+The browser keeps a shelf of books (`web/src/shelf.ts`): each book's
+history autosaves under localStorage key `langgen.book.<id>`, and
+`langgen.shelf.v1` lists the books with their titles and the one last open.
+The single-world save `langgen.sim.v1` is copied onto the shelf once as "An
+earlier history" and left in place, as is the older `langgen.workbench.v2`.
+Books leave the shelf only when the reader removes one and confirms.
+Unreadable books or an unreadable shelf open recovery without being
+overwritten; save failures stay visible and export still works. Storage is
+local to the browser, not synced. The sample chronicle (`web/src/sample.ts`)
+is a fixed recipe; opening it puts a fresh copy on the shelf.

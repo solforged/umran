@@ -1,23 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Community, Engine, LexiconRow, Variety } from "../model";
+import type { Engine, LexiconRow } from "../model";
 
 type OriginFilter = "all" | "inherited" | "derived" | "coined" | "borrowed" | "kept";
 
-/// Every concept's current word in the selected community's language.
-export function Lexicon({
+/// Every concept's current word in one language.
+export function Dictionary({
   engine,
   version,
   generation,
   variety,
-  community,
   concept,
   onConcept,
 }: {
   engine: Engine;
   version: number;
   generation: number;
-  variety: Variety;
-  community: Community;
+  variety: number;
   concept: string | null;
   onConcept: (concept: string) => void;
 }) {
@@ -27,9 +25,9 @@ export function Lexicon({
   const tableRef = useRef<HTMLTableSectionElement>(null);
 
   const rows = useMemo(
-    () => engine.lexicon(generation, variety.id),
+    () => engine.lexicon(generation, variety),
     // `version` changes whenever the history does.
-    [engine, generation, variety.id, version],
+    [engine, generation, variety, version],
   );
   const fields = useMemo(() => [...new Set(rows.map((r) => r.field))].sort(), [rows]);
   const shown = useMemo(() => {
@@ -43,10 +41,6 @@ export function Lexicon({
   }, [rows, query, field, origin]);
 
   useEffect(() => {
-    if (concept === null && rows.length > 0) onConcept(rows[0].concept);
-  }, [concept, rows, onConcept]);
-
-  useEffect(() => {
     tableRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
   }, [concept]);
 
@@ -57,22 +51,8 @@ export function Lexicon({
     onConcept(shown[next].concept);
   };
 
-  const counts = {
-    borrowed: rows.filter((r) => r.origin.kind === "borrowed").length,
-    coined: rows.filter((r) => r.origin.kind === "coined").length,
-  };
-
   return (
-    <section className="pane lexicon" aria-label="Lexicon">
-      <div className="pane-head">
-        <div>
-          <h2 className={`hand-${variety.family % 5}`}>{variety.name}</h2>
-          <p className="muted">
-            {variety.meaning ? `“${variety.meaning}” · ` : ""}spoken by {community.name} · {rows.length} meanings, {counts.borrowed} loans,{" "}
-            {counts.coined} coinages
-          </p>
-        </div>
-      </div>
+    <div className="dictionary">
       <div className="filters">
         <input
           type="search"
@@ -130,7 +110,7 @@ export function Lexicon({
         </table>
         {shown.length === 0 ? <p className="muted pad">No words match.</p> : null}
       </div>
-    </section>
+    </div>
   );
 }
 

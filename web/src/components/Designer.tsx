@@ -14,7 +14,7 @@ export interface Founding {
   worldSeed: number;
 }
 
-function randomSeed(): number {
+export function randomSeed(): number {
   return Math.floor(Math.random() * 0xffff_ffff);
 }
 
@@ -25,22 +25,25 @@ const SECONDARY_ORDER = ["plain", "aspirated", "breathy", "labialized", "rounded
 export function Designer({
   catalog,
   newWorld,
+  initial,
   onFound,
   onCancel,
 }: {
   catalog: Catalog;
   newWorld: boolean;
+  /// Choices carried over from the title page.
+  initial?: Founding;
   onFound: (founding: Founding) => void;
   onCancel?: () => void;
 }) {
-  const [worldSeed, setWorldSeed] = useState(() => randomSeed());
-  const [seed, setSeed] = useState(() => randomSeed());
+  const [worldSeed, setWorldSeed] = useState(() => initial?.worldSeed ?? randomSeed());
+  const [seed, setSeed] = useState(() => initial?.seed ?? randomSeed());
   const [consonants, setConsonants] = useState(18);
   const [vowels, setVowels] = useState(5);
-  const [design, setDesign] = useState<LanguageDesign>(() => typicalDesign(seed, 18, 5));
-  const [naming, setNaming] = useState<Naming>({ kind: "people" });
-  const [power, setPower] = useState(0.5);
-  const [openness, setOpenness] = useState(0.5);
+  const [design, setDesign] = useState<LanguageDesign>(() => initial?.design ?? typicalDesign(seed, 18, 5));
+  const [naming, setNaming] = useState<Naming>(initial?.naming ?? { kind: "people" });
+  const [power, setPower] = useState(initial?.power ?? 0.5);
+  const [openness, setOpenness] = useState(initial?.openness ?? 0.5);
   const result = useMemo(() => preview(design, seed, naming), [design, seed, naming]);
   const set = (patch: Partial<LanguageDesign>) => setDesign((d) => ({ ...d, ...patch }));
 
@@ -344,7 +347,7 @@ export function Designer({
             </button>
           ) : null}
           <button type="submit" className="primary" disabled={typeof result === "string"}>
-            {newWorld ? "Create world" : "Found community"}
+            {newWorld ? "Begin the book" : "Found community"}
           </button>
         </div>
       </aside>

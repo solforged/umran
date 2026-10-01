@@ -3,8 +3,8 @@ import type { Action, Catalog, ContactKind, Naming, Overview } from "../model";
 import { NamingSelect } from "./NamingSelect";
 import { Modal } from "./Modal";
 
-/// "world" and "found" open the language designer; the rest are here.
-export type DialogKind = "world" | "found" | "split" | "connect" | "shift";
+/// "found" opens the language designer; the rest are here.
+export type DialogKind = "found" | "split" | "connect" | "shift";
 
 const TITLES: Record<"split" | "connect" | "shift", string> = {
   split: "A people parts ways",

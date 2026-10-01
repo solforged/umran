@@ -595,11 +595,12 @@ impl Bench {
 /// The world's history up to now as annal entries: peoples appearing,
 /// parting, meeting, and changing tongues, plus each language's sound laws.
 fn annals(world: &World, connections: &[(u32, usize, usize, ContactKind)]) -> Vec<Annal> {
-    let name = |c: usize| world.community_name(c);
+    // Names are written as they were said at the time of each entry.
     let meaning = |c: usize| &world.communities[c].name.meaning;
-    let tongue = |c: usize| world.language_title(world.communities[c].variety);
     let mut out: Vec<Annal> = Vec::new();
-    for (generation, event) in &world.events {
+    for &(generation, ref event) in &world.events {
+        let name = |c: usize| world.community_name_at(c, generation);
+        let tongue = |c: usize| world.language_title_at(world.communities[c].variety, generation);
         let (kind, text) = match *event {
             WorldEvent::Found { community } => (
                 "found",
@@ -634,12 +635,12 @@ fn annals(world: &World, connections: &[(u32, usize, usize, ContactKind)]) -> Ve
                     "The {} forsake their old speech for that of the {}, and call it {}.",
                     name(community),
                     name(toward),
-                    world.language_title(variety)
+                    world.language_title_at(variety, generation)
                 ),
             ),
         };
         out.push(Annal {
-            generation: *generation,
+            generation,
             kind,
             text,
             variety: None,
@@ -659,7 +660,11 @@ fn annals(world: &World, connections: &[(u32, usize, usize, ContactKind)]) -> Ve
         out.push(Annal {
             generation,
             kind: "contact",
-            text: format!("The {} and the {} {how}.", name(a), name(b)),
+            text: format!(
+                "The {} and the {} {how}.",
+                world.community_name_at(a, generation),
+                world.community_name_at(b, generation)
+            ),
             variety: None,
         });
     }
@@ -677,7 +682,8 @@ fn annals(world: &World, connections: &[(u32, usize, usize, ContactKind)]) -> Ve
                 kind: "law",
                 text: format!(
                     "In {}: {}.",
-                    world.language_title(v),
+                    // The name before this law touched it.
+                    world.language_title_at(v, generation.saturating_sub(1)),
                     lowercase_first(&label)
                 ),
                 variety: Some(v),

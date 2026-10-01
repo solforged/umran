@@ -57,6 +57,18 @@ impl Name {
             });
         }
     }
+
+    /// The form the name had at `generation`, before any later sound law.
+    pub fn form_at(&self, generation: u32) -> &Form {
+        self.log
+            .iter()
+            .find(|e| e.generation > generation)
+            .and_then(|e| match &e.event {
+                Event::SoundLaw { before, .. } => Some(before),
+                _ => None,
+            })
+            .unwrap_or(&self.form)
+    }
 }
 
 impl Naming {
@@ -277,6 +289,24 @@ mod tests {
             .filter(|s| variety("semitic", *s).morphology.names.head_first)
             .count();
         assert!(first >= 30, "{first} of 40");
+    }
+
+    #[test]
+    fn names_remember_their_older_forms() {
+        let v = variety("typical", 3);
+        let mut name = Naming::People.coin(&v, None, 0).unwrap();
+        let first = name.form.clone();
+        let mut second = first.clone();
+        second.segs.pop();
+        name.change(second.clone(), "a law", 4);
+        let mut third = second.clone();
+        third.segs.reverse();
+        name.change(third.clone(), "another law", 9);
+        assert_eq!(name.form_at(0), &first);
+        assert_eq!(name.form_at(3), &first);
+        assert_eq!(name.form_at(4), &second);
+        assert_eq!(name.form_at(8), &second);
+        assert_eq!(name.form_at(9), &third);
     }
 
     #[test]

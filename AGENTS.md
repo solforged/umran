@@ -21,8 +21,9 @@ Read further when the task touches it:
   is tested natively; `Workbench` is a thin wrapper, since `JsValue` panics
   off WASM.
 - `web/src`: React, TypeScript, and Vite. `model.ts` mirrors the facade's
-  JSON views; `engine.ts` adapts the WASM; `App.tsx` holds view state,
-  actions, and persistence; `components/` holds the panes and dialogs.
+  JSON views; `engine.ts` adapts the WASM; `shelf.ts` stores the books;
+  `App.tsx` holds view state and actions; `components/` holds the shelf,
+  title page, the book's two pages, and dialogs.
 
 All linguistic logic runs in Rust. Presentation code never mints or changes
 words, and there is no backend or second implementation of linguistic
