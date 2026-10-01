@@ -1,6 +1,8 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowLeft,
+  BookOpen,
   AudioLines,
   Globe,
   Languages,
@@ -12,9 +14,10 @@ import {
   ScrollText,
   Users,
   WholeWord,
+  X,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, Catalog, Community, Craft, CraftView, Engine, Overview, PlaceExonym, ReligionView, StateView, TellingView, Variety, WordMap, WorldMap } from "../model";
+import type { Annal, Catalog, Community, Craft, CraftView, Engine, Overview, PlaceExonym, ReligionView, RenderingRow, StateView, TellingView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { CONTACT_NAME, EVENT_KIND, FAITH_HOW, FALL_NAME, howCame, howNamed, hue, LIVELIHOOD_NAME, RISE_NAME, TERMS, TERRAIN_NAME, type Term } from "../lore";
 import { bond } from "../words";
@@ -41,13 +44,6 @@ export type Focus =
   | { kind: "event"; annal: Annal }
   | { kind: "history" };
 
-/// Most of a people's story the card lists, newest first.
-const STORY_LENGTH = 12;
-/// Most examples of a sound change the card lists.
-const EXAMPLES = 6;
-/// Sound laws a language card lists before "all of them".
-const RECENT_LAWS = 8;
-
 /// Share of core words below which two languages count as unrelated.
 const KIN_FLOOR = 0.05;
 
@@ -66,7 +62,23 @@ interface Context {
   onDialog: (kind: DialogKind, community: number) => void;
   /// Tell the history again as a telling set aside told it.
   onRestore: (telling: number) => void;
+  /// The folio page open over the map, by its section's id.
+  leaf: string | null;
+  onLeaf: (leaf: string | null) => void;
+  /// Where the folio is laid: over the map.
+  folioHost: HTMLElement | null;
 }
+
+/// The folio: a card's long and wide sections, laid open over the map one
+/// at a time. Each section registers its title for the folio's tabs.
+interface Folio {
+  open: string | null;
+  page: HTMLElement | null;
+  show: (leaf: string | null) => void;
+  register: (id: string, title: string) => () => void;
+}
+
+const FolioContext = createContext<Folio | null>(null);
 
 /// Most cards the trail names before the one open.
 const TRAIL_SHOWN = 3;
@@ -74,8 +86,9 @@ const TRAIL_SHOWN = 3;
 /// The encyclopedia: one card at a time about whatever is in focus, with
 /// every name in it leading to that thing's own card. Each card opens the
 /// same way: what kind of thing it is, its name, a box of facts, and its
-/// specimen words where it has a language, then sections to read on. The
-/// last few cards visited stay named above it, to step back to.
+/// specimen words where it has a language, then sections to read on. Long
+/// and wide sections show a line on the card and open in the folio over
+/// the map. The last few cards visited stay named above it, to step back to.
 export function Pedia({
   trail,
   onReturn,
@@ -83,6 +96,23 @@ export function Pedia({
 }: Context & { trail: Focus[]; onReturn: (index: number) => void }) {
   const focus = trail.at(-1)!;
   const first = Math.max(0, trail.length - 1 - TRAIL_SHOWN);
+  const { leaf, onLeaf, folioHost } = context;
+  const [leaves, setLeaves] = useState<{ id: string; title: string }[]>([]);
+  const [page, setPage] = useState<HTMLDivElement | null>(null);
+  const register = useCallback((id: string, title: string) => {
+    setLeaves((all) => (all.some((l) => l.id === id) ? all.map((l) => (l.id === id ? { id, title } : l)) : [...all, { id, title }]));
+    return () => setLeaves((all) => all.filter((l) => l.id !== id));
+  }, []);
+  const folio = useMemo<Folio>(() => ({ open: leaf, page, show: onLeaf, register }), [leaf, page, onLeaf, register]);
+  // The page stays chosen from card to card, but shows only where the card
+  // has a section of that name.
+  const shown = leaf !== null && leaves.some((l) => l.id === leaf);
+  useEffect(() => {
+    if (!shown) return;
+    const close = (e: KeyboardEvent) => e.key === "Escape" && onLeaf(null);
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [shown, onLeaf]);
   return (
     <aside className="pedia" aria-label="Encyclopedia">
       <nav className="pedia-nav">
@@ -119,9 +149,39 @@ export function Pedia({
           </ol>
         ) : null}
       </nav>
-      <article className="card">
-        <Card focus={focus} context={context} />
-      </article>
+      <FolioContext.Provider value={folio}>
+        <article className="card">
+          <Card focus={focus} context={context} />
+        </article>
+      </FolioContext.Provider>
+      {folioHost && shown
+        ? createPortal(
+            <section className="folio" aria-label={`Folio: ${focusLabel(focus, context)}`}>
+              <header className="folio-head">
+                <span className="folio-of">{focusLabel(focus, context)}</span>
+                <div className="folio-tabs" role="tablist">
+                  {leaves.map((l) => (
+                    <button
+                      key={l.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={l.id === leaf}
+                      className="folio-tab"
+                      onClick={() => onLeaf(l.id)}
+                    >
+                      {l.title}
+                    </button>
+                  ))}
+                </div>
+                <button type="button" className="icon folio-close" title="Close the folio (Esc)" onClick={() => onLeaf(null)}>
+                  <X size={16} />
+                </button>
+              </header>
+              <div className="folio-page card" role="tabpanel" ref={setPage} />
+            </section>,
+            folioHost,
+          )
+        : null}
     </aside>
   );
 }
@@ -423,6 +483,66 @@ function Story({ annals, context }: { annals: Annal[]; context: Context }) {
   );
 }
 
+/// A section too long or too wide for the card. The card keeps its title
+/// and a line about it; the whole of it opens in the folio over the map.
+function Leaf({ id, title, summary, children }: { id: string; title: string; summary: ReactNode; children: ReactNode }) {
+  const folio = useContext(FolioContext)!;
+  const { register } = folio;
+  useEffect(() => register(id, title), [register, id, title]);
+  const open = folio.open === id;
+  return (
+    <section className={open ? "leaf open" : "leaf"}>
+      <h3>
+        <button type="button" className="leaf-title" aria-expanded={open} onClick={() => folio.show(open ? null : id)}>
+          {title}
+          <BookOpen size={13} aria-hidden="true" />
+        </button>
+      </h3>
+      <div className="leaf-summary">{summary}</div>
+      {open && folio.page ? createPortal(children, folio.page) : null}
+    </section>
+  );
+}
+
+/// The first few of a list, then how many more, which opens the folio.
+function Few<T>({ items, link, leaf, max = 3 }: { items: T[]; link: (item: T) => ReactNode; leaf: string; max?: number }) {
+  const folio = useContext(FolioContext)!;
+  if (items.length <= max + 1) return <Joined items={items} link={link} />;
+  return (
+    <>
+      {items.slice(0, max).map((item, i) => (
+        <Fragment key={i}>
+          <span className="joined">{link(item)},</span>{" "}
+        </Fragment>
+      ))}
+      and{" "}
+      <button type="button" className="link" onClick={() => folio.show(leaf)}>
+        {items.length - max} more
+      </button>
+    </>
+  );
+}
+
+/// Something's story in the folio, newest first, with its latest moment
+/// on the card.
+function StoryLeaf({ title, annals, context }: { title: string; annals: Annal[]; context: Context }) {
+  const last = annals.at(-1);
+  if (!last) return null;
+  return (
+    <Leaf
+      id="story"
+      title={title}
+      summary={
+        <p>
+          Latest, in year <Year generation={last.generation} context={context} />: <Told text={last.text} />
+        </p>
+      }
+    >
+      <Story annals={[...annals].reverse()} context={context} />
+    </Leaf>
+  );
+}
+
 /// A language's specimen, each word opening its own card.
 function LanguageSpecimen({ variety, context }: { variety: number; context: Context }) {
   return (
@@ -525,6 +645,7 @@ function WorldCard({ context }: { context: Context }) {
   const held = new Set(peoples.flatMap((c) => c.lands)).size;
   const silent = overview.varieties.filter((v) => !v.spoken);
   const states = overview.states.filter((s) => s.fell === null);
+  const crafts = overview.crafts.filter((c) => c.first !== null);
   return (
     <>
       <CardHead icon={Globe} kind="The world" title={`Year ${overview.generation * YEARS}`} />
@@ -548,25 +669,38 @@ function WorldCard({ context }: { context: Context }) {
           </button>
         </p>
       ) : null}
-      <h3>Peoples</h3>
-      <table className="peoples">
-        <tbody>
-          {peoples.map((c) => (
-            <tr key={c.id}>
-              <th scope="row">
-                <PeopleLink c={c} context={context} />
-              </th>
-              <td className="num">{Math.round(c.size).toLocaleString()}</td>
-              <td>
-                <LanguageLink variety={c.variety} context={context} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <Leaf
+        id="peoples"
+        title="Peoples"
+        summary={
+          <p>
+            The largest: <Few items={peoples} link={(c) => <PeopleLink c={c} context={context} />} leaf="peoples" />.
+          </p>
+        }
+      >
+        <table className="peoples">
+          <thead><tr><th>People</th><th>Souls</th><th>Speech</th></tr></thead>
+          <tbody>
+            {peoples.map((c) => (
+              <tr key={c.id}>
+                <th scope="row">
+                  <PeopleLink c={c} context={context} />
+                </th>
+                <td className="num">{Math.round(c.size).toLocaleString()}</td>
+                <td>
+                  <LanguageLink variety={c.variety} context={context} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Leaf>
       {states.length > 0 ? (
-        <>
-          <h3>States that stand</h3>
+        <Leaf
+          id="states"
+          title="States that stand"
+          summary={<p><Few items={states} link={(state) => <StateLink state={state} context={context} />} leaf="states" />.</p>}
+        >
           <table className="peoples">
             <thead><tr><th>State</th><th>Rulers</th><th>Subjects</th><th>City</th></tr></thead>
             <tbody>
@@ -580,11 +714,14 @@ function WorldCard({ context }: { context: Context }) {
               ))}
             </tbody>
           </table>
-        </>
+        </Leaf>
       ) : null}
       {overview.religions.length > 0 ? (
-        <>
-          <h3>Religions</h3>
+        <Leaf
+          id="religions"
+          title="Religions"
+          summary={<p><Few items={overview.religions} link={(religion) => <ReligionLink religion={religion} context={context} />} leaf="religions" />.</p>}
+        >
           <table className="peoples">
             <thead><tr><th>Religion</th><th>Founded</th><th>Followers</th></tr></thead>
             <tbody>
@@ -597,29 +734,49 @@ function WorldCard({ context }: { context: Context }) {
               ))}
             </tbody>
           </table>
-        </>
+        </Leaf>
       ) : null}
-      <h3>Crafts</h3>
-      <table className="peoples">
-        <thead><tr><th>Craft</th><th>First held</th><th>Holders</th></tr></thead>
-        <tbody>
-          {overview.crafts.map((craft) => (
-            <tr key={craft.id}>
-              <th scope="row"><CraftLink craft={craft.id} context={context} /></th>
-              <td>{craft.first === null ? "not yet" : <Year generation={craft.first} context={context} />}</td>
-              <td className="num">{craft.holders.length}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <Leaf
+        id="crafts"
+        title="Crafts"
+        summary={
+          crafts.length === 0 ? (
+            <p className="muted">No people has a craft yet.</p>
+          ) : (
+            <p>
+              Held: <Few items={crafts} link={(craft) => <CraftLink craft={craft.id} context={context} />} leaf="crafts" />.
+            </p>
+          )
+        }
+      >
+        <table className="peoples">
+          <thead><tr><th>Craft</th><th>First held</th><th>Holders</th></tr></thead>
+          <tbody>
+            {overview.crafts.map((craft) => (
+              <tr key={craft.id}>
+                <th scope="row"><CraftLink craft={craft.id} context={context} /></th>
+                <td>{craft.first === null ? "not yet" : <Year generation={craft.first} context={context} />}</td>
+                <td className="num">{craft.holders.length}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Leaf>
       {spoken.length > 1 ? (
-        <>
-          <h3>Words compared</h3>
+        <Leaf
+          id="compared"
+          title="Words compared"
+          summary={
+            <p>
+              Basic words across {spoken.length} living languages, shaded by shared root.
+            </p>
+          }
+        >
           <p className="muted small">
             Words shaded alike come from one root: they are <Explained term="cognate">cognates</Explained>.
           </p>
           <WordsCompared spoken={spoken} context={context} />
-        </>
+        </Leaf>
       ) : null}
       <FamilyTrees context={context} />
       {silent.length > 0 ? (
@@ -642,10 +799,16 @@ function FamilyTrees({ context }: { context: Context }) {
   );
   if (families.length === 0) return null;
   return (
-    <>
-      <h3>
-        <Explained term="family">Families</Explained>
-      </h3>
+    <Leaf
+      id="families"
+      title="Family trees"
+      summary={
+        <p>
+          {families.length} <Explained term="family">{families.length === 1 ? "family" : "families"}</Explained> of more
+          than one language, each drawn as a chart of descent.
+        </p>
+      }
+    >
       {families.map((f) => (
         <FamilyTree
           key={f}
@@ -655,7 +818,7 @@ function FamilyTrees({ context }: { context: Context }) {
           onOpen={(id) => context.go({ kind: "language", variety: id })}
         />
       ))}
-    </>
+    </Leaf>
   );
 }
 
@@ -692,58 +855,70 @@ function HistoryCard({ context }: { context: Context }) {
     return [...written, ...struck].sort((a, b) => a.annal.generation - b.annal.generation);
   }, [overview, variety]);
   const spoken = overview.varieties.filter((v) => v.spoken);
+  const struck = lines.filter((l) => l.telling).length;
   return (
     <>
       <CardHead icon={ScrollText} kind="History" title="Everything that has happened" />
-      <label className="history-laws">
-        <span>
-          <Explained term="sound law">Sound changes</Explained> in
-        </span>
-        <select
-          value={variety ?? ""}
-          onChange={(e) => setVariety(e.target.value === "" ? null : Number(e.target.value))}
-        >
-          <option value="">no language</option>
-          {spoken.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.name}
-            </option>
-          ))}
-        </select>
-      </label>
       {lines.length === 0 ? (
         <p className="muted">Nothing has happened yet.</p>
       ) : (
-        <ol className="history">
-          {lines.map(({ annal, telling, opens }, i) => (
-            <li key={i} className={telling ? "struck" : undefined}>
-              <Year generation={annal.generation} context={context} />
-              {telling ? (
-                <span>
-                  {opens ? (
-                    <span className="struck-note">
-                      {telling.why === "undone" ? "Struck out" : "In another telling"}
-                      {" · "}
-                      <button type="button" className="link" onClick={() => context.onRestore(telling.index)}>
-                        tell it this way
-                      </button>
-                    </span>
-                  ) : null}
-                  <del>
-                    <Told text={annal.text} />
-                  </del>
-                </span>
-              ) : (
-                <span>
-                  <button type="button" className="moment" onClick={() => context.go({ kind: "event", annal })}>
-                    <Told text={annal.text} />
-                  </button>
-                  <AnnalLinks annal={annal} context={context} />
-                </span>
-              )}
-            </li>
-          ))}
-        </ol>
+        <Leaf
+          id="history"
+          title="The whole history"
+          summary={
+            <p>
+              {lines.length - struck} moments written from year 0 to year {overview.latest * YEARS}
+              {struck > 0 ? `, and ${struck} struck out but kept` : ""}.
+            </p>
+          }
+        >
+          <label className="history-laws">
+            <span>
+              <Explained term="sound law">Sound changes</Explained> in
+            </span>
+            <select
+              value={variety ?? ""}
+              onChange={(e) => setVariety(e.target.value === "" ? null : Number(e.target.value))}
+            >
+              <option value="">no language</option>
+              {spoken.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <ol className="history">
+            {lines.map(({ annal, telling, opens }, i) => (
+              <li key={i} className={telling ? "struck" : undefined}>
+                <Year generation={annal.generation} context={context} />
+                {telling ? (
+                  <span>
+                    {opens ? (
+                      <span className="struck-note">
+                        {telling.why === "undone" ? "Struck out" : "In another telling"}
+                        {" · "}
+                        <button type="button" className="link" onClick={() => context.onRestore(telling.index)}>
+                          tell it this way
+                        </button>
+                      </span>
+                    ) : null}
+                    <del>
+                      <Told text={annal.text} />
+                    </del>
+                  </span>
+                ) : (
+                  <span>
+                    <button type="button" className="moment" onClick={() => context.go({ kind: "event", annal })}>
+                      <Told text={annal.text} />
+                    </button>
+                    <AnnalLinks annal={annal} context={context} />
+                  </span>
+                )}
+              </li>
+            ))}
+          </ol>
+        </Leaf>
       )}
     </>
   );
@@ -754,9 +929,10 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
   const name = (id: number) => overview.communities[id];
   const v = overview.varieties[c.variety];
   const contacts = overview.contacts.filter((k) => k.a === c.id || k.b === c.id);
+  const other = (k: (typeof contacts)[number]) => name(k.a === c.id ? k.b : k.a);
+  const kinds = [...new Set(contacts.map((k) => k.kind))];
   const moves = overview.moves.filter((m) => m.community === c.id);
   const told = overview.annals.filter((a) => a.peoples.includes(c.id));
-  const story = told.slice(-STORY_LENGTH).reverse();
   const realm = overview.states.find((s) => s.fell === null &&
     (s.rulers === c.id || s.members.some((m) => m.community === c.id && m.left === null)));
   return (
@@ -831,22 +1007,54 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
         ]}
       />
       <LanguageSpecimen variety={c.variety} context={context} />
-      <h3>Dealings</h3>
       {contacts.length > 0 ? (
-        <ul className="roster">
-          {contacts.map((k, i) => (
-            <li key={i}>
-              They {bond(k.kind, k.intensity)} the <PeopleLink c={name(k.a === c.id ? k.b : k.a)} context={context} />{" "}
-              <span className="muted">({CONTACT_NAME[k.kind].toLowerCase()})</span>
-            </li>
-          ))}
-        </ul>
+        <Leaf
+          id="dealings"
+          title="Dealings"
+          summary={
+            <p>
+              {kinds.map((kind, i) => (
+                <Fragment key={kind}>
+                  {i > 0 ? "; " : ""}
+                  {CONTACT_NAME[kind]}:{" "}
+                  <Few
+                    items={contacts.filter((k) => k.kind === kind)}
+                    link={(k) => <PeopleLink c={other(k)} context={context} />}
+                    leaf="dealings"
+                  />
+                </Fragment>
+              ))}
+              .
+            </p>
+          }
+        >
+          <ul className="roster">
+            {contacts.map((k, i) => (
+              <li key={i}>
+                They {bond(k.kind, k.intensity)} the <PeopleLink c={other(k)} context={context} />{" "}
+                <span className="muted">({CONTACT_NAME[k.kind].toLowerCase()})</span>
+              </li>
+            ))}
+          </ul>
+        </Leaf>
       ) : (
-        <p className="muted">They deal with no one.</p>
+        <>
+          <h3>Dealings</h3>
+          <p className="muted">They deal with no one.</p>
+        </>
       )}
       {moves.length > 0 ? (
-        <>
-          <h3>Wanderings</h3>
+        <Leaf
+          id="wanderings"
+          title="Wanderings"
+          summary={
+            <p>
+              {moves.length === 1 ? "Once" : `${moves.length} times`}, last to{" "}
+              <LandLink region={moves.at(-1)!.to} context={context} /> in year{" "}
+              <Year generation={moves.at(-1)!.generation} context={context} />.
+            </p>
+          }
+        >
           <ol className="history">
             {moves.map((m, i) => (
               <li key={i}>
@@ -858,10 +1066,9 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
               </li>
             ))}
           </ol>
-        </>
+        </Leaf>
       ) : null}
-      <h3>Their story</h3>
-      <Story annals={story} context={context} />
+      <StoryLeaf title="Their story" annals={told} context={context} />
       {c.ended === null ? (
         <>
           <h3>Shape their history</h3>
@@ -939,8 +1146,7 @@ function StateCard({ state, context }: { state: StateView; context: Context }) {
         {state.standard === null ? null : <> Its court’s <Explained term="standard language">standard language</Explained>{" "}
           {state.fell === null ? "draws" : "drew"} kindred dialects towards it through <Explained term="dialect levelling">dialect levelling</Explained>.</>}
       </p>
-      <h3>Its story</h3>
-      <Story annals={told.slice(-STORY_LENGTH).reverse()} context={context} />
+      <StoryLeaf title="Its story" annals={told} context={context} />
     </>
   );
 }
@@ -969,16 +1175,11 @@ function ReligionCard({ religion, context }: { religion: ReligionView; context: 
       {religion.followers.length === 0 ? <p className="muted">No living people holds this faith.</p> : (
         <p><Joined items={religion.followers} link={(id) => <PeopleLink c={overview.communities[id]} context={context} />} /></p>
       )}
-      <h3>Words of the faith</h3>
-      <Renderings rows={religion.words} overview={overview} sacred={religion.sacred}
-        onLanguage={(variety) => context.go({ kind: "language", variety })}
-        onWord={(variety, concept) => context.go({ kind: "word", variety, concept })} />
-      <p className="muted small">
+      <RenderingsLeaf title="Words of the faith" rows={religion.words} sacred={religion.sacred} context={context}>
         A <Explained term="learned word">learned word</Explained> may return from the sacred language beside its older descendant,
         making a <Explained term="doublet">doublet</Explained>. Older gods may become demons through <Explained term="pejoration">pejoration</Explained>.
-      </p>
-      <h3>Its story</h3>
-      <Story annals={told.slice(-STORY_LENGTH).reverse()} context={context} />
+      </RenderingsLeaf>
+      <StoryLeaf title="Its story" annals={told} context={context} />
     </>
   );
 }
@@ -997,16 +1198,47 @@ function CraftCard({ craft, context }: { craft: CraftView; context: Context }) {
         ["Holders", craft.holders.length === 0 ? "no living people" :
           <Joined items={craft.holders} link={(id) => <PeopleLink c={overview.communities[id]} context={context} />} />],
       ]} />
-      <h3>Words of the craft</h3>
-      <Renderings rows={craft.words} overview={overview}
-        onLanguage={(variety) => context.go({ kind: "language", variety })}
-        onWord={(variety, concept) => context.go({ kind: "word", variety, concept })} />
-      <p className="muted small">
+      <RenderingsLeaf title="Words of the craft" rows={craft.words} context={context}>
         New meanings may use older words, much like <Explained term="meaning extension by livelihood">meanings shaped by a way of life</Explained>.
-      </p>
-      <h3>Its story</h3>
-      <Story annals={told.slice(-STORY_LENGTH).reverse()} context={context} />
+      </RenderingsLeaf>
+      <StoryLeaf title="Its story" annals={told} context={context} />
     </>
+  );
+}
+
+/// The words languages found for a faith's or a craft's meanings, and how.
+function RenderingsLeaf({ title, rows, sacred, context, children }: {
+  title: string;
+  rows: RenderingRow[];
+  sacred?: number;
+  context: Context;
+  children: ReactNode;
+}) {
+  const languages = new Set(rows.flatMap((row) => row.renderings.map((r) => r.variety))).size;
+  return (
+    <Leaf
+      id="words"
+      title={title}
+      summary={
+        rows.length === 0 ? (
+          <p className="muted">No words yet.</p>
+        ) : (
+          <p>
+            {rows.length} {rows.length === 1 ? "meaning" : "meanings"} in {languages}{" "}
+            {languages === 1 ? "language" : "languages"}, and how each found its word.
+          </p>
+        )
+      }
+    >
+      <Renderings
+        rows={rows}
+        overview={context.overview}
+        sacred={sacred}
+        onLanguage={(variety) => context.go({ kind: "language", variety })}
+        onWord={(variety, concept) => context.go({ kind: "word", variety, concept })}
+      />
+      <p className="muted small">{children}</p>
+    </Leaf>
   );
 }
 
@@ -1014,7 +1246,6 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
   const { engine, version, generation, overview } = context;
   const v = overview.varieties[variety];
   const respelled = overview.annals.some((a) => a.kind === "respelling" && a.variety === variety && a.generation === v.written);
-  const [allLaws, setAllLaws] = useState(false);
   const speakers = overview.communities.filter((c) => c.ended === null && c.variety === variety);
   const daughters = overview.varieties.filter((d) => d.parent === variety);
   const kin = useMemo(
@@ -1070,21 +1301,50 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
         ]}
       />
       <LanguageSpecimen variety={variety} context={context} />
-      <h3><Explained term="given name">Given names in fashion</Explained></h3>
-      {v.names.length === 0 ? <p className="muted">None yet.</p> : (
-        <ul className="roster given-names">
-          {v.names.map((name, i) => (
-            <li key={i}>
-              <span className="word">{name.name}</span> <span className="ipa">/{name.ipa}/</span>{" "}
-              “{name.meaning}”
-              {name.from !== null ? <small className="muted"> from <LanguageLink variety={name.from} context={context} /> (sacred)</small> : null}
-            </li>
-          ))}
-        </ul>
-      )}
+      {v.names.length > 0 ? (
+        <Leaf
+          id="names"
+          title="Given names in fashion"
+          summary={
+            <p>
+              <Few
+                items={v.names}
+                link={(name) => <span className="word">{name.name}</span>}
+                leaf="names"
+              />
+              .
+            </p>
+          }
+        >
+          <p className="muted small">
+            Each is a <Explained term="given name">given name</Explained>, most built from the language’s own words.
+          </p>
+          <ul className="roster given-names">
+            {v.names.map((name, i) => (
+              <li key={i}>
+                <span className="word">{name.name}</span> <span className="ipa">/{name.ipa}/</span>{" "}
+                “{name.meaning}”
+                {name.from !== null ? <small className="muted"> from <LanguageLink variety={name.from} context={context} /> (sacred)</small> : null}
+              </li>
+            ))}
+          </ul>
+        </Leaf>
+      ) : null}
       {kin.length > 0 ? (
-        <>
-          <h3>Shares core words with</h3>
+        <Leaf
+          id="kin"
+          title="Shares core words with"
+          summary={
+            <p>
+              <Few
+                items={kin}
+                link={(k) => <><LanguageLink variety={k.other} context={context} /> {Math.round(k.score * 100)}%</>}
+                leaf="kin"
+              />
+              .
+            </p>
+          }
+        >
           <ul className="roster">
             {kin.map((k) => (
               <li key={k.other} className="meter-row">
@@ -1094,7 +1354,7 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
               </li>
             ))}
           </ul>
-        </>
+        </Leaf>
       ) : null}
       <FamilyHead variety={v} context={context} />
       <h3>Sounds</h3>
@@ -1112,15 +1372,30 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
           </div>
         ))}
       </dl>
-      <h3>
-        <Explained term="sound law">Sound laws</Explained>
-      </h3>
       {laws.length === 0 ? (
-        <p className="muted">None yet.</p>
-      ) : (
         <>
+          <h3><Explained term="sound law">Sound laws</Explained></h3>
+          <p className="muted">None yet.</p>
+        </>
+      ) : (
+        <Leaf
+          id="laws"
+          title="Sound laws"
+          summary={
+            <p>
+              {laws.length} so far; the latest, in year <Year generation={laws[0].generation} context={context} />:{" "}
+              <button type="button" className="link" onClick={() => context.go({ kind: "law", id: laws[0].id })}>
+                {laws[0].label}
+              </button>
+              .
+            </p>
+          }
+        >
+          <p className="muted small">
+            Each <Explained term="sound law">sound law</Explained> changed every living word with that sound at once.
+          </p>
           <ol className="history">
-            {(allLaws ? laws : laws.slice(0, RECENT_LAWS)).map((law, i) => (
+            {laws.map((law, i) => (
               <li key={i}>
                 <Year generation={law.generation} context={context} />
                 <span>
@@ -1137,15 +1412,13 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
               </li>
             ))}
           </ol>
-          {laws.length > RECENT_LAWS ? (
-            <button type="button" className="link more" onClick={() => setAllLaws(!allLaws)}>
-              {allLaws ? "Only the latest" : `All ${laws.length}`}
-            </button>
-          ) : null}
-        </>
+        </Leaf>
       )}
-      <details className="every-word">
-        <summary>Every word ({v.words.toLocaleString()})</summary>
+      <Leaf
+        id="dictionary"
+        title="Every word"
+        summary={<p>{v.words.toLocaleString()} words, each with its meaning, sound, and history.</p>}
+      >
         <Dictionary
           engine={engine}
           version={version}
@@ -1154,7 +1427,7 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
           concept={null}
           onConcept={(concept) => context.go({ kind: "word", variety, concept })}
         />
-      </details>
+      </Leaf>
     </>
   );
 }
@@ -1165,17 +1438,23 @@ function FamilyHead({ variety, context }: { variety: Variety; context: Context }
   const size = overview.varieties.filter((v) => v.family === variety.family && v.born <= overview.generation).length;
   if (size < 2) return null;
   return (
-    <>
-      <h3>
-        Its <Explained term="family">family</Explained>
-      </h3>
+    <Leaf
+      id="family"
+      title="Its family"
+      summary={
+        <p>
+          A chart of the {size} languages of its <Explained term="family">family</Explained>, descended from{" "}
+          <LanguageLink variety={variety.family} context={context} />.
+        </p>
+      }
+    >
       <FamilyTree
         overview={overview}
         family={variety.family}
         chosen={variety.id}
         onOpen={(id) => context.go({ kind: "language", variety: id })}
       />
-    </>
+    </Leaf>
   );
 }
 
@@ -1258,32 +1537,39 @@ function LawCard({ id, context }: { id: string; context: Context }) {
         A <Explained term="sound law">sound law</Explained>. On the map, orange land underwent it and grey land did not;
         red lines are <Explained term="isogloss">isoglosses</Explained>, where it stopped.
       </p>
-      <h3>Who has it</h3>
       {had.length > 0 ? (
-        <ul className="roster">
-          {had.map(({ c, law }) => (
-            <li key={c.id}>
-              <PeopleLink c={c} context={context} /> <span className="muted">{howCame(law, c, overview)}</span>
-            </li>
-          ))}
-        </ul>
+        <Leaf
+          id="who"
+          title="Who has it"
+          summary={
+            <p>
+              <Few items={had} link={({ c }) => <PeopleLink c={c} context={context} />} leaf="who" />.
+            </p>
+          }
+        >
+          <ul className="roster">
+            {had.map(({ c, law }) => (
+              <li key={c.id}>
+                <PeopleLink c={c} context={context} /> <span className="muted">{howCame(law, c, overview)}</span>
+              </li>
+            ))}
+          </ul>
+          {without.length > 0 ? (
+            <>
+              <h3>Not undergone by</h3>
+              <p>
+                <Joined items={without} link={(c) => <PeopleLink c={c} context={context} />} />
+              </p>
+            </>
+          ) : null}
+        </Leaf>
       ) : (
-        <p className="muted">No living people has it.</p>
+        <>
+          <h3>Who has it</h3>
+          <p className="muted">No living people has it.</p>
+        </>
       )}
-      {without.length > 0 && had.length > 0 ? (
-        <>
-          <h3>Not undergone by</h3>
-          <p>
-            <Joined items={without} link={(c) => <PeopleLink c={c} context={context} />} />
-          </p>
-        </>
-      ) : null}
-      {told.length > 0 ? (
-        <>
-          <h3>As it happened</h3>
-          <Story annals={told.slice(-EXAMPLES).reverse()} context={context} />
-        </>
-      ) : null}
+      <StoryLeaf title="As it happened" annals={told} context={context} />
     </>
   );
 }
@@ -1321,8 +1607,17 @@ function LandCard({ region, context }: { region: number; context: Context }) {
         ]}
       />
       {names.length > 0 ? (
-        <>
-          <h3>Its names</h3>
+        <Leaf
+          id="names"
+          title="Its names"
+          summary={
+            <p>
+              First called <span className="word">{names[0].spelled}</span>, in year{" "}
+              <Year generation={names[0].since} context={context} />
+              {names.length > 1 ? `; ${names.length} names so far` : ""}.
+            </p>
+          }
+        >
           <ol className="history">
             {names.map((n, i) => (
               <li key={i}>
@@ -1337,13 +1632,22 @@ function LandCard({ region, context }: { region: number; context: Context }) {
               </li>
             ))}
           </ol>
-        </>
+        </Leaf>
       ) : null}
       {exonyms.length > 0 ? (
-        <>
-          <h3>
-            <Explained term="exonym">What others call it</Explained>
-          </h3>
+        <Leaf
+          id="exonyms"
+          title="What others call it"
+          summary={
+            <p>
+              How {new Set(exonyms.map((e) => e.variety)).size} other languages say it
+              {otherNames(exonyms, now?.spelled).some((g) => !g.same) ? (
+                <>, some with an <Explained term="exonym">exonym</Explained> of their own</>
+              ) : null}
+              .
+            </p>
+          }
+        >
           <ul className="roster">
             {otherNames(exonyms, now?.spelled).map((group) => (
               <li key={group.spelled}>
@@ -1364,11 +1668,19 @@ function LandCard({ region, context }: { region: number; context: Context }) {
               </li>
             ))}
           </ul>
-        </>
+        </Leaf>
       ) : null}
       {arrivals.length > 0 ? (
-        <>
-          <h3>Comings and goings</h3>
+        <Leaf
+          id="comings"
+          title="Comings and goings"
+          summary={
+            <p>
+              {arrivals.length === 1 ? "One people came or went" : `${arrivals.length} comings and goings`}, the
+              latest in year <Year generation={arrivals.at(-1)!.generation} context={context} />.
+            </p>
+          }
+        >
           <ol className="history">
             {arrivals.map((m, i) => (
               <li key={i}>
@@ -1382,7 +1694,7 @@ function LandCard({ region, context }: { region: number; context: Context }) {
               </li>
             ))}
           </ol>
-        </>
+        </Leaf>
       ) : null}
     </>
   );

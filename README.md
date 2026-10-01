@@ -13,7 +13,7 @@ languages branch out. It runs entirely in the browser.
 **[Try it in your browser](https://solforged.github.io/umran/)**: choose
 "Watch a sample world" to open one already four thousand years along.
 
-![The stage after 5,600 years: three language families spread over the map, with the feed of recent events and the encyclopedia card for the world](docs/images/stage.png)
+![The stage after 4,050 years: three language families spread over the map drawn as an old chart, the encyclopedia card for the world beside it, and the latest line of the chronicle above the time bar](docs/images/stage.png)
 
 ## What happens in a world
 

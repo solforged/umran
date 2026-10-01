@@ -1389,83 +1389,115 @@ button.icon,
   }
 }
 
-/* What happened most recently, over the map's corner. */
-.feed {
+/* The folio: a card's long and wide sections, laid over the map as a
+   sheet, the map dimmed around it. In portrait it covers the card too. */
+.folio-host {
+  grid-area: map;
+  position: relative;
+  z-index: 6;
+  min-height: 0;
+  pointer-events: none;
+}
+
+.folio {
   position: absolute;
-  left: 0.6rem;
-  bottom: 0.6rem;
-  width: min(26rem, 70%);
-  max-height: 45%;
-  overflow: auto;
-  margin: 0;
-  padding: 0.3rem;
-  list-style: none;
-  background: color-mix(in srgb, var(--paper-raised) 88%, transparent);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  backdrop-filter: blur(3px);
-}
-
-.feed .feed-entry {
-  display: grid;
-  grid-template-columns: auto 2.6rem 1fr;
-  gap: 0.4rem;
-  align-items: baseline;
-  width: 100%;
-  padding: 0.2rem 0.3rem;
-  border: 0;
-  border-radius: 4px;
-  background: none;
-  color: var(--ink);
-  font-size: 0.92rem;
-  line-height: 1.3;
-  text-align: left;
-}
-
-.feed .feed-entry:hover,
-.feed .feed-entry[aria-current="true"] {
-  background: var(--accent-mute);
-}
-
-.feed li.fresh {
-  animation: arrive 0.6s ease-out;
-}
-
-@keyframes arrive {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-}
-
-.feed-year {
-  color: var(--ink-soft);
-  font-variant-numeric: tabular-nums;
-}
-
-.feed-text {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-/* Under a sound change in the feed: the specimen words it reached. */
-.feed .specimen-line {
-  grid-column: 3;
-  font-size: 0.88em;
-  color: var(--ink-soft);
-}
-
-.feed-states {
+  inset: 1rem 1.4rem;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.2rem 0.6rem;
-  padding: 0 0.3rem 0.2rem 4.2rem;
+  flex-direction: column;
+  pointer-events: auto;
+  background: var(--paper-raised);
+  border: 1.5px solid var(--ink);
+  box-shadow: 0 12px 36px rgb(0 0 0 / 0.45);
 }
 
-.feed-states .word {
-  font-size: 0.9rem;
+.stage:has(.folio) .stage-map .mapview > svg:not(.chart-rose) {
+  filter: blur(1px) brightness(0.82);
+}
+
+.folio-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.8rem;
+  padding: 0.5rem 0.6rem 0 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.folio-of {
+  align-self: center;
+  padding-bottom: 0.3rem;
+  font-family: var(--display);
+  font-size: 1.15rem;
+  white-space: nowrap;
+}
+
+.folio-tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 0.1rem;
+  margin-bottom: -1px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.folio-tab {
+  padding: 0.35rem 0.8rem;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.folio-tab[aria-selected="true"] {
+  position: relative;
+  border-color: var(--line);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.folio-close {
+  align-self: center;
+  margin-bottom: 0.3rem;
+}
+
+.folio-page {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem 1.6rem 2rem;
+  background: var(--paper);
+}
+
+/* A card section that opens in the folio: its title leads there, and a
+   line under it says what it holds. */
+.leaf-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.leaf-title svg {
+  opacity: 0.6;
+}
+
+.leaf-title:hover,
+.leaf.open .leaf-title {
+  color: var(--accent);
+}
+
+.leaf-summary p {
+  margin: 0.15rem 0;
 }
 
 .annal-states {
@@ -1663,15 +1695,6 @@ button.icon,
 .card button.more {
   margin-top: 0.3rem;
   font-size: 0.9em;
-}
-
-.every-word summary {
-  margin-top: 1.3rem;
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--ink-soft);
-  cursor: pointer;
 }
 
 /* A word card's head already names the meaning. */
@@ -2036,39 +2059,136 @@ button.play {
   font-variant-numeric: tabular-nums;
 }
 
-.pause-on {
+/* On the stage, the chronicle's latest line sits above one row of
+   controls, the rarer ones in menus that open upward. */
+.stage-bar {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 0.25rem;
+  padding: 0.3rem 1rem 0.45rem;
+}
+
+.stage-bar .transport {
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.stage-bar .scrub {
+  min-width: 6rem;
+}
+
+.chronicle-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  min-width: 0;
+  font-size: 0.9rem;
+}
+
+.chronicle-latest {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-soft);
+  text-align: left;
+}
+
+.chronicle-latest svg {
+  flex: none;
+  align-self: center;
+}
+
+.chronicle-year {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.chronicle-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+button.chronicle-latest:hover {
+  color: var(--ink);
+}
+
+.chronicle-more {
+  flex: none;
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+
+.chronicle-open {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: auto;
   white-space: nowrap;
 }
 
-.act {
+.bar-menu {
   position: relative;
+  flex: none;
 }
 
-.act summary {
+.bar-menu summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   padding: 0.3rem 0.7rem;
   border: 1px solid var(--line);
   border-radius: 6px;
   list-style: none;
+  white-space: nowrap;
   cursor: pointer;
 }
 
-.act-menu {
+.bar-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.bar-menu-body {
   position: absolute;
   right: 0;
   bottom: calc(100% + 0.4rem);
-  z-index: 5;
+  z-index: 30;
   display: grid;
-  gap: 0.3rem;
-  min-width: 18rem;
-  padding: 0.5rem;
+  gap: 0.5rem;
+  min-width: 16rem;
+  padding: 0.6rem;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--paper-raised);
   box-shadow: 0 4px 16px rgb(0 0 0 / 0.3);
 }
 
+.bar-menu-body label {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.act-menu {
+  min-width: 18rem;
+  gap: 0.3rem;
+}
+
 .act-menu button {
   text-align: left;
+}
+
+/* Where the bar is narrow, its menus keep only their icons. */
+@media (max-width: 720px) {
+  .bar-label {
+    display: none;
+  }
 }
 
 /* Setting up a new world: the chart in the middle with its title box,
@@ -2320,6 +2440,12 @@ button.play {
       "map"
       "pedia"
       "time";
+  }
+
+  .folio-host {
+    grid-area: auto;
+    grid-row: 3 / 5;
+    grid-column: 1;
   }
 
   .pedia {

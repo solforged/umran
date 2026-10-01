@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Layers, Pause, Play, SkipForward } from "lucide-react";
+import { Feather, Gauge, Layers, Pause, Play, ScrollText, SkipForward } from "lucide-react";
 import type { Annal, Catalog, Craft, Engine, Overview, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { EVENT_KIND, hue } from "../lore";
@@ -8,7 +8,6 @@ import type { DialogKind } from "./ActionDialog";
 import { Told } from "./Told";
 import { MapView, type Tint } from "./MapView";
 import { Pedia, type Focus } from "./Pedia";
-import { SpecimenChanges } from "./Specimen";
 
 /// What stops the years passing on their own.
 type PauseOn = "nothing" | "peoples" | "sounds" | "anything";
@@ -34,8 +33,6 @@ function stops(on: PauseOn, annal: Annal): boolean {
   }
 }
 
-/// Most entries the feed shows.
-const FEED_LENGTH = 8;
 /// Most cards the back button remembers.
 const TRAIL_LENGTH = 40;
 
@@ -95,8 +92,13 @@ export function Stage({
   // The encyclopedia's trail of cards; the last is the one open.
   const [trail, setTrail] = useState<Focus[]>([{ kind: "world" }]);
   const focus = trail.at(-1)!;
+  // The folio page open over the map, by its section's id.
+  const [leaf, setLeaf] = useState<string | null>(null);
+  const [folioHost, setFolioHost] = useState<HTMLDivElement | null>(null);
   const go = (next: Focus) => {
     if (next.kind === "people") onSelect(next.id);
+    // The history card is the whole history, so it opens in the folio.
+    if (next.kind === "history") setLeaf("history");
     // Opening the card already open adds nothing to the trail.
     setTrail((t) => (JSON.stringify(t.at(-1)) === JSON.stringify(next) ? t : [...t.slice(-TRAIL_LENGTH), next]));
   };
@@ -210,6 +212,10 @@ export function Stage({
   const beacons = fresh.filter((a) => a.kind !== "law").flatMap((a) => a.peoples);
 
   const people = overview.communities[selected];
+  // The latest moment written, for the chronicle's line.
+  const last = overview.annals.at(-1) ?? null;
+  const sameYear = last ? overview.annals.filter((a) => a.generation === last.generation).length : 0;
+  const LastIcon = last ? EVENT_KIND[last.kind].icon : null;
 
   return (
     <div className="stage">
@@ -310,20 +316,8 @@ export function Stage({
             </label>
           ))}
         </details>
-        <Feed
-          annals={overview.annals}
-          overview={overview}
-          onState={(id) => go({ kind: "state", id })}
-          onReligion={(id) => go({ kind: "religion", id })}
-          onCraft={(id) => go({ kind: "craft", id })}
-          generation={overview.generation}
-          open={focus.kind === "event" ? focus.annal : null}
-          onPick={(annal) => {
-            setPlaying(false);
-            go({ kind: "event", annal });
-          }}
-        />
       </section>
+      <div className="folio-host" ref={setFolioHost} />
 
       <Pedia
         trail={trail}
@@ -339,13 +333,41 @@ export function Stage({
         onScrub={onScrub}
         onPlay={() => setPlaying(true)}
         onRestore={onRestore}
+        leaf={leaf}
+        onLeaf={setLeaf}
+        folioHost={folioHost}
         onDialog={(kind, community) => {
           onSelect(community);
           onDialog(kind);
         }}
       />
 
-      <footer className="timebar">
+      <footer className="timebar stage-bar">
+        <div className="chronicle-line">
+          {last && LastIcon ? (
+            <button
+              type="button"
+              className="chronicle-latest"
+              title="Open this moment"
+              onClick={() => {
+                setPlaying(false);
+                go({ kind: "event", annal: last });
+              }}
+            >
+              <LastIcon size={14} aria-hidden="true" />
+              <span className="chronicle-year">{last.generation * YEARS}</span>
+              <span className="chronicle-text">
+                <Told text={last.text} />
+              </span>
+            </button>
+          ) : (
+            <span className="chronicle-latest muted">Nothing is written yet.</span>
+          )}
+          {sameYear > 1 ? <span className="chronicle-more muted">and {sameYear - 1} more that year</span> : null}
+          <button type="button" className="link chronicle-open" onClick={() => go({ kind: "history" })}>
+            <ScrollText size={14} aria-hidden="true" /> Chronicle
+          </button>
+        </div>
         <div className="transport">
           <button
             type="button"
@@ -357,13 +379,6 @@ export function Stage({
             {playing ? <Pause size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}
             {playing ? "Pause" : "Play"}
           </button>
-          <select value={pace} aria-label="How quickly" onChange={(e) => setPace(Number(e.target.value))}>
-            {PACES.map(([value, name]) => (
-              <option key={value} value={value}>
-                {name}
-              </option>
-            ))}
-          </select>
           <button
             type="button"
             className="icon"
@@ -373,152 +388,112 @@ export function Stage({
           >
             <SkipForward size={18} />
           </button>
-        </div>
-        <div className="track scrub">
-          <input
-            type="range"
-            min={0}
-            max={latest}
-            value={generation}
-            disabled={latest === 0}
-            aria-label="Year"
-            aria-valuetext={year(generation)}
-            onChange={(e) => onScrub(Number(e.target.value))}
-          />
-          <div className="ticks" aria-hidden="true">
-            {overview.timeline
-              .filter((m) => m.kind !== "run")
-              .map((m, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  tabIndex={-1}
-                  className={`tick tick-${m.kind}`}
-                  style={{ left: `${(m.generation / Math.max(latest, 1)) * 100}%` }}
-                  title={`In ${year(m.generation)}: ${m.label}`}
-                  onClick={() => onScrub(m.generation)}
-                />
-              ))}
+          <div className="track scrub">
+            <input
+              type="range"
+              min={0}
+              max={latest}
+              value={generation}
+              disabled={latest === 0}
+              aria-label="Year"
+              aria-valuetext={year(generation)}
+              onChange={(e) => onScrub(Number(e.target.value))}
+            />
+            <div className="ticks" aria-hidden="true">
+              {overview.timeline
+                .filter((m) => m.kind !== "run")
+                .map((m, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    tabIndex={-1}
+                    className={`tick tick-${m.kind}`}
+                    style={{ left: `${(m.generation / Math.max(latest, 1)) * 100}%` }}
+                    title={`In ${year(m.generation)}: ${m.label}`}
+                    onClick={() => onScrub(m.generation)}
+                  />
+                ))}
+            </div>
           </div>
-        </div>
-        <span className="stage-year">
-          Year {generation * YEARS}
-          {atPresent ? null : (
-            <>
-              {" · "}
-              <button type="button" className="link" onClick={() => onScrub(latest)}>
-                to the present
-              </button>
-            </>
-          )}
-        </span>
-        <label className="pause-on">
-          Stop for{" "}
-          <select value={pauseOn} onChange={(e) => setPauseOn(e.target.value as PauseOn)}>
-            {PAUSE_ON.map(([value, name]) => (
-              <option key={value} value={value}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <details className="act">
-          <summary>Shape history</summary>
-          <div className="act-menu" onClick={(e) => (e.currentTarget.parentElement as HTMLDetailsElement).removeAttribute("open")}>
-            {people?.ended === null ? (
+          <span className="stage-year">
+            Year {generation * YEARS}
+            {atPresent ? null : (
               <>
-                <button type="button" onClick={() => onDialog("split")}>
-                  Some of the {people.name} go their own way
-                </button>
-                <button type="button" onClick={() => onDialog("connect")}>
-                  The {people.name} meet another people
-                </button>
-                <button type="button" onClick={() => onDialog("shift")}>
-                  The {people.name} take up another language
+                {" · "}
+                <button type="button" className="link" onClick={() => onScrub(latest)}>
+                  to the present
                 </button>
               </>
-            ) : null}
-            <button type="button" onClick={() => onDialog("found")}>
-              A new people arrives
-            </button>
-            <button type="button" onClick={() => onDialog("state")}>
-              Found a state
-            </button>
-            <button type="button" onClick={() => onDialog("religion")}>
-              Found a religion
-            </button>
-            <button type="button" onClick={() => onDialog("craft")}>
-              Teach a craft
-            </button>
-            <button type="button" disabled={!canUndo} onClick={onUndo}>
-              Strike out what was last written
-            </button>
-          </div>
-        </details>
+            )}
+          </span>
+          <details className="bar-menu">
+            <summary title="How quickly the years pass, and what stops them">
+              <Gauge size={16} aria-hidden="true" />
+              <span className="bar-label">Pace</span>
+            </summary>
+            <div className="bar-menu-body">
+              <label>
+                How quickly
+                <select value={pace} onChange={(e) => setPace(Number(e.target.value))}>
+                  {PACES.map(([value, name]) => (
+                    <option key={value} value={value}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Stop for
+                <select value={pauseOn} onChange={(e) => setPauseOn(e.target.value as PauseOn)}>
+                  {PAUSE_ON.map(([value, name]) => (
+                    <option key={value} value={value}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </details>
+          <details className="bar-menu act">
+            <summary title="Shape history">
+              <Feather size={16} aria-hidden="true" />
+              <span className="bar-label">Shape history</span>
+            </summary>
+            <div className="bar-menu-body act-menu" onClick={(e) => {
+              if ((e.target as HTMLElement).closest("button")) (e.currentTarget.parentElement as HTMLDetailsElement).removeAttribute("open");
+            }}>
+              {people?.ended === null ? (
+                <>
+                  <button type="button" onClick={() => onDialog("split")}>
+                    Some of the {people.name} go their own way
+                  </button>
+                  <button type="button" onClick={() => onDialog("connect")}>
+                    The {people.name} meet another people
+                  </button>
+                  <button type="button" onClick={() => onDialog("shift")}>
+                    The {people.name} take up another language
+                  </button>
+                </>
+              ) : null}
+              <button type="button" onClick={() => onDialog("found")}>
+                A new people arrives
+              </button>
+              <button type="button" onClick={() => onDialog("state")}>
+                Found a state
+              </button>
+              <button type="button" onClick={() => onDialog("religion")}>
+                Found a religion
+              </button>
+              <button type="button" onClick={() => onDialog("craft")}>
+                Teach a craft
+              </button>
+              <button type="button" disabled={!canUndo} onClick={onUndo}>
+                Strike out what was last written
+              </button>
+            </div>
+          </details>
+        </div>
       </footer>
     </div>
-  );
-}
-
-/// What happened most recently, newest first, over the map.
-function Feed({
-  annals,
-  overview,
-  onState,
-  onReligion,
-  onCraft,
-  generation,
-  open,
-  onPick,
-}: {
-  annals: Annal[];
-  overview: Overview;
-  onState: (id: number) => void;
-  onReligion: (id: number) => void;
-  onCraft: (id: Craft) => void;
-  generation: number;
-  open: Annal | null;
-  onPick: (annal: Annal) => void;
-}) {
-  const recent = annals.slice(-FEED_LENGTH).reverse();
-  if (recent.length === 0) return null;
-  return (
-    <ol className="feed" aria-label="What happened">
-      {recent.map((a) => {
-        const Icon = EVENT_KIND[a.kind].icon;
-        const same = open !== null && open.generation === a.generation && open.text === a.text;
-        return (
-          <li key={`${a.generation}-${a.kind}-${a.text}`} className={a.generation === generation ? "fresh" : undefined}>
-            <button type="button" className="feed-entry" aria-current={same} onClick={() => onPick(a)}>
-              <Icon size={14} aria-hidden="true" />
-              <span className="feed-year">{a.generation * YEARS}</span>
-              <span className="feed-text">
-                <Told text={a.text} />
-              </span>
-              {a.kind === "law" ? <SpecimenChanges words={a.specimen} /> : null}
-            </button>
-            {a.states.length + a.religions.length + a.crafts.length > 0 ? (
-              <div className="feed-states">
-                {a.states.filter((id) => overview.states[id]).map((id) => (
-                  <button key={`state-${id}`} type="button" className="link word" style={{ color: hue(id) }} onClick={() => onState(id)}>
-                    {overview.states[id].name}
-                  </button>
-                ))}
-                {a.religions.filter((id) => overview.religions[id]).map((id) => (
-                  <button key={`religion-${id}`} type="button" className="link word" style={{ color: hue(id) }} onClick={() => onReligion(id)}>
-                    {overview.religions[id].name}
-                  </button>
-                ))}
-                {a.crafts.map((id) => (
-                  <button key={id} type="button" className="link" onClick={() => onCraft(id)}>
-                    {overview.crafts.find((c) => c.id === id)?.name}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </li>
-        );
-      })}
-    </ol>
   );
 }

@@ -35,20 +35,3 @@ export function Specimen({
     </dl>
   );
 }
-
-/// Only the specimen words a sound change reached, in one short line, or
-/// nothing if it reached none of them.
-export function SpecimenChanges({ words }: { words: SpecimenWord[] }) {
-  const reached = words.filter((w) => w.was !== null);
-  if (reached.length === 0) return null;
-  return (
-    <span className="specimen-line">
-      {reached.map((w, i) => (
-        <span key={w.concept}>
-          {i > 0 ? " · " : ""}
-          {w.concept} <i>{w.was}</i> → <i>{w.spelled}</i>
-        </span>
-      ))}
-    </span>
-  );
-}
