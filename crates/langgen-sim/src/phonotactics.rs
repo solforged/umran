@@ -2,10 +2,11 @@ use crate::concepts::Iconic;
 use crate::form::Form;
 use crate::inventory::Inventory;
 use crate::phoneme::{Backness, CATALOG, Height, Manner, PhonemeId, Place, Segment};
-use crate::preset::PhonotacticPrior;
+use crate::profile::PhonotacticPrior;
 use crate::rng::weighted_index;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// Weight added to a preferred onset or coda already in the inventory;
 /// a preferred cluster enters with `PREFERRED_WEIGHT + 1`.
@@ -39,7 +40,7 @@ impl Phonotactics {
         prefer(&mut onsets, inventory, &prior.preferred_onsets);
         prefer(&mut codas, inventory, &prior.preferred_codas);
         // Velar and palatal nasals, glottal stops, and palatal laterals are
-        // rare word-initially unless a preset asks for them.
+        // rare word-initially unless a profile asks for them.
         onsets.retain(|(ids, w)| {
             let rare = ids.len() == 1 && matches!(CATALOG.get(ids[0]).ipa(), "ŋ" | "ɲ" | "ʔ" | "ʎ");
             ids.len() <= prior.max_onset as usize && !(rare && *w < PREFERRED_WEIGHT)
@@ -66,13 +67,53 @@ impl Phonotactics {
         let codas = singles(&self.codas);
         let mut phones = Vec::with_capacity(4);
         for _ in 0..if disyllabic { 2 } else { 1 } {
-            phones.push(pick(rng, &onsets, iconic));
+            // A language that has lost every initial consonant coins
+            // vowel-initial words.
+            if !onsets.is_empty() {
+                phones.push(pick(rng, &onsets, iconic));
+            }
             phones.push(pick(rng, &self.nuclei, iconic));
         }
         if !disyllabic && !codas.is_empty() && rng.r#gen::<f32>() < self.final_coda {
             phones.push(pick(rng, &codas, iconic));
         }
         Form::from_phones(phones)
+    }
+
+    /// Syllable statistics of the words a language has now, for coining
+    /// roots that sound like its present rather than its founding.
+    pub fn observe<'a>(forms: impl Iterator<Item = &'a Form>) -> Self {
+        let mut onsets: BTreeMap<u16, f32> = BTreeMap::new();
+        let mut nuclei: BTreeMap<u16, f32> = BTreeMap::new();
+        let mut codas: BTreeMap<u16, f32> = BTreeMap::new();
+        let (mut words, mut closed, mut longer) = (0.0_f32, 0.0_f32, 0.0_f32);
+        for form in forms {
+            let syllables = form.syllables();
+            let Some(last) = syllables.last() else {
+                continue;
+            };
+            words += 1.0;
+            closed += f32::from(!last.coda.is_empty());
+            longer += f32::from(syllables.len() > 1);
+            for s in &syllables {
+                *nuclei.entry(form.segs[s.nucleus].phone.0).or_default() += 1.0;
+                if s.onset.len() == 1 {
+                    *onsets.entry(form.segs[s.onset.start].phone.0).or_default() += 1.0;
+                }
+                if s.coda.len() == 1 {
+                    *codas.entry(form.segs[s.coda.start].phone.0).or_default() += 1.0;
+                }
+            }
+        }
+        let list = |m: BTreeMap<u16, f32>| m.into_iter().map(|(id, n)| (PhonemeId(id), n));
+        Self {
+            onsets: list(onsets).map(|(id, n)| (vec![id], n)).collect(),
+            nuclei: list(nuclei).collect(),
+            codas: list(codas).map(|(id, n)| (vec![id], n)).collect(),
+            final_coda: if words > 0.0 { closed / words } else { 0.0 },
+            open_medial: false,
+            disyllabic_roots: if words > 0.0 { longer / words } else { 0.0 },
+        }
     }
 
     /// Whether `form` is a shape `root` can produce.

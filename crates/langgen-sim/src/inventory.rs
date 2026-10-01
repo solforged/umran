@@ -1,5 +1,5 @@
 use crate::phoneme::{CATALOG, PhonemeId, Segment};
-use crate::preset::InventoryPrior;
+use crate::profile::InventoryPrior;
 use crate::rng::weighted_index;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -8,8 +8,12 @@ use serde::{Deserialize, Serialize};
 const MIN_SCORE: f32 = 0.45;
 /// Weight floor so a required but dispreferred segment still gets used.
 const MIN_WEIGHT: f32 = 0.08;
+/// Score for a manner or height a prior does not list.
+pub(crate) const UNLISTED_PRIMARY: f32 = -0.9;
+/// Score for a place or backness a prior does not list.
+pub(crate) const UNLISTED_SECONDARY: f32 = -0.5;
 
-/// The segments a variety uses, each with a usage weight from its preset.
+/// The segments a variety uses, each with a usage weight from its profile.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Inventory {
     pub consonants: Vec<PhonemeId>,
@@ -92,8 +96,8 @@ pub fn score(prior: &InventoryPrior, seg: Segment) -> f32 {
     let mut s = 0.12;
     match seg {
         Segment::Consonant(c) => {
-            s += lookup(&prior.manner, c.manner, -0.9);
-            s += lookup(&prior.place, c.place, -0.5);
+            s += lookup(&prior.manner, c.manner, UNLISTED_PRIMARY);
+            s += lookup(&prior.place, c.place, UNLISTED_SECONDARY);
             s += if c.voiced {
                 prior.voiced
             } else {
@@ -101,8 +105,8 @@ pub fn score(prior: &InventoryPrior, seg: Segment) -> f32 {
             };
         }
         Segment::Vowel(v) => {
-            s += lookup(&prior.height, v.height, -0.9);
-            s += lookup(&prior.backness, v.backness, -0.5);
+            s += lookup(&prior.height, v.height, UNLISTED_PRIMARY);
+            s += lookup(&prior.backness, v.backness, UNLISTED_SECONDARY);
             s += if v.rounded {
                 prior.rounded
             } else {
@@ -142,13 +146,13 @@ fn repair_universals(consonants: &mut Vec<PhonemeId>, vowels: &mut Vec<PhonemeId
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::preset::Preset;
+    use crate::profile::SoundProfile;
     use crate::rng::stream;
 
     #[test]
     fn respects_required_forbidden_and_counts() {
-        for preset in Preset::all() {
-            let prior = &preset.inventory;
+        for profile in SoundProfile::examples() {
+            let prior = &profile.inventory;
             for seed in 0..200 {
                 let inv = Inventory::sample(prior, &mut stream(seed, &[]));
                 let ipa = |id: &PhonemeId| CATALOG.get(*id).ipa().to_string();
@@ -157,14 +161,14 @@ mod tests {
                     assert!(
                         !all.contains(f),
                         "{} seed {seed} has forbidden {f}",
-                        preset.id
+                        profile.id
                     );
                 }
                 for r in &prior.required {
                     assert!(
                         all.contains(r),
                         "{} seed {seed} lacks required {r}",
-                        preset.id
+                        profile.id
                     );
                 }
                 assert!(inv.vowels.len() >= prior.vowel_count.0 as usize);

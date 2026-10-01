@@ -1,10 +1,11 @@
 use crate::phoneme::{Backness, Height, Manner, Place};
 use serde::{Deserialize, Serialize};
 
-/// A culture's starting sound preferences and spelling habits. Presets are
-/// starting points: a variety samples from one once, then changes on its own.
+/// The full numbers behind a sound system: segment preferences, syllable
+/// shapes, and spelling. The four built-in profiles are examples; a culture
+/// usually starts from one and layers `Flavor` adjustments on top.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Preset {
+pub struct SoundProfile {
     pub id: String,
     pub name: String,
     pub description: String,
@@ -63,13 +64,13 @@ pub enum LongVowel {
     Unmarked,
 }
 
-impl Preset {
-    pub fn all() -> Vec<Preset> {
+impl SoundProfile {
+    pub fn examples() -> Vec<SoundProfile> {
         vec![elvish(), kuo_toa(), illithid(), neutral()]
     }
 
-    pub fn by_id(id: &str) -> Option<Preset> {
-        Self::all().into_iter().find(|p| p.id == id)
+    pub fn by_id(id: &str) -> Option<SoundProfile> {
+        Self::examples().into_iter().find(|p| p.id == id)
     }
 }
 
@@ -87,7 +88,7 @@ fn weights(list: &[(&str, f32)]) -> Vec<(String, f32)> {
     list.iter().map(|(s, w)| (s.to_string(), *w)).collect()
 }
 
-/// Rare or marked segments that no current preset wants.
+/// Rare or marked segments that no example profile wants.
 fn marked(more: &[&str]) -> Vec<String> {
     let mut out = ipas(&[
         "q", "ɓ", "ɗ", "pʼ", "tʼ", "kʼ", "ɨ", "ø", "æ", "ʊ", "y", "ə", "ɪ", "ɬ", "ʎ",
@@ -96,12 +97,12 @@ fn marked(more: &[&str]) -> Vec<String> {
     out
 }
 
-fn elvish() -> Preset {
+fn elvish() -> SoundProfile {
     use Backness::*;
     use Height::*;
     use Manner::*;
     use Place::*;
-    Preset {
+    SoundProfile {
         id: "elvish".into(),
         name: "Elvish".into(),
         description: "Open, liquid, and palatal; Tolkienic rather than a reconstruction.".into(),
@@ -179,12 +180,12 @@ fn elvish() -> Preset {
     }
 }
 
-fn kuo_toa() -> Preset {
+fn kuo_toa() -> SoundProfile {
     use Backness::*;
     use Height::*;
     use Manner::*;
     use Place::*;
-    Preset {
+    SoundProfile {
         id: "kuo-toa".into(),
         name: "Kuo-toa".into(),
         description: "Wet, labial, and echoing; Blibdoolpoolp as a north star, not a template."
@@ -254,12 +255,12 @@ fn kuo_toa() -> Preset {
     }
 }
 
-fn illithid() -> Preset {
+fn illithid() -> SoundProfile {
     use Backness::*;
     use Height::*;
     use Manner::*;
     use Place::*;
-    Preset {
+    SoundProfile {
         id: "illithid".into(),
         name: "Illithid".into(),
         description: "Sibilant, dental, and slightly illegal clusters; cerebral rather than wet."
@@ -332,12 +333,12 @@ fn illithid() -> Preset {
     }
 }
 
-fn neutral() -> Preset {
+fn neutral() -> SoundProfile {
     use Backness::*;
     use Height::*;
     use Manner::*;
     use Place::*;
-    Preset {
+    SoundProfile {
         id: "neutral".into(),
         name: "Neutral".into(),
         description: "A bland human baseline; fork this when inventing a new vibe.".into(),

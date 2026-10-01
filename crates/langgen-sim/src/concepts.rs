@@ -287,6 +287,104 @@ pub fn by_id(id: &str) -> Option<&'static Concept> {
     CONCEPTS.iter().find(|c| c.id == id)
 }
 
+/// Pairs of concepts where one word plausibly comes to cover the other:
+/// attested polysemies and semantic shifts such as sun/day, see/know,
+/// this/he, sky/god, and shadow/spirit. Hand-curated after cross-linguistic
+/// colexification patterns (CLICS) from memory, not checked against the
+/// database. Links are symmetric.
+pub static RELATED: &[(&str, &str)] = &[
+    // The physical world and time.
+    ("sun", "day"),
+    ("light", "day"),
+    ("fire", "light"),
+    ("dark", "night"),
+    ("black", "dark"),
+    ("night", "yesterday"),
+    ("river", "water"),
+    ("sea", "water"),
+    ("smoke", "cloud"),
+    ("soil", "sand"),
+    ("soil", "field"),
+    ("hill", "mountain"),
+    ("stone", "mountain"),
+    ("wall", "stone"),
+    // Religion and the unseen.
+    ("sky", "god"),
+    ("spirit", "wind"),
+    ("shadow", "spirit"),
+    ("life", "spirit"),
+    ("chief", "god"),
+    // People and places.
+    ("person", "people"),
+    ("person", "3sg"),
+    ("this", "3sg"),
+    ("who", "what"),
+    ("house", "village"),
+    ("door", "mouth"),
+    // The body.
+    ("tooth", "horn"),
+    ("skin", "cloth"),
+    ("flesh", "food"),
+    ("liver", "heart"),
+    ("red", "blood"),
+    // Plants and animals.
+    ("tree", "wood"),
+    ("seed", "grain"),
+    ("seed", "egg"),
+    ("fly", "bird"),
+    ("ant", "louse"),
+    ("cattle", "horse"),
+    ("bread", "food"),
+    // Things.
+    ("spear", "knife"),
+    ("bow", "spear"),
+    ("shield", "wall"),
+    ("net", "rope"),
+    ("sail", "cloth"),
+    // Actions.
+    ("see", "know"),
+    ("hear", "know"),
+    ("think", "know"),
+    ("eat", "bite"),
+    ("drink", "suck"),
+    ("go", "run"),
+    ("go", "come"),
+    ("carry", "take"),
+    ("take", "buy"),
+    ("give", "sell"),
+    ("hit", "fight"),
+    ("fight", "hunt"),
+    ("hunt", "fishing"),
+    ("burn", "cook"),
+    ("fall", "die"),
+    ("cry", "sing"),
+    ("say", "pray"),
+    ("tie", "weave"),
+    // Properties and speech.
+    ("big", "long"),
+    ("far", "long"),
+    ("thick", "wide"),
+    ("heavy", "hard"),
+    ("good", "sweet"),
+    ("word", "name"),
+    ("word", "voice"),
+    ("law", "word"),
+];
+
+/// Concepts a word for `concept` could plausibly extend to, or come from.
+pub fn related(concept: &Concept) -> impl Iterator<Item = &'static Concept> + '_ {
+    RELATED.iter().filter_map(move |&(a, b)| {
+        let other = if a == concept.id {
+            b
+        } else if b == concept.id {
+            a
+        } else {
+            return None;
+        };
+        by_id(other)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -296,6 +394,16 @@ mod tests {
     fn ids_are_unique() {
         let ids: HashSet<_> = CONCEPTS.iter().map(|c| c.id).collect();
         assert_eq!(ids.len(), CONCEPTS.len());
+    }
+
+    #[test]
+    fn related_pairs_name_known_concepts() {
+        for (a, b) in RELATED {
+            assert!(by_id(a).is_some() && by_id(b).is_some(), "{a}/{b}");
+            assert_ne!(a, b);
+        }
+        let sun: Vec<_> = related(by_id("sun").unwrap()).map(|c| c.id).collect();
+        assert_eq!(sun, ["day"]);
     }
 
     #[test]

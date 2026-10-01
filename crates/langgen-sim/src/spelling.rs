@@ -1,6 +1,6 @@
 use crate::form::{Form, Seg};
 use crate::phoneme::CATALOG;
-use crate::preset::{LongVowel, Spelling};
+use crate::profile::{LongVowel, Spelling};
 
 impl Spelling {
     /// The form in this variety's romanization.
@@ -67,12 +67,12 @@ impl Spelling {
 #[cfg(test)]
 mod tests {
     use crate::form::Form;
-    use crate::preset::Preset;
+    use crate::profile::SoundProfile;
 
-    fn write(preset: &str, ipa: &str, boundaries: &[usize]) -> String {
+    fn write(profile: &str, ipa: &str, boundaries: &[usize]) -> String {
         let mut form = Form::from_ipa(ipa).unwrap();
         form.boundaries = boundaries.to_vec();
-        Preset::by_id(preset).unwrap().spelling.write(&form)
+        SoundProfile::by_id(profile).unwrap().spelling.write(&form)
     }
 
     #[test]

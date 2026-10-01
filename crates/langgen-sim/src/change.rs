@@ -162,20 +162,32 @@ impl Rewrite {
 }
 
 impl SoundChange {
+    /// Positions this change alters in `form`, with what each becomes
+    /// (`None` deletes). Matches that would rewrite a segment to itself are
+    /// left out, as is the last-vowel protection `apply` adds.
+    pub fn hits<'a>(
+        &'a self,
+        form: &'a Form,
+    ) -> impl Iterator<Item = (usize, Option<PhonemeId>)> + 'a {
+        (0..form.segs.len()).filter_map(move |i| {
+            let id = form.segs[i].phone;
+            let hit = self.target.matches(id)
+                && self.left.left_ok(form, i)
+                && self.right.right_ok(form, i);
+            let out = if hit { self.result.apply(id) } else { Some(id) };
+            (out != Some(id)).then_some((i, out))
+        })
+    }
+
     /// Applies the change simultaneously: every environment is matched
     /// against the input, so a rewrite never feeds or bleeds its own
     /// application elsewhere in the same word. A word never loses its last
     /// vowel; morpheme boundaries follow the segments that survive.
     pub fn apply(&self, form: &Form) -> Form {
-        let mut outcome: Vec<Option<PhonemeId>> = (0..form.segs.len())
-            .map(|i| {
-                let id = form.segs[i].phone;
-                let hit = self.target.matches(id)
-                    && self.left.left_ok(form, i)
-                    && self.right.right_ok(form, i);
-                if hit { self.result.apply(id) } else { Some(id) }
-            })
-            .collect();
+        let mut outcome: Vec<Option<PhonemeId>> = form.phones().map(Some).collect();
+        for (i, out) in self.hits(form) {
+            outcome[i] = out;
+        }
 
         let vowel_survives = outcome
             .iter()

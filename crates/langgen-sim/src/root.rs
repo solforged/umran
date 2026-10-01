@@ -31,7 +31,9 @@ pub fn mint_roots(seed: u64, tactics: &Phonotactics) -> Vec<(&'static Concept, F
         .collect()
 }
 
-fn mint_one(
+/// A root for `concept` that avoids `field` entirely and, for its first few
+/// draws, every form in `used`.
+pub(crate) fn mint_one(
     rng: &mut impl Rng,
     tactics: &Phonotactics,
     concept: &Concept,
@@ -56,33 +58,33 @@ mod tests {
     use super::*;
     use crate::inventory::Inventory;
     use crate::phoneme::CATALOG;
-    use crate::preset::Preset;
+    use crate::profile::SoundProfile;
 
-    fn tactics(seed: u64, preset: &Preset) -> Phonotactics {
+    fn tactics(seed: u64, profile: &SoundProfile) -> Phonotactics {
         let inventory =
-            Inventory::sample(&preset.inventory, &mut stream(seed, &[key("inventory")]));
-        Phonotactics::compile(&preset.phonotactics, &inventory)
+            Inventory::sample(&profile.inventory, &mut stream(seed, &[key("inventory")]));
+        Phonotactics::compile(&profile.phonotactics, &inventory)
     }
 
     #[test]
     fn roots_fit_template_and_are_unique_within_fields() {
-        for preset in Preset::all() {
+        for profile in SoundProfile::examples() {
             for seed in 0..1000 {
-                let tactics = tactics(seed, &preset);
+                let tactics = tactics(seed, &profile);
                 let roots = mint_roots(seed, &tactics);
                 let mut seen: HashSet<(Field, &Form)> = HashSet::new();
                 for (concept, form) in &roots {
                     assert!(
                         tactics.fits_root(form),
                         "{} seed {seed}: {} /{}/ breaks the root template",
-                        preset.id,
+                        profile.id,
                         concept.id,
                         form.ipa()
                     );
                     assert!(
                         seen.insert((concept.field, form)),
                         "{} seed {seed}: /{}/ repeats within {:?}",
-                        preset.id,
+                        profile.id,
                         form.ipa(),
                         concept.field
                     );
@@ -93,11 +95,11 @@ mod tests {
 
     #[test]
     fn minting_is_reproducible() {
-        let preset = Preset::by_id("elvish").unwrap();
-        let a = mint_roots(42, &tactics(42, &preset));
-        let b = mint_roots(42, &tactics(42, &preset));
+        let profile = SoundProfile::by_id("elvish").unwrap();
+        let a = mint_roots(42, &tactics(42, &profile));
+        let b = mint_roots(42, &tactics(42, &profile));
         assert_eq!(a, b);
-        let c = mint_roots(43, &tactics(43, &preset));
+        let c = mint_roots(43, &tactics(43, &profile));
         assert_ne!(a, c);
     }
 
@@ -105,12 +107,12 @@ mod tests {
     fn sound_symbolism_is_a_tendency() {
         // "small" should contain /i/ clearly more often than other
         // property words, but not always.
-        let preset = Preset::by_id("elvish").unwrap();
+        let profile = SoundProfile::by_id("elvish").unwrap();
         let i = CATALOG.id_by_ipa("i").unwrap();
         let (mut small, mut other, mut other_total) = (0, 0, 0);
         let seeds = 2000;
         for seed in 0..seeds {
-            for (concept, form) in mint_roots(seed, &tactics(seed, &preset)) {
+            for (concept, form) in mint_roots(seed, &tactics(seed, &profile)) {
                 let has_i = form.phones().any(|p| p == i);
                 match concept.id {
                     "small" => small += usize::from(has_i),
