@@ -85,15 +85,20 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   the recipient's established sounds and then undergo only later laws.
 - Names (`names.rs`) are words: a people's name is coined from its own
   lexicon by a `Naming` (the people, those who speak, people of a place,
-  or an epithet on an older name), and its language is named after it
-  with the language's belonging affix or a compound with "tongue" or
-  "word" (`NameRules` in `morphology.rs`, drawn after all other founding
-  draws). Names are clipped to three syllables for a people and four for
-  a language, as names said every day are, and epithets go only on short
-  names, so they do not stack over many splits. A split-off people never
-  takes a name in use: when its clipped name is another's, it takes a
-  place name, or else its chosen name a syllable longer at a time, and a
-  new language whose usual name is taken is named the other way ("the X
+  an epithet on an older name, or, for a people that moves off, the land
+  it settles, with the belonging affix: "of Opuw", as Northumbrians are
+  of Northumbria), and its language is named after it with the language's
+  belonging affix or a compound with "tongue" or "word" (`NameRules` in
+  `morphology.rs`, drawn after all other founding draws). Names are
+  clipped to three syllables for a people and four for a language, as
+  names said every day are, and epithets go only on short names, so they
+  do not stack over many splits. A split-off people avoids meanings other
+  peoples have; when all are had, it is named for its land, or failing
+  that for a place another people is also named for. It never takes a
+  name in use: when its clipped name is another's, its land, a place, or
+  an epithet on the old name said short ("the far Goths") tells it apart,
+  or else whichever of those needs the fewest syllables more. A new
+  language whose usual name is taken is named the other way ("the X
   tongue" for "of the X") or in full. Names then undergo the same sound
   laws as their variety's words, so two may still come to sound alike
   over time. Split-off peoples name themselves; a people that shifts

@@ -5,8 +5,9 @@ mod annals;
 
 use annals::{Annal, annals};
 use serde::Serialize;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use umran_sim::compare::intelligibility;
-use umran_sim::concepts::{by_id, related};
+use umran_sim::concepts::{Concept, by_id, related};
 use umran_sim::morphology::Slot;
 use umran_sim::names::PlaceOrigin;
 use umran_sim::phoneme::{Backness, Manner, Secondary};
@@ -1198,7 +1199,24 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
         },
     }];
     let kept = kept_through_shift(world, variety, word);
+    let (passing, folded) = passing_senses(word);
     for (i, entry) in word.log.iter().enumerate() {
+        if folded.contains(&i) {
+            if let Some(&(concept, times)) = passing.get(&i) {
+                out.push(HistoryLine {
+                    generation: entry.generation,
+                    text: if times == 1 {
+                        format!("For a few generations also used for '{}'", concept.gloss)
+                    } else {
+                        format!(
+                            "Now and then used for '{}' too, never for long ({times} times)",
+                            concept.gloss
+                        )
+                    },
+                });
+            }
+            continue;
+        }
         let text = match &entry.event {
             // A kept word was never heard as foreign.
             Event::Borrowed { .. } if kept => continue,
@@ -1228,6 +1246,37 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
         });
     }
     out
+}
+
+/// Longest a word can hold a sense, in generations, for taking it up and
+/// dropping it again to be told as a passing use rather than a change of
+/// meaning, as a dictionary records only the senses that took hold.
+const PASSING_SENSE: u32 = 10;
+
+/// Senses `word` took up and dropped again within `PASSING_SENSE`
+/// generations: per concept, how many times, keyed by the log index of its
+/// first such use; and every log index those uses span, to fold away.
+fn passing_senses(word: &Lexeme) -> (BTreeMap<usize, (&'static Concept, usize)>, HashSet<usize>) {
+    let mut first: HashMap<&'static str, usize> = HashMap::new();
+    let mut passing = BTreeMap::new();
+    let mut folded = HashSet::new();
+    for (i, entry) in word.log.iter().enumerate() {
+        let Event::Extended { to } = entry.event else {
+            continue;
+        };
+        let lost = word.log[i + 1..]
+            .iter()
+            .position(|e| matches!(e.event, Event::Lost { sense } if sense.id == to.id))
+            .map(|k| i + 1 + k);
+        let Some(j) = lost else { continue };
+        if word.log[j].generation - entry.generation > PASSING_SENSE {
+            continue;
+        }
+        folded.extend([i, j]);
+        let head = *first.entry(to.id).or_insert(i);
+        passing.entry(head).or_insert((to, 0)).1 += 1;
+    }
+    (passing, folded)
 }
 
 pub(crate) fn substrate_label(id: &str) -> String {

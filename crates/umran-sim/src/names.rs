@@ -30,6 +30,11 @@ pub enum Naming {
     /// An epithet on an older name: "the far Goths", "Little Poland". On a
     /// founding, it qualifies "the people".
     Epithet { epithet: String },
+    /// "The people of Opuw": from the name of the land they settle, as the
+    /// Northumbrians were named for the land north of the Humber. Only a
+    /// people moving off from another takes it; founders have no land
+    /// name yet.
+    Land,
 }
 
 /// Landscape a people can be named for.
@@ -39,7 +44,7 @@ pub const EPITHETS: [&str; 7] = ["new", "far", "small", "big", "old", "red", "bl
 /// Syllables beyond which a name takes no further epithet, so epithets
 /// do not stack over many splits: there were Ostrogoths and Visigoths,
 /// never "far East Goths".
-const MAX_EPITHET_BASE: usize = 2;
+pub(crate) const MAX_EPITHET_BASE: usize = 2;
 /// Most syllables a people's name keeps, and a language's. Names said
 /// every day are short, and long ones are clipped in use: Deutsch,
 /// English, Magyar, Suomi, Kiswahili.
@@ -145,8 +150,8 @@ impl Naming {
     }
 
     /// The people's name in `variety`'s words, clipped as names are in
-    /// everyday use. `base` is the older name an epithet qualifies,
-    /// spelled for the gloss.
+    /// everyday use. `base` is the older name an epithet qualifies, or the
+    /// land a people is named for, spelled for the gloss.
     pub fn coin(
         &self,
         variety: &Variety,
@@ -207,6 +212,17 @@ impl Naming {
                 (
                     morphology.compound(&word(epithet)?, &head),
                     format!("the {epithet} {of}"),
+                )
+            }
+            Naming::Land => {
+                let (land, spelled) =
+                    base.ok_or("a people is named for its land only once it has one")?;
+                // "Of" the land, as Northumbrians are of Northumbria: the
+                // land comes first whatever the word order, so clipping
+                // keeps it.
+                (
+                    morphology.belonging(&land.form),
+                    format!("the people of {spelled}"),
                 )
             }
         };

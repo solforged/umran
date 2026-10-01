@@ -17,7 +17,7 @@ use umran_sim::{Event, Form, Lexeme, Variety, World, WorldEvent, catalog};
 pub(crate) struct Annal {
     pub generation: u32,
     /// "found", "split", "migration", "shift", "contact", "parted",
-    /// "conquest", or "law".
+    /// "neighbours", "conquest", or "law".
     pub kind: &'static str,
     /// The annalist's words. Words of the language are marked `*thus*`.
     pub text: String,
@@ -155,6 +155,9 @@ fn tell(world: &World, keys: &[u64], options: &[&str], fill: &[(&str, &str)]) ->
 pub(crate) fn annals(world: &World) -> Vec<Annal> {
     let meaning = |c: usize| world.communities[c].name.meaning.as_str();
     let mut out: Vec<Annal> = Vec::new();
+    // Peoples coming to live beside one another and drifting apart, by
+    // generation, told together so they do not crowd out the rest.
+    let mut neighbours: BTreeMap<u32, Neighbours> = BTreeMap::new();
     let entry = |generation, kind, text, peoples: &[usize], lands: &[usize]| Annal {
         generation,
         kind,
@@ -277,14 +280,147 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 &[community, toward],
                 &[],
             ),
+            WorldEvent::Met {
+                a,
+                b,
+                kind: ContactKind::Neighbours,
+            } => {
+                neighbours.entry(generation).or_default().met.push((a, b));
+                continue;
+            }
+            WorldEvent::Parted {
+                a,
+                b,
+                kind: ContactKind::Neighbours,
+            } => {
+                neighbours
+                    .entry(generation)
+                    .or_default()
+                    .parted
+                    .push((a, b));
+                continue;
+            }
             WorldEvent::Met { a, b, kind } => pair("contact", contact_wording(kind), a, b),
             WorldEvent::Parted { a, b, kind } => pair("parted", parting_wording(kind), a, b),
             WorldEvent::Conquered { ruler, ruled } => pair("conquest", CONQUEST, ruler, ruled),
         });
     }
+    out.extend(
+        neighbours
+            .into_iter()
+            .map(|(generation, n)| neighbours_annal(world, generation, &n)),
+    );
     out.extend(sound_changes(world));
     out.sort_by_key(|a| (a.generation, a.kind == "law"));
     out
+}
+
+/// Pairs of peoples that came to live beside one another, and that
+/// drifted apart, in one generation.
+#[derive(Default)]
+struct Neighbours {
+    met: Vec<(usize, usize)>,
+    parted: Vec<(usize, usize)>,
+}
+
+/// Most pairs an entry on neighbours names before only counting them.
+const NEIGHBOURS_NAMED: usize = 3;
+
+/// One entry for every change among neighbours in `generation`. A single
+/// change is told as any other dealing is; several are told together, and
+/// many only counted, with each pair in the apparatus.
+fn neighbours_annal(world: &World, generation: u32, n: &Neighbours) -> Annal {
+    let name = |c: usize| world.community_name_at(c, generation);
+    let g = u64::from(generation);
+    let single = |kind: &str, options: &[&str], (a, b): (usize, usize)| {
+        tell(
+            world,
+            &[key(kind), g, a as u64, b as u64],
+            options,
+            &[("a", &name(a)), ("b", &name(b))],
+        )
+    };
+    // "the A came to live beside the B, and the C beside the D"
+    let clause = |pairs: &[(usize, usize)], first: &str, rest: &str, counted: &str| {
+        if pairs.len() > NEIGHBOURS_NAMED {
+            return format!("{} pairs of peoples {counted}", number(pairs.len()));
+        }
+        let told: Vec<String> = pairs
+            .iter()
+            .enumerate()
+            .map(|(i, &(a, b))| {
+                let verb = if i == 0 { first } else { rest };
+                format!("the {} {verb} the {}", name(a), name(b))
+            })
+            .collect();
+        match told.split_last() {
+            Some((last, init)) if !init.is_empty() => format!("{}, and {last}", init.join(", ")),
+            _ => told.concat(),
+        }
+    };
+    let mut notes = Vec::new();
+    let text =
+        match (n.met.as_slice(), n.parted.as_slice()) {
+            (&[pair], []) => single("contact", contact_wording(ContactKind::Neighbours), pair),
+            ([], &[pair]) => single("parted", parting_wording(ContactKind::Neighbours), pair),
+            (met, parted) => {
+                let mut clauses = Vec::new();
+                if !met.is_empty() {
+                    clauses.push(clause(
+                        met,
+                        "came to live beside",
+                        "beside",
+                        "came to live as neighbours",
+                    ));
+                }
+                if !parted.is_empty() {
+                    clauses.push(clause(
+                        parted,
+                        "drifted apart from",
+                        "from",
+                        "drifted apart",
+                    ));
+                }
+                for (pairs, what) in [(met, "Neighbours"), (parted, "Apart")] {
+                    if pairs.len() > NEIGHBOURS_NAMED {
+                        notes.extend(pairs.iter().map(|&(a, b)| {
+                            format!("{what}: the {} and the {}.", name(a), name(b))
+                        }));
+                    }
+                }
+                format!("That year {}.", clauses.join("; "))
+            }
+        };
+    let mut peoples: Vec<usize> = Vec::new();
+    for &(a, b) in n.met.iter().chain(&n.parted) {
+        for c in [a, b] {
+            if !peoples.contains(&c) {
+                peoples.push(c);
+            }
+        }
+    }
+    Annal {
+        generation,
+        kind: "neighbours",
+        text,
+        notes,
+        variety: None,
+        peoples,
+        lands: Vec::new(),
+        laws: Vec::new(),
+        specimen: Vec::new(),
+    }
+}
+
+/// `n` in words, as the annalist writes small numbers.
+fn number(n: usize) -> String {
+    const WORDS: [&str; 13] = [
+        "no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+        "eleven", "twelve",
+    ];
+    WORDS
+        .get(n)
+        .map_or_else(|| n.to_string(), |w| (*w).to_string())
 }
 
 /// What `region` was called at the end of `generation`.

@@ -12,6 +12,7 @@ import {
   Handshake,
   Languages,
   Unlink,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import type { Annal, Community, ContactKind, Law, Overview, PlaceName, Terrain } from "./model";
@@ -24,6 +25,7 @@ export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string 
   shift: { icon: Languages, name: "A people changes tongue" },
   contact: { icon: Handshake, name: "Peoples meet" },
   parted: { icon: Unlink, name: "Peoples part" },
+  neighbours: { icon: Users, name: "Neighbours come and go" },
   conquest: { icon: Crown, name: "A conquest" },
   law: { icon: AudioLines, name: "A sound change" },
 };

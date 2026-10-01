@@ -34,6 +34,9 @@ const INITIAL_SIZE: f32 = 1000.0;
 const SHIFT_MIN_GAP: f32 = 0.2;
 /// Contact intensity between the halves of a community that just split.
 const FISSION_CONTACT: f32 = 0.5;
+/// Weight of a people that moves off naming itself for its new land,
+/// against epithets and places weighing 1 together.
+const LAND_NAMING: f32 = 0.4;
 /// Prestige gap below which no people conquers another.
 const CONQUEST_MIN_GAP: f32 = 0.3;
 /// How much longer rule lasts per unit of prestige gap between ruler and
@@ -563,86 +566,105 @@ impl World {
     pub fn split(&mut self, community: usize, naming: Option<&Naming>, intensity: f32) -> usize {
         let parent = self.communities[community].variety;
         let mut daughter = self.varieties[parent].fork(parent, self.generation);
+        let home = self.communities[community].region;
+        let region = self.leavers_land(home);
+        // The land they settle, as they say it, which they may be named for.
+        let land = self.heard_place(region, parent, &daughter);
         let naming = match naming {
             Some(n) => n.clone(),
-            None => self.daughter_naming(community),
+            None => {
+                let spelled = land.as_ref().map(|l| daughter.title(&l.form));
+                self.daughter_naming(community, spelled.as_deref(), region != home)
+            }
         };
-        let base = &self.communities[community].name;
+        let parent_name = &self.communities[community].name;
+        let base = |n: &Naming| match n {
+            Naming::Land => land.as_ref().map(|l| (l, &daughter)),
+            _ => Some((parent_name, &self.varieties[parent])),
+        };
         let taken = |name: &Name| {
             self.communities
                 .iter()
                 .any(|c| c.name.form.segs == name.form.segs)
         };
-        let mut name = self.coin(&daughter, &naming, Some((base, &self.varieties[parent])));
+        let mut name = self.coin(&daughter, &naming, base(&naming));
         // A clipped name can come out as an existing one ("the new Tinea"
-        // clipped back to "Tinea"); a place name tells them apart instead,
-        // or, when those are taken too, the chosen name clipped a syllable
-        // longer at a time, and qualified again only if even the whole of
-        // it is another's ("the new Muktho").
+        // clipped back to "Tinea"). The land they settle, a place, or an
+        // epithet on the old name said short ("the far Goths") tells them
+        // apart instead; when all of those are taken, whichever of them
+        // needs the fewest syllables more, and only if even every whole
+        // name is another's, the chosen one qualified again ("the new
+        // Muktho").
         if taken(&name) {
-            let place = crate::names::PLACES
+            let short_parent = Name {
+                form: crate::names::clipped(
+                    parent_name.form.clone(),
+                    crate::names::MAX_EPITHET_BASE,
+                ),
+                ..parent_name.clone()
+            };
+            let others = land
                 .iter()
-                .map(|p| Naming::Place { place: (*p).into() })
-                .map(|n| self.coin(&daughter, &n, None))
-                .find(|n| !taken(n));
-            name = match place {
-                Some(place) => place,
-                None => {
-                    let shortest = |whole: &Name| {
-                        (crate::names::MAX_PEOPLE_NAME + 1..=whole.form.vowel_count())
-                            .map(|max| Name {
-                                form: crate::names::clipped(whole.form.clone(), max),
-                                ..whole.clone()
-                            })
-                            .find(|n| !taken(n))
+                .map(|_| Naming::Land)
+                .chain(
+                    crate::names::PLACES
+                        .iter()
+                        .map(|p| Naming::Place { place: (*p).into() }),
+                )
+                .filter(|n| *n != naming)
+                .map(|n| {
+                    let b = base(&n);
+                    (n, b)
+                })
+                .chain(crate::names::EPITHETS.iter().map(|e| {
+                    let epithet = Naming::Epithet {
+                        epithet: (*e).into(),
                     };
-                    let spelled = self.varieties[parent].title(&base.form);
-                    let mut whole = naming
-                        .coin_whole(&daughter, Some((base, &spelled)), self.generation)
-                        .unwrap_or(name);
+                    (epithet, Some((&short_parent, &self.varieties[parent])))
+                }));
+            let wholes: Vec<Name> = std::iter::once((naming.clone(), base(&naming)))
+                .chain(others)
+                .filter_map(|(n, b)| {
+                    let spelled = b.map(|(name, v)| (name, v.title(&name.form)));
+                    n.coin_whole(
+                        &daughter,
+                        spelled.as_ref().map(|(name, s)| (*name, s.as_str())),
+                        self.generation,
+                    )
+                    .ok()
+                })
+                .collect();
+            let longest = wholes.iter().map(|w| w.form.vowel_count()).max();
+            let free = (crate::names::MAX_PEOPLE_NAME..=longest.unwrap_or(0)).find_map(|max| {
+                wholes
+                    .iter()
+                    .filter(|w| w.form.vowel_count() >= max)
+                    .map(|w| Name {
+                        form: crate::names::clipped(w.form.clone(), max),
+                        ..w.clone()
+                    })
+                    .find(|n| !taken(n))
+            });
+            name = match free {
+                Some(free) => free,
+                None => {
+                    let mut whole = wholes.into_iter().next().unwrap_or(name);
                     let new = Naming::Epithet {
                         epithet: "new".into(),
                     };
-                    loop {
-                        if let Some(free) = shortest(&whole) {
-                            break free;
-                        }
+                    while taken(&whole) {
                         let spelled = daughter.title(&whole.form);
                         match new.coin_whole(&daughter, Some((&whole, &spelled)), self.generation) {
                             Ok(longer) => whole = longer,
-                            Err(_) => break whole,
+                            Err(_) => break,
                         }
                     }
+                    whole
                 }
             };
         }
         daughter.name = self.fresh_language_name(&daughter, &name);
         self.varieties.push(daughter);
-        // The leavers take the roomiest land beside home if it has more
-        // room than home, judged before they go. When the land beside is
-        // full, a coastal people sends them along or over the sea instead,
-        // to the coast with the most room for the voyage, as Greek cities
-        // sent out colonies.
-        let home = self.communities[community].region;
-        let occupied = self.occupation();
-        let room = |r: usize| self.capacity(r) - occupied.get(&r).copied().unwrap_or(0.0);
-        let colony = || {
-            let map = &self.map;
-            (0..map.regions.len())
-                .filter(|&r| map.coastal(home) && map.coastal(r) && r != home)
-                .filter(|&r| !map.regions[home].neighbours.contains(&r))
-                .filter(|&r| map.distance(home, r) <= COLONY_REACH && room(r) > room(home))
-                .map(|r| (r, room(r) / (1.0 + map.distance(home, r))))
-                .fold(None, |best: Option<(usize, f32)>, (r, score)| match best {
-                    Some((_, s)) if s >= score => best,
-                    _ => Some((r, score)),
-                })
-                .map(|(r, _)| r)
-        };
-        let region = match self.roomiest(&self.map.regions[home].neighbours) {
-            Some(beside) if room(beside) > room(home) => beside,
-            _ => colony().unwrap_or(home),
-        };
         self.communities[community].size /= 2.0;
         let mut new = self.communities[community].clone();
         new.name = name;
@@ -1011,9 +1033,70 @@ impl World {
         Some(self.varieties[place.variety].title(place.name.form_at(generation)))
     }
 
+    /// Where a people leaving `home` goes: the roomiest land beside home if
+    /// it has more room than home, judged before they go. When the land
+    /// beside is full, a coastal people sends them along or over the sea
+    /// instead, to the coast with the most room for the voyage, as Greek
+    /// cities sent out colonies.
+    fn leavers_land(&self, home: usize) -> usize {
+        let occupied = self.occupation();
+        let room = |r: usize| self.capacity(r) - occupied.get(&r).copied().unwrap_or(0.0);
+        let colony = || {
+            let map = &self.map;
+            (0..map.regions.len())
+                .filter(|&r| map.coastal(home) && map.coastal(r) && r != home)
+                .filter(|&r| !map.regions[home].neighbours.contains(&r))
+                .filter(|&r| map.distance(home, r) <= COLONY_REACH && room(r) > room(home))
+                .map(|r| (r, room(r) / (1.0 + map.distance(home, r))))
+                .fold(None, |best: Option<(usize, f32)>, (r, score)| match best {
+                    Some((_, s)) if s >= score => best,
+                    _ => Some((r, score)),
+                })
+                .map(|(r, _)| r)
+        };
+        match self.roomiest(&self.map.regions[home].neighbours) {
+            Some(beside) if room(beside) > room(home) => beside,
+            _ => colony().unwrap_or(home),
+        }
+    }
+
+    /// What `region` is called, as speakers of `variety`, a daughter of
+    /// `parent`, would say it: as its namers say it if `parent` descends
+    /// from them, otherwise fitted to `variety`'s sounds. `None` if no one
+    /// has named it yet.
+    fn heard_place(&self, region: usize, parent: usize, variety: &Variety) -> Option<Name> {
+        let place = self.places[region].last()?;
+        if place.variety == parent || self.descends(parent, place.variety) {
+            return Some(place.name.clone());
+        }
+        let mut rng = stream(
+            self.seed,
+            &[
+                key("heard-place"),
+                region as u64,
+                u64::from(self.generation),
+            ],
+        );
+        let ear = Adapter::new(
+            variety.lexicon.living().map(|l| &l.form),
+            &variety.profile.inventory,
+        );
+        Some(Name {
+            form: ear.adapt(&place.name.form, 0.0, &mut rng),
+            meaning: place.name.meaning.clone(),
+            coined: self.generation,
+            log: Vec::new(),
+        })
+    }
+
     /// What a group leaving `community` calls itself: an epithet on the
-    /// old name or a place, avoiding meanings other communities have.
-    fn daughter_naming(&self, community: usize) -> Naming {
+    /// old name, a place, or, when `moving`, its new land (`land`, as it
+    /// says it), avoiding meanings other communities have. When all of
+    /// those are had, it is named for its land even if staying; failing
+    /// that, for a place another people in the world is also named for,
+    /// as many peoples are "of the river"; and only failing that too, "the
+    /// new" old name.
+    fn daughter_naming(&self, community: usize, land: Option<&str>, moving: bool) -> Naming {
         let parent = &self.communities[community].name;
         let spelled = self.community_name(community);
         let taken: HashSet<String> = self
@@ -1021,8 +1104,10 @@ impl World {
             .iter()
             .map(|c| c.name.meaning.clone())
             .collect();
-        let options: Vec<(Naming, f32)> = Naming::for_daughter(parent)
-            .into_iter()
+        let land = land.filter(|l| !taken.contains(&format!("the people of {l}")));
+        let all = Naming::for_daughter(parent);
+        let mut options: Vec<(Naming, f32)> = all
+            .iter()
             .filter(|(n, _)| {
                 let meaning = match n {
                     Naming::Epithet { epithet } => format!("the {epithet} {spelled}"),
@@ -1031,7 +1116,20 @@ impl World {
                 };
                 !taken.contains(&meaning)
             })
+            .cloned()
             .collect();
+        if moving && land.is_some() {
+            options.push((Naming::Land, LAND_NAMING));
+        }
+        if options.is_empty() {
+            if land.is_some() {
+                return Naming::Land;
+            }
+            options = all
+                .into_iter()
+                .filter(|(n, _)| matches!(n, Naming::Place { .. }))
+                .collect();
+        }
         if options.is_empty() {
             return Naming::Epithet {
                 epithet: "new".into(),
@@ -1045,7 +1143,8 @@ impl World {
 
     /// A people's name in `variety`'s words, falling back to "the people"
     /// if `naming` cannot be built. `base` is the name an epithet
-    /// qualifies, with the variety that spells it.
+    /// qualifies or the land a people is named for, with the variety that
+    /// spells it.
     fn coin(&self, variety: &Variety, naming: &Naming, base: Option<(&Name, &Variety)>) -> Name {
         let spelled = base.map(|(name, v)| (name, v.title(&name.form)));
         naming
@@ -2549,6 +2648,40 @@ mod tests {
                     world.communities.len(),
                     "seed {seed}, {profile}: {all:?}"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn names_stay_short_when_every_name_is_had() {
+        // Each split from the newest people, all in one generation, so the
+        // daughters speak alike and soon run out of places and epithets.
+        for seed in 0..4 {
+            for profile in ["familiar", "polynesian", "finnic"] {
+                let mut world = World::new(seed, Params::static_society());
+                world.found(&SoundProfile::by_id(profile).unwrap(), 0.5, 0.5);
+                for _ in 0..24 {
+                    world.split(world.communities.len() - 1, None, 0.0);
+                }
+                let names: HashSet<_> = world
+                    .communities
+                    .iter()
+                    .map(|c| &c.name.form.segs)
+                    .collect();
+                assert_eq!(
+                    names.len(),
+                    world.communities.len(),
+                    "seed {seed}, {profile}"
+                );
+                for c in &world.communities {
+                    let syllables = c.name.form.vowel_count();
+                    assert!(
+                        syllables <= crate::names::MAX_PEOPLE_NAME + 1,
+                        "seed {seed}, {profile}: {} is {syllables} syllables, “{}”",
+                        c.name.form.ipa(),
+                        c.name.meaning
+                    );
+                }
             }
         }
     }

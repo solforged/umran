@@ -25,7 +25,8 @@ function stops(on: PauseOn, annal: Annal): boolean {
     case "nothing":
       return false;
     case "peoples":
-      return annal.kind !== "law";
+      // Neighbours come and go too often to stop the years for.
+      return annal.kind !== "law" && annal.kind !== "neighbours";
     case "sounds":
       return annal.kind === "law";
     case "anything":

@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 
 /// Bumped whenever an engine change would make an existing recipe replay
 /// differently. Saves record it so a mismatch can be reported.
-pub const ENGINE_REVISION: u32 = 13;
+pub const ENGINE_REVISION: u32 = 14;
 /// Identifies saved recipes. Kept from the project's first name, langgen,
 /// so files saved before the rename still load.
 pub const FORMAT: &str = "langgen-sim-recipe";
@@ -380,6 +380,9 @@ fn apply(world: &mut World, action: &Action) -> Result<(), String> {
         } => {
             design.validate()?;
             naming.validate()?;
+            if *naming == Naming::Land {
+                return Err("a founding people has no land name to be called by yet".into());
+            }
             if let Some(r) = *region
                 && !world
                     .map
