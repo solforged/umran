@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Dices, Play, Plus, SlidersHorizontal, X } from "lucide-react";
+import { Dices, Play, Plus, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import { createEngine, message, presetDesign } from "../engine";
 import type { Catalog, Engine, MapSize, Naming, Overview, WorldMap } from "../model";
 import { hue, TERRAIN_NAME } from "../lore";
@@ -72,12 +72,16 @@ export function WorldSetup({
   catalog,
   onBegin,
   onShelf,
+  onSample,
 }: {
   catalog: Catalog;
   onBegin: (engine: Engine) => void;
   /// Back to the shelf, if there are worlds on it.
   onShelf?: () => void;
+  /// Open the sample world, already thousands of years along.
+  onSample: () => Promise<void>;
 }) {
+  const [sampling, setSampling] = useState(false);
   const [worldSeed, setWorldSeed] = useState(() => randomSeed());
   const [size, setSize] = useState<MapSize>("medium");
   const [founders, setFounders] = useState<Founder[]>(() =>
@@ -195,6 +199,23 @@ export function WorldSetup({
       </section>
 
       <aside className="pedia setup-panel" aria-label="Peoples">
+        <button
+          type="button"
+          className="sample-callout"
+          disabled={sampling}
+          onClick={() => {
+            setSampling(true);
+            // Let the button say it is working before the engine, which
+            // blocks the page while it plays the years, starts.
+            setTimeout(() => void onSample().finally(() => setSampling(false)), 30);
+          }}
+        >
+          <Sparkles size={20} aria-hidden="true" />
+          <span>
+            <strong>{sampling ? "Playing four thousand years…" : "Watch a sample world"}</strong>
+            <span>Three peoples, four thousand years on: their families spread, one rules another, and a people changes its language. Or make your own below.</span>
+          </span>
+        </button>
         <section className="setup-world">
           <h3>The world</h3>
           <div className="row spread">

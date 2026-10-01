@@ -42,4 +42,5 @@ Worlds leave the shelf only when the reader removes one and confirms.
 Unreadable saves or an unreadable shelf open recovery without being
 overwritten; save failures stay visible and export still works. Storage is
 local to the browser, not synced. The sample world (`web/src/sample.ts`)
-is a fixed recipe; opening it puts a fresh copy on the shelf.
+is a fixed recipe of four thousand years, offered on the shelf and at the
+top of world setup; opening it puts a fresh copy on the shelf.

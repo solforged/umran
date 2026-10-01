@@ -1,35 +1,33 @@
-// The sample chronicle: a fixed recipe, so every reader starts from the
-// same few centuries. Opening it puts a copy on the shelf to continue.
+// The sample world: a fixed recipe, so every visitor starts from the same
+// four thousand years. Three peoples of three families settle the map and
+// spread; after 2,500 years the river people come to rule the sea people,
+// who later give up their tongue for their rulers'. Opening it puts a copy
+// on the shelf to continue.
 
 import { createEngine, presetDesign } from "./engine";
-import type { Action, Engine } from "./model";
+import type { Action, Engine, Naming } from "./model";
 
-const WORLD = 1407;
+const WORLD = 21;
 
-export async function sampleBook(): Promise<Engine> {
+export async function sampleWorld(): Promise<Engine> {
   const engine = await createEngine(WORLD, "medium");
+  const found = (preset: string, seed: number, naming: Naming, power: number): Action => ({
+    kind: "found",
+    naming,
+    design: presetDesign(preset, seed),
+    seed,
+    power,
+    openness: 0.5,
+  });
   const actions: Action[] = [
-    {
-      kind: "found",
-      naming: { kind: "place", place: "river" },
-      design: presetDesign("germanic", 31),
-      seed: 31,
-      power: 0.6,
-      openness: 0.4,
-    },
-    { kind: "run", generations: 8 },
-    { kind: "split", community: 0, intensity: 0.3 },
-    { kind: "run", generations: 10 },
-    {
-      kind: "found",
-      naming: { kind: "people" },
-      design: presetDesign("finnic", 52),
-      seed: 52,
-      power: 0.4,
-      openness: 0.6,
-    },
-    { kind: "connect", a: 1, b: 2, intensity: 0.6, contact: "trade" },
-    { kind: "run", generations: 12 },
+    found("germanic", 31, { kind: "place", place: "river" }, 0.7),
+    found("semitic", 52, { kind: "people" }, 0.5),
+    found("polynesian", 73, { kind: "place", place: "sea" }, 0.4),
+    { kind: "run", generations: 100 },
+    { kind: "connect", a: 0, b: 2, intensity: 0.8, contact: "rule" },
+    { kind: "run", generations: 30 },
+    { kind: "shift", community: 2, toward: 0 },
+    { kind: "run", generations: 30 },
   ];
   try {
     for (const action of actions) engine.act(action);

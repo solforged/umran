@@ -10,7 +10,8 @@ every word they speak changes in response: sounds shift regularly, words
 are borrowed and compete, names wear down, and families of related
 languages branch out. It runs entirely in the browser.
 
-**[Try it in your browser](https://solforged.github.io/umran/)**
+**[Try it in your browser](https://solforged.github.io/umran/)**: choose
+"Watch a sample world" to open one already four thousand years along.
 
 ![The stage after 5,600 years: three language families spread over the map, with the feed of recent events and the encyclopedia card for the world](docs/images/stage.png)
 

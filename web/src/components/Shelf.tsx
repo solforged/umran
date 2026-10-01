@@ -45,7 +45,7 @@ export function Shelf({
           <button type="button" className="world-card" onClick={onSample}>
             <Sparkles size={20} aria-hidden="true" />
             <strong>A sample world</strong>
-            <span>A few centuries already played, to watch and go on with.</span>
+            <span>Four thousand years already played, to watch and go on with.</span>
           </button>
         </li>
         {worlds.map((book) => (

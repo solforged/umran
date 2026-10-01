@@ -9,7 +9,7 @@ import { Modal } from "./components/Modal";
 import { Shelf } from "./components/Shelf";
 import { Stage } from "./components/Stage";
 import { WorldSetup } from "./components/WorldSetup";
-import { sampleBook } from "./sample";
+import { sampleWorld } from "./sample";
 import { download } from "./takeout";
 import {
   describe,
@@ -210,7 +210,7 @@ export default function App() {
 
   const sample = async () => {
     try {
-      adopt(newBookId(), await sampleBook(), true);
+      adopt(newBookId(), await sampleWorld(), true);
     } catch (e) {
       setError(`The sample could not be written: ${message(e)}`);
     }
@@ -253,6 +253,7 @@ export default function App() {
           catalog={catalog}
           onBegin={begin}
           onShelf={shelf.books.length > 0 ? () => setView({ kind: "shelf" }) : undefined}
+          onSample={sample}
         />
       </div>
     );
