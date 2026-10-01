@@ -120,6 +120,15 @@ export interface Community {
   region: number;
 }
 
+/// A sound law a variety underwent; `from` is the variety it spread from,
+/// if it came as a wave from a neighbour rather than arising there.
+export interface Law {
+  generation: number;
+  id: string;
+  label: string;
+  from: number | null;
+}
+
 export interface Variety {
   id: number;
   /// What its speakers call it.
@@ -132,7 +141,7 @@ export interface Variety {
   profile: string;
   consonants: string[];
   vowels: string[];
-  laws: { generation: number; label: string }[];
+  laws: Law[];
   words: number;
   wordBuilding: string;
   builders: { relation: string; shape: string }[];
@@ -273,6 +282,8 @@ export interface Region {
   coastal: boolean;
   /// Land on a body of land of at most two regions.
   island: boolean;
+  /// Regions sharing a border with it.
+  neighbours: number[];
 }
 
 /// The land a book's history plays out on; it never changes.

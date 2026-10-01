@@ -336,11 +336,20 @@ fn sound_changes(world: &World) -> Vec<Annal> {
                 ),
                 None => tell(world, &keys, LAW_UNSEEN, &[("p", &people)]),
             };
+            // A change that spread from a neighbour says where it came from.
+            let note = |id: &str| match variety.waves.iter().find(|(w, _)| *w == id) {
+                Some(&(_, source)) => format!(
+                    "{}, spreading from {}",
+                    label(id),
+                    speakers(world, source, generation)
+                ),
+                None => label(id),
+            };
             out.push(Annal {
                 generation,
                 kind: "law",
                 text,
-                notes: ids.iter().map(|id| label(id)).collect(),
+                notes: ids.iter().map(|id| note(id)).collect(),
                 variety: Some(v),
             });
         }

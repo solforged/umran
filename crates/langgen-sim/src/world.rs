@@ -15,7 +15,7 @@ use crate::variety::Variety;
 use rand::{Rng, RngCore};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 /// Effective Leipzig–Jakarta rank for cultural vocabulary when it comes to
@@ -65,6 +65,17 @@ const PLACE_HOLD: f32 = 2.0;
 /// namers, as most river names in England are Celtic.
 const PLACE_KEEP_KNOWN: f32 = 0.85;
 const PLACE_KEEP_UNKNOWN: f32 = 0.4;
+/// Generations a sound change keeps spreading after it takes hold in a
+/// variety, its pull fading over them: a wave runs for a few centuries,
+/// then the change is simply part of the language.
+const WAVE_SPAN: u32 = 10;
+/// Generations apart at which two varieties take up each other's sound
+/// changes half as readily as twin dialects do.
+const KIN_SPAN: f32 = 20.0;
+/// How readily unrelated languages take up each other's sound changes,
+/// relative to twin dialects: areal changes do cross families, as the
+/// uvular r crossed western Europe, but seldom.
+const KIN_STRANGERS: f32 = 0.15;
 
 /// Rates per generation. Defaults are calibrated so an isolated variety
 /// keeps about 84% of its core list per 40 generations.
@@ -157,6 +168,11 @@ pub struct Params {
     /// within reach, scaled by how crowded home is, how mobile its terrain
     /// makes it, and whether a stronger people shares it.
     pub migration_rate: f32,
+    /// Scales the chance per generation that a sound change spreads from a
+    /// variety to one it is in contact with, by the contact's kind and
+    /// intensity, how close their land is, how near their kinship, and
+    /// which is the more prestigious.
+    pub wave_rate: f32,
 }
 
 impl Default for Params {
@@ -193,6 +209,7 @@ impl Default for Params {
             trade_rate: 0.01,
             conquest_rate: 0.05,
             migration_rate: 0.02,
+            wave_rate: 1.0,
         }
     }
 }
@@ -210,6 +227,7 @@ impl Params {
             trade_rate: 0.0,
             conquest_rate: 0.0,
             migration_rate: 0.0,
+            wave_rate: 0.0,
             ..Self::default()
         }
     }
@@ -290,6 +308,18 @@ impl ContactKind {
             ContactKind::Intermarriage => 20.0,
             ContactKind::Religion => 30.0,
             ContactKind::Neighbours => 40.0,
+        }
+    }
+
+    /// How readily a sound change passes along this kind of contact: it
+    /// spreads through daily talk between people living side by side or
+    /// marrying, less through rulers' speech, least through traders and
+    /// priests.
+    pub fn carries_sounds(self) -> f32 {
+        match self {
+            ContactKind::Neighbours | ContactKind::Intermarriage => 1.0,
+            ContactKind::Rule => 0.7,
+            ContactKind::Trade | ContactKind::Religion => 0.3,
         }
     }
 }
@@ -658,6 +688,7 @@ impl World {
                 self.sound_change(v, targets);
             }
         }
+        self.spread_waves(&spoken);
         self.borrow();
         let prestige = self.variety_prestige();
         for v in (0..self.varieties.len()).filter(|&v| spoken[v]) {
@@ -1405,7 +1436,12 @@ impl World {
             return;
         };
         let law = (*law).clone();
+        self.apply_law(v, &law);
+    }
 
+    /// Applies `law` to every living word of variety `v`, and to the names
+    /// of its language, its peoples, and the lands they hold.
+    fn apply_law(&mut self, v: usize, law: &Law) {
         let generation = self.generation;
         let variety = &mut self.varieties[v];
         let minimal = variety.minimal;
@@ -1443,6 +1479,126 @@ impl World {
                 p.name.change(after, law.id, generation);
             }
         }
+    }
+
+    /// Sound changes spread like waves. A law that took hold in a variety
+    /// in the last `WAVE_SPAN` generations may pass to a variety in
+    /// contact with it that has not had it: likelier through close
+    /// dealings between near land, between close kin (dialects that parted
+    /// lately), from the more prestigious side, while the change is fresh,
+    /// and when the receiving speakers like what it does. At most one law
+    /// arrives in a variety per generation, all decided against the state
+    /// before any arrives, so the order of varieties does not matter.
+    fn spread_waves(&mut self, spoken: &[bool]) {
+        if self.params.wave_rate <= 0.0 {
+            return;
+        }
+        let generation = self.generation;
+        let mut arrivals: Vec<(usize, Law, usize)> = Vec::new();
+        for v in (0..self.varieties.len()).filter(|&v| spoken[v]) {
+            let applied: HashSet<&str> = self.varieties[v].laws.iter().map(|(_, id)| *id).collect();
+            // For each law on offer: its total pull, and the variety
+            // pulling hardest, which is where it is said to come from.
+            let mut offers: BTreeMap<&'static str, (f32, usize, f32)> = BTreeMap::new();
+            for contact in &self.contacts {
+                for (me, other) in [(contact.a, contact.b), (contact.b, contact.a)] {
+                    let (m, o) = (&self.communities[me], &self.communities[other]);
+                    if m.variety != v || o.variety == v {
+                        continue;
+                    }
+                    let near = 0.2 + 0.8 * self.map.closeness(m.region, o.region);
+                    let prestige = (1.0 + 2.0 * (o.prestige - m.prestige)).clamp(0.25, 3.0);
+                    let pull = self.params.wave_rate
+                        * contact.kind.carries_sounds()
+                        * contact.intensity
+                        * near
+                        * prestige
+                        * self.kinship(v, o.variety);
+                    for &(g, id) in &self.varieties[o.variety].laws {
+                        let age = generation.saturating_sub(g);
+                        if age >= WAVE_SPAN || applied.contains(id) {
+                            continue;
+                        }
+                        let h = pull * (1.0 - age as f32 / WAVE_SPAN as f32);
+                        let offer = offers.entry(id).or_insert((0.0, o.variety, 0.0));
+                        offer.0 += h;
+                        if h > offer.2 {
+                            (offer.1, offer.2) = (o.variety, h);
+                        }
+                    }
+                }
+            }
+            let variety = &self.varieties[v];
+            let offered: Vec<(&Law, usize, f32)> = offers
+                .into_iter()
+                .filter_map(|(id, (h, from, _))| {
+                    let law = self.laws.iter().find(|l| l.id == id)?;
+                    let a = law.assess(
+                        variety.lexicon.living().map(|l| &l.form),
+                        &variety.profile.inventory,
+                        variety.minimal,
+                    )?;
+                    let taste = (self.params.preference_pull * a.pull.clamp(-5.0, 3.0))
+                        .exp()
+                        .min(3.0);
+                    Some((law, from, h * taste))
+                })
+                .collect();
+            if offered.is_empty() {
+                continue;
+            }
+            let total: f32 = offered.iter().map(|o| o.2).sum();
+            let mut rng = self.at(v).rng(&[key("wave")]);
+            if rng.r#gen::<f32>() < total {
+                let (law, from, _) = offered[weighted_index(&mut rng, offered.iter().map(|o| o.2))];
+                arrivals.push((v, law.clone(), from));
+            }
+        }
+        for (v, law, from) in arrivals {
+            self.apply_law(v, &law);
+            self.varieties[v].waves.push((law.id, from));
+        }
+    }
+
+    /// How readily varieties `a` and `b` take up each other's sound
+    /// changes: 1 for dialects that have just parted, half that once they
+    /// have been apart `KIN_SPAN` generations, falling on toward
+    /// `KIN_STRANGERS`, which is all unrelated languages get.
+    fn kinship(&self, a: usize, b: usize) -> f32 {
+        // Each variety's line back to its root, with the generation each
+        // step of it left its parent.
+        let line = |mut at: usize| {
+            let mut out = vec![(at, None)];
+            while let Some(fork) = self.varieties[at].parent {
+                out.last_mut().expect("never empty").1 = Some(fork.generation);
+                at = fork.variety;
+                out.push((at, None));
+            }
+            out
+        };
+        let (la, lb) = (line(a), line(b));
+        let Some((i, j)) = la
+            .iter()
+            .enumerate()
+            .find_map(|(i, (x, _))| Some((i, lb.iter().position(|(y, _)| y == x)?)))
+        else {
+            return KIN_STRANGERS;
+        };
+        // The lines parted when the first of them left their common
+        // ancestor.
+        let parted = [
+            i.checked_sub(1).map(|k| la[k].1),
+            j.checked_sub(1).map(|k| lb[k].1),
+        ]
+        .into_iter()
+        .flatten()
+        .flatten()
+        .min();
+        let Some(parted) = parted else {
+            return 1.0;
+        };
+        let apart = self.generation.saturating_sub(parted) as f32;
+        (1.0 / (1.0 + apart / KIN_SPAN)).max(KIN_STRANGERS)
     }
 
     /// Each contact carries words both ways, mostly from the more
@@ -2626,5 +2782,41 @@ mod tests {
             }
         }
         assert!(moved >= 3, "{moved} migrations in 6 books");
+    }
+
+    #[test]
+    fn sound_changes_spread_to_close_kin_far_more_than_to_strangers() {
+        let (mut kin, mut strangers) = (0, 0);
+        for seed in 0..30 {
+            let params = Params {
+                wave_rate: 1.0,
+                ..Params::static_society()
+            };
+            let mut world = World::new(seed, params);
+            // One taste and one land for all, so only kinship differs.
+            let home = world.found(&SoundProfile::base(), 0.5, 0.5);
+            let stranger = world.found(&SoundProfile::base(), 0.5, 0.5);
+            let dialect = world.split(home, None, 0.5);
+            world.connect(home, stranger, 0.5, ContactKind::Neighbours);
+            let land = world.communities[home].region;
+            world.communities[stranger].region = land;
+            world.communities[dialect].region = land;
+            world.run(60);
+            let source = world.communities[home].variety;
+            for (who, count) in [(dialect, &mut kin), (stranger, &mut strangers)] {
+                let v = world.variety_of(who);
+                for &(id, from) in &v.waves {
+                    assert!(
+                        v.laws.iter().any(|(_, l)| *l == id),
+                        "a wave is a law undergone"
+                    );
+                    *count += usize::from(from == source);
+                }
+            }
+        }
+        assert!(
+            kin >= 10 && kin >= 2 * strangers,
+            "{kin} changes reached the dialect, {strangers} the strangers"
+        );
     }
 }

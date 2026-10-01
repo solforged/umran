@@ -471,9 +471,11 @@ impl Bench {
                         laws: v
                             .laws
                             .iter()
-                            .map(|(generation, id)| LawView {
-                                generation: *generation,
-                                label: law_label(id),
+                            .map(|&(generation, law)| LawView {
+                                generation,
+                                id: law,
+                                label: law_label(law),
+                                from: v.waves.iter().find(|(w, _)| *w == law).map(|(_, f)| *f),
                             })
                             .collect(),
                         words: v.lexicon.living().count(),
@@ -610,6 +612,7 @@ impl Bench {
                     outline: r.outline.clone(),
                     coastal: map.coastal(id),
                     island: map.island(id),
+                    neighbours: r.neighbours.clone(),
                 })
                 .collect(),
         })
@@ -1458,7 +1461,11 @@ struct Builder {
 #[derive(Serialize)]
 struct LawView {
     generation: u32,
+    id: &'static str,
     label: String,
+    /// The variety it spread from, if it came as a wave from a neighbour
+    /// rather than arising here.
+    from: Option<usize>,
 }
 
 #[derive(Serialize)]
@@ -1548,6 +1555,8 @@ struct RegionView {
     coastal: bool,
     /// Land on a body of land of at most two regions.
     island: bool,
+    /// Regions sharing a border with it.
+    neighbours: Vec<usize>,
 }
 
 #[derive(Serialize)]

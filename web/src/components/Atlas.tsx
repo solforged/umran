@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { Community, ContactKind, Engine, Overview, PlaceName, Terrain, WorldMap } from "../model";
+import type { Community, ContactKind, Engine, Law, Overview, PlaceName, Terrain, WorldMap } from "../model";
 import { YEARS } from "../model";
 
 const TERRAIN_NAME: Record<Terrain, string> = {
@@ -29,6 +29,14 @@ const ROUTE_FADE = 40;
 function hue(n: number): string {
   return `hsl(${Math.round((n * 137.508) % 360)} 55% 48%)`;
 }
+
+/// Colours of the isogloss view: land whose people underwent the change,
+/// and peopled land that did not.
+const CHANGED = "hsl(24 75% 50%)";
+const UNCHANGED = "hsl(210 12% 55%)";
+/// Farthest apart two corners can be and still be one corner of two
+/// bordering lands, in map units.
+const SAME_POINT = 1e-3;
 
 /// A gently curved path from `a` to `b`, stopping short of `b` so its
 /// arrowhead does not cover the label there.
@@ -65,7 +73,8 @@ export function Atlas({
   /// Turn to the chronicle with this people chosen.
   onRead: (community: number) => void;
 }) {
-  const [show, setShow] = useState<"peoples" | "words">("peoples");
+  const [show, setShow] = useState<"peoples" | "words" | "change">("peoples");
+  const [law, setLaw] = useState<string | null>(null);
   const [concept, setConcept] = useState("fire");
   const [contacts, setContacts] = useState(true);
   const [names, setNames] = useState(true);
@@ -109,16 +118,68 @@ export function Atlas({
   const family = (c: Community) => overview.varieties[c.variety].family;
   const wordBy = useMemo(() => new Map(words?.words.map((w) => [w.community, w])), [words]);
 
-  // A region takes the colour of its largest people: its family, or the
-  // root of that people's word.
-  const tint = (region: number): string | null => {
+  // Every sound change some living people has undergone, with who has
+  // it, the most widespread first. The substrate merges of a language
+  // shift are each their own, so they are left out.
+  const changes = useMemo(() => {
+    const byId = new Map<string, { id: string; label: string; had: Map<number, Law> }>();
+    for (const c of overview.communities) {
+      for (const l of overview.varieties[c.variety].laws) {
+        if (l.id === "substrate") continue;
+        const entry = byId.get(l.id) ?? { id: l.id, label: l.label, had: new Map() };
+        entry.had.set(c.id, l);
+        byId.set(l.id, entry);
+      }
+    }
+    return [...byId.values()].sort((a, b) => b.had.size - a.had.size || a.label.localeCompare(b.label));
+  }, [overview]);
+  // By default the most widespread change that stopped short of someone.
+  const change =
+    changes.find((c) => c.id === law) ??
+    changes.find((c) => c.had.size < overview.communities.length) ??
+    changes[0] ??
+    null;
+
+  // The edge two bordering lands share, for drawing isoglosses on.
+  const borders = useMemo(() => {
+    const out: { a: number; b: number; ends: [number, number][] }[] = [];
+    for (const r of map.regions) {
+      if (r.terrain === "sea") continue;
+      for (const n of r.neighbours) {
+        const other = map.regions[n];
+        if (n < r.id || other.terrain === "sea") continue;
+        const ends = r.outline.filter(([x, y]) =>
+          other.outline.some(([u, v]) => Math.abs(x - u) < SAME_POINT && Math.abs(y - v) < SAME_POINT),
+        );
+        if (ends.length >= 2) out.push({ a: r.id, b: n, ends: ends.slice(0, 2) });
+      }
+    }
+    return out;
+  }, [map]);
+
+  // A region takes the colour of its largest people: its family, the root
+  // of that people's word, or whether that people underwent the change.
+  const largestOn = (region: number): Community | null => {
     const here = placed.byRegion.get(region);
-    if (!here) return null;
-    const largest = here.reduce((a, b) => (b.size > a.size ? b : a));
+    return here ? here.reduce((a, b) => (b.size > a.size ? b : a)) : null;
+  };
+  const tint = (region: number): string | null => {
+    const largest = largestOn(region);
+    if (!largest) return null;
     if (show === "peoples") return hue(family(largest));
+    if (show === "change") return change?.had.has(largest.id) ? CHANGED : UNCHANGED;
     const word = wordBy.get(largest.id);
     return word ? hue(word.group) : null;
   };
+  // Where the change stopped: borders between peopled lands whose peoples
+  // differ in having it.
+  const isoglosses =
+    show === "change" && change
+      ? borders.filter(({ a, b }) => {
+          const [pa, pb] = [largestOn(a), largestOn(b)];
+          return pa && pb && change.had.has(pa.id) !== change.had.has(pb.id);
+        })
+      : [];
 
   const groups = useMemo(() => {
     if (!words) return [];
@@ -180,6 +241,11 @@ export function Atlas({
                 </g>
               );
             })}
+          </g>
+          <g className="isoglosses">
+            {isoglosses.map(({ a, b, ends: [[x1, y1], [x2, y2]] }) => (
+              <line key={`${a}-${b}`} className="isogloss" x1={x1} y1={y1} x2={x2} y2={y2} />
+            ))}
           </g>
           {names ? (
             <g className="place-names" aria-hidden="true">
@@ -302,6 +368,30 @@ export function Atlas({
             </select>
           </label>
           <label>
+            <input
+              type="radio"
+              name="show"
+              checked={show === "change"}
+              disabled={!change}
+              onChange={() => setShow("change")}
+            />
+            A sound change{" "}
+            <select
+              value={change?.id ?? ""}
+              disabled={!change}
+              onChange={(e) => {
+                setLaw(e.target.value);
+                setShow("change");
+              }}
+            >
+              {changes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label} ({c.had.size})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
             <input type="checkbox" checked={names} onChange={(e) => setNames(e.target.checked)} />
             Names of lands
           </label>
@@ -326,6 +416,29 @@ export function Atlas({
                   <span className="word">{g.forms.join(", ")}</span>
                 </li>
               ))}
+            </ul>
+          </section>
+        ) : null}
+
+        {show === "change" && change ? (
+          <section>
+            <h3>{change.label}</h3>
+            <p className="muted">
+              Lines mark where the change stopped: an isogloss. Changes spread most readily between close kin
+              living side by side.
+            </p>
+            <ul className="atlas-partners">
+              {overview.communities.map((c) => {
+                const had = change.had.get(c.id);
+                return (
+                  <li key={c.id}>
+                    <button type="button" className="link" onClick={() => choose(c.id)}>
+                      {c.name}
+                    </button>
+                    : {had ? howCame(had, c, overview) : <span className="muted">not undergone</span>}
+                  </li>
+                );
+              })}
             </ul>
           </section>
         ) : null}
@@ -464,6 +577,21 @@ export function Atlas({
       </aside>
     </main>
   );
+}
+
+/// When and how people `c` came to have sound change `law`: before their
+/// speech parted from its parent's, from a neighbour, or of themselves.
+function howCame(law: Law, c: Community, overview: Overview): string {
+  const year = `year ${law.generation * YEARS}`;
+  const variety = overview.varieties[c.variety];
+  if (variety.forkedAt !== null && variety.parent !== null && law.generation <= variety.forkedAt) {
+    return `${year}, before their speech parted from ${overview.varieties[variety.parent].name}`;
+  }
+  if (law.from !== null) {
+    const source = overview.communities.find((k) => k.variety === law.from);
+    return `${year}, spreading from ${source ? `the ${source.name}` : overview.varieties[law.from].name}`;
+  }
+  return `${year}, arising among them`;
 }
 
 /// How a land came by one of its names, given the name before it.

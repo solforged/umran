@@ -29,6 +29,9 @@ pub struct Variety {
     pub minimal: MinimalWord,
     /// Sound laws in the order applied, with their generation.
     pub laws: Vec<(u32, &'static str)>,
+    /// Laws among `laws` that reached it from a neighbour rather than
+    /// arising in it, with the variety each came from.
+    pub waves: Vec<(&'static str, usize)>,
     /// Where this variety split from, if it did.
     pub parent: Option<Fork>,
 }
@@ -73,6 +76,7 @@ impl Variety {
             ),
             founding_inventory: inventory,
             laws: Vec::new(),
+            waves: Vec::new(),
             parent: None,
         }
     }
