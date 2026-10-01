@@ -51,6 +51,16 @@ not add features to `langgen-core`.
   them.
 - Every random draw comes from a ChaCha8 stream keyed by purpose
   (`rng.rs`), so adding a process never shifts existing draws.
+- Varieties fork on splits and shifts and keep their lineage (`Fork`);
+  `World::cognate` and `root_of` give true descent. The comparative method
+  (`compare.rs`) must never read lineage; it is only graded against it.
+- Communities grow within their founders' territory, split when large,
+  and take prestige from authored `power` plus relative size. A community
+  shifts language only to another family's, and keeps its own sound
+  preferences as a substrate. Unspoken varieties are extinct and frozen.
+- Tests and examples that study one mechanism use
+  `Params::static_society()`, so growth, splits, and shifts cannot
+  interfere.
 - Tune `Params` against the calibration tools rather than the tests; the
   statistical tests check bands, not exact values.
 
@@ -58,6 +68,8 @@ not add features to `langgen-core`.
 cargo run --release -p langgen-sim --example found -- <seed> <profile>
 cargo run --release -p langgen-sim --example drift -- <seed> <profile> <generations> [flavor...]
 cargo run --release -p langgen-sim --example contact -- <seed> <donor> <recipient> <kind> <generations> <seeds>
+cargo run --release -p langgen-sim --example family -- <seed> <proto> <outsider> <generations>
+cargo run --release -p langgen-sim --example history -- <seed> <generations>
 cargo run --release -p langgen-sim --example calibrate -- <seeds> <generations>
 ```
 

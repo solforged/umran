@@ -1,8 +1,9 @@
 use crate::change::{Env, Matcher, Rewrite, SoundChange, apply_all};
 use crate::form::Form;
 use crate::inventory::preference;
-use crate::phoneme::{Backness, Height, Manner, Place};
+use crate::phoneme::{Backness, Height, Manner, PhonemeId, Place};
 use crate::profile::InventoryPrior;
+use std::collections::HashSet;
 
 /// A named sound law: one or more rules applied in order, each regularly
 /// across every living word.
@@ -18,13 +19,32 @@ pub struct Law {
 }
 
 /// What a law would do to a lexicon if chosen now.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Assessment {
     pub words: usize,
     /// Mean change in preference score per altered segment; positive when
     /// the law moves sounds toward what the culture prefers. Deletions count
     /// as neutral; forbidden segments score very low.
     pub pull: f32,
+    /// Every segment the law would alter, and what it becomes.
+    pub shifts: Vec<(PhonemeId, Option<PhonemeId>)>,
+}
+
+impl Assessment {
+    /// Mean movement toward the sound set `target`, from -1 to 1: +1 when a
+    /// segment outside it becomes one inside, -1 for the reverse.
+    /// Deletions count as neutral.
+    pub fn toward(&self, target: &HashSet<PhonemeId>) -> f32 {
+        let total: f32 = self
+            .shifts
+            .iter()
+            .map(|&(old, new)| match new {
+                Some(new) => f32::from(target.contains(&new)) - f32::from(target.contains(&old)),
+                None => 0.0,
+            })
+            .sum();
+        total / self.shifts.len().max(1) as f32
+    }
 }
 
 impl Law {
@@ -38,7 +58,8 @@ impl Law {
         forms: impl Iterator<Item = &'a Form>,
         prior: &InventoryPrior,
     ) -> Option<Assessment> {
-        let (mut words, mut segments, mut total) = (0, 0, 0.0);
+        let (mut words, mut total) = (0, 0.0);
+        let mut shifts = Vec::new();
         for form in forms {
             // Judge by the real result, so matches blocked by last-vowel
             // protection do not make a law look applicable.
@@ -49,18 +70,19 @@ impl Law {
             let mut current = form.clone();
             for rule in &self.rules {
                 for (i, out) in rule.hits(&current) {
-                    segments += 1;
+                    let old = current.segs[i].phone;
                     if let Some(new) = out {
-                        let old = current.segs[i].phone;
                         total += preference(prior, new) - preference(prior, old);
                     }
+                    shifts.push((old, out));
                 }
                 current = rule.apply(&current);
             }
         }
         (words > 0).then(|| Assessment {
             words,
-            pull: total / segments as f32,
+            pull: total / shifts.len() as f32,
+            shifts,
         })
     }
 }

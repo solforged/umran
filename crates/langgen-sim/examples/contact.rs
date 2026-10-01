@@ -15,7 +15,7 @@ fn world(
     kind: ContactKind,
     generations: u32,
 ) -> World {
-    let mut world = World::new(seed, Params::default());
+    let mut world = World::new(seed, Params::static_society());
     let d = world.found("Donor", donor, 0.8, 0.4);
     let r = world.found("Recipient", recipient, 0.3, 0.7);
     world.connect(d, r, 0.8, kind);

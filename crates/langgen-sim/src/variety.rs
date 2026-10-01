@@ -1,3 +1,4 @@
+use crate::adapt::ESTABLISHED_SHARE;
 use crate::form::Form;
 use crate::inventory::Inventory;
 use crate::lexicon::Lexicon;
@@ -6,7 +7,7 @@ use crate::phonotactics::Phonotactics;
 use crate::profile::SoundProfile;
 use crate::rng::{key, stream};
 use crate::root::mint_roots;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// One language variety: the profile its speakers' preferences come from,
 /// its words, and the sound laws it has undergone.
@@ -19,6 +20,19 @@ pub struct Variety {
     pub lexicon: Lexicon,
     /// Sound laws in the order applied, with their generation.
     pub laws: Vec<(u32, &'static str)>,
+    /// Where this variety split from, if it did.
+    pub parent: Option<Fork>,
+}
+
+/// A variety's descent from another.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Fork {
+    /// Index of the parent variety in its `World`.
+    pub variety: usize,
+    pub generation: u32,
+    /// Words with ids below this were inherited from the parent and share
+    /// those ids there; later ids are this variety's own.
+    pub inherited: u32,
 }
 
 impl Variety {
@@ -33,7 +47,41 @@ impl Variety {
             lexicon: Lexicon::found(mint_roots(seed, &phonotactics)),
             founding_inventory: inventory,
             laws: Vec::new(),
+            parent: None,
         }
+    }
+
+    /// A daughter of this variety, identical at the moment of the split.
+    /// Laws already applied stay applied; obsolete words stay in the record.
+    pub fn fork(&self, parent: usize, generation: u32) -> Self {
+        Self {
+            parent: Some(Fork {
+                variety: parent,
+                generation,
+                inherited: self.lexicon.lexemes.len() as u32,
+            }),
+            ..self.clone()
+        }
+    }
+
+    /// Segments in at least 2% of living words (and at least two): the
+    /// sounds speakers treat as their own rather than marginal.
+    pub fn established(&self) -> HashSet<PhonemeId> {
+        let mut in_words: HashMap<PhonemeId, u32> = HashMap::new();
+        let mut words = 0;
+        for lexeme in self.lexicon.living() {
+            words += 1;
+            let unique: HashSet<PhonemeId> = lexeme.form.phones().collect();
+            for p in unique {
+                *in_words.entry(p).or_default() += 1;
+            }
+        }
+        let threshold = (words as f32 * ESTABLISHED_SHARE).max(2.0);
+        in_words
+            .into_iter()
+            .filter(|&(_, n)| n as f32 >= threshold)
+            .map(|(p, _)| p)
+            .collect()
     }
 
     /// Segments used by living words, consonants then vowels, by IPA.

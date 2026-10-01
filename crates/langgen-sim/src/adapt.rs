@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, HashSet};
 /// allowing no codas at all, and loans get a vowel after final consonants.
 const OPEN_SYLLABLE_THRESHOLD: f32 = 0.05;
 /// Share of living words a sound must occur in to count as native.
-const ESTABLISHED_SHARE: f32 = 0.02;
+pub(crate) const ESTABLISHED_SHARE: f32 = 0.02;
 /// Preference score at which a foreign segment is kept half the time it
 /// could be: the same threshold inventory sampling uses.
 const ACCEPTANCE_MIDPOINT: f32 = 0.45;

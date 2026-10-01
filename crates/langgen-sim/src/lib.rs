@@ -6,6 +6,7 @@
 
 pub mod adapt;
 pub mod change;
+pub mod compare;
 pub mod concepts;
 pub mod flavor;
 pub mod form;
@@ -32,5 +33,5 @@ pub use lexicon::{Entry, Event, Lexeme, LexemeId, Lexicon, Origin, Slot};
 pub use phoneme::{CATALOG, PhonemeId, Segment};
 pub use phonotactics::Phonotactics;
 pub use profile::{LongVowel, SoundProfile, Spelling};
-pub use variety::Variety;
-pub use world::{Community, Contact, ContactKind, Params, World};
+pub use variety::{Fork, Variety};
+pub use world::{Community, Contact, ContactKind, Params, World, WorldEvent};
