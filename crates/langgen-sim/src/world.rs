@@ -575,16 +575,48 @@ impl World {
         };
         let mut name = self.coin(&daughter, &naming, Some((base, &self.varieties[parent])));
         // A clipped name can come out as an existing one ("the new Tinea"
-        // clipped back to "Tinea"); a place name tells them apart instead.
+        // clipped back to "Tinea"); a place name tells them apart instead,
+        // or, when those are taken too, the chosen name clipped a syllable
+        // longer at a time, and qualified again only if even the whole of
+        // it is another's ("the new Muktho").
         if taken(&name) {
-            let other = crate::names::PLACES
+            let place = crate::names::PLACES
                 .iter()
                 .map(|p| Naming::Place { place: (*p).into() })
                 .map(|n| self.coin(&daughter, &n, None))
                 .find(|n| !taken(n));
-            name = other.unwrap_or(name);
+            name = match place {
+                Some(place) => place,
+                None => {
+                    let shortest = |whole: &Name| {
+                        (crate::names::MAX_PEOPLE_NAME + 1..=whole.form.vowel_count())
+                            .map(|max| Name {
+                                form: crate::names::clipped(whole.form.clone(), max),
+                                ..whole.clone()
+                            })
+                            .find(|n| !taken(n))
+                    };
+                    let spelled = self.varieties[parent].title(&base.form);
+                    let mut whole = naming
+                        .coin_whole(&daughter, Some((base, &spelled)), self.generation)
+                        .unwrap_or(name);
+                    let new = Naming::Epithet {
+                        epithet: "new".into(),
+                    };
+                    loop {
+                        if let Some(free) = shortest(&whole) {
+                            break free;
+                        }
+                        let spelled = daughter.title(&whole.form);
+                        match new.coin_whole(&daughter, Some((&whole, &spelled)), self.generation) {
+                            Ok(longer) => whole = longer,
+                            Err(_) => break whole,
+                        }
+                    }
+                }
+            };
         }
-        daughter.name = self.language_name(&daughter, &name);
+        daughter.name = self.fresh_language_name(&daughter, &name);
         self.varieties.push(daughter);
         // The leavers take the roomiest land beside home if it has more
         // room than home, judged before they go. When the land beside is
@@ -666,8 +698,11 @@ impl World {
     }
 
     /// A contact with no event of its own, as between the halves of a
-    /// split, which the split's event already tells.
+    /// split, which the split's event already tells. Two peoples have at
+    /// most one contact: a new one between them replaces the old.
     fn link(&mut self, a: usize, b: usize, intensity: f32, kind: ContactKind) {
+        self.contacts
+            .retain(|k| (k.a, k.b) != (a, b) && (k.a, k.b) != (b, a));
         self.contacts.push(Contact {
             a,
             b,
@@ -1032,6 +1067,24 @@ impl World {
         )
     }
 
+    /// A new language's name, as `language_name`, but formed another way
+    /// when that name is already a spoken language's.
+    fn fresh_language_name(&self, variety: &Variety, people: &Name) -> Name {
+        let spoken = self.spoken();
+        let taken = |name: &Name| {
+            (0..self.varieties.len())
+                .any(|v| spoken[v] && self.varieties[v].name.form.segs == name.form.segs)
+        };
+        let mut ways = crate::names::language_names(
+            variety,
+            people,
+            &variety.title(&people.form),
+            self.generation,
+        );
+        let free = ways.iter().position(|n| !taken(n)).unwrap_or(0);
+        ways.swap_remove(free)
+    }
+
     /// What `community` calls itself, spelled in its language.
     pub fn community_name(&self, community: usize) -> String {
         self.variety_of(community)
@@ -1050,14 +1103,24 @@ impl World {
     /// names, so it is how they would say it now rather than a name with a
     /// history of its own.
     pub fn exonym(&self, community: usize, by: usize) -> String {
-        let listener = self.variety_of(by);
-        let adapter = Adapter::new(
+        self.exonym_heard(&self.ear(self.communities[by].variety), community, by)
+    }
+
+    /// How speakers of `variety` fit foreign sounds to their own: build it
+    /// once to hear many names, as `exonym_heard` does.
+    pub fn ear(&self, variety: usize) -> Adapter {
+        let listener = &self.varieties[variety];
+        Adapter::new(
             listener.lexicon.living().map(|l| &l.form),
             &listener.profile.inventory,
-        );
+        )
+    }
+
+    /// `exonym`, with the ear of `by`'s language already built.
+    pub fn exonym_heard(&self, ear: &Adapter, community: usize, by: usize) -> String {
         let mut rng = stream(self.seed, &[key("exonym"), community as u64, by as u64]);
-        let heard = adapter.adapt(&self.communities[community].name.form, 0.0, &mut rng);
-        listener.title(&heard)
+        let heard = ear.adapt(&self.communities[community].name.form, 0.0, &mut rng);
+        self.variety_of(by).title(&heard)
     }
 
     /// What a variety's speakers call it, spelled.
@@ -1338,7 +1401,7 @@ impl World {
         }
         // The people keeps its own name and names its new speech after
         // itself, the new language's way: Bulgars gave Slavic speech theirs.
-        new.name = self.language_name(&new, &self.communities[community].name);
+        new.name = self.fresh_language_name(&new, &self.communities[community].name);
         self.varieties.push(new);
         self.communities[community].variety = new_index;
         // So does its name for the land it holds.
@@ -2460,6 +2523,48 @@ mod tests {
     }
 
     #[test]
+    fn peoples_that_split_off_never_take_a_name_in_use() {
+        for seed in 0..6 {
+            for profile in ["familiar", "polynesian", "finnic"] {
+                let mut world = World::new(seed, Params::static_society());
+                world.found(&SoundProfile::by_id(profile).unwrap(), 0.5, 0.5);
+                for _ in 0..24 {
+                    world.split(0, None, 0.0);
+                }
+                let names: HashSet<_> = world
+                    .communities
+                    .iter()
+                    .map(|c| &c.name.form.segs)
+                    .collect();
+                let all: Vec<_> = (0..world.communities.len())
+                    .map(|c| {
+                        (
+                            world.community_name(c),
+                            world.communities[c].name.meaning.clone(),
+                        )
+                    })
+                    .collect();
+                assert_eq!(
+                    names.len(),
+                    world.communities.len(),
+                    "seed {seed}, {profile}: {all:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn two_peoples_keep_one_contact_however_often_they_meet() {
+        let mut world = World::new(3, Params::static_society());
+        let a = world.found(&SoundProfile::base(), 0.5, 0.5);
+        let b = world.found(&SoundProfile::base(), 0.5, 0.5);
+        world.connect(a, b, 0.4, ContactKind::Trade);
+        world.connect(b, a, 0.7, ContactKind::Religion);
+        assert_eq!(world.contacts.len(), 1);
+        assert_eq!(world.contacts[0].kind, ContactKind::Religion);
+    }
+
+    #[test]
     fn intelligibility_is_symmetric_and_near_zero_for_strangers() {
         use crate::compare::intelligibility;
         let mut world = World::new(6, Params::static_society());
@@ -2656,7 +2761,7 @@ mod tests {
 
     /// Peoples split again and again over a long history, yet their names
     /// stay short enough to say: epithets do not stack and long names are
-    /// clipped.
+    /// clipped, a syllable longer only where the short name is taken.
     #[test]
     fn names_stay_short_over_many_splits() {
         for seed in 0..4 {
@@ -2667,7 +2772,7 @@ mod tests {
             world.run(150);
             assert!(world.communities.len() > 2, "no splits to test");
             for c in &world.communities {
-                assert!(c.name.form.vowel_count() <= 3, "{}", c.name.form.ipa());
+                assert!(c.name.form.vowel_count() <= 4, "{}", c.name.form.ipa());
             }
             for (v, spoken) in world.spoken().into_iter().enumerate() {
                 let name = &world.varieties[v].name.form;

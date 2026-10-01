@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 
 /// Bumped whenever an engine change would make an existing recipe replay
 /// differently. Saves record it so a mismatch can be reported.
-pub const ENGINE_REVISION: u32 = 12;
+pub const ENGINE_REVISION: u32 = 13;
 /// Identifies saved recipes.
 pub const FORMAT: &str = "langgen-sim-recipe";
 /// Generations between cached checkpoints.
@@ -158,9 +158,7 @@ impl Chronicle {
     /// it cannot happen and changes nothing. A run straight after another
     /// run extends it, so playing generation by generation stays one action.
     pub fn act(&mut self, action: Action) -> Result<(), String> {
-        let mut next = self.latest.clone();
-        apply(&mut next, &action)?;
-        self.latest = next;
+        apply(&mut self.latest, &action)?;
         match (self.actions.last_mut(), &action) {
             (Some(Action::Run { generations }), Action::Run { generations: more }) => {
                 *generations += more;
@@ -367,6 +365,8 @@ fn community(world: &World, index: usize) -> Result<(), String> {
     }
 }
 
+/// Checks `action` and only then changes `world`, so a refused action
+/// leaves it as it was.
 fn apply(world: &mut World, action: &Action) -> Result<(), String> {
     match action {
         Action::Found {

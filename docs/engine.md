@@ -90,11 +90,15 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   "word" (`NameRules` in `morphology.rs`, drawn after all other founding
   draws). Names are clipped to three syllables for a people and four for
   a language, as names said every day are, and epithets go only on short
-  names, so they do not stack over many splits. Names then undergo the
-  same sound laws as their variety's words. Split-off peoples name
-  themselves; a people that shifts keeps its name and names its new
-  speech after itself. Exonyms are the name adapted to a contact's sounds,
-  computed from current forms.
+  names, so they do not stack over many splits. A split-off people never
+  takes a name in use: when its clipped name is another's, it takes a
+  place name, or else its chosen name a syllable longer at a time, and a
+  new language whose usual name is taken is named the other way ("the X
+  tongue" for "of the X") or in full. Names then undergo the same sound
+  laws as their variety's words, so two may still come to sound alike
+  over time. Split-off peoples name themselves; a people that shifts
+  keeps its name and names its new speech after itself. Exonyms are the
+  name adapted to a contact's sounds, computed from current forms.
 - Lands are named too (`World::places`). The largest people on a land
   names it on first holding it, from its own words: for what the land is
   ("the hill"), what it is like ("the black hill", "the horse field"), as
@@ -132,13 +136,14 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   religion 30, distant neighbours 40) and cannot end in its first third.
   Rule lasts longer the further its ruler stands above the ruled, and rule
   and intermarriage leave the peoples neighbours. Peoples on the same land
-  stay neighbours. The world makes contacts of its own: peoples on the same
-  or bordering land become neighbours, more readily and more closely the
-  easier the border is to cross; peoples open trade, nearer partners
-  likelier; and a people far above one it deals with may conquer it. Each
-  beginning, ending, and conquest is a
-  `WorldEvent`, so it is told in the chronicle and stops "until something
-  happens". `Params::static_society()` turns all of this off.
+  stay neighbours. Two peoples have one contact at most: a new one between
+  them replaces the old. The world makes contacts of its own: peoples on
+  the same or bordering land become neighbours, more readily and more
+  closely the easier the border is to cross; peoples open trade, nearer
+  partners likelier; and a people far above one it deals with may conquer
+  it. Each beginning, ending, and conquest is a `WorldEvent`, so it is told
+  in the history and stops "until something happens".
+  `Params::static_society()` turns all of this off.
 - Social identity, territory, ancestry, and language are independent.
 - Every random draw comes from a ChaCha8 stream keyed by purpose
   (`rng.rs`), so adding a process never shifts existing draws.

@@ -43,7 +43,7 @@ const MAX_EPITHET_BASE: usize = 2;
 /// Most syllables a people's name keeps, and a language's. Names said
 /// every day are short, and long ones are clipped in use: Deutsch,
 /// English, Magyar, Suomi, Kiswahili.
-const MAX_PEOPLE_NAME: usize = 3;
+pub(crate) const MAX_PEOPLE_NAME: usize = 3;
 const MAX_LANGUAGE_NAME: usize = 4;
 /// Epithets a group that moves off tends to take.
 const DAUGHTER_EPITHETS: [&str; 3] = ["new", "far", "small"];
@@ -144,9 +144,23 @@ impl Naming {
         epithets.chain(places).collect()
     }
 
-    /// The people's name in `variety`'s words. `base` is the older name an
-    /// epithet qualifies, spelled for the gloss.
+    /// The people's name in `variety`'s words, clipped as names are in
+    /// everyday use. `base` is the older name an epithet qualifies,
+    /// spelled for the gloss.
     pub fn coin(
+        &self,
+        variety: &Variety,
+        base: Option<(&Name, &str)>,
+        generation: u32,
+    ) -> Result<Name, String> {
+        let mut name = self.coin_whole(variety, base, generation)?;
+        name.form = clipped(name.form, MAX_PEOPLE_NAME);
+        Ok(name)
+    }
+
+    /// The name in full, unclipped, for when the clipped name would be
+    /// another people's: "the new Tinea" where "Tinea" is taken.
+    pub fn coin_whole(
         &self,
         variety: &Variety,
         base: Option<(&Name, &str)>,
@@ -197,7 +211,7 @@ impl Naming {
             }
         };
         Ok(Name {
-            form: clipped(form, MAX_PEOPLE_NAME),
+            form,
             meaning,
             coined: generation,
             log: Vec::new(),
@@ -208,7 +222,7 @@ impl Naming {
 /// `form` cut after its `max`th vowel if it has more, as long names are
 /// clipped in use. Ending on a vowel keeps the clipped name pronounceable
 /// in any language.
-fn clipped(form: Form, max: usize) -> Form {
+pub(crate) fn clipped(form: Form, max: usize) -> Form {
     let Some(&end) = form.syllables().get(max).map(|s| &s.onset.start) else {
         return form;
     };
@@ -229,29 +243,53 @@ fn clipped(form: Form, max: usize) -> Form {
 /// or compounded with a word for speech unless that would make it too
 /// long to say every day.
 pub fn language_name(variety: &Variety, people: &Name, spelled: &str, generation: u32) -> Name {
+    language_names(variety, people, spelled, generation).swap_remove(0)
+}
+
+/// Every way a language can be named from its speakers' name, the usual
+/// one first: the other way of forming it (a language that names by the
+/// belonging affix can still say "the X tongue"), then each said in full
+/// rather than clipped, for when the usual name is another language's.
+pub fn language_names(
+    variety: &Variety,
+    people: &Name,
+    spelled: &str,
+    generation: u32,
+) -> Vec<Name> {
     let morphology = &variety.morphology;
-    let speech = morphology.names.speech.and_then(|id| {
+    let compound = |id: &str| {
         let concept = by_id(id)?;
         let word = variety.lexicon.word_for(concept)?.form.clone();
-        let fits = morphology.compound(&people.form, &word).vowel_count() <= MAX_LANGUAGE_NAME;
-        fits.then_some((word, concept.gloss))
-    });
-    let (form, meaning) = match speech {
-        Some((word, gloss)) => (
+        Some((
             morphology.compound(&people.form, &word),
-            format!("the {spelled} {gloss}"),
-        ),
-        None => (
-            morphology.belonging(&people.form),
-            format!("of the {spelled}"),
-        ),
+            format!("the {spelled} {}", concept.gloss),
+        ))
     };
-    Name {
-        form: clipped(form, MAX_LANGUAGE_NAME),
-        meaning,
+    let belonging = (
+        morphology.belonging(&people.form),
+        format!("of the {spelled}"),
+    );
+    let ways: Vec<(Form, String)> = match morphology.names.speech.and_then(compound) {
+        Some(c) if c.0.vowel_count() <= MAX_LANGUAGE_NAME => vec![c, belonging],
+        Some(c) => vec![belonging, c],
+        None => [Some(belonging), compound("tongue")]
+            .into_iter()
+            .flatten()
+            .collect(),
+    };
+    let name = |form: Form, meaning: &String| Name {
+        form,
+        meaning: meaning.clone(),
         coined: generation,
         log: Vec::new(),
-    }
+    };
+    let short = ways
+        .iter()
+        .map(|(form, meaning)| name(clipped(form.clone(), MAX_LANGUAGE_NAME), meaning));
+    let whole = ways
+        .iter()
+        .map(|(form, meaning)| name(form.clone(), meaning));
+    short.chain(whole).collect()
 }
 
 /// What a land is like, which decides what it can be named for.
