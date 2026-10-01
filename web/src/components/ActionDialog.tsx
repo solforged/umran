@@ -1,5 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from "react";
-import type { Action, Catalog, ContactKind, Overview } from "../model";
+import type { Action, Catalog, ContactKind, Naming, Overview } from "../model";
+import { NamingSelect } from "./NamingSelect";
 import { Modal } from "./Modal";
 
 /// "world" and "found" open the language designer; the rest are here.
@@ -30,7 +31,7 @@ export function ActionDialog({
 }) {
   const communities = overview.communities;
   const others = communities.filter((c) => c.id !== selected);
-  const [name, setName] = useState(kind === "split" ? `${communities[selected]?.name ?? ""} 2` : "");
+  const [naming, setNaming] = useState<Naming | null>(null);
   const [community, setCommunity] = useState(selected);
   const [other, setOther] = useState(others[0]?.id ?? 0);
   const [contact, setContact] = useState<ContactKind>("neighbours");
@@ -40,7 +41,7 @@ export function ActionDialog({
     event.preventDefault();
     switch (kind) {
       case "split":
-        onAction({ kind: "split", community, name, intensity });
+        onAction({ kind: "split", community, intensity, ...(naming ? { naming } : {}) });
         return;
       case "connect":
         onAction({ kind: "connect", a: community, b: other, intensity, contact });
@@ -80,8 +81,15 @@ export function ActionDialog({
           <>
             {pick("Community", community, setCommunity)}
             <label>
-              New community's name
-              <input required value={name} onChange={(e) => setName(e.target.value)} />
+              The new community calls itself
+              <NamingSelect
+                catalog={catalog}
+                value={naming}
+                onChange={setNaming}
+                daughter
+                parent={communities.find((c) => c.id === community)?.name}
+              />
+              <small>Built from their own words, so it follows their sound changes.</small>
             </label>
             {slider("Contact afterwards", intensity, setIntensity, "0 means the two lose touch entirely.")}
             <p className="muted">Half the people leave; from now on their speech changes on its own.</p>

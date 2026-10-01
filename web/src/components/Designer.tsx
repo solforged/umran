@@ -1,9 +1,10 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { presetDesign, preview, typicalDesign } from "../engine";
-import type { Catalog, LanguageDesign, LongVowelStyle, SoundInfo } from "../model";
+import type { Catalog, LanguageDesign, LongVowelStyle, Naming, SoundInfo } from "../model";
+import { NamingSelect } from "./NamingSelect";
 
 export interface Founding {
-  name: string;
+  naming: Naming;
   design: LanguageDesign;
   /// The language's own seed, the one previewed.
   seed: number;
@@ -37,10 +38,10 @@ export function Designer({
   const [consonants, setConsonants] = useState(18);
   const [vowels, setVowels] = useState(5);
   const [design, setDesign] = useState<LanguageDesign>(() => typicalDesign(seed, 18, 5));
-  const [name, setName] = useState("");
+  const [naming, setNaming] = useState<Naming>({ kind: "people" });
   const [power, setPower] = useState(0.5);
   const [openness, setOpenness] = useState(0.5);
-  const result = useMemo(() => preview(design, seed), [design, seed]);
+  const result = useMemo(() => preview(design, seed, naming), [design, seed, naming]);
   const set = (patch: Partial<LanguageDesign>) => setDesign((d) => ({ ...d, ...patch }));
 
   const state = (ipa: string) => design.sounds.find((s) => s.ipa === ipa);
@@ -105,8 +106,8 @@ export function Designer({
       className="designer"
       onSubmit={(e) => {
         e.preventDefault();
-        if (typeof result === "string" || name.trim() === "") return;
-        onFound({ name: name.trim(), design, seed, power, openness, worldSeed });
+        if (typeof result === "string") return;
+        onFound({ naming, design, seed, power, openness, worldSeed });
       }}
     >
       <div className="designer-controls">
@@ -262,8 +263,9 @@ export function Designer({
 
         <Section title="Community">
           <label>
-            Name
-            <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Hill" />
+            They call themselves
+            <NamingSelect catalog={catalog} value={naming} onChange={(n) => n && setNaming(n)} />
+            <small>Built from their own words; see the preview.</small>
           </label>
           {knob("Power", power, setPower, "weak", "strong")}
           {knob("Openness to foreign words", openness, setOpenness, "closed", "open")}
@@ -293,6 +295,16 @@ export function Designer({
           <p className="error">{result}</p>
         ) : (
           <>
+            <div className="names">
+              <p>
+                <span className="endonym">{result.people.name}</span>{" "}
+                <span className="muted">“{result.people.meaning}” /{result.people.ipa}/</span>
+              </p>
+              <p>
+                speaking <span className="glottonym">{result.language.name}</span>{" "}
+                <span className="muted">“{result.language.meaning}”</span>
+              </p>
+            </div>
             <p className="muted small">
               {result.homophones} words share a form · {result.syllables.toFixed(1)} syllables per word · seed {seed}
             </p>
@@ -331,7 +343,7 @@ export function Designer({
               Cancel
             </button>
           ) : null}
-          <button type="submit" className="primary" disabled={typeof result === "string" || name.trim() === ""}>
+          <button type="submit" className="primary" disabled={typeof result === "string"}>
             {newWorld ? "Create world" : "Found community"}
           </button>
         </div>

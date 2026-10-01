@@ -3,6 +3,7 @@ use crate::concepts::{CONCEPTS, Concept, Field, related};
 use crate::form::Form;
 use crate::laws::{Law, catalog};
 use crate::lexicon::{Entry, Event, LexemeId, Origin};
+use crate::names::{Name, Naming};
 use crate::phoneme::PhonemeId;
 use crate::phonotactics::Phonotactics;
 use crate::profile::SoundProfile;
@@ -146,7 +147,8 @@ impl Params {
 /// A group of people with a home variety and a few traits.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Community {
-    pub name: String,
+    /// What its people call themselves, in their current language.
+    pub name: Name,
     /// Index into `World::varieties`.
     pub variety: usize,
     /// Social standing relative to others, 0–1, recomputed each generation
@@ -210,6 +212,8 @@ impl ContactKind {
 /// Something that happened to communities rather than to words.
 #[derive(Clone, Debug, PartialEq)]
 pub enum WorldEvent {
+    /// `community` was founded with a new language.
+    Found { community: usize },
     /// `daughter` split off from `community`, speaking a new variety.
     Split { community: usize, daughter: usize },
     /// `community` abandoned variety `from` for a daughter of `toward`'s.
@@ -283,30 +287,26 @@ impl World {
     /// A world with one community and its variety, for studying drift alone.
     pub fn solo(seed: u64, profile: &SoundProfile, params: Params) -> Self {
         let mut world = Self::new(seed, params);
-        world.found("Solo", profile, 0.5, 0.5);
+        world.found(profile, 0.5, 0.5);
         world
     }
 
     /// Founds a community with a new variety of its own; returns its index.
     /// `power` is its standing apart from size, and its starting prestige.
     /// The variety's seed derives from the world seed and the index.
-    pub fn found(
-        &mut self,
-        name: &str,
-        profile: &SoundProfile,
-        power: f32,
-        openness: f32,
-    ) -> usize {
+    pub fn found(&mut self, profile: &SoundProfile, power: f32, openness: f32) -> usize {
         let index = self.communities.len();
         let variety_seed = stream(self.seed, &[key("found"), index as u64]).next_u64();
-        self.found_seeded(name, profile, variety_seed, power, openness)
+        self.found_seeded(&Naming::People, profile, variety_seed, power, openness)
     }
 
     /// Founds a community whose language comes from `variety_seed`, so a
     /// design previewed with that seed founds exactly the words shown.
+    /// The people names itself as `naming` says, in its new language's
+    /// words, and names the language after itself.
     pub fn found_seeded(
         &mut self,
-        name: &str,
+        naming: &Naming,
         profile: &SoundProfile,
         variety_seed: u64,
         power: f32,
@@ -314,10 +314,11 @@ impl World {
     ) -> usize {
         let index = self.communities.len();
         let mut variety = Variety::found(variety_seed, profile);
-        variety.name = format!("{name} speech");
+        let name = self.coin(&variety, naming, None);
+        variety.name = self.language_name(&variety, &name);
         self.varieties.push(variety);
         self.communities.push(Community {
-            name: name.into(),
+            name,
             variety: self.varieties.len() - 1,
             prestige: power.clamp(0.0, 1.0),
             power: power.clamp(0.0, 1.0),
@@ -330,20 +331,30 @@ impl World {
                 .max()
                 .unwrap_or(0),
         });
+        self.events
+            .push((self.generation, WorldEvent::Found { community: index }));
         index
     }
 
     /// Part of `community` moves off as a new community whose speech becomes
     /// a daughter variety; returns the new community's index. The two stay
     /// in contact at `intensity` (0 for none).
-    pub fn split(&mut self, community: usize, name: &str, intensity: f32) -> usize {
+    /// The new community names itself as `naming` says, or chooses a name
+    /// itself if `None`; its speech is named after it.
+    pub fn split(&mut self, community: usize, naming: Option<&Naming>, intensity: f32) -> usize {
         let parent = self.communities[community].variety;
         let mut daughter = self.varieties[parent].fork(parent, self.generation);
-        daughter.name = format!("{name} speech");
+        let naming = match naming {
+            Some(n) => n.clone(),
+            None => self.daughter_naming(community),
+        };
+        let base = &self.communities[community].name;
+        let name = self.coin(&daughter, &naming, Some((base, &self.varieties[parent])));
+        daughter.name = self.language_name(&daughter, &name);
         self.varieties.push(daughter);
         self.communities[community].size /= 2.0;
         let mut new = self.communities[community].clone();
-        new.name = name.into();
+        new.name = name;
         new.variety = self.varieties.len() - 1;
         self.communities.push(new);
         let index = self.communities.len() - 1;
@@ -480,27 +491,92 @@ impl World {
             }
             let mut rng = self.community_rng(c, "fission");
             if rng.r#gen::<f32>() < self.params.fission_rate {
-                let name = self.daughter_name(c);
-                self.split(c, &name, FISSION_CONTACT);
+                self.split(c, None, FISSION_CONTACT);
             }
         }
     }
 
-    /// "Hill 2", "Hill 3", ...: the founding name plus a count of the
-    /// communities already bearing it.
-    fn daughter_name(&self, community: usize) -> String {
-        let base = self.communities[community]
-            .name
-            .split(' ')
-            .next()
-            .unwrap_or_default()
-            .to_string();
-        let taken = self
+    /// What a group leaving `community` calls itself: an epithet on the
+    /// old name or a place, avoiding meanings other communities have.
+    fn daughter_naming(&self, community: usize) -> Naming {
+        let parent = &self.communities[community].name;
+        let spelled = self.community_name(community);
+        let taken: HashSet<String> = self
             .communities
             .iter()
-            .filter(|c| c.name.split(' ').next() == Some(base.as_str()))
-            .count();
-        format!("{base} {}", taken + 1)
+            .map(|c| c.name.meaning.clone())
+            .collect();
+        let options: Vec<(Naming, f32)> = Naming::for_daughter(parent)
+            .into_iter()
+            .filter(|(n, _)| {
+                let meaning = match n {
+                    Naming::Epithet { epithet } => format!("the {epithet} {spelled}"),
+                    Naming::Place { place } => format!("the people of the {place}"),
+                    _ => return true,
+                };
+                !taken.contains(&meaning)
+            })
+            .collect();
+        if options.is_empty() {
+            return Naming::Epithet {
+                epithet: "new".into(),
+            };
+        }
+        let mut rng = self.community_rng(community, "naming");
+        options[weighted_index(&mut rng, options.iter().map(|(_, w)| *w))]
+            .0
+            .clone()
+    }
+
+    /// A people's name in `variety`'s words, falling back to "the people"
+    /// if `naming` cannot be built. `base` is the name an epithet
+    /// qualifies, with the variety that spells it.
+    fn coin(&self, variety: &Variety, naming: &Naming, base: Option<(&Name, &Variety)>) -> Name {
+        let spelled = base.map(|(name, v)| (name, v.title(&name.form)));
+        naming
+            .coin(
+                variety,
+                spelled.as_ref().map(|(n, s)| (*n, s.as_str())),
+                self.generation,
+            )
+            .or_else(|_| Naming::People.coin(variety, None, self.generation))
+            .unwrap_or_default()
+    }
+
+    fn language_name(&self, variety: &Variety, people: &Name) -> Name {
+        crate::names::language_name(
+            variety,
+            people,
+            &variety.title(&people.form),
+            self.generation,
+        )
+    }
+
+    /// What `community` calls itself, spelled in its language.
+    pub fn community_name(&self, community: usize) -> String {
+        self.variety_of(community)
+            .title(&self.communities[community].name.form)
+    }
+
+    /// What `by`'s people call `community`: its own name as they hear it,
+    /// fitted to their sounds the way a loan is. Computed from the current
+    /// names, so it is how they would say it now rather than a name with a
+    /// history of its own.
+    pub fn exonym(&self, community: usize, by: usize) -> String {
+        let listener = self.variety_of(by);
+        let adapter = Adapter::new(
+            listener.lexicon.living().map(|l| &l.form),
+            &listener.profile.inventory,
+        );
+        let mut rng = stream(self.seed, &[key("exonym"), community as u64, by as u64]);
+        let heard = adapter.adapt(&self.communities[community].name.form, 0.0, &mut rng);
+        listener.title(&heard)
+    }
+
+    /// What a variety's speakers call it, spelled.
+    pub fn language_title(&self, variety: usize) -> String {
+        let v = &self.varieties[variety];
+        v.title(&v.name.form)
     }
 
     /// The variety a lineage starts from: its ultimate ancestor.
@@ -560,10 +636,6 @@ impl World {
         let old_sounds = self.varieties[old].established();
         let mut new = self.varieties[source].fork(source, generation);
         new.profile = self.varieties[old].profile.clone();
-        new.name = format!(
-            "{} {}",
-            self.communities[community].name, self.varieties[source].name
-        );
         let mut rng = self.community_rng(community, "substrate");
 
         let mut foreign: Vec<PhonemeId> = new
@@ -644,6 +716,9 @@ impl World {
             });
             new.lexicon.slots[i].introduce(id, self.params.loan_share);
         }
+        // The people keeps its own name and names its new speech after
+        // itself, the new language's way: Bulgars gave Slavic speech theirs.
+        new.name = self.language_name(&new, &self.communities[community].name);
         self.varieties.push(new);
         self.communities[community].variety = new_index;
         self.events.push((
@@ -754,6 +829,13 @@ impl World {
             }
         }
         variety.laws.push((generation, law.id));
+        // Names are words too.
+        let after = law.apply(&variety.name.form);
+        variety.name.change(after, law.id, generation);
+        for community in self.communities.iter_mut().filter(|c| c.variety == v) {
+            let after = law.apply(&community.name.form);
+            community.name.change(after, law.id, generation);
+        }
     }
 
     /// Each contact carries words both ways, mostly from the more
@@ -1130,13 +1212,8 @@ mod tests {
     /// generations.
     fn pair(seed: u64, kind: ContactKind) -> World {
         let mut world = World::new(seed, Params::static_society());
-        let d = world.found("Donor", &SoundProfile::by_id("iranian").unwrap(), 0.8, 0.4);
-        let r = world.found(
-            "Recipient",
-            &SoundProfile::by_id("polynesian").unwrap(),
-            0.3,
-            0.7,
-        );
+        let d = world.found(&SoundProfile::by_id("iranian").unwrap(), 0.8, 0.4);
+        let r = world.found(&SoundProfile::by_id("polynesian").unwrap(), 0.3, 0.7);
         world.connect(d, r, 0.8, kind);
         world.run(40);
         world
@@ -1300,10 +1377,10 @@ mod tests {
         let (mut recovered, mut true_total, mut correct, mut found_total) = (0, 0, 0, 0);
         for seed in 0..30u64 {
             let mut world = World::new(seed, Params::static_society());
-            let west = world.found("West", &profiles[seed as usize % 4], 0.5, 0.5);
-            let outsiders = world.found("Outsiders", &profiles[(seed as usize + 2) % 4], 0.9, 0.3);
+            let west = world.found(&profiles[seed as usize % 4], 0.5, 0.5);
+            let outsiders = world.found(&profiles[(seed as usize + 2) % 4], 0.9, 0.3);
             world.run(5);
-            let east = world.split(west, "East", 0.0);
+            let east = world.split(west, None, 0.0);
             world.connect(outsiders, east, 0.8, ContactKind::Rule);
             world.run(40);
             let (a, b) = (
@@ -1386,7 +1463,7 @@ mod tests {
             Params::default(),
         );
         world.run(3);
-        let east = world.split(0, "East", 0.0);
+        let east = world.split(0, None, 0.0);
         let (a, b) = (
             world.communities[0].variety,
             world.communities[east].variety,
@@ -1428,8 +1505,8 @@ mod tests {
                     ..Params::static_society()
                 };
                 let mut world = World::new(seed, params);
-                let a = world.found("A", &SoundProfile::by_id(x).unwrap(), 0.5, 0.5);
-                let b = world.found("B", &SoundProfile::by_id(y).unwrap(), 0.5, 0.5);
+                let a = world.found(&SoundProfile::by_id(x).unwrap(), 0.5, 0.5);
+                let b = world.found(&SoundProfile::by_id(y).unwrap(), 0.5, 0.5);
                 world.connect(a, b, 1.0, ContactKind::Neighbours);
                 world.run(80);
                 let (sa, sb) = (
@@ -1473,13 +1550,8 @@ mod tests {
 
     fn conquest(seed: u64, params: Params) -> (World, usize, usize) {
         let mut world = World::new(seed, params);
-        let rulers = world.found("Rulers", &SoundProfile::by_id("iranian").unwrap(), 0.9, 0.3);
-        let subjects = world.found(
-            "Subjects",
-            &SoundProfile::by_id("polynesian").unwrap(),
-            0.2,
-            0.6,
-        );
+        let rulers = world.found(&SoundProfile::by_id("iranian").unwrap(), 0.9, 0.3);
+        let subjects = world.found(&SoundProfile::by_id("polynesian").unwrap(), 0.2, 0.6);
         world.connect(rulers, subjects, 1.0, ContactKind::Rule);
         (world, rulers, subjects)
     }
@@ -1537,9 +1609,9 @@ mod tests {
     fn intelligibility_falls_as_daughters_diverge() {
         use crate::compare::intelligibility;
         let mut world = World::new(2, Params::static_society());
-        let west = world.found("West", &SoundProfile::by_id("typical").unwrap(), 0.5, 0.5);
-        let other = world.found("Other", &SoundProfile::by_id("iranian").unwrap(), 0.5, 0.5);
-        let east = world.split(west, "East", 0.0);
+        let west = world.found(&SoundProfile::by_id("typical").unwrap(), 0.5, 0.5);
+        let other = world.found(&SoundProfile::by_id("iranian").unwrap(), 0.5, 0.5);
+        let east = world.split(west, None, 0.0);
         let score = |w: &World, a: usize, b: usize| {
             intelligibility(&w.variety_of(a).lexicon, &w.variety_of(b).lexicon)
         };
@@ -1557,8 +1629,8 @@ mod tests {
     fn intelligibility_is_symmetric_and_near_zero_for_strangers() {
         use crate::compare::intelligibility;
         let mut world = World::new(6, Params::static_society());
-        let a = world.found("A", &SoundProfile::by_id("typical").unwrap(), 0.5, 0.5);
-        let b = world.found("B", &SoundProfile::by_id("germanic").unwrap(), 0.5, 0.5);
+        let a = world.found(&SoundProfile::by_id("typical").unwrap(), 0.5, 0.5);
+        let b = world.found(&SoundProfile::by_id("germanic").unwrap(), 0.5, 0.5);
         world.run(20);
         let (la, lb) = (&world.variety_of(a).lexicon, &world.variety_of(b).lexicon);
         assert!((intelligibility(la, lb) - intelligibility(lb, la)).abs() < 1e-6);
@@ -1577,6 +1649,76 @@ mod tests {
                 .count();
             assert!(shifts <= 1, "seed {seed}: {shifts} shifts");
         }
+    }
+
+    #[test]
+    fn peoples_name_themselves_and_their_speech() {
+        let mut world = World::new(3, Params::static_society());
+        let a = world.found(&SoundProfile::typical(), 0.5, 0.5);
+        let b = world.found(&SoundProfile::by_id("iranian").unwrap(), 0.9, 0.5);
+        assert_eq!(world.communities[a].name.meaning, "the people");
+        let people = |w: &World, c: usize| {
+            let concept = crate::concepts::by_id("people").unwrap();
+            w.variety_of(c)
+                .lexicon
+                .word_for(concept)
+                .unwrap()
+                .form
+                .clone()
+        };
+        assert_eq!(world.communities[a].name.form, people(&world, a));
+        assert!(
+            world.varieties[0]
+                .name
+                .meaning
+                .contains(&world.community_name(a))
+        );
+
+        // A daughter takes a new name, by itself or as told.
+        let d = world.split(a, None, 0.3);
+        assert_ne!(world.communities[d].name, world.communities[a].name);
+        let river = Naming::Place {
+            place: "river".into(),
+        };
+        let e = world.split(a, Some(&river), 0.3);
+        assert_eq!(world.communities[e].name.meaning, "the people of the river");
+
+        // Neighbours say it with their own sounds.
+        assert!(!world.exonym(a, b).is_empty());
+
+        // A people that shifts keeps its name, and names its new speech
+        // after itself.
+        let before = world.communities[a].name.clone();
+        let v = world.shift(a, b);
+        assert_eq!(world.communities[a].name, before);
+        assert!(
+            world.varieties[v]
+                .name
+                .meaning
+                .contains(&world.community_name(a))
+        );
+    }
+
+    #[test]
+    fn names_undergo_sound_change() {
+        let mut world = World::new(5, Params::static_society());
+        world.found(&SoundProfile::typical(), 0.5, 0.5);
+        let concept = crate::concepts::by_id("people").unwrap();
+        world.run(80);
+        let name = &world.communities[0].name;
+        let word = world.variety_of(0).lexicon.slot(concept);
+        // While "people" keeps its founding word, the name moves with it.
+        if world.variety_of(0).lexicon.keeps_founding_word(concept) {
+            assert_eq!(
+                name.form,
+                world
+                    .variety_of(0)
+                    .lexicon
+                    .get(word.dominant().unwrap())
+                    .form
+            );
+        }
+        assert!(!name.log.is_empty() || world.variety_of(0).laws.is_empty());
     }
 
     #[test]

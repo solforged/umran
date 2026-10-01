@@ -1,5 +1,6 @@
 import init, { Workbench } from "./wasm/langgen_web";
 import type {
+  Naming,
   Action,
   Catalog,
   Engine,
@@ -67,9 +68,9 @@ export function typicalDesign(seed: number, consonants: number, vowels: number):
 }
 
 /// Sample words for a design, or the reason it cannot found a language.
-export function preview(design: LanguageDesign, seed: number): Preview | string {
+export function preview(design: LanguageDesign, seed: number, naming: Naming): Preview | string {
   try {
-    return JSON.parse(Workbench.preview(JSON.stringify(design), seed)) as Preview;
+    return JSON.parse(Workbench.preview(JSON.stringify(design), seed, JSON.stringify(naming))) as Preview;
   } catch (error) {
     return message(error);
   }

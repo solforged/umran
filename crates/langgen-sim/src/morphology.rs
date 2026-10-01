@@ -43,8 +43,31 @@ pub struct Morphology {
     /// Inserted between vowels meeting at a boundary, as many languages
     /// put j, w, h, or a glottal stop there.
     pub glide: Option<PhonemeId>,
+    /// How this language puts words together into names.
+    pub names: NameRules,
     open_medial: bool,
 }
+
+/// How a language builds compounds and names. Drawn after everything else
+/// a language founds with, so adding it changed no earlier draw.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NameRules {
+    /// Whether a compound puts its head first (Welsh Aberystwyth "mouth of
+    /// the Ystwyth", Semitic Beth-lehem "house of bread") or last (English
+    /// Hill-folk). Prefixing languages tend to put heads first.
+    pub head_first: bool,
+    /// "Of, belonging to": the affix that makes a people's name into its
+    /// language's (English -ish, Arabic -ī, Swahili ki-).
+    pub belonging: Affix,
+    /// Whether the language's name is the people's name with `belonging`
+    /// (English, Swahili) or a compound with a word for speech (Diné
+    /// bizaad, "the people's language"); the concept used if a compound.
+    pub speech: Option<&'static str>,
+}
+
+/// Share of languages that name their speech with a compound rather than
+/// an affix.
+const SPEECH_COMPOUND: f32 = 0.4;
 
 impl Morphology {
     pub fn found(prior: &MorphologyPrior, tactics: &Phonotactics, rng: &mut impl Rng) -> Self {
@@ -151,6 +174,7 @@ impl Morphology {
                 }
             }
         }
+        let names = NameRules::draw(prior, &onsets, vowels, &affixes, rng);
         Self {
             kind: prior.kind,
             affixes,
@@ -158,7 +182,27 @@ impl Morphology {
             basic,
             link,
             glide,
+            names,
             open_medial: tactics.open_medial,
+        }
+    }
+
+    /// A compound of `modifier` and `head`, in this language's order.
+    pub fn compound(&self, modifier: &Form, head: &Form) -> Form {
+        if self.names.head_first {
+            self.join(head, modifier)
+        } else {
+            self.join(modifier, head)
+        }
+    }
+
+    /// "Of `base`": the belonging affix attached.
+    pub fn belonging(&self, base: &Form) -> Form {
+        let affix = &self.names.belonging;
+        if affix.suffix {
+            self.join(base, &affix.form)
+        } else {
+            self.join(&affix.form, base)
         }
     }
 
@@ -258,6 +302,55 @@ impl Morphology {
         Form {
             segs,
             boundaries: vec![boundary],
+        }
+    }
+}
+
+impl NameRules {
+    fn draw(
+        prior: &MorphologyPrior,
+        onsets: &[(PhonemeId, f32)],
+        vowels: &[(PhonemeId, f32)],
+        affixes: &[(Relation, Affix)],
+        rng: &mut impl Rng,
+    ) -> Self {
+        let pick = |rng: &mut dyn rand::RngCore, list: &[(PhonemeId, f32)]| {
+            list[weighted_index(&mut &mut *rng, list.iter().map(|(_, w)| *w))].0
+        };
+        // Root-and-pattern languages attach this one as a suffix, like the
+        // Arabic nisba -ī, and put heads first, like the construct state.
+        let (suffixing, head_first) = match prior.kind {
+            MorphologyKind::RootPattern => (1.0, 0.9),
+            MorphologyKind::Concatenative => {
+                (prior.suffixing, 0.15 + 0.7 * (1.0 - prior.suffixing))
+            }
+        };
+        let head_first = rng.r#gen::<f32>() < head_first;
+        let suffix = rng.r#gen::<f32>() < suffixing;
+        let mut form = Form::default();
+        for _ in 0..DISTINCT_TRIES {
+            let v = pick(rng, vowels);
+            let c = pick(rng, onsets);
+            form = Form::from_phones(match (suffix, rng.gen_range(0..3)) {
+                (true, 0) => vec![v],
+                (_, 1) => vec![v, c],
+                _ => vec![c, v],
+            });
+            if !affixes.iter().any(|(_, a)| a.form == form) {
+                break;
+            }
+        }
+        let speech = (rng.r#gen::<f32>() < SPEECH_COMPOUND).then(|| {
+            if rng.r#gen::<f32>() < 0.6 {
+                "tongue"
+            } else {
+                "word"
+            }
+        });
+        Self {
+            head_first,
+            belonging: Affix { form, suffix },
+            speech,
         }
     }
 }

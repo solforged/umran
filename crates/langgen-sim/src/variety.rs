@@ -3,6 +3,7 @@ use crate::form::Form;
 use crate::inventory::Inventory;
 use crate::lexicon::Lexicon;
 use crate::morphology::Morphology;
+use crate::names::Name;
 use crate::phoneme::PhonemeId;
 use crate::phonotactics::Phonotactics;
 use crate::profile::SoundProfile;
@@ -14,8 +15,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 /// its words, and the sound laws it has undergone.
 #[derive(Clone, Debug)]
 pub struct Variety {
-    /// What people call it, e.g. "Hill speech".
-    pub name: String,
+    /// What its speakers call it; empty until a world names it.
+    pub name: Name,
     pub profile: SoundProfile,
     /// Segments sampled at founding. The current inventory is whatever the
     /// living words use; see `inventory`.
@@ -53,7 +54,7 @@ impl Variety {
             &mut stream(seed, &[key("morphology")]),
         );
         Self {
-            name: String::new(),
+            name: Name::default(),
             profile: profile.clone(),
             lexicon: Lexicon::found(mint_roots(
                 seed,
@@ -117,5 +118,10 @@ impl Variety {
 
     pub fn spell(&self, form: &Form) -> String {
         self.profile.spelling.write(form)
+    }
+
+    /// A name's form spelled and capitalized.
+    pub fn title(&self, form: &Form) -> String {
+        crate::names::title(&self.spell(form))
     }
 }

@@ -9,7 +9,7 @@ use langgen_sim::{
     Action, CATALOG, Chronicle, ENGINE_REVISION, Event, Flavor, Form, Lexeme, Origin, PhonemeId,
     Recipe, World, WorldEvent, catalog,
 };
-use langgen_sim::{LanguageDesign, MorphologyKind, Segment, Variety};
+use langgen_sim::{LanguageDesign, MorphologyKind, Naming, Segment, Variety};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
@@ -53,9 +53,10 @@ impl Workbench {
         Bench::typical_design(seed, consonants, vowels).map_err(fail)
     }
 
-    /// Sample words from a design, without founding anything.
-    pub fn preview(design: &str, seed: u32) -> Result<String, JsValue> {
-        Bench::preview(design, seed).map_err(fail)
+    /// Sample words from a design, and the names its people would take,
+    /// without founding anything.
+    pub fn preview(design: &str, seed: u32, naming: &str) -> Result<String, JsValue> {
+        Bench::preview(design, seed, naming).map_err(fail)
     }
 
     pub fn act(&mut self, action: &str) -> Result<(), JsValue> {
@@ -184,6 +185,8 @@ impl Bench {
                 description: description.into(),
             })
             .collect(),
+            name_places: langgen_sim::names::PLACES.to_vec(),
+            name_epithets: langgen_sim::names::EPITHETS.to_vec(),
         })
     }
 
@@ -203,11 +206,17 @@ impl Bench {
 
     /// Founds a throwaway language from `design` and returns a sample of its
     /// words, its word families, and a few numbers.
-    pub fn preview(design: &str, seed: u32) -> Result<String, String> {
+    pub fn preview(design: &str, seed: u32, naming: &str) -> Result<String, String> {
         let design: LanguageDesign =
             serde_json::from_str(design).map_err(|e| format!("Malformed design: {e}"))?;
         design.validate()?;
+        let naming: Naming =
+            serde_json::from_str(naming).map_err(|e| format!("Malformed naming: {e}"))?;
+        naming.validate()?;
         let variety = Variety::found(u64::from(seed), &design.profile());
+        let people = naming.coin(&variety, None, 0)?;
+        let spelled = variety.title(&people.form);
+        let language = langgen_sim::names::language_name(&variety, &people, &spelled, 0);
         let lexicon = &variety.lexicon;
         let row = |concept: &'static langgen_sim::Concept| {
             let word = lexicon.word_for(concept)?;
@@ -246,6 +255,16 @@ impl Bench {
         let syllables = forms.iter().map(|f| f.syllables().len()).sum::<usize>() as f32
             / forms.len().max(1) as f32;
         to_json(&Preview {
+            people: NameView {
+                name: spelled,
+                ipa: people.form.ipa(),
+                meaning: people.meaning,
+            },
+            language: NameView {
+                name: variety.title(&language.form),
+                ipa: language.form.ipa(),
+                meaning: language.meaning,
+            },
             words,
             families,
             homophones,
@@ -310,7 +329,27 @@ impl Bench {
                 .enumerate()
                 .map(|(id, c)| CommunityView {
                     id,
-                    name: c.name.clone(),
+                    name: world.community_name(id),
+                    meaning: c.name.meaning.clone(),
+                    ipa: c.name.form.ipa(),
+                    coined: c.name.coined,
+                    once: c.name.log.first().and_then(|e| match &e.event {
+                        Event::SoundLaw { before, .. } => Some(world.variety_of(id).title(before)),
+                        _ => None,
+                    }),
+                    exonyms: world
+                        .contacts
+                        .iter()
+                        .filter_map(|k| match (k.a == id, k.b == id) {
+                            (true, _) => Some(k.b),
+                            (_, true) => Some(k.a),
+                            _ => None,
+                        })
+                        .map(|by| Exonym {
+                            by,
+                            name: world.exonym(id, by),
+                        })
+                        .collect(),
                     variety: c.variety,
                     size: c.size,
                     prestige: c.prestige,
@@ -326,7 +365,8 @@ impl Bench {
                     let (consonants, vowels) = v.inventory();
                     VarietyView {
                         id,
-                        name: v.name.clone(),
+                        name: world.language_title(id),
+                        meaning: v.name.meaning.clone(),
                         parent: v.parent.map(|f| f.variety),
                         forked_at: v.parent.map(|f| f.generation),
                         family: world.family(id),
@@ -435,7 +475,7 @@ impl Bench {
                 let word = o.lexicon.word_for(concept)?;
                 Some(Cognate {
                     variety: other,
-                    name: o.name.clone(),
+                    name: world.language_title(other),
                     spelled: o.spell(&word.form),
                     ipa: word.form.ipa(),
                 })
@@ -466,15 +506,15 @@ impl Bench {
     fn timeline(&self) -> Vec<Marker> {
         let latest = self.chronicle.latest();
         let name = |c: usize| {
-            latest
-                .communities
-                .get(c)
-                .map_or("?".into(), |c| c.name.clone())
+            if c < latest.communities.len() {
+                latest.community_name(c)
+            } else {
+                "?".into()
+            }
         };
         let mut out: Vec<Marker> = Vec::new();
         for (generation, action) in self.chronicle.timeline() {
             let label = match action {
-                Action::Found { name, .. } => format!("{name} founded"),
                 Action::Connect {
                     a,
                     b,
@@ -490,8 +530,8 @@ impl Bench {
                     )
                 }
                 Action::Run { generations } => format!("Ran {generations} generations"),
-                // Splits and shifts appear as world events below.
-                Action::Split { .. } | Action::Shift { .. } => continue,
+                // Foundings, splits and shifts appear as world events below.
+                Action::Found { .. } | Action::Split { .. } | Action::Shift { .. } => continue,
             };
             let kind = match action {
                 Action::Run { .. } => "run",
@@ -505,6 +545,14 @@ impl Bench {
         }
         for (generation, event) in &latest.events {
             let label = match event {
+                WorldEvent::Found { community } => {
+                    out.push(Marker {
+                        generation: *generation,
+                        kind: "action",
+                        label: format!("{} founded", name(*community)),
+                    });
+                    continue;
+                }
                 WorldEvent::Split {
                     community,
                     daughter,
@@ -628,7 +676,7 @@ fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
         };
         return OriginView {
             kind: "kept",
-            from: Some(world.varieties[from].name.clone()),
+            from: Some(world.language_title(from)),
             generation: word.born,
         };
     }
@@ -654,7 +702,7 @@ fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
         },
         Origin::Borrowed { from, .. } => OriginView {
             kind: "borrowed",
-            from: Some(world.varieties[from].name.clone()),
+            from: Some(world.language_title(from)),
             generation: word.born,
         },
     }
@@ -710,11 +758,13 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
             }
             Origin::Borrowed { from, .. } if kept_through_shift(world, variety, word) => format!(
                 "Kept from {} when its speakers changed language, for '{}'",
-                world.varieties[from].name, word.first_sense.gloss
+                world.language_title(from),
+                word.first_sense.gloss
             ),
             Origin::Borrowed { from, .. } => format!(
                 "Borrowed from {} for '{}'",
-                world.varieties[from].name, word.first_sense.gloss
+                world.language_title(from),
+                word.first_sense.gloss
             ),
         },
     }];
@@ -790,6 +840,22 @@ struct Choice {
 }
 
 #[derive(Serialize)]
+struct NameView {
+    name: String,
+    ipa: String,
+    /// What it meant when coined.
+    meaning: String,
+}
+
+#[derive(Serialize)]
+struct Exonym {
+    /// The community that uses it.
+    by: usize,
+    name: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct CatalogView {
     sounds: Vec<SoundView>,
     /// Chart columns and rows, in display order.
@@ -798,6 +864,9 @@ struct CatalogView {
     heights: Vec<&'static str>,
     presets: Vec<Choice>,
     contacts: Vec<Choice>,
+    /// What a people can be named for, and the epithets it can take.
+    name_places: Vec<&'static str>,
+    name_epithets: Vec<&'static str>,
 }
 
 /// One catalog segment, placed for the sound chart.
@@ -819,6 +888,8 @@ struct PreviewWord {
 
 #[derive(Serialize)]
 struct Preview {
+    people: NameView,
+    language: NameView,
     words: Vec<PreviewWord>,
     families: Vec<PreviewWord>,
     /// Concepts sharing a form with another concept.
@@ -951,9 +1022,20 @@ struct Marker {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct CommunityView {
     id: usize,
+    /// What it calls itself, spelled in its language.
     name: String,
+    meaning: String,
+    ipa: String,
+    /// Generation the name was coined.
+    coined: u32,
+    /// How the name was spelled when coined, if sound change has since
+    /// altered it.
+    once: Option<String>,
+    /// What its contacts call it.
+    exonyms: Vec<Exonym>,
     variety: usize,
     size: f32,
     prestige: f32,
@@ -965,7 +1047,9 @@ struct CommunityView {
 #[serde(rename_all = "camelCase")]
 struct VarietyView {
     id: usize,
+    /// What its speakers call it.
     name: String,
+    meaning: String,
     parent: Option<usize>,
     forked_at: Option<u32>,
     family: usize,
@@ -1069,10 +1153,13 @@ mod tests {
     use super::*;
     use langgen_sim::CONCEPTS;
 
+    const PEOPLE: &str = r#"{"kind":"people"}"#;
+    const RIVER: &str = r#"{"kind":"place","place":"river"}"#;
+
     fn found(name: &str, preset: &str) -> String {
         let design = LanguageDesign::preset(preset, 1).unwrap();
         serde_json::json!({
-            "kind": "found", "name": name, "design": design, "seed": 7, "power": 0.5, "openness": 0.5
+            "kind": "found", "naming": {"kind": "people"}, "design": design, "seed": name.len(), "power": 0.5, "openness": 0.5
         })
         .to_string()
     }
@@ -1084,7 +1171,7 @@ mod tests {
         w.act(r#"{"kind":"connect","a":0,"b":1,"intensity":0.6,"contact":"trade"}"#)
             .unwrap();
         w.act(r#"{"kind":"run","generations":12}"#).unwrap();
-        w.act(r#"{"kind":"split","community":0,"name":"Upland","intensity":0.3}"#)
+        w.act(r#"{"kind":"split","community":0,"intensity":0.3}"#)
             .unwrap();
         w.act(r#"{"kind":"run","generations":10}"#).unwrap();
         w
@@ -1094,10 +1181,10 @@ mod tests {
     fn founding_matches_its_preview() {
         let design = Bench::design("indic", 2).unwrap();
         let preview: serde_json::Value =
-            serde_json::from_str(&Bench::preview(&design, 99).unwrap()).unwrap();
+            serde_json::from_str(&Bench::preview(&design, 99, RIVER).unwrap()).unwrap();
         let mut w = Bench::new(1);
         let action = format!(
-            r#"{{"kind":"found","name":"Ridge","design":{design},"seed":99,"power":0.5,"openness":0.5}}"#
+            r#"{{"kind":"found","naming":{{"kind":"place","place":"river"}},"design":{design},"seed":99,"power":0.5,"openness":0.5}}"#
         );
         w.act(&action).unwrap();
         let word: serde_json::Value =
@@ -1109,19 +1196,33 @@ mod tests {
             .find(|r| r["gloss"] == "water")
             .unwrap();
         assert_eq!(word["variants"][0]["ipa"], shown["ipa"]);
+        let overview: serde_json::Value = serde_json::from_str(&w.overview(0).unwrap()).unwrap();
+        assert_eq!(
+            overview["communities"][0]["name"],
+            preview["people"]["name"]
+        );
+        assert_eq!(
+            overview["communities"][0]["meaning"],
+            "the people of the river"
+        );
+        assert_eq!(
+            overview["varieties"][0]["name"],
+            preview["language"]["name"]
+        );
     }
 
     #[test]
     fn designs_preview_without_founding() {
         let design = Bench::design("semitic", 3).unwrap();
         let preview: serde_json::Value =
-            serde_json::from_str(&Bench::preview(&design, 3).unwrap()).unwrap();
+            serde_json::from_str(&Bench::preview(&design, 3, PEOPLE).unwrap()).unwrap();
         assert!(preview["words"].as_array().unwrap().len() > 20);
         assert!(!preview["families"].as_array().unwrap().is_empty());
         let typical: serde_json::Value =
             serde_json::from_str(&Bench::typical_design(4, 15, 5).unwrap()).unwrap();
         assert_eq!(typical["sounds"].as_array().unwrap().len(), 20);
-        assert!(Bench::preview("{}", 1).is_err());
+        assert!(Bench::preview("{}", 1, PEOPLE).is_err());
+        assert!(Bench::preview(&design, 1, r#"{"kind":"place","place":"moon"}"#).is_err());
         let catalog: serde_json::Value = serde_json::from_str(&Bench::catalog().unwrap()).unwrap();
         assert!(catalog["sounds"].as_array().unwrap().len() > 70);
         assert!(catalog["presets"].as_array().unwrap().len() > 5);
@@ -1160,7 +1261,7 @@ mod tests {
         assert!(Bench::load("{}").is_err());
         let mut w = bench();
         assert!(
-            w.act(r#"{"kind":"split","community":9,"name":"X","intensity":0}"#)
+            w.act(r#"{"kind":"split","community":9,"intensity":0}"#)
                 .is_err()
         );
         assert!(w.act("not json").is_err());

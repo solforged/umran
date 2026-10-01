@@ -60,6 +60,10 @@ export function Communities({
       </div>
 
       <h3>{current.name}</h3>
+      <p className="muted small">
+        “{current.meaning}”{current.once ? `, once ${current.once}` : ""} · speaks {overview.varieties[current.variety].name}
+        {overview.varieties[current.variety].meaning ? ` (“${overview.varieties[current.variety].meaning}”)` : ""}
+      </p>
       <dl className="facts">
         <dt>Power</dt>
         <dd>{current.power.toFixed(2)}</dd>
@@ -73,6 +77,12 @@ export function Communities({
                 .map((c) => `${name(c.a === selected ? c.b : c.a)} (${c.kind}, ${Math.round(c.intensity * 100)}%)`)
                 .join("; ")}
         </dd>
+        {current.exonyms.length > 0 ? (
+          <>
+            <dt>Called</dt>
+            <dd>{current.exonyms.map((e) => `${e.name} by ${name(e.by)}`).join("; ")}</dd>
+          </>
+        ) : null}
       </dl>
       {closest.length > 0 ? (
         <>

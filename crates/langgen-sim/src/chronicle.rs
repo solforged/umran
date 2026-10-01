@@ -3,13 +3,14 @@
 //! determinism makes exact; cached checkpoints keep scrubbing quick.
 
 use crate::design::LanguageDesign;
+use crate::names::Naming;
 use crate::world::{ContactKind, Params, World};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Bumped whenever an engine change would make an existing recipe replay
 /// differently. Saves record it so a mismatch can be reported.
-pub const ENGINE_REVISION: u32 = 5;
+pub const ENGINE_REVISION: u32 = 6;
 /// Identifies saved recipes.
 pub const FORMAT: &str = "langgen-sim-recipe";
 /// Generations between cached checkpoints.
@@ -22,7 +23,8 @@ const MAX_RUN: u32 = 2000;
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum Action {
     Found {
-        name: String,
+        /// What the people call themselves, built from their own words.
+        naming: Naming,
         design: LanguageDesign,
         /// The language's own seed: the one its design was previewed with.
         seed: u64,
@@ -37,7 +39,9 @@ pub enum Action {
     },
     Split {
         community: usize,
-        name: String,
+        /// `None` lets the new community choose its own name.
+        #[serde(default)]
+        naming: Option<Naming>,
         intensity: f32,
     },
     Shift {
@@ -262,17 +266,15 @@ fn community(world: &World, index: usize) -> Result<(), String> {
 fn apply(world: &mut World, action: &Action) -> Result<(), String> {
     match action {
         Action::Found {
-            name,
+            naming,
             design,
             seed,
             power,
             openness,
         } => {
             design.validate()?;
-            if name.trim().is_empty() {
-                return Err("a community needs a name".into());
-            }
-            world.found_seeded(name.trim(), &design.profile(), *seed, *power, *openness);
+            naming.validate()?;
+            world.found_seeded(naming, &design.profile(), *seed, *power, *openness);
         }
         Action::Connect {
             a,
@@ -289,14 +291,14 @@ fn apply(world: &mut World, action: &Action) -> Result<(), String> {
         }
         Action::Split {
             community: c,
-            name,
+            naming,
             intensity,
         } => {
             community(world, *c)?;
-            if name.trim().is_empty() {
-                return Err("the new community needs a name".into());
+            if let Some(naming) = naming {
+                naming.validate()?;
             }
-            world.split(*c, name.trim(), *intensity);
+            world.split(*c, naming.as_ref(), *intensity);
         }
         Action::Shift {
             community: c,
@@ -325,7 +327,7 @@ mod tests {
 
     fn found(name: &str, preset: &str) -> Action {
         Action::Found {
-            name: name.into(),
+            naming: Naming::People,
             design: LanguageDesign::preset(preset, 0)
                 .unwrap_or_else(|| LanguageDesign::typical(0, 14, 5)),
             seed: name.len() as u64,
@@ -358,7 +360,7 @@ mod tests {
         .unwrap();
         c.act(Action::Split {
             community: 0,
-            name: "Upland".into(),
+            naming: None,
             intensity: 0.3,
         })
         .unwrap();
@@ -371,8 +373,8 @@ mod tests {
         let mut c = sample();
         let mut direct = World::new(7, Params::default());
         let design = |p: &str| LanguageDesign::preset(p, 0).unwrap().profile();
-        direct.found_seeded("Hill", &design("typical"), 4, 0.5, 0.5);
-        direct.found_seeded("Coast", &design("polynesian"), 5, 0.5, 0.5);
+        direct.found_seeded(&Naming::People, &design("typical"), 4, 0.5, 0.5);
+        direct.found_seeded(&Naming::People, &design("polynesian"), 5, 0.5, 0.5);
         direct.run(12);
         assert!(same(&c.world_at(12), &direct));
         // Actions taken at a generation are part of that generation's view.
@@ -422,7 +424,13 @@ mod tests {
             })
             .is_err()
         );
-        assert!(c.act(found("", "typical")).is_err());
+        let mut unnamed = found("X", "typical");
+        if let Action::Found { naming, .. } = &mut unnamed {
+            *naming = Naming::Place {
+                place: "moon".into(),
+            };
+        }
+        assert!(c.act(unnamed).is_err());
         let mut bad = found("X", "typical");
         if let Action::Found { design, .. } = &mut bad {
             design.sounds.clear();
@@ -447,7 +455,7 @@ mod tests {
         world.act(found("Hill", "typical")).unwrap();
         let ran = world.run_until_event(400);
         assert!(ran < 400, "a growing community eventually splits");
-        assert_eq!(world.latest().events.len(), 1);
+        assert_eq!(world.latest().events.len(), 2, "the founding and the split");
     }
 
     #[test]

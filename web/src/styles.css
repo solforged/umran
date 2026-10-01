@@ -889,3 +889,20 @@ table.preview tr {
     grid-template-columns: 1fr;
   }
 }
+
+.designer-preview .names {
+  margin: 0.25rem 0 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.designer-preview .names p {
+  margin: 0.15rem 0;
+}
+.designer-preview .endonym {
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+.designer-preview .glottonym {
+  font-weight: 600;
+}

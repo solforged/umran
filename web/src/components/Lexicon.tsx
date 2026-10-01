@@ -68,7 +68,7 @@ export function Lexicon({
         <div>
           <h2>{variety.name}</h2>
           <p className="muted">
-            Spoken by {community.name} · {variety.profile} sounds · {rows.length} meanings, {counts.borrowed} loans,{" "}
+            {variety.meaning ? `“${variety.meaning}” · ` : ""}spoken by {community.name} · {rows.length} meanings, {counts.borrowed} loans,{" "}
             {counts.coined} coinages
           </p>
         </div>

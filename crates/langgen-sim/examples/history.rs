@@ -14,9 +14,9 @@ fn main() {
 
     let profile = |id: &str| SoundProfile::by_id(id).unwrap();
     let mut world = World::new(seed, Params::default());
-    let hill = world.found("Hill", &profile("typical"), 0.5, 0.4);
-    let coast = world.found("Coast", &profile("polynesian"), 0.4, 0.6);
-    let empire = world.found("Empire", &profile("iranian"), 0.85, 0.3);
+    let hill = world.found(&profile("typical"), 0.5, 0.4);
+    let coast = world.found(&profile("polynesian"), 0.4, 0.6);
+    let empire = world.found(&profile("iranian"), 0.85, 0.3);
     world.connect(hill, coast, 0.5, ContactKind::Trade);
     world.connect(empire, coast, 0.8, ContactKind::Rule);
     world.connect(empire, hill, 0.3, ContactKind::Neighbours);
@@ -27,9 +27,12 @@ fn main() {
         generations * 25
     );
     println!("Events");
-    let name = |c: usize| world.communities[c].name.clone();
+    let name = |c: usize| world.community_name(c);
     for (generation, event) in &world.events {
         match event {
+            WorldEvent::Found { community } => {
+                println!("  gen {generation:>3}  {} founded", name(*community))
+            }
             WorldEvent::Split {
                 community,
                 daughter,
@@ -54,18 +57,22 @@ fn main() {
     }
 
     println!("\nCommunities now");
-    for c in &world.communities {
+    for (i, c) in world.communities.iter().enumerate() {
         let mut lineage = vec![c.variety];
         while let Some(fork) = world.varieties[*lineage.last().unwrap()].parent {
             lineage.push(fork.variety);
         }
         let lineage: Vec<String> = lineage.iter().map(|v| format!("v{v}")).collect();
+        let meaning = format!("\"{}\"", c.name.meaning);
+        let language = &world.varieties[c.variety].name;
         println!(
-            "  {:<16} size {:>5.0} prestige {:.2}  speaks {}",
-            c.name,
+            "  {:<16} {meaning:<34} size {:>5.0} prestige {:.2}  speaks {} ({}, \"{}\")",
+            world.community_name(i),
             c.size,
             c.prestige,
-            lineage.join(" ← ")
+            lineage.join(" ← "),
+            world.language_title(c.variety),
+            language.meaning,
         );
     }
 

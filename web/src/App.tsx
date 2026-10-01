@@ -22,7 +22,7 @@ type Boot =
   | { status: "recovery"; raw: string; error: string };
 
 function foundingAction(f: Founding): Action {
-  return { kind: "found", name: f.name, design: f.design, seed: f.seed, power: f.power, openness: f.openness };
+  return { kind: "found", naming: f.naming, design: f.design, seed: f.seed, power: f.power, openness: f.openness };
 }
 
 function readSaved(): string | null {

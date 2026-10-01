@@ -16,10 +16,10 @@ fn main() {
     let generations: u32 = arg(3, "40").parse().expect("generations");
 
     let mut world = World::new(seed, Params::static_society());
-    let west = world.found("West", &proto, 0.5, 0.5);
-    let outsiders = world.found("Outsiders", &outsider, 0.9, 0.3);
+    let west = world.found(&proto, 0.5, 0.5);
+    let outsiders = world.found(&outsider, 0.9, 0.3);
     world.run(5);
-    let east = world.split(west, "East", 0.0);
+    let east = world.split(west, None, 0.0);
     world.connect(outsiders, east, 0.8, ContactKind::Rule);
     world.run(generations);
 

@@ -45,7 +45,22 @@ export interface PreviewWord {
   from: string | null;
 }
 
+/// What a people's name means, which decides how it is built from their words.
+export type Naming =
+  | { kind: "people" }
+  | { kind: "speakers" }
+  | { kind: "place"; place: string }
+  | { kind: "epithet"; epithet: string };
+
+export interface NameView {
+  name: string;
+  ipa: string;
+  meaning: string;
+}
+
 export interface Preview {
+  people: NameView;
+  language: NameView;
   words: PreviewWord[];
   families: PreviewWord[];
   homophones: number;
@@ -53,9 +68,10 @@ export interface Preview {
 }
 
 export type Action =
-  | { kind: "found"; name: string; design: LanguageDesign; seed: number; power: number; openness: number }
+  | { kind: "found"; naming: Naming; design: LanguageDesign; seed: number; power: number; openness: number }
   | { kind: "connect"; a: number; b: number; intensity: number; contact: ContactKind }
-  | { kind: "split"; community: number; name: string; intensity: number }
+  /// Without `naming`, the new community chooses its own name.
+  | { kind: "split"; community: number; naming?: Naming; intensity: number }
   | { kind: "shift"; community: number; toward: number }
   | { kind: "run"; generations: number };
 
@@ -72,6 +88,8 @@ export interface Catalog {
   heights: string[];
   presets: Choice[];
   contacts: Choice[];
+  namePlaces: string[];
+  nameEpithets: string[];
 }
 
 export interface Marker {
@@ -82,7 +100,15 @@ export interface Marker {
 
 export interface Community {
   id: number;
+  /// What it calls itself, in its own language.
   name: string;
+  meaning: string;
+  ipa: string;
+  coined: number;
+  /// The name as first spelled, if sound change has altered it.
+  once: string | null;
+  /// What each contact calls it.
+  exonyms: { by: number; name: string }[];
   variety: number;
   size: number;
   prestige: number;
@@ -92,7 +118,9 @@ export interface Community {
 
 export interface Variety {
   id: number;
+  /// What its speakers call it.
   name: string;
+  meaning: string;
   parent: number | null;
   forkedAt: number | null;
   family: number;

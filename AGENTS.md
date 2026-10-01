@@ -3,157 +3,71 @@
 A seeded language-change simulator. Communities with sound preferences grow,
 split, meet, and rule one another, and their languages change in response:
 regular sound change, borrowing, word competition, and language shift. Rust
-engine, browser workbench. Started for Sol's game civilizations; it is now
-pursued for its own sake, and names are a later, downstream feature.
+engine, browser workbench.
 
-The design doc holds the plan, milestone status, and calibration results:
-https://claude.ai/code/artifact/965cab5c-8222-4277-8b9d-804394941e3c
-Record milestone progress there, not here; this file is for lasting rules.
+Read further when the task touches it:
+
+- `docs/engine.md`: the engine model, module by module, the mechanism
+  examples, and what is not yet modelled.
+- `docs/history.md`: actions, replay, branching, recipes, and autosave.
+- Design doc (plan, milestone status, calibration results):
+  https://claude.ai/code/artifact/965cab5c-8222-4277-8b9d-804394941e3c.
+  Record milestone progress there, not here.
 
 ## Architecture
 
 - `crates/langgen-sim`: the engine, independent of the browser.
 - `crates/langgen-web`: `wasm-bindgen` facade. `Bench` holds the logic and
   is tested natively; `Workbench` is a thin wrapper, since `JsValue` panics
-  off WASM. It returns presentation-ready JSON views of any generation.
-- `web/src/engine.ts`: WASM initialization and the typed adapter.
-- `web/src/model.ts`: the TypeScript presentation contract.
-- `web/src/App.tsx`: view state, actions, branching, and persistence.
-- `web/src/components/`: `Designer` (sound chart, knobs, live preview,
-  used for new worlds and new communities), `Timeline` (scrubber),
-  `Communities`, `Lexicon`, `Inspector` (word history and sound system),
-  `RunControls`, `ActionDialog` (split, connect, shift), `Modal`.
+  off WASM.
+- `web/src`: React, TypeScript, and Vite. `model.ts` mirrors the facade's
+  JSON views; `engine.ts` adapts the WASM; `App.tsx` holds view state,
+  actions, and persistence; `components/` holds the panes and dialogs.
 
-React, TypeScript, and Vite provide the interface; all linguistic logic runs
-in Rust/WASM. No backend, network language service, component suite, or
-second implementation of linguistic rules. Presentation code never mints or
-changes words. Bun manages frontend dependencies; Rust is pinned in
-`rust-toolchain.toml`. Generated WASM bindings are ignored in Git and rebuilt
-before development or production builds.
+All linguistic logic runs in Rust. Presentation code never mints or changes
+words, and there is no backend or second implementation of linguistic
+rules. Bun manages frontend dependencies; Rust is pinned in
+`rust-toolchain.toml`; generated WASM bindings are ignored in Git.
 
-## Engine model
+## Rules that must hold
 
-- `World` (`world.rs`) steps communities, varieties, and contacts through
-  25-year generations. `Variety` holds a `SoundProfile` and a `Lexicon` of
-  `Slot`s, where words compete for each concept with usage weights. Words
-  keep a log of every sound law, borrowing, extension, and loss.
-- Languages are founded from a `LanguageDesign` (`design.rs`): the exact
-  sounds, each used or favoured, plus knobs (word length, final consonants,
-  inner clusters, repetition, long vowels, affixes or root-and-pattern,
-  suffixing, derivation) and spelling. It resolves to an internal
-  `SoundProfile`: chosen sounds exactly, favoured ones preferred, absent
-  ones discouraged but reachable by sound change. There are no named
-  culture packs; `SoundProfile::typical()` is the plain base for "fill
-  typical", and presets (typical, or typical plus a `Flavor` from
-  `flavor.rs` or `palettes.rs`) only produce starting designs to edit.
-- One preference score, taste plus cross-linguistic frequency from PHOIBLE
-  (`typology.rs`), drives inventories, how often sounds are used, sound-law
-  odds, and acceptance of foreign sounds. Sampled inventories favour
-  feature economy (series like b d g), and a forbidden sound beats the
-  "voiced implies voiceless" repair (Arabic has b without p).
-- The catalog (`phoneme.rs`) describes consonants by place, manner,
-  voicing, and a `Secondary` articulation (aspirated, breathy,
-  labialized); new segments are appended, never inserted. Vowel length is
-  a per-segment flag that profiles can make contrastive.
-- Concepts (`concepts.rs`): the Leipzig–Jakarta 100 in rank order plus
-  cultural concepts with a `Tier`. Word length follows `length_bias`
-  (Zipf's law of abbreviation: basic meanings short, specialist long, one
-  to three syllables). Parent words usually follow the nursery pattern
-  (mama, papa). Only `expressive` meanings (small things, insects and
-  birds, cries and sounds, baby talk) reduplicate or repeat consonants;
-  others avoid it. Roots are unique within a semantic field, with a weak
-  sound-symbolic bias. Minting skips spellings that read as English
-  vulgarities, a courtesy rather than a linguistic claim.
-- Word families (`FAMILIES`, `morphology.rs`): each language mints its own
-  affixes, or vowel patterns over consonant roots for root-and-pattern
-  (`MorphologyKind::RootPattern`), and builds some family members from
-  their bases (`Origin::Derived`). Junctions get a link vowel or a glide as
-  the language needs. Root-and-pattern derivations use each word's true
-  root skeleton, never a surface reading that includes a pattern's prefix.
-  New words come from curated semantic shifts (`RELATED`) or fresh roots.
-- Sound laws (`laws.rs`) apply simultaneously and regularly to every living
-  word, never to obsolete ones, and never delete a word's last vowel.
-  "No change" competes with them, so a culture is never forced into a law.
-- Borrowability is set per concept (Leipzig–Jakarta rank or `Tier`), never
-  per semantic field, so field patterns must emerge. `wold.rs` holds WOLD
-  figures for validation only; the model never reads them. Loans adapt to
-  the recipient's established sounds and then undergo only later laws.
-- Varieties fork on splits and shifts and keep their lineage (`Fork`);
-  `World::cognate` and `root_of` give true descent. The comparative method
-  (`compare.rs`) must never read lineage; it is only graded against it.
-- Communities grow within their founders' territory, split when large, and
-  take prestige from authored `power` plus relative size. A community shifts
-  language only to another family's, keeping its own sound preferences and
-  some old words as a substrate. Unspoken varieties are extinct and frozen.
-- Social identity, territory, ancestry, and language are independent.
 - Every random draw comes from a ChaCha8 stream keyed by purpose
-  (`rng.rs`), so adding a process never shifts existing draws.
-
-## History and saving
-
-A history is a seed plus ordered `Action`s (`chronicle.rs`): found, connect,
-split, shift, run. Found records the full design and the language's own
-seed, the one its preview used, so founding gives exactly the previewed
-words. Consecutive runs merge, so playing stays one action and
-undo removes the whole stretch. Any past generation is recovered by
-replaying, with checkpoints every 10 generations; the timeline needs no
-separate data. Play and "next event" work only at the present.
-Acting while viewing the past discards the later history after confirmation.
-
-Saves are recipes (`Recipe`: format, `ENGINE_REVISION`, seed, actions), not
-resolved states. Bump `ENGINE_REVISION` whenever a change would make an
-existing recipe replay differently; loading a recipe from another revision
-still works but the UI warns that its words may differ. Resolved-state saves
-remain possible later work if exact preservation across versions matters.
-
-The browser autosaves under localStorage key `langgen.sim.v1`. The previous
-workbench's `langgen.workbench.v2` data is left untouched, never deleted.
-Unreadable saves open recovery without being overwritten; save failures stay
-visible and export still works. Storage is local to the browser, not synced.
+  (`rng.rs`); a new process gets its own stream or draws after existing
+  ones, so it never shifts earlier draws.
+- Sound laws apply regularly to every living word and name, never to
+  obsolete words, and never delete a word's last vowel.
+- Borrowability is per concept, never per semantic field. WOLD figures
+  (`wold.rs`) are for validation only.
+- The comparative method (`compare.rs`) never reads lineage.
+- Catalog segments are appended, never inserted.
+- Bump `ENGINE_REVISION` (`chronicle.rs`) whenever an existing recipe would
+  replay differently.
+- Never delete a user's saved data; unreadable saves open recovery.
 
 ## Commands
 
 ```sh
 bun install
 bun run dev                 # builds WASM, serves http://127.0.0.1:5173
-bun run build               # WASM, TypeScript check, production dist/
-bun run preview             # serve the production build
-bun run check               # TypeScript only; requires generated bindings
+bun run build               # WASM, TypeScript check, static dist/ (all deployment needs)
 cargo test --workspace
 cargo fmt --all
-cargo run --release -p langgen-sim --example found -- <seed> <profile>
-cargo run --release -p langgen-sim --example drift -- <seed> <profile> <generations> [flavor...]
-cargo run --release -p langgen-sim --example contact -- <seed> <donor> <recipient> <kind> <generations> <seeds>
-cargo run --release -p langgen-sim --example family -- <seed> <proto> <outsider> <generations>
-cargo run --release -p langgen-sim --example history -- <seed> <generations>
-cargo run --release -p langgen-sim --example calibrate -- <seeds> <generations>
+cargo clippy --workspace --all-targets
 ```
-
-The pinned toolchain includes `wasm32-unknown-unknown`; wasm-pack is a local
-development dependency. Deployment needs only `dist/`, not a server.
 
 ## Testing
 
-- Tests and examples that study one mechanism use
-  `Params::static_society()`, so growth, splits, and shifts cannot interfere.
+- Tests that study one mechanism use `Params::static_society()`.
 - Statistical tests check bands over many seeds, not exact values. Tune
-  `Params` against the calibration examples, then confirm the tests still
-  hold; the simulator crate is optimized even in dev builds for this.
-
-## Not yet modelled
-
-Places and migration (territories stand in for a map), compounding and
-inflection, derivation as a source of new words after founding, stress,
-tone, vowel harmony, consonant length, prenasalized stops, syntax and
-alignment, dialect levelling, and names.
+  `Params` against the `calibrate` example, then confirm the tests hold.
 
 ## Working with Sol
 
-Sol is learning through the design, wants architectural choices explained,
-and permits clean redesign rather than protecting incidental implementation.
-The framing is loosely Toynbee rather than Spengler: inherent sound and
-worldview biases plus challenge and response, not fixed civilizational life
-cycles.
+Sol is learning through the design, wants architectural choices and
+linguistic terms explained, and permits clean redesign rather than
+protecting incidental implementation. The framing is loosely Toynbee
+rather than Spengler: inherent sound and worldview biases plus challenge
+and response, not fixed civilizational life cycles.
 
 ## Advisor
 
