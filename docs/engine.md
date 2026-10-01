@@ -7,6 +7,14 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   25-year generations. `Variety` holds a `SoundProfile` and a `Lexicon` of
   `Slot`s, where words compete for each concept with usage weights. Words
   keep a log of every sound law, borrowing, extension, and loss.
+- The map (`geography.rs`) is drawn from the world seed at a chosen size
+  (`MapSize`): regions are Voronoi cells around jittered hex-grid points,
+  so each borders about six others. Terrain (sea, plains, forest, steppe,
+  hills, mountains, desert) comes from smooth noise ranked into fixed
+  shares, and sets how many a region feeds (`fertility`) and how hard it
+  is to cross (`travel`). Travel distances between all regions are
+  precomputed. Map generation uses only arithmetic and square roots, so
+  native and WASM draw the same map.
 - Languages are founded from a `LanguageDesign` (`design.rs`): the exact
   sounds, each used or favoured, plus knobs (word length, final consonants,
   inner clusters, repetition, long vowels, affixes or root-and-pattern,
@@ -72,8 +80,13 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
 - Varieties fork on splits and shifts and keep their lineage (`Fork`);
   `World::cognate` and `root_of` give true descent. The comparative method
   (`compare.rs`) must never read lineage; it is only graded against it.
-- Communities grow within their founders' territory, split when large, and
-  take prestige from authored `power` plus relative size. A community shifts
+- Each community lives on one region. A founded people settles unpeopled
+  land, likelier the more it feeds and the further it lies from other
+  peoples. Communities grow toward their region's capacity (`capacity`
+  times its terrain's fertility, shared by everyone on it), split when
+  large, and the leavers take the roomiest bordering land when it has
+  more room than home, so peoples spread across the map. Prestige comes
+  from authored `power` plus relative size. A community shifts
   language only to another family's, keeping its own sound preferences and
   some old words as a substrate. Unspoken varieties are extinct and frozen.
 - Contacts come and go (`end_contacts`, `make_contacts`). Each kind has a
@@ -81,9 +94,11 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   religion 30, distant neighbours 40) and cannot end in its first third.
   Rule lasts longer the further its ruler stands above the ruled, and rule
   and intermarriage leave the peoples neighbours. Peoples on the same land
-  stay neighbours. The world makes contacts of its own: peoples sharing
-  land become neighbours, peoples open trade, and a people far above one
-  it deals with may conquer it. Each beginning, ending, and conquest is a
+  stay neighbours. The world makes contacts of its own: peoples on the same
+  or bordering land become neighbours, more readily and more closely the
+  easier the border is to cross; peoples open trade, nearer partners
+  likelier; and a people far above one it deals with may conquer it. Each
+  beginning, ending, and conquest is a
   `WorldEvent`, so it is told in the chronicle and stops "until something
   happens". `Params::static_society()` turns all of this off.
 - Social identity, territory, ancestry, and language are independent.
@@ -108,6 +123,8 @@ cargo run --release -p langgen-sim --example audit -- [seeds] [generations]
 
 ## Not yet modelled
 
-Places and migration (territories stand in for a map), compounding and
-derivation after founding beyond renewal, inflection, stress, tone, vowel harmony, consonant length, prenasalized
-stops, syntax and alignment, dialect levelling, personal and place names.
+Migration after settling (whole peoples moving), seafaring and sea
+routes, rivers, place names, compounding and derivation after founding
+beyond renewal, inflection, stress, tone, vowel harmony, consonant length,
+prenasalized stops, syntax and alignment, dialect levelling, sound changes
+spreading between neighbours as waves, personal names.

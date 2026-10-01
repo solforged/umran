@@ -7,6 +7,7 @@
 //! book shows struck through and can return to.
 
 use crate::design::LanguageDesign;
+use crate::geography::MapSize;
 use crate::names::Naming;
 use crate::world::{ContactKind, Params, World};
 use serde::{Deserialize, Serialize};
@@ -14,7 +15,7 @@ use std::collections::BTreeMap;
 
 /// Bumped whenever an engine change would make an existing recipe replay
 /// differently. Saves record it so a mismatch can be reported.
-pub const ENGINE_REVISION: u32 = 9;
+pub const ENGINE_REVISION: u32 = 10;
 /// Identifies saved recipes.
 pub const FORMAT: &str = "langgen-sim-recipe";
 /// Generations between cached checkpoints.
@@ -81,6 +82,10 @@ pub struct Recipe {
     pub format: String,
     pub revision: u32,
     pub seed: u64,
+    /// How large a map the seed draws. Recipes from before maps get the
+    /// default size.
+    #[serde(default)]
+    pub map: MapSize,
     pub actions: Vec<Action>,
     /// Tellings set aside, oldest first. They never affect the replay.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -98,6 +103,7 @@ struct Cursor {
 #[derive(Clone, Debug)]
 pub struct Chronicle {
     pub seed: u64,
+    pub map: MapSize,
     actions: Vec<Action>,
     tellings: Vec<Telling>,
     latest: World,
@@ -105,12 +111,13 @@ pub struct Chronicle {
 }
 
 impl Chronicle {
-    pub fn new(seed: u64) -> Self {
+    pub fn new(seed: u64, map: MapSize) -> Self {
         Self {
             seed,
+            map,
             actions: Vec::new(),
             tellings: Vec::new(),
-            latest: World::new(seed, Params::default()),
+            latest: World::with_map(seed, Params::default(), map),
             checkpoints: BTreeMap::new(),
         }
     }
@@ -231,7 +238,7 @@ impl Chronicle {
             .tellings
             .get(index)
             .ok_or_else(|| format!("there is no telling {index}"))?;
-        let mut taken = Self::new(self.seed);
+        let mut taken = Self::new(self.seed, self.map);
         for (i, action) in telling.actions.iter().enumerate() {
             taken
                 .act(action.clone())
@@ -273,7 +280,10 @@ impl Chronicle {
             .range(..=target)
             .next_back()
             .map(|(_, (c, w))| (*c, w.clone()))
-            .unwrap_or_else(|| (Cursor::default(), World::new(self.seed, Params::default())));
+            .unwrap_or_else(|| {
+                let fresh = World::with_map(self.seed, Params::default(), self.map);
+                (Cursor::default(), fresh)
+            });
         while cursor.action < self.actions.len() {
             match &self.actions[cursor.action] {
                 Action::Run { generations } => {
@@ -308,6 +318,7 @@ impl Chronicle {
             format: FORMAT.into(),
             revision: ENGINE_REVISION,
             seed: self.seed,
+            map: self.map,
             actions: self.actions.clone(),
             tellings: self.tellings.clone(),
         }
@@ -320,7 +331,7 @@ impl Chronicle {
         if recipe.format != FORMAT {
             return Err(format!("not a {FORMAT} file"));
         }
-        let mut chronicle = Self::new(recipe.seed);
+        let mut chronicle = Self::new(recipe.seed, recipe.map);
         for (i, action) in recipe.actions.iter().enumerate() {
             chronicle
                 .act(action.clone())
@@ -437,7 +448,7 @@ mod tests {
     }
 
     fn sample() -> Chronicle {
-        let mut c = Chronicle::new(7);
+        let mut c = Chronicle::new(7, MapSize::default());
         c.act(found("Hill", "familiar")).unwrap();
         c.act(found("Coast", "polynesian")).unwrap();
         c.act(Action::Run { generations: 15 }).unwrap();
@@ -595,7 +606,7 @@ mod tests {
         let mut cold = Chronicle::from_recipe(&c.recipe()).unwrap();
         assert!(same(&cold.world_at(39), c.latest()));
 
-        let mut world = Chronicle::new(1);
+        let mut world = Chronicle::new(1, MapSize::default());
         world.act(found("Hill", "familiar")).unwrap();
         let ran = world.run_until_event(400);
         assert!(ran < 400, "a growing community eventually splits");

@@ -24,7 +24,7 @@ Read further when the task touches it:
   JSON views; `engine.ts` adapts the WASM; `shelf.ts` stores the books;
   `takeout.ts` formats exports; `App.tsx` holds view state and actions;
   `components/` holds the shelf, title page, the book's two pages, the
-  appendix, and dialogs.
+  atlas, the appendix, and dialogs.
 
 All linguistic logic runs in Rust. Presentation code never mints or changes
 words, and there is no backend or second implementation of linguistic

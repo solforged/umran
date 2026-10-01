@@ -2,8 +2,9 @@
 
 How the workbench records, replays, and stores a world.
 
-A history is a seed plus ordered `Action`s (`chronicle.rs`): found, connect,
-split, shift, run. Found records the naming, the full design, and the
+A history is a seed, a map size, and ordered `Action`s (`chronicle.rs`):
+found, connect, split, shift, run. The seed draws the map as well as the
+history. Found records the naming, the full design, and the
 language's own seed, the one its preview used, so founding gives exactly
 the previewed words and names. A split's naming is optional; without one
 the new people chooses. Consecutive runs merge, so playing stays one action and
@@ -21,8 +22,9 @@ shows those entries struck through, and `restore` takes a telling up again,
 setting the present aside in its place. Tellings travel in the recipe but
 never affect its replay.
 
-Saves are recipes (`Recipe`: format, `ENGINE_REVISION`, seed, actions), not
-resolved states. Bump `ENGINE_REVISION` whenever a change would make an
+Saves are recipes (`Recipe`: format, `ENGINE_REVISION`, seed, map size,
+actions), not resolved states; recipes from before maps had a size get
+the middling map. Bump `ENGINE_REVISION` whenever a change would make an
 existing recipe replay differently; loading a recipe from another revision
 still works but the UI warns that its words may differ. Resolved-state saves
 remain possible later work if exact preservation across versions matters.

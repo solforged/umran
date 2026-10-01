@@ -9,8 +9,8 @@ use langgen_sim::concepts::related;
 use langgen_sim::morphology::Slot;
 use langgen_sim::phoneme::{Backness, Manner, Secondary};
 use langgen_sim::{
-    Action, CATALOG, Chronicle, ENGINE_REVISION, Event, FORMAT, Flavor, Form, Lexeme, Origin,
-    PhonemeId, Recipe, SetAside, World, WorldEvent, catalog,
+    Action, CATALOG, Chronicle, ENGINE_REVISION, Event, FORMAT, Flavor, Form, Lexeme, MapSize,
+    Origin, PhonemeId, Recipe, SetAside, Terrain, World, WorldEvent, catalog,
 };
 use langgen_sim::{LanguageDesign, MorphologyKind, Naming, Segment, Variety};
 use serde::Serialize;
@@ -25,11 +25,13 @@ pub struct Workbench {
 
 #[wasm_bindgen]
 impl Workbench {
+    /// A new history whose map `size` ("small", "medium", or "large") is
+    /// drawn from `seed`.
     #[wasm_bindgen(constructor)]
-    pub fn new(seed: u32) -> Workbench {
-        Workbench {
-            bench: Bench::new(seed),
-        }
+    pub fn new(seed: u32, size: &str) -> Result<Workbench, JsValue> {
+        Ok(Workbench {
+            bench: Bench::new(seed, size).map_err(fail)?,
+        })
     }
 
     pub fn load(json: &str) -> Result<Workbench, JsValue> {
@@ -104,6 +106,17 @@ impl Workbench {
     ) -> Result<String, JsValue> {
         self.bench.word(generation, variety, concept).map_err(fail)
     }
+
+    /// The land: regions with their outlines and terrain.
+    pub fn map(&self) -> Result<String, JsValue> {
+        self.bench.map().map_err(fail)
+    }
+
+    /// Every living people's word for `concept`, grouped by common root.
+    #[wasm_bindgen(js_name = wordMap)]
+    pub fn word_map(&mut self, generation: u32, concept: &str) -> Result<String, JsValue> {
+        self.bench.word_map(generation, concept).map_err(fail)
+    }
 }
 
 pub struct Bench {
@@ -119,13 +132,15 @@ pub struct Bench {
 }
 
 impl Bench {
-    pub fn new(seed: u32) -> Bench {
-        Bench {
-            chronicle: Chronicle::new(u64::from(seed)),
+    pub fn new(seed: u32, size: &str) -> Result<Bench, String> {
+        let map: MapSize = serde_json::from_value(serde_json::Value::String(size.into()))
+            .map_err(|_| format!("Unknown world size: {size}."))?;
+        Ok(Bench {
+            chronicle: Chronicle::new(u64::from(seed), map),
             cached: None,
             saved_revision: None,
             told: Vec::new(),
-        }
+        })
     }
 
     /// Restores a saved recipe.
@@ -332,7 +347,7 @@ impl Bench {
             let told = match self.told.iter().find(|(a, _)| *a == telling.actions) {
                 Some((_, told)) => told.clone(),
                 None => {
-                    let told = tell(self.chronicle.seed, &telling.actions);
+                    let told = tell(self.chronicle.seed, self.chronicle.map, &telling.actions);
                     self.told.push((telling.actions.clone(), told.clone()));
                     told
                 }
@@ -432,6 +447,7 @@ impl Bench {
                     prestige: c.prestige,
                     power: c.power,
                     openness: c.openness,
+                    region: c.region,
                 })
                 .collect(),
             varieties: world
@@ -571,6 +587,65 @@ impl Bench {
             cognates,
         })
     }
+
+    /// The land the history plays out on. It never changes, so the
+    /// browser asks once per book.
+    pub fn map(&self) -> Result<String, String> {
+        let map = &self.chronicle.latest().map;
+        to_json(&MapView {
+            size: map.size,
+            width: map.width,
+            height: map.height,
+            regions: map
+                .regions
+                .iter()
+                .enumerate()
+                .map(|(id, r)| RegionView {
+                    id,
+                    terrain: r.terrain,
+                    site: r.site,
+                    outline: r.outline.clone(),
+                    coastal: map.coastal(id),
+                })
+                .collect(),
+        })
+    }
+
+    /// What each living people says for `concept` at `generation`, as a
+    /// dialect atlas shows it: words descended from one root share a
+    /// group, numbered in order of first appearance.
+    pub fn word_map(&mut self, generation: u32, concept: &str) -> Result<String, String> {
+        let concept = langgen_sim::concepts::by_id(concept).ok_or("Unknown concept.")?;
+        let world = self.world(generation);
+        let mut roots = Vec::new();
+        let words = world
+            .communities
+            .iter()
+            .enumerate()
+            .filter_map(|(community, c)| {
+                let v = &world.varieties[c.variety];
+                let id = v.lexicon.slot(concept).dominant()?;
+                let word = v.lexicon.get(id);
+                let root = world.root_of(c.variety, id);
+                let group = roots.iter().position(|r| *r == root).unwrap_or_else(|| {
+                    roots.push(root);
+                    roots.len() - 1
+                });
+                Some(MapWord {
+                    community,
+                    spelled: v.spell(&word.form),
+                    ipa: word.form.ipa(),
+                    group,
+                    origin: origin_view(world, c.variety, word),
+                })
+            })
+            .collect();
+        to_json(&WordMapView {
+            concept: concept.id,
+            gloss: concept.gloss,
+            words,
+        })
+    }
 }
 
 impl Bench {
@@ -668,11 +743,12 @@ impl Bench {
 /// parting, meeting, and changing tongues, plus each language's sound laws.
 /// The annals a telling set aside would have written, or none if it no
 /// longer replays on this engine.
-fn tell(seed: u64, actions: &[Action]) -> Vec<Annal> {
+fn tell(seed: u64, map: MapSize, actions: &[Action]) -> Vec<Annal> {
     let recipe = Recipe {
         format: FORMAT.into(),
         revision: ENGINE_REVISION,
         seed,
+        map,
         actions: actions.to_vec(),
         tellings: Vec::new(),
     };
@@ -1219,6 +1295,8 @@ struct CommunityView {
     prestige: f32,
     power: f32,
     openness: f32,
+    /// The map region it lives on.
+    region: usize,
 }
 
 #[derive(Serialize)]
@@ -1328,6 +1406,40 @@ struct WordView {
     cognates: Vec<Cognate>,
 }
 
+#[derive(Serialize)]
+struct MapView {
+    size: MapSize,
+    width: f32,
+    height: f32,
+    regions: Vec<RegionView>,
+}
+
+#[derive(Serialize)]
+struct RegionView {
+    id: usize,
+    terrain: Terrain,
+    site: [f32; 2],
+    outline: Vec<[f32; 2]>,
+    coastal: bool,
+}
+
+#[derive(Serialize)]
+struct WordMapView {
+    concept: &'static str,
+    gloss: &'static str,
+    words: Vec<MapWord>,
+}
+
+#[derive(Serialize)]
+struct MapWord {
+    community: usize,
+    spelled: String,
+    ipa: String,
+    /// Words with the same group descend from one root.
+    group: usize,
+    origin: OriginView,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1345,7 +1457,7 @@ mod tests {
     }
 
     fn bench() -> Bench {
-        let mut w = Bench::new(5);
+        let mut w = Bench::new(5, "medium").unwrap();
         w.act(&found("Hill", "familiar")).unwrap();
         w.act(&found("Coast", "polynesian")).unwrap();
         w.act(r#"{"kind":"connect","a":0,"b":1,"intensity":0.6,"contact":"trade"}"#)
@@ -1396,7 +1508,7 @@ mod tests {
 
     #[test]
     fn the_chronicle_tells_contacts_beginning_and_ending() {
-        let mut w = Bench::new(5);
+        let mut w = Bench::new(5, "medium").unwrap();
         w.act(&found("Hill", "familiar")).unwrap();
         w.act(&found("Coast", "polynesian")).unwrap();
         w.act(r#"{"kind":"connect","a":0,"b":1,"intensity":0.6,"contact":"trade"}"#)
@@ -1459,7 +1571,7 @@ mod tests {
         let design = Bench::design("indic", 2).unwrap();
         let preview: serde_json::Value =
             serde_json::from_str(&Bench::preview(&design, 99, RIVER).unwrap()).unwrap();
-        let mut w = Bench::new(1);
+        let mut w = Bench::new(1, "medium").unwrap();
         let action = format!(
             r#"{{"kind":"found","naming":{{"kind":"place","place":"river"}},"design":{design},"seed":99,"power":0.5,"openness":0.5}}"#
         );

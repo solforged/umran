@@ -116,6 +116,8 @@ export interface Community {
   prestige: number;
   power: number;
   openness: number;
+  /// The map region it lives on.
+  region: number;
 }
 
 export interface Variety {
@@ -223,6 +225,41 @@ export interface WordDetail {
   cognates: { variety: number; name: string; spelled: string; ipa: string }[];
 }
 
+export type MapSize = "small" | "medium" | "large";
+
+export type Terrain = "sea" | "plains" | "forest" | "steppe" | "hills" | "mountains" | "desert";
+
+export interface Region {
+  id: number;
+  terrain: Terrain;
+  /// The point the region was drawn around, in map units.
+  site: [number, number];
+  outline: [number, number][];
+  coastal: boolean;
+}
+
+/// The land a book's history plays out on; it never changes.
+export interface WorldMap {
+  size: MapSize;
+  width: number;
+  height: number;
+  regions: Region[];
+}
+
+/// Every people's word for one meaning, as a dialect atlas shows it.
+export interface WordMap {
+  concept: string;
+  gloss: string;
+  words: {
+    community: number;
+    spelled: string;
+    ipa: string;
+    /// Words sharing a group descend from one root.
+    group: number;
+    origin: Origin;
+  }[];
+}
+
 export interface Engine {
   act(action: Action): void;
   undo(): boolean;
@@ -234,6 +271,8 @@ export interface Engine {
   overview(generation: number): Overview;
   lexicon(generation: number, variety: number): LexiconRow[];
   word(generation: number, variety: number, concept: string): WordDetail;
+  map(): WorldMap;
+  wordMap(generation: number, concept: string): WordMap;
   save(): string;
   dispose(): void;
 }

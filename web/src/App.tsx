@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createEngine, loadCatalog, loadEngine, message } from "./engine";
-import type { Action, Catalog, Engine } from "./model";
+import { createEngine, loadCatalog, loadEngine, message, presetDesign } from "./engine";
+import type { Action, Catalog, Engine, WorldMap } from "./model";
 import { YEARS } from "./model";
 import { ActionDialog, type DialogKind } from "./components/ActionDialog";
 import { Appendix } from "./components/Appendix";
-import { Designer, type Founding } from "./components/Designer";
+import { Atlas } from "./components/Atlas";
+import { Designer, randomSeed, type Founding } from "./components/Designer";
 import { Modal } from "./components/Modal";
 import { Recto } from "./components/Recto";
 import { Shelf } from "./components/Shelf";
@@ -36,6 +37,8 @@ type View =
   | { kind: "book"; id: string }
   | { kind: "recovery"; what: string; raw: string; error: string };
 
+type Page = "chronicle" | "atlas" | "appendix";
+
 function foundingAction(f: Founding): Action {
   return { kind: "found", naming: f.naming, design: f.design, seed: f.seed, power: f.power, openness: f.openness };
 }
@@ -50,7 +53,8 @@ export default function App() {
   const [community, setCommunity] = useState(0);
   const [concept, setConcept] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogKind | null>(null);
-  const [appendix, setAppendix] = useState(false);
+  const [page, setPage] = useState<Page>("chronicle");
+  const [worldMap, setWorldMap] = useState<WorldMap | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -79,11 +83,12 @@ export default function App() {
   const adopt = useCallback((id: string, next: Engine, fresh: boolean) => {
     engine.current?.dispose();
     engine.current = next;
+    setWorldMap(next.map());
     setViewing(null);
     setCommunity(0);
     setConcept(null);
     setDialog(null);
-    setAppendix(false);
+    setPage("chronicle");
     setError(null);
     setInfo(null);
     setVersion((v) => v + 1);
@@ -207,16 +212,29 @@ export default function App() {
   );
 
   const begin = useCallback(
-    async (founding: Founding) => {
+    async (founding: Founding, others: number) => {
       try {
-        const next = await createEngine(founding.worldSeed);
+        const next = await createEngine(founding.worldSeed, founding.worldSize);
         next.act(foundingAction(founding));
+        // The others are drawn by chance: any starting sounds, any words.
+        for (let i = 0; i < others && catalog; i++) {
+          const preset = catalog.presets[Math.floor(Math.random() * catalog.presets.length)].id;
+          const seed = randomSeed();
+          next.act({
+            kind: "found",
+            naming: { kind: "people" },
+            design: presetDesign(preset, seed),
+            seed,
+            power: 0.5,
+            openness: 0.5,
+          });
+        }
         adopt(newBookId(), next, true);
       } catch (e) {
         setError(message(e));
       }
     },
-    [adopt],
+    [adopt, catalog],
   );
 
   const sample = async () => {
@@ -262,7 +280,7 @@ export default function App() {
       <main className="splash">
         <TitlePage
           catalog={catalog}
-          onBegin={(f) => void begin(f)}
+          onBegin={(f, others) => void begin(f, others)}
           onCancel={() => setView({ kind: "shelf" })}
         />
         {error ? <p className="error">{error}</p> : null}
@@ -316,10 +334,13 @@ export default function App() {
       </header>
 
       <nav className="thumbs" aria-label="Sections of the book">
-        <button type="button" aria-current={!appendix} onClick={() => setAppendix(false)}>
+        <button type="button" aria-current={page === "chronicle"} onClick={() => setPage("chronicle")}>
           Chronicle
         </button>
-        <button type="button" aria-current={appendix} onClick={() => setAppendix(true)}>
+        <button type="button" aria-current={page === "atlas"} onClick={() => setPage("atlas")}>
+          Atlas
+        </button>
+        <button type="button" aria-current={page === "appendix"} onClick={() => setPage("appendix")}>
           Appendix
         </button>
       </nav>
@@ -344,7 +365,7 @@ export default function App() {
         </p>
       ) : null}
 
-      {appendix ? (
+      {page === "appendix" ? (
         <Appendix
           engine={engine.current}
           version={version}
@@ -352,7 +373,21 @@ export default function App() {
           overview={overview}
           title={title}
           variety={overview.communities[selected].variety}
-          onBack={() => setAppendix(false)}
+          onBack={() => setPage("chronicle")}
+        />
+      ) : page === "atlas" && worldMap ? (
+        <Atlas
+          engine={engine.current}
+          map={worldMap}
+          version={version}
+          generation={generation}
+          overview={overview}
+          selected={selected}
+          onSelect={setCommunity}
+          onRead={(id) => {
+            setCommunity(id);
+            setPage("chronicle");
+          }}
         />
       ) : (
         <main className="book">

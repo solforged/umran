@@ -11,6 +11,7 @@ pub mod concepts;
 pub mod design;
 pub mod flavor;
 pub mod form;
+pub mod geography;
 pub mod inventory;
 pub mod laws;
 pub mod lexicon;
@@ -35,6 +36,7 @@ pub use concepts::{CONCEPTS, Class, Concept, FAMILIES, Field, Iconic, Relation, 
 pub use design::{LanguageDesign, Sound};
 pub use flavor::Flavor;
 pub use form::{Form, Seg, Syllable};
+pub use geography::{Map, MapSize, Region, Terrain};
 pub use inventory::Inventory;
 pub use laws::{Law, catalog};
 pub use lexicon::{Entry, Event, Lexeme, LexemeId, Lexicon, Origin, Slot};

@@ -6,9 +6,12 @@ import type {
   Engine,
   LanguageDesign,
   LexiconRow,
+  MapSize,
   Overview,
   Preview,
   WordDetail,
+  WordMap,
+  WorldMap,
 } from "./model";
 
 // One WASM module; the Workbench owns the history and React only holds view
@@ -35,17 +38,19 @@ function wrap(bench: Workbench): Engine {
     lexicon: (generation, variety) => JSON.parse(bench.lexicon(generation, variety)) as LexiconRow[],
     word: (generation, variety, concept) =>
       JSON.parse(bench.word(generation, variety, concept)) as WordDetail,
+    map: () => JSON.parse(bench.map()) as WorldMap,
+    wordMap: (generation, concept) => JSON.parse(bench.wordMap(generation, concept)) as WordMap,
     save: () => bench.save(),
     dispose: () => bench.free(),
   };
 }
 
-export async function createEngine(seed: number): Promise<Engine> {
+export async function createEngine(seed: number, size: MapSize): Promise<Engine> {
   if (!Number.isInteger(seed) || seed < 0 || seed > 0xffff_ffff) {
     throw new Error("Choose a whole-number seed between 0 and 4294967295.");
   }
   await ready();
-  return wrap(new Workbench(seed));
+  return wrap(new Workbench(seed, size));
 }
 
 export async function loadEngine(json: string): Promise<Engine> {

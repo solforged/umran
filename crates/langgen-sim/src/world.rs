@@ -1,6 +1,7 @@
 use crate::adapt::Adapter;
 use crate::concepts::{CONCEPTS, Concept, Field, related};
 use crate::form::Form;
+use crate::geography::{Map, MapSize};
 use crate::laws::{Law, catalog};
 use crate::lexicon::{Entry, Event, LexemeId, Lexicon, Origin};
 use crate::morphology::Morphology;
@@ -15,6 +16,7 @@ use rand::{Rng, RngCore};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 /// Effective Leipzig–Jakarta rank for cultural vocabulary when it comes to
 /// internal replacement.
@@ -39,6 +41,9 @@ const CONQUEST_MIN_GAP: f32 = 0.3;
 const RULE_HOLD: f32 = 3.0;
 /// Intensity of rule after a conquest, at least.
 const CONQUEST_INTENSITY: f32 = 0.6;
+/// Travel effort beyond which a founding people no longer prefers land
+/// further from others: far enough to be its own.
+const SETTLE_APART: f32 = 8.0;
 
 /// Rates per generation. Defaults are calibrated so an isolated variety
 /// keeps about 84% of its core list per 40 generations.
@@ -95,8 +100,8 @@ pub struct Params {
     /// Population growth per generation for a community far below
     /// `capacity`; growth slows logistically as it fills up.
     pub growth_rate: f32,
-    /// Population one territory can support; communities that split share
-    /// their founders' territory.
+    /// Population an open plain region can support; other land supports
+    /// its terrain's share of this, and peoples on one region share it.
     pub capacity: f32,
     /// Above this population a community may split in two.
     pub split_size: f32,
@@ -199,9 +204,10 @@ pub struct Community {
     pub openness: f32,
     /// Population.
     pub size: f32,
-    /// The land this community lives on: each founded people brings its
-    /// own, and communities that split from it share it.
-    pub territory: usize,
+    /// The region of the map this community lives on. Founded peoples
+    /// settle open land; a community that splits off takes the roomiest
+    /// land beside its parent's when that has more room, else stays.
+    pub region: usize,
 }
 
 /// What brings two communities together, which shapes what they borrow.
@@ -310,6 +316,8 @@ pub struct Contact {
 pub struct World {
     pub seed: u64,
     pub generation: u32,
+    /// The land, drawn from the seed. Shared, since it never changes.
+    pub map: Arc<Map>,
     pub communities: Vec<Community>,
     pub varieties: Vec<Variety>,
     pub contacts: Vec<Contact>,
@@ -340,10 +348,17 @@ impl Step {
 }
 
 impl World {
+    /// A world on a map of the default size.
     pub fn new(seed: u64, params: Params) -> Self {
+        Self::with_map(seed, params, MapSize::default())
+    }
+
+    /// A world on a map of `size`, drawn from `seed`.
+    pub fn with_map(seed: u64, params: Params, size: MapSize) -> Self {
         Self {
             seed,
             generation: 0,
+            map: Arc::new(Map::generate(seed, size)),
             communities: Vec::new(),
             varieties: Vec::new(),
             contacts: Vec::new(),
@@ -386,6 +401,7 @@ impl World {
         let name = self.coin(&variety, naming, None);
         variety.name = self.language_name(&variety, &name);
         self.varieties.push(variety);
+        let region = self.homeland(index);
         self.communities.push(Community {
             name,
             variety: self.varieties.len() - 1,
@@ -393,16 +409,64 @@ impl World {
             power: power.clamp(0.0, 1.0),
             openness: openness.clamp(0.0, 1.0),
             size: INITIAL_SIZE,
-            territory: self
-                .communities
-                .iter()
-                .map(|c| c.territory + 1)
-                .max()
-                .unwrap_or(0),
+            region,
         });
         self.events
             .push((self.generation, WorldEvent::Found { community: index }));
         index
+    }
+
+    /// Where newly founded community `community` settles: unpeopled land,
+    /// likelier the more it feeds and the further it lies from other
+    /// peoples, or the roomiest land when none is unpeopled.
+    fn homeland(&self, community: usize) -> usize {
+        let peopled: HashSet<usize> = self.communities.iter().map(|c| c.region).collect();
+        let open: Vec<usize> = (0..self.map.regions.len())
+            .filter(|&r| self.map.regions[r].terrain.is_land() && !peopled.contains(&r))
+            .collect();
+        if open.is_empty() {
+            let all: Vec<usize> = (0..self.map.regions.len()).collect();
+            return self.roomiest(&all).expect("every map has land");
+        }
+        let weight = |r: usize| {
+            let fertility = self.map.regions[r].terrain.fertility();
+            let apart = peopled
+                .iter()
+                .map(|&o| self.map.distance(r, o))
+                .fold(SETTLE_APART, f32::min);
+            fertility * fertility * apart
+        };
+        let mut rng = stream(self.seed, &[key("homeland"), community as u64]);
+        open[weighted_index(&mut rng, open.iter().map(|&r| weight(r)))]
+    }
+
+    /// How many each region can support.
+    pub fn capacity(&self, region: usize) -> f32 {
+        self.params.capacity * self.map.regions[region].terrain.fertility()
+    }
+
+    /// Population living on each region.
+    fn occupation(&self) -> HashMap<usize, f32> {
+        let mut out: HashMap<usize, f32> = HashMap::new();
+        for c in &self.communities {
+            *out.entry(c.region).or_default() += c.size;
+        }
+        out
+    }
+
+    /// The land among `regions` with the most room left, lowest index
+    /// first on a tie; `None` if all of them are sea.
+    fn roomiest(&self, regions: &[usize]) -> Option<usize> {
+        let occupied = self.occupation();
+        let room = |r: usize| self.capacity(r) - occupied.get(&r).copied().unwrap_or(0.0);
+        regions
+            .iter()
+            .copied()
+            .filter(|&r| self.map.regions[r].terrain.is_land())
+            .fold(None, |best: Option<usize>, r| match best {
+                Some(b) if room(b) >= room(r) => Some(b),
+                _ => Some(r),
+            })
     }
 
     /// Part of `community` moves off as a new community whose speech becomes
@@ -436,10 +500,20 @@ impl World {
         }
         daughter.name = self.language_name(&daughter, &name);
         self.varieties.push(daughter);
+        // The leavers take the roomiest land beside home if it has more
+        // room than home, judged before they go.
+        let home = self.communities[community].region;
+        let occupied = self.occupation();
+        let room = |r: usize| self.capacity(r) - occupied.get(&r).copied().unwrap_or(0.0);
+        let region = match self.roomiest(&self.map.regions[home].neighbours) {
+            Some(beside) if room(beside) > room(home) => beside,
+            _ => home,
+        };
         self.communities[community].size /= 2.0;
         let mut new = self.communities[community].clone();
         new.name = name;
         new.variety = self.varieties.len() - 1;
+        new.region = region;
         self.communities.push(new);
         let index = self.communities.len() - 1;
         if intensity > 0.0 {
@@ -556,19 +630,16 @@ impl World {
         )
     }
 
-    /// Logistic growth against each territory's capacity, with a little
+    /// Logistic growth against each region's capacity, with a little
     /// noise; then prestige from power plus relative size.
     fn grow(&mut self) {
-        let mut occupied: HashMap<usize, f32> = HashMap::new();
-        for c in &self.communities {
-            *occupied.entry(c.territory).or_default() += c.size;
-        }
+        let occupied = self.occupation();
         for c in 0..self.communities.len() {
             let mut rng = self.community_rng(c, "grow");
             let noise = rng.gen_range(-0.05..0.05);
-            let community = &mut self.communities[c];
-            let room = 1.0 - occupied[&community.territory] / self.params.capacity;
-            community.size *= (self.params.growth_rate * room + noise).exp();
+            let region = self.communities[c].region;
+            let room = 1.0 - occupied[&region] / self.capacity(region);
+            self.communities[c].size *= (self.params.growth_rate * room + noise).exp();
         }
         let n = self.communities.len() as f32;
         let mean = self.communities.iter().map(|c| c.size.ln()).sum::<f32>() / n;
@@ -757,7 +828,7 @@ impl World {
             let (ca, cb) = (&self.communities[contact.a], &self.communities[contact.b]);
             let hold = match contact.kind {
                 // Peoples on the same land stay neighbours.
-                ContactKind::Neighbours if ca.territory == cb.territory => continue,
+                ContactKind::Neighbours if ca.region == cb.region => continue,
                 ContactKind::Rule => 1.0 + RULE_HOLD * gap,
                 _ => 1.0,
             };
@@ -794,9 +865,10 @@ impl World {
         }
     }
 
-    /// The world makes contacts of its own: peoples sharing land deal with
-    /// each other again, peoples open trade, and a people far above one
-    /// it deals with may come to rule it.
+    /// The world makes contacts of its own: peoples on the same or
+    /// bordering land deal with each other again, peoples open trade,
+    /// nearer partners likelier, and a people far above one it deals with
+    /// may come to rule it.
     fn make_contacts(&mut self) {
         let in_touch = |contacts: &[Contact], a: usize, b: usize| {
             contacts
@@ -808,10 +880,11 @@ impl World {
             let strangers: Vec<usize> = (0..self.communities.len())
                 .filter(|&o| o != c && !in_touch(&self.contacts, c, o))
                 .collect();
+            let here = self.communities[c].region;
             for &o in strangers.iter().filter(|&&o| o > c) {
-                let shared = self.communities[o].territory == self.communities[c].territory;
-                if shared && rng.r#gen::<f32>() < self.params.neighbour_rate {
-                    let intensity = rng.gen_range(0.3..0.7);
+                let near = self.map.closeness(here, self.communities[o].region);
+                if near > 0.0 && rng.r#gen::<f32>() < self.params.neighbour_rate * near {
+                    let intensity = rng.gen_range(0.3..0.7) * near;
                     self.connect(c, o, intensity, ContactKind::Neighbours);
                 }
             }
@@ -820,7 +893,11 @@ impl World {
                 .filter(|&o| !in_touch(&self.contacts, c, o))
                 .collect();
             if !strangers.is_empty() && rng.r#gen::<f32>() < self.params.trade_rate {
-                let o = strangers[crate::rng::index(&mut rng, strangers.len())];
+                let reach = |o: usize| {
+                    let d = self.map.distance(here, self.communities[o].region);
+                    1.0 / ((1.0 + d) * (1.0 + d))
+                };
+                let o = strangers[weighted_index(&mut rng, strangers.iter().map(|&o| reach(o)))];
                 let intensity = rng.gen_range(0.2..0.6);
                 self.connect(c, o, intensity, ContactKind::Trade);
             }
@@ -2142,15 +2219,32 @@ mod tests {
     }
 
     #[test]
-    fn splitting_shares_land_instead_of_multiplying_it() {
-        let mut world = World::solo(8, &SoundProfile::base(), Params::default());
-        world.run(300);
-        let total: f32 = world.communities.iter().map(|c| c.size).sum();
-        assert!(total < world.params.capacity * 1.2, "population {total}");
-        assert!(
-            world.communities.len() <= 8,
-            "{} communities",
-            world.communities.len()
-        );
+    fn peoples_spread_to_bordering_land_without_overfilling_it() {
+        for seed in [8, 9, 10] {
+            let mut world = World::solo(seed, &SoundProfile::base(), Params::default());
+            world.run(300);
+            for (region, people) in world.occupation() {
+                assert!(
+                    people < world.capacity(region) * 1.2,
+                    "seed {seed}: region {region} holds {people}"
+                );
+            }
+            let mut moved = false;
+            for (_, event) in &world.events {
+                if let WorldEvent::Split {
+                    community,
+                    daughter,
+                } = *event
+                {
+                    let (from, to) = (
+                        world.communities[community].region,
+                        world.communities[daughter].region,
+                    );
+                    assert!(from == to || world.map.regions[from].neighbours.contains(&to));
+                    moved |= from != to;
+                }
+            }
+            assert!(moved, "seed {seed}: no people ever left home");
+        }
     }
 }

@@ -7,7 +7,7 @@ import type { Action, Engine } from "./model";
 const WORLD = 1407;
 
 export async function sampleBook(): Promise<Engine> {
-  const engine = await createEngine(WORLD);
+  const engine = await createEngine(WORLD, "medium");
   const actions: Action[] = [
     {
       kind: "found",

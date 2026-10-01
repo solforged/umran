@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { frequencyDesign, presetDesign, preview } from "../engine";
-import type { Catalog, LanguageDesign, LongVowelStyle, Naming, SoundInfo } from "../model";
+import type { Catalog, LanguageDesign, LongVowelStyle, MapSize, Naming, SoundInfo } from "../model";
 import { NamingSelect } from "./NamingSelect";
 
 export interface Founding {
@@ -12,6 +12,7 @@ export interface Founding {
   openness: number;
   /// Only when starting a new world.
   worldSeed: number;
+  worldSize: MapSize;
 }
 
 export function randomSeed(): number {
@@ -110,7 +111,7 @@ export function Designer({
       onSubmit={(e) => {
         e.preventDefault();
         if (typeof result === "string") return;
-        onFound({ naming, design, seed, power, openness, worldSeed });
+        onFound({ naming, design, seed, power, openness, worldSeed, worldSize: initial?.worldSize ?? "medium" });
       }}
     >
       <div className="designer-controls">
@@ -281,7 +282,7 @@ export function Designer({
                   Random
                 </button>
               </span>
-              <small>Decides how history unfolds once time runs.</small>
+              <small>Draws the map and decides how history unfolds once time runs.</small>
             </label>
           ) : null}
         </Section>
