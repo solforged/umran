@@ -13,7 +13,7 @@ interface Line {
 
 /// The annalist's text, with words of the language (marked *thus*) set
 /// in the language's style.
-function Told({ text }: { text: string }) {
+export function Told({ text }: { text: string }) {
   const parts: ReactNode[] = text.split(/\*([^*]+)\*/).map((part, i) =>
     i % 2 === 1 ? (
       <i key={i} className="word">

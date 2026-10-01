@@ -22,9 +22,13 @@ Read further when the task touches it:
   off WASM.
 - `web/src`: React, TypeScript, and Vite. `model.ts` mirrors the facade's
   JSON views; `engine.ts` adapts the WASM; `shelf.ts` stores the books;
-  `takeout.ts` formats exports; `App.tsx` holds view state and actions;
-  `components/` holds the shelf, title page, the book's two pages, the
-  atlas, the appendix, and dialogs.
+  `takeout.ts` formats exports; `lore.ts` holds shared names and the
+  glossary of linguistic terms; `App.tsx` holds view state and actions.
+  `components/` holds the shelf, title page, the stage (the default view:
+  `MapView`, the feed and time bar in `Stage`, and the encyclopedia cards
+  in `Pedia`), the older book pages and atlas, the appendix, and dialogs.
+  Annals carry the peoples, lands, and laws they tell of, so every entry
+  can link to their cards.
 
 All linguistic logic runs in Rust. Presentation code never mints or changes
 words, and there is no backend or second implementation of linguistic

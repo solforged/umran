@@ -1382,7 +1382,7 @@ table.preview tr {
 /* Names of lands, as an old map letters them: small, spaced, italic. */
 .place-names text {
   font-family: var(--serif);
-  font-size: 0.17px;
+  font-size: calc(0.17px * var(--label, 1));
   font-style: italic;
   letter-spacing: 0.01px;
   text-anchor: middle;
@@ -1390,7 +1390,7 @@ table.preview tr {
   fill: color-mix(in srgb, var(--ink) 70%, transparent);
   paint-order: stroke;
   stroke: color-mix(in srgb, var(--paper) 70%, transparent);
-  stroke-width: 0.04px;
+  stroke-width: calc(0.04px * var(--label, 1));
   pointer-events: none;
 }
 .place-names text.left {
@@ -1454,18 +1454,18 @@ table.preview tr {
 
 /* SVG lengths here are map units: a region is about one unit across. */
 .people text {
-  font-size: 0.24px;
+  font-size: calc(0.24px * var(--label, 1));
   font-weight: 600;
   text-anchor: middle;
   dominant-baseline: middle;
   paint-order: stroke;
   stroke: var(--paper);
-  stroke-width: 0.06px;
+  stroke-width: calc(0.06px * var(--label, 1));
   stroke-linejoin: round;
 }
 
 .people.chosen text {
-  font-size: 0.3px;
+  font-size: calc(0.3px * var(--label, 1));
   text-decoration: underline;
 }
 
@@ -1639,5 +1639,342 @@ input.inline {
   .appendix,
   .atlas {
     padding-right: 0;
+  }
+}
+
+/* The stage: the map in the middle, the encyclopedia beside it, and time
+   along the bottom. */
+
+.stage {
+  /* The stage always fills the window, even where the book scrolls. */
+  height: 100dvh;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(20rem, 27rem);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "head head"
+    "notices notices"
+    "map pedia"
+    "time time";
+}
+
+.stage-head {
+  grid-area: head;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 0.4rem 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.stage-title {
+  font-style: italic;
+}
+
+.stage-notices {
+  grid-area: notices;
+}
+
+.stage-map {
+  grid-area: map;
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.mapview {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.mapview svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.mapview.zoomable svg {
+  cursor: grab;
+  touch-action: none;
+}
+
+.mapview.zoomable svg:active {
+  cursor: grabbing;
+}
+
+.map-zoom {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
+button.icon,
+.map-zoom button {
+  display: grid;
+  place-items: center;
+  padding: 0.35rem;
+}
+
+/* Something just happened to these peoples. */
+.beacon {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: beacon 1.6s ease-out 2 forwards;
+}
+
+@keyframes beacon {
+  from {
+    transform: scale(0.3);
+    opacity: 1;
+  }
+  to {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+/* What happened most recently, over the map's corner. */
+.feed {
+  position: absolute;
+  left: 0.6rem;
+  bottom: 0.6rem;
+  width: min(26rem, 70%);
+  max-height: 45%;
+  overflow: auto;
+  margin: 0;
+  padding: 0.3rem;
+  list-style: none;
+  background: color-mix(in srgb, var(--paper-raised) 88%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  backdrop-filter: blur(3px);
+}
+
+.feed button {
+  display: grid;
+  grid-template-columns: auto 2.6rem 1fr;
+  gap: 0.4rem;
+  align-items: baseline;
+  width: 100%;
+  padding: 0.2rem 0.3rem;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--ink);
+  font-size: 0.85rem;
+  text-align: left;
+}
+
+.feed button:hover,
+.feed button[aria-current="true"] {
+  background: var(--accent-mute);
+}
+
+.feed li.fresh {
+  animation: arrive 0.6s ease-out;
+}
+
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.feed-year {
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.feed-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* The encyclopedia: one card at a time, every name a way onward. */
+.pedia {
+  grid-area: pedia;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 1rem 1.5rem;
+  border-left: 1px solid var(--line);
+  background: var(--paper-raised);
+}
+
+.pedia-nav {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0;
+  background: var(--paper-raised);
+}
+
+.card h2 {
+  margin: 0.3rem 0;
+  font-size: 1.6rem;
+}
+
+.card h3 {
+  margin: 1.1rem 0 0.3rem;
+  font-size: 1rem;
+}
+
+.card p {
+  margin: 0.3rem 0;
+}
+
+.roster {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.2rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.moment {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.moment:hover {
+  color: var(--accent);
+}
+
+.event-text {
+  font-size: 1.15rem;
+}
+
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+/* A linguist's term, explained in place. */
+.term {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline dotted;
+  cursor: help;
+}
+
+.term-note {
+  display: block;
+  margin: 0.3rem 0;
+  padding: 0.4rem 0.6rem;
+  border-left: 2px solid var(--accent);
+  background: var(--accent-mute);
+  color: var(--ink);
+  font-size: 0.88rem;
+  font-style: normal;
+  font-weight: normal;
+}
+
+/* Time, along the bottom. */
+.timebar {
+  grid-area: time;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.9rem;
+  padding: 0.45rem 1rem;
+  border-top: 1px solid var(--line);
+  background: var(--paper-raised);
+}
+
+.transport {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+button.icon.play {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.scrub {
+  flex: 1;
+  min-width: 12rem;
+}
+
+.stage-year {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.pause-on {
+  font-size: 0.9rem;
+}
+
+.act {
+  position: relative;
+}
+
+.act summary {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.act-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.4rem);
+  z-index: 5;
+  display: grid;
+  gap: 0.3rem;
+  min-width: 18rem;
+  padding: 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.3);
+}
+
+.act-menu button {
+  text-align: left;
+}
+
+@media (max-width: 900px) {
+  .stage {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr) minmax(0, 42vh) auto;
+    grid-template-areas:
+      "head"
+      "notices"
+      "map"
+      "pedia"
+      "time";
+  }
+
+  .pedia {
+    border-top: 1px solid var(--line);
+    border-left: 0;
   }
 }

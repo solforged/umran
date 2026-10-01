@@ -1,52 +1,8 @@
 import { useMemo, useState } from "react";
-import type { Community, ContactKind, Engine, Law, Overview, PlaceName, Terrain, WorldMap } from "../model";
+import type { Community, Engine, Law, Overview, WorldMap } from "../model";
 import { YEARS } from "../model";
-
-const TERRAIN_NAME: Record<Terrain, string> = {
-  plains: "Plains",
-  forest: "Forest",
-  steppe: "Steppe",
-  hills: "Hills",
-  mountains: "Mountains",
-  desert: "Desert",
-  sea: "Sea",
-};
-
-const CONTACT_NAME: Record<ContactKind, string> = {
-  neighbours: "Neighbours",
-  trade: "Trade",
-  rule: "Rule",
-  religion: "Religion",
-  intermarriage: "Intermarriage",
-};
-
-/// Gap between stacked labels of peoples sharing a region, in map units.
-const LINE = 0.3;
-/// Generations over which a route fades to its faintest.
-const ROUTE_FADE = 40;
-
-/// A colour for the `n`th family or root, far from its neighbours in hue.
-function hue(n: number): string {
-  return `hsl(${Math.round((n * 137.508) % 360)} 55% 48%)`;
-}
-
-/// Colours of the isogloss view: land whose people underwent the change,
-/// and peopled land that did not.
-const CHANGED = "hsl(24 75% 50%)";
-const UNCHANGED = "hsl(210 12% 55%)";
-/// Farthest apart two corners can be and still be one corner of two
-/// bordering lands, in map units.
-const SAME_POINT = 1e-3;
-
-/// A gently curved path from `a` to `b`, stopping short of `b` so its
-/// arrowhead does not cover the label there.
-function route([ax, ay]: [number, number], [bx, by]: [number, number]): string {
-  const [dx, dy] = [bx - ax, by - ay];
-  const length = Math.hypot(dx, dy) || 1;
-  const end: [number, number] = [bx - (dx / length) * 0.18, by - (dy / length) * 0.18];
-  const bend: [number, number] = [ax + dx / 2 - dy * 0.2, ay + dy / 2 + dx * 0.2];
-  return `M${ax},${ay} Q${bend[0]},${bend[1]} ${end[0]},${end[1]}`;
-}
+import { CONTACT_NAME, howCame, howNamed, hue, TERRAIN_NAME } from "../lore";
+import { MapView, peoplesByRegion, type Tint } from "./MapView";
 
 /// The book's map: every people where it lives, coloured by language
 /// family, with the dealings between them and the roads they took, or
@@ -101,22 +57,9 @@ export function Atlas({
     [engine, generation, concept, show, version],
   );
 
-  // Peoples sharing a region stack their labels around its centre.
-  const placed = useMemo(() => {
-    const byRegion = new Map<number, Community[]>();
-    for (const c of overview.communities) byRegion.set(c.region, [...(byRegion.get(c.region) ?? []), c]);
-    const out = new Map<number, [number, number]>();
-    for (const [region, here] of byRegion) {
-      const [x, y] = map.regions[region].site;
-      here.forEach((c, i) => out.set(c.id, [x, y + (i - (here.length - 1) / 2) * LINE]));
-    }
-    return { byRegion, at: out };
-  }, [overview.communities, map]);
-
+  const byRegion = useMemo(() => peoplesByRegion(overview), [overview]);
   const placeOf = useMemo(() => new Map(overview.places.map((p) => [p.region, p.names])), [overview.places]);
-
   const family = (c: Community) => overview.varieties[c.variety].family;
-  const wordBy = useMemo(() => new Map(words?.words.map((w) => [w.community, w])), [words]);
 
   // Every sound change some living people has undergone, with who has
   // it, the most widespread first. The substrate merges of a language
@@ -140,46 +83,12 @@ export function Atlas({
     changes[0] ??
     null;
 
-  // The edge two bordering lands share, for drawing isoglosses on.
-  const borders = useMemo(() => {
-    const out: { a: number; b: number; ends: [number, number][] }[] = [];
-    for (const r of map.regions) {
-      if (r.terrain === "sea") continue;
-      for (const n of r.neighbours) {
-        const other = map.regions[n];
-        if (n < r.id || other.terrain === "sea") continue;
-        const ends = r.outline.filter(([x, y]) =>
-          other.outline.some(([u, v]) => Math.abs(x - u) < SAME_POINT && Math.abs(y - v) < SAME_POINT),
-        );
-        if (ends.length >= 2) out.push({ a: r.id, b: n, ends: ends.slice(0, 2) });
-      }
-    }
-    return out;
-  }, [map]);
-
-  // A region takes the colour of its largest people: its family, the root
-  // of that people's word, or whether that people underwent the change.
-  const largestOn = (region: number): Community | null => {
-    const here = placed.byRegion.get(region);
-    return here ? here.reduce((a, b) => (b.size > a.size ? b : a)) : null;
-  };
-  const tint = (region: number): string | null => {
-    const largest = largestOn(region);
-    if (!largest) return null;
-    if (show === "peoples") return hue(family(largest));
-    if (show === "change") return change?.had.has(largest.id) ? CHANGED : UNCHANGED;
-    const word = wordBy.get(largest.id);
-    return word ? hue(word.group) : null;
-  };
-  // Where the change stopped: borders between peopled lands whose peoples
-  // differ in having it.
-  const isoglosses =
-    show === "change" && change
-      ? borders.filter(({ a, b }) => {
-          const [pa, pb] = [largestOn(a), largestOn(b)];
-          return pa && pb && change.had.has(pa.id) !== change.had.has(pb.id);
-        })
-      : [];
+  const tint: Tint =
+    show === "words" && words
+      ? { kind: "words", words }
+      : show === "change" && change
+        ? { kind: "change", had: new Set(change.had.keys()) }
+        : { kind: "peoples" };
 
   const groups = useMemo(() => {
     if (!words) return [];
@@ -188,10 +97,6 @@ export function Atlas({
     return [...seen.entries()].map(([group, forms]) => ({ group, forms: [...new Set(forms)] }));
   }, [words]);
 
-  // Peoples on the same land need no line between them.
-  const dealings = contacts
-    ? overview.contacts.filter((k) => overview.communities[k.a].region !== overview.communities[k.b].region)
-    : [];
   const regionOf = map.regions[chosen.region];
   const partners = overview.contacts
     .filter((k) => k.a === chosen.id || k.b === chosen.id)
@@ -202,145 +107,24 @@ export function Atlas({
   const land = picked ?? chosen.region;
   const landRegion = map.regions[land];
   const landNames = placeOf.get(land) ?? [];
-  const dwellers = placed.byRegion.get(land) ?? [];
+  const dwellers = byRegion.get(land) ?? [];
 
   return (
     <main className="atlas">
       <figure className="atlas-map">
-        <svg
-          viewBox={`0 0 ${map.width} ${map.height}`}
-          role="img"
-          aria-label={`Map of ${map.regions.length} lands in year ${generation * YEARS}`}
-        >
-          <defs>
-            <marker
-              id="route-head"
-              viewBox="0 0 10 10"
-              refX="6"
-              refY="5"
-              markerWidth="5"
-              markerHeight="5"
-              orient="auto-start-reverse"
-            >
-              <path className="route-head" d="M0,0 L10,5 L0,10 z" />
-            </marker>
-          </defs>
-          <g className="lands">
-            {map.regions.map((r) => {
-              const colour = tint(r.id);
-              const points = r.outline.map(([x, y]) => `${x},${y}`).join(" ");
-              const sea = r.terrain === "sea";
-              return (
-                <g key={r.id} onClick={sea ? undefined : () => setPicked(r.id)}>
-                  <title>{sea ? "Sea" : (nameOf(r.id) ?? `Unnamed ${TERRAIN_NAME[r.terrain].toLowerCase()}`)}</title>
-                  <polygon
-                    className={`land terrain-${r.terrain}${sea ? "" : " open"}${r.id === land ? " shown" : ""}`}
-                    points={points}
-                  />
-                  {colour ? <polygon className="claim" points={points} style={{ fill: colour }} /> : null}
-                </g>
-              );
-            })}
-          </g>
-          <g className="isoglosses">
-            {isoglosses.map(({ a, b, ends: [[x1, y1], [x2, y2]] }) => (
-              <line key={`${a}-${b}`} className="isogloss" x1={x1} y1={y1} x2={x2} y2={y2} />
-            ))}
-          </g>
-          {names ? (
-            <g className="place-names" aria-hidden="true">
-              {overview.places.map((p) => {
-                const [x, y] = map.regions[p.region].site;
-                const here = placed.byRegion.get(p.region)?.length ?? 0;
-                const top = here > 0 ? y - (here / 2) * LINE - 0.06 : y;
-                return (
-                  <text key={p.region} x={x} y={top} className={here > 0 ? "place-name" : "place-name left"}>
-                    {p.names.at(-1)!.spelled}
-                  </text>
-                );
-              })}
-            </g>
-          ) : null}
-          {routes ? (
-            <g className="routes">
-              {overview.moves.map((m, i) => {
-                const mover = overview.communities[m.community];
-                const age = generation - m.generation;
-                const mine = m.community === chosen.id;
-                return (
-                  <path
-                    key={i}
-                    className={`route${m.overseas ? " overseas" : ""}${mine ? " chosen" : ""}`}
-                    d={route(map.regions[m.from].site, map.regions[m.to].site)}
-                    markerEnd="url(#route-head)"
-                    style={{
-                      stroke: hue(family(mover)),
-                      strokeOpacity: mine ? 1 : 0.3 + 0.6 * Math.max(0, 1 - age / ROUTE_FADE),
-                    }}
-                  >
-                    <title>
-                      {`${mover.name} ${m.kind === "split" ? "went out" : "moved"} to ${nameOf(m.to) ?? "new land"}${m.overseas ? " by sea" : ""}, year ${m.generation * YEARS}`}
-                    </title>
-                  </path>
-                );
-              })}
-            </g>
-          ) : null}
-          <g className="dealings">
-            {dealings.map((k, i) => {
-              const [ax, ay] = placed.at.get(k.a)!;
-              const [bx, by] = placed.at.get(k.b)!;
-              return (
-                <line
-                  key={i}
-                  className={`dealing dealing-${k.kind}`}
-                  x1={ax}
-                  y1={ay}
-                  x2={bx}
-                  y2={by}
-                  style={{ strokeOpacity: 0.35 + 0.65 * k.intensity }}
-                />
-              );
-            })}
-          </g>
-          <g className="peoples">
-            {overview.communities.map((c) => {
-              const [x, y] = placed.at.get(c.id)!;
-              const word = wordBy.get(c.id);
-              const label = show === "words" ? (word?.spelled ?? "—") : c.name;
-              return (
-                <g
-                  key={c.id}
-                  className={c.id === selected ? "people chosen" : "people"}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={show === "words" ? `${c.name}: ${label}` : c.name}
-                  onClick={() => choose(c.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      choose(c.id);
-                    }
-                  }}
-                >
-                  <title>
-                    {show === "words" && word
-                      ? `${c.name}: ${word.spelled} /${word.ipa}/`
-                      : `${c.name}, ${Math.round(c.size).toLocaleString()} souls`}
-                  </title>
-                  <text
-                    x={x}
-                    y={y}
-                    className={`hand-${family(c) % 5}`}
-                    style={{ fill: show === "words" && word ? hue(word.group) : hue(family(c)) }}
-                  >
-                    {label}
-                  </text>
-                </g>
-              );
-            })}
-          </g>
-        </svg>
+        <MapView
+          map={map}
+          overview={overview}
+          generation={generation}
+          tint={tint}
+          names={names}
+          routes={routes}
+          contacts={contacts}
+          chosen={new Set([chosen.id])}
+          lands={new Set([land])}
+          onPeople={choose}
+          onLand={setPicked}
+        />
       </figure>
 
       <aside className="atlas-key">
@@ -577,36 +361,4 @@ export function Atlas({
       </aside>
     </main>
   );
-}
-
-/// When and how people `c` came to have sound change `law`: before their
-/// speech parted from its parent's, from a neighbour, or of themselves.
-function howCame(law: Law, c: Community, overview: Overview): string {
-  const year = `year ${law.generation * YEARS}`;
-  const variety = overview.varieties[c.variety];
-  if (variety.forkedAt !== null && variety.parent !== null && law.generation <= variety.forkedAt) {
-    return `${year}, before their speech parted from ${overview.varieties[variety.parent].name}`;
-  }
-  if (law.from !== null) {
-    const source = overview.communities.find((k) => k.variety === law.from);
-    return `${year}, spreading from ${source ? `the ${source.name}` : overview.varieties[law.from].name}`;
-  }
-  return `${year}, arising among them`;
-}
-
-/// How a land came by one of its names, given the name before it.
-function howNamed(name: PlaceName, before: PlaceName | undefined, overview: Overview): string {
-  const meaning = `“${name.meaning}”`;
-  switch (name.origin) {
-    case "coined": {
-      const by = name.by === null ? null : overview.communities[name.by]?.name;
-      return `${meaning}, named in ${name.language}${by ? ` by the ${by}` : ""}`;
-    }
-    case "borrowed":
-      return `${meaning}, ${before ? `${before.spelled} ` : ""}as ${name.language} heard it`;
-    case "inherited":
-      return `came down into ${name.language}`;
-    case "kept":
-      return `kept when its people took up ${name.language}`;
-  }
 }

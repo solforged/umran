@@ -10,6 +10,7 @@ import { Modal } from "./components/Modal";
 import { Recto } from "./components/Recto";
 import { Shelf } from "./components/Shelf";
 import { Timeline } from "./components/Timeline";
+import { Stage } from "./components/Stage";
 import { TitlePage } from "./components/TitlePage";
 import { Verso } from "./components/Verso";
 import { sampleBook } from "./sample";
@@ -37,7 +38,7 @@ type View =
   | { kind: "book"; id: string }
   | { kind: "recovery"; what: string; raw: string; error: string };
 
-type Page = "chronicle" | "atlas" | "appendix";
+type Page = "stage" | "chronicle" | "atlas" | "appendix";
 
 function foundingAction(f: Founding): Action {
   return { kind: "found", naming: f.naming, design: f.design, seed: f.seed, power: f.power, openness: f.openness };
@@ -53,7 +54,7 @@ export default function App() {
   const [community, setCommunity] = useState(0);
   const [concept, setConcept] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogKind | null>(null);
-  const [page, setPage] = useState<Page>("chronicle");
+  const [page, setPage] = useState<Page>("stage");
   const [worldMap, setWorldMap] = useState<WorldMap | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -88,7 +89,7 @@ export default function App() {
     setCommunity(0);
     setConcept(null);
     setDialog(null);
-    setPage("chronicle");
+    setPage("stage");
     setError(null);
     setInfo(null);
     setVersion((v) => v + 1);
@@ -313,6 +314,90 @@ export default function App() {
 
   const title = shelf.books.find((b) => b.id === view.id)?.title ?? "A new book";
 
+  const notices = (
+    <>
+      {overview.savedRevision !== null ? (
+        <p className="notice">
+          This history was saved with engine revision {overview.savedRevision}; this is revision{" "}
+          {overview.revision}, so its words may differ from when it was saved.
+        </p>
+      ) : null}
+      {error ? (
+        <p className="notice error" role="alert">
+          {error} <button type="button" className="link" onClick={() => setError(null)}>Dismiss</button>
+        </p>
+      ) : null}
+      {saveError ? <p className="notice error">{saveError}</p> : null}
+      {info ? (
+        <p className="notice" role="status">
+          {info} <button type="button" className="link" onClick={() => setInfo(null)}>Dismiss</button>
+        </p>
+      ) : null}
+    </>
+  );
+
+  const strike = () => {
+    engine.current?.undo();
+    setViewing(null);
+    setVersion((v) => v + 1);
+    persist();
+  };
+
+  const dialogs =
+    dialog === "found" ? (
+      <Modal open wide title="A new people arrives" onClose={() => setDialog(null)}>
+        <Designer
+          catalog={catalog}
+          newWorld={false}
+          onCancel={() => setDialog(null)}
+          onFound={(f) => {
+            setDialog(null);
+            perform(foundingAction(f));
+          }}
+        />
+      </Modal>
+    ) : dialog ? (
+      <ActionDialog
+        kind={dialog}
+        catalog={catalog}
+        overview={overview}
+        selected={selected}
+        onClose={() => setDialog(null)}
+        onAction={(action) => {
+          setDialog(null);
+          perform(action);
+        }}
+      />
+    ) : null;
+
+  if (page === "stage" && worldMap) {
+    return (
+      <div className="app">
+        <Stage
+          engine={engine.current}
+          map={worldMap}
+          version={version}
+          generation={generation}
+          overview={overview}
+          title={title}
+          notices={notices}
+          canUndo={overview.timeline.length > 1}
+          selected={selected}
+          onSelect={setCommunity}
+          onShelf={toShelf}
+          onBook={() => setPage("chronicle")}
+          onScrub={scrub}
+          onTick={tick}
+          onStop={persist}
+          onNextEvent={() => nextEvent(EVENT_LIMIT)}
+          onUndo={strike}
+          onDialog={setDialog}
+        />
+        {dialogs}
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <header className="running-head">
@@ -334,6 +419,9 @@ export default function App() {
       </header>
 
       <nav className="thumbs" aria-label="Sections of the book">
+        <button type="button" onClick={() => setPage("stage")}>
+          Stage
+        </button>
         <button type="button" aria-current={page === "chronicle"} onClick={() => setPage("chronicle")}>
           Chronicle
         </button>
@@ -347,23 +435,7 @@ export default function App() {
 
       <Timeline overview={overview} generation={generation} onScrub={scrub} />
 
-      {overview.savedRevision !== null ? (
-        <p className="notice">
-          This history was saved with engine revision {overview.savedRevision}; this is revision{" "}
-          {overview.revision}, so its words may differ from when it was saved.
-        </p>
-      ) : null}
-      {error ? (
-        <p className="notice error" role="alert">
-          {error} <button type="button" className="link" onClick={() => setError(null)}>Dismiss</button>
-        </p>
-      ) : null}
-      {saveError ? <p className="notice error">{saveError}</p> : null}
-      {info ? (
-        <p className="notice" role="status">
-          {info} <button type="button" className="link" onClick={() => setInfo(null)}>Dismiss</button>
-        </p>
-      ) : null}
+      {notices}
 
       {page === "appendix" ? (
         <Appendix
@@ -404,12 +476,7 @@ export default function App() {
             onTick={tick}
             onStop={persist}
             onNextEvent={() => nextEvent(EVENT_LIMIT)}
-            onStrike={() => {
-              engine.current?.undo();
-              setViewing(null);
-              setVersion((v) => v + 1);
-              persist();
-            }}
+            onStrike={strike}
           />
           <Recto
             engine={engine.current}
@@ -428,31 +495,7 @@ export default function App() {
         </main>
       )}
 
-      {dialog === "found" ? (
-        <Modal open wide title="A new people arrives" onClose={() => setDialog(null)}>
-          <Designer
-            catalog={catalog}
-            newWorld={false}
-            onCancel={() => setDialog(null)}
-            onFound={(f) => {
-              setDialog(null);
-              perform(foundingAction(f));
-            }}
-          />
-        </Modal>
-      ) : dialog ? (
-        <ActionDialog
-          kind={dialog}
-          catalog={catalog}
-          overview={overview}
-          selected={selected}
-          onClose={() => setDialog(null)}
-          onAction={(action) => {
-            setDialog(null);
-            perform(action);
-          }}
-        />
-      ) : null}
+      {dialogs}
 
     </div>
   );

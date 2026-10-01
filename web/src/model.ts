@@ -225,6 +225,12 @@ export interface Annal {
   /// The apparatus: what a linguist would note, such as sound laws.
   notes: string[];
   variety: number | null;
+  /// The peoples it tells of.
+  peoples: number[];
+  /// The lands it tells of: where peoples went, and where from.
+  lands: number[];
+  /// The sound laws it tells of, by id.
+  laws: string[];
 }
 
 export interface Origin {

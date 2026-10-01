@@ -26,6 +26,12 @@ pub(crate) struct Annal {
     pub notes: Vec<String>,
     /// The variety a sound law changed, so a view can show one language's.
     pub variety: Option<usize>,
+    /// The peoples it tells of, so a view can link to them.
+    pub peoples: Vec<usize>,
+    /// The lands it tells of: where peoples went, and where from.
+    pub lands: Vec<usize>,
+    /// The sound laws it tells of, by id.
+    pub laws: Vec<&'static str>,
 }
 
 const FOUND: &[&str] = &[
@@ -146,12 +152,15 @@ fn tell(world: &World, keys: &[u64], options: &[&str], fill: &[(&str, &str)]) ->
 pub(crate) fn annals(world: &World) -> Vec<Annal> {
     let meaning = |c: usize| world.communities[c].name.meaning.as_str();
     let mut out: Vec<Annal> = Vec::new();
-    let entry = |generation, kind, text| Annal {
+    let entry = |generation, kind, text, peoples: &[usize], lands: &[usize]| Annal {
         generation,
         kind,
         text,
         notes: Vec::new(),
         variety: None,
+        peoples: peoples.to_vec(),
+        lands: lands.to_vec(),
+        laws: Vec::new(),
     };
     for &(generation, ref event) in &world.events {
         let name = |c: usize| world.community_name_at(c, generation);
@@ -162,6 +171,8 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 generation,
                 kind,
                 tell(world, &all, options, &[("a", &name(a)), ("b", &name(b))]),
+                &[a, b],
+                &[],
             )
         };
         let tongue = |c: usize| world.language_title_at(world.communities[c].variety, generation);
@@ -180,6 +191,8 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                         ("l", &tongue(community)),
                     ],
                 ),
+                &[community],
+                &[],
             ),
             WorldEvent::Split {
                 community,
@@ -202,6 +215,8 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                             ("to", &place(world, to, generation)),
                         ],
                     ),
+                    &[community, daughter],
+                    &[from, to],
                 );
                 if from != to {
                     annal.notes.extend(place_note(world, to, generation));
@@ -231,6 +246,8 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                             ("to", &place(world, to, generation)),
                         ],
                     ),
+                    &[community],
+                    &[from, to],
                 );
                 annal.notes.extend(place_note(world, to, generation));
                 annal
@@ -253,6 +270,8 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                         ("l", &world.language_title_at(variety, generation)),
                     ],
                 ),
+                &[community, toward],
+                &[],
             ),
             WorldEvent::Met { a, b, kind } => pair("contact", contact_wording(kind), a, b),
             WorldEvent::Parted { a, b, kind } => pair("parted", parting_wording(kind), a, b),
@@ -315,7 +334,7 @@ fn sound_changes(world: &World) -> Vec<Annal> {
     for (v, variety) in world.varieties.iter().enumerate() {
         // A daughter's inherited laws are told in its parent's annals.
         let from = variety.parent.map_or(0, |f| f.generation + 1);
-        let mut by_generation: BTreeMap<u32, Vec<&str>> = BTreeMap::new();
+        let mut by_generation: BTreeMap<u32, Vec<&'static str>> = BTreeMap::new();
         for &(generation, id) in variety.laws.iter().filter(|(g, _)| *g >= from) {
             by_generation.entry(generation).or_default().push(id);
         }
@@ -351,6 +370,11 @@ fn sound_changes(world: &World) -> Vec<Annal> {
                 text,
                 notes: ids.iter().map(|id| note(id)).collect(),
                 variety: Some(v),
+                peoples: (0..world.communities.len())
+                    .filter(|&c| world.communities[c].variety == v)
+                    .collect(),
+                lands: Vec::new(),
+                laws: ids,
             });
         }
     }
