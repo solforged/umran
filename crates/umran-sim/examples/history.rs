@@ -202,6 +202,14 @@ fn main() {
                 "  gen {generation:>3}  {} is spelled anew",
                 world.language_title(*variety)
             ),
+            WorldEvent::Fixed { state } => println!(
+                "  gen {generation:>3}  {} is fixed as a classical form",
+                world.states[*state].name.meaning
+            ),
+            WorldEvent::Vernacular { variety, .. } => println!(
+                "  gen {generation:>3}  {} is written in its own right",
+                world.language_title(*variety)
+            ),
         }
     }
 

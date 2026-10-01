@@ -272,6 +272,23 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   god and demon as cognates across languages (Sanskrit *deva* "god",
   Avestan *daēva* "demon"). Rival doctrines and iconoclasm are not yet
   modelled.
+- Diglossia (`diglossia.rs`): a state's written standard is fixed as a
+  classical form, a frozen copy pushed as a variety of its own, either by
+  grammarians once it has been written twelve generations (a tenth
+  likely each generation after) or when its state falls after six
+  generations of writing. Its speakers and the speakers of every language
+  descended from it then write the classical form, not their speech:
+  their speech counts as unwritten, changes at the ordinary pace again
+  (the standard's brake moves to the frozen form), and borrows learned
+  words from the classical form, which stands above any people that
+  learns from it (doublets, as French *fragile* beside *frêle*). Readers
+  of other languages that deal with them borrow from it too, half as
+  closely. The classical form outlives its state. A language is written
+  in its own right again (`Variety::vernacular`) when a state takes it as
+  its standard, when a faith that translates its written teaching reaches
+  its speakers, or when a founder's written teaching is in it; the
+  classical form then lends to it half as closely. Over many seeds most
+  worlds fix a classical form, the first near year 4,450.
 - Social identity, territory, ancestry, and language are independent.
 - Every random draw comes from a ChaCha8 stream keyed by purpose
   (`rng.rs`), so adding a process never shifts existing draws.
@@ -295,11 +312,10 @@ cargo run --release -p umran-sim --example audit -- [seeds] [generations]
 ## Not yet modelled
 
 Rivers, climates, cities with speech of their own (a city's speech is
-its court's), diglossia (a standard frozen beside everyday speech),
-compounding and derivation after founding beyond renewal and new
-meanings, inflection, stress, tone, vowel harmony, consonant length,
-prenasalized stops, syntax and alignment, rival doctrines within a
-faith. Each catalog law happens at most once in a lineage, so over long
-spans languages run short of changes they have not had, and waves grow
-rarer with them; real sound change goes on recycling the same kinds of
-change.
+its court's; no koiné), purism within a classical form, compounding and
+derivation after founding beyond renewal and new meanings, inflection,
+stress, tone, vowel harmony, consonant length, prenasalized stops,
+syntax and alignment, rival doctrines within a faith. Each catalog law
+happens at most once in a lineage, so over long spans languages run
+short of changes they have not had, and waves grow rarer with them; real
+sound change goes on recycling the same kinds of change.

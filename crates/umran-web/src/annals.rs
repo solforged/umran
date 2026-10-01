@@ -14,8 +14,8 @@ use umran_sim::names::PlaceOrigin;
 use umran_sim::rng::{index, key, stream};
 use umran_sim::world::{ContactKind, Hardship};
 use umran_sim::{
-    Challenge, Craft, Event, Fall, Form, Lexeme, Livelihood, Origin, Revelation, Rise, Variety,
-    World, WorldEvent, catalog,
+    Challenge, Craft, Event, Fall, Fixing, Form, Lexeme, Livelihood, Origin, Revelation, Rise,
+    Variety, Vernacular, World, WorldEvent, catalog,
 };
 
 #[derive(Clone, PartialEq, Serialize)]
@@ -23,8 +23,9 @@ pub(crate) struct Annal {
     pub generation: u32,
     /// "found", "split", "migration", "shift", "contact", "parted",
     /// "neighbours", "conquest", "spread", "displaced", "hardship",
-    /// "livelihood", "ended", "rose", "fell", "standard", "craft", "faith",
-    /// "conversion", "meaning", "respelling", or "law".
+    /// "livelihood", "ended", "rose", "fell", "standard", "classical",
+    /// "vernacular", "craft", "faith", "conversion", "meaning",
+    /// "respelling", or "law".
     pub kind: &'static str,
     /// The annalist's words. Words of the language are marked `*thus*`.
     pub text: String,
@@ -536,6 +537,10 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 ];
                 annal
             }
+            WorldEvent::Fixed { state } => state_annal(world, generation, state, "classical"),
+            WorldEvent::Vernacular { variety, by } => {
+                vernacular_annal(world, generation, variety, by)
+            }
         });
     }
     out.extend(
@@ -618,6 +623,17 @@ fn state_annal(world: &World, generation: u32, state: usize, kind: &'static str)
             }
             _ => FELL_COLLAPSED,
         },
+        "classical" => {
+            let classical = s.classical.expect("a fixed state has a classical form");
+            notes.push(format!(
+                "{} stays as it stood; everyday {tongue} now changes freely, and its speakers borrow learned words from the written form.",
+                crate::language_label(world, classical.variety)
+            ));
+            match classical.how {
+                Fixing::Age => FIXED_AGE,
+                Fixing::Fall => FIXED_FALL,
+            }
+        }
         _ => {
             notes.push(format!(
                 "{tongue} now changes slowly, and the kindred speech of the realm levels toward it."
@@ -658,6 +674,92 @@ fn state_annal(world: &World, generation: u32, state: usize, kind: &'static str)
         specimen: Vec::new(),
         states: vec![state],
         religions: Vec::new(),
+        crafts: Vec::new(),
+    }
+}
+
+const FIXED_AGE: &[&str] = &[
+    "The grammarians of {c} fixed how {l} should be written; from then on men wrote as their forefathers had spoken.",
+    "In {n}, the schools settled {l} as it stood, and taught it so ever after.",
+];
+const FIXED_FALL: &[&str] = &[
+    "{n} had fallen, but its writing outlived it: {l} was still written as the court at {c} had spoken it.",
+    "With {n} gone, its tongue lived on in writing, unchanging, while speech went its own ways.",
+];
+const VERNACULAR_STANDARD: &[&str] = &[
+    "The {p} began to write {l} as they spoke it, and no longer {k}.",
+    "In {n}, men put aside {k} and wrote {l}, the speech of the court.",
+];
+const VERNACULAR_SCRIPTURE: &[&str] = &[
+    "The {p} read {f} in their own speech, and began to write {l} as it was spoken.",
+    "The teaching of {f} was put into {l}, and the {p} began to write their own tongue.",
+];
+
+/// Speakers of `variety` beginning to write their own speech in place of
+/// a classical form.
+fn vernacular_annal(world: &World, generation: u32, variety: usize, by: Vernacular) -> Annal {
+    let tongue = world.language_title_at(variety, generation);
+    let high = world.varieties[variety]
+        .high
+        .map(|h| crate::language_label(world, h))
+        .unwrap_or_default();
+    let peoples: Vec<usize> = (0..world.communities.len())
+        .filter(|&c| world.communities[c].variety == variety)
+        .collect();
+    let people = peoples
+        .first()
+        .map(|&c| world.community_name_at(c, generation))
+        .unwrap_or_default();
+    let (options, states, religions, realm, faith) = match by {
+        Vernacular::Standard { state } => {
+            let s = &world.states[state];
+            let realm = world.varieties[world.communities[s.rulers].variety]
+                .title(s.name.form_at(generation));
+            (
+                VERNACULAR_STANDARD,
+                vec![state],
+                Vec::new(),
+                realm,
+                String::new(),
+            )
+        }
+        Vernacular::Scripture { religion } => {
+            let r = &world.religions[religion];
+            let faith = world.varieties[r.sacred].title(&r.name.form);
+            (
+                VERNACULAR_SCRIPTURE,
+                Vec::new(),
+                vec![religion],
+                String::new(),
+                faith,
+            )
+        }
+    };
+    Annal {
+        generation,
+        kind: "vernacular",
+        text: tell(
+            world,
+            &[key("vernacular"), u64::from(generation), variety as u64],
+            options,
+            &[
+                ("p", &people),
+                ("l", &tongue),
+                ("k", &high),
+                ("n", &realm),
+                ("f", &faith),
+            ],
+        ),
+        notes: vec![format!(
+            "{tongue} is written in its own right from now on; {high} still lends it learned words, more slowly."
+        )],
+        variety: Some(variety),
+        peoples,
+        lands: Vec::new(),
+        laws: Vec::new(),
+        specimen: Vec::new(),
+        states,
+        religions,
         crafts: Vec::new(),
     }
 }

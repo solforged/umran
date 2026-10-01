@@ -48,6 +48,12 @@ pub struct Variety {
     /// this language's own sound laws, as German Mailand came from
     /// Mediolanum.
     pub exonyms: Vec<(usize, Name)>,
+    /// The classical form its speakers write, or wrote before writing
+    /// their own speech (`diglossia.rs`).
+    pub high: Option<usize>,
+    /// When its speakers began to write their own speech in place of
+    /// `high`, if they have.
+    pub vernacular: Option<u32>,
 }
 
 /// A variety's descent from another.
@@ -110,6 +116,8 @@ impl Variety {
             given: Vec::new(),
             written: None,
             exonyms: Vec::new(),
+            high: None,
+            vernacular: None,
         };
         variety.given = given_stock(&variety, livelihood, &mut stream(seed, &[key("given")]));
         variety

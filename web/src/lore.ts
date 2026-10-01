@@ -18,6 +18,8 @@ import {
   Sprout,
   BookOpen,
   Hammer,
+  PenLine,
+  ScrollText,
   Sparkles,
   UserRoundMinus,
   Unlink,
@@ -47,6 +49,8 @@ export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string 
   rose: { icon: Landmark, name: "A state rises" },
   fell: { icon: CircleX, name: "A state falls" },
   standard: { icon: Languages, name: "A standard language" },
+  classical: { icon: ScrollText, name: "A classical language" },
+  vernacular: { icon: PenLine, name: "Speech is written" },
   craft: { icon: Hammer, name: "A new craft" },
   faith: { icon: Sparkles, name: "A faith is founded" },
   conversion: { icon: Sparkles, name: "A people changes faith" },
@@ -188,6 +192,12 @@ export const TERMS = {
     "A word’s meaning becoming worse. A new faith may use an older word for a god to mean a demon.",
   "learned word":
     "A word taken back from a sacred or classical language. English fragile came from Latin beside frail, which had already descended from the same Latin word.",
+  diglossia:
+    "Two forms of one language for different purposes: a fixed, written high form for law, worship, and learning, and the everyday speech everyone grows up with. Latin beside the early Romance languages and Classical Arabic beside the spoken dialects are examples.",
+  "classical language":
+    "A standard fixed as it stood, by grammarians or by the fall of its state, and written long after its speakers’ everyday speech has moved on. It keeps lending learned words.",
+  vernacular:
+    "The everyday speech of a people, as against a classical or sacred language. Writing the vernacular, as Dante did Italian, ends diglossia.",
   doublet:
     "Two words in one language that came from the same older word by different routes. English frail and fragile are a doublet: one inherited, the other learned from Latin.",
   "given name":

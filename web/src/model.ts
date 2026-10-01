@@ -175,6 +175,9 @@ export interface StateView {
   fallenTo: number | null;
   standard: number | null;
   purism: number;
+  /// Its standard frozen as a classical form, once fixed: by grammarians
+  /// ("age") or by the state's fall ("fall").
+  classical: { variety: number; fixed: number; how: "age" | "fall" } | null;
   city: number;
   lands: number[];
 }
@@ -273,6 +276,16 @@ export interface Variety {
   nameStyle: "single" | "double";
   written: number | null;
   sacredOf: number | null;
+  /// The state whose classical form it is, if it is one.
+  classicalOf: number | null;
+  /// The classical form its speakers write, or wrote before writing their
+  /// own speech.
+  high: number | null;
+  /// When its speakers began to write their own speech in place of `high`.
+  vernacular: number | null;
+  /// 0–1: how much of the core vocabulary its speech still shares with
+  /// `high`, while it is spoken.
+  keptFromHigh: number | null;
 }
 
 /// One of the few basic words shown wherever a language appears.
@@ -377,7 +390,7 @@ export interface TellingView {
 /// One chronicle entry; `variety` is set for a sound law.
 export interface Annal {
   generation: number;
-  kind: "found" | "split" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "craft" | "faith" | "conversion" | "meaning" | "respelling";
+  kind: "found" | "split" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling";
   /// The annalist's words; words of the language are marked *thus*.
   text: string;
   /// The apparatus: what a linguist would note, such as sound laws.

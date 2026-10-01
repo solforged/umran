@@ -1,5 +1,6 @@
 use crate::adapt::Adapter;
 use crate::concepts::{CONCEPTS, Concept, Field, related};
+use crate::diglossia::{CLASSICAL_PRESTIGE, Vernacular};
 use crate::form::Form;
 use crate::geography::{Map, MapSize, Terrain};
 use crate::ideas::{Craft, Religion, SACRED_INTENSITY, SACRED_PRESTIGE, living_related};
@@ -545,6 +546,12 @@ pub enum WorldEvent {
     /// The state whose standard variety `variety` is spelled it anew, as
     /// it now sounds.
     Respelled { variety: usize },
+    /// State `state`'s standard was fixed as a classical form
+    /// (`State::classical` says how).
+    Fixed { state: usize },
+    /// Speakers of `variety` began to write their own speech in place of
+    /// a classical form.
+    Vernacular { variety: usize, by: Vernacular },
 }
 
 /// What kind of bad times strike a land.
@@ -1088,6 +1095,7 @@ impl World {
         self.spread_faiths();
         self.learn_words();
         self.reform_spelling();
+        self.fix_classics();
         self.hold_places();
         self.hear_places();
     }
@@ -2324,7 +2332,8 @@ impl World {
     /// Prestige of each variety: the highest among communities at home in
     /// it, and more for a standing state's standard, whose words carry
     /// the court's standing wherever they go. A faith's sacred language
-    /// keeps its standing however few speak it.
+    /// and a state's classical form keep their standing however few speak
+    /// them.
     fn variety_prestige(&self) -> Vec<f32> {
         let mut out = vec![0.0_f32; self.varieties.len()];
         for c in &self.communities {
@@ -2337,6 +2346,11 @@ impl World {
         }
         for r in &self.religions {
             out[r.sacred] = out[r.sacred].max(SACRED_PRESTIGE);
+        }
+        for s in &self.states {
+            if let Some(k) = s.classical {
+                out[k.variety] = out[k.variety].max(CLASSICAL_PRESTIGE);
+            }
         }
         out
     }
@@ -2587,8 +2601,9 @@ impl World {
     }
 
     /// Each contact carries words both ways, mostly from the more
-    /// prestigious side, and the faithful take words from their faith's
-    /// sacred language, the more if they read. A concept's chance of being
+    /// prestigious side, the faithful take words from their faith's
+    /// sacred language, and writers from the classical form they write,
+    /// the more if they read. A concept's chance of being
     /// borrowed scales with intensity, the recipient's openness, the
     /// prestige gap, the contact's affinity for its field, and its own
     /// borrowability. The donor's current word is adapted to the
@@ -2646,6 +2661,16 @@ impl World {
                 recipient: c,
                 intensity: SACRED_INTENSITY * if reads { 2.0 } else { 1.0 },
                 kind: ContactKind::Religion,
+                levelled: false,
+            });
+        }
+        for (c, high, intensity, standing) in self.classical_sources() {
+            channels.push(Channel {
+                donor: high,
+                prestige: standing,
+                recipient: c,
+                intensity,
+                kind: ContactKind::Rule,
                 levelled: false,
             });
         }

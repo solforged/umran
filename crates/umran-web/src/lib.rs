@@ -580,6 +580,17 @@ impl Bench {
                         name_style: v.style,
                         written: v.written,
                         sacred_of: world.religions.iter().position(|r| r.sacred == id),
+                        classical_of: world.classical_of(id),
+                        high: v.high,
+                        vernacular: v.vernacular,
+                        // How much of the core its written form still
+                        // shares with its speech, while it is spoken.
+                        kept_from_high: v.high.filter(|_| spoken[id]).map(|h| {
+                            umran_sim::compare::intelligibility(
+                                &world.varieties[h].lexicon,
+                                &v.lexicon,
+                            )
+                        }),
                     }
                 })
                 .collect(),
@@ -920,13 +931,17 @@ impl Bench {
                         r.name.meaning
                     )
                 }
+                WorldEvent::Fixed { state } => {
+                    format!("{} fixed in writing", latest.states[*state].name.meaning)
+                }
                 // Too frequent to mark: told in the annals instead.
                 WorldEvent::Spread { .. }
                 | WorldEvent::Displaced { .. }
                 | WorldEvent::Learnt { .. }
                 | WorldEvent::Converted { .. }
                 | WorldEvent::Pejorated { .. }
-                | WorldEvent::Respelled { .. } => continue,
+                | WorldEvent::Respelled { .. }
+                | WorldEvent::Vernacular { .. } => continue,
             };
             out.push(Marker {
                 generation: *generation,
@@ -1791,6 +1806,17 @@ struct VarietyView {
     written: Option<u32>,
     /// The religion whose sacred language it is, if it is one.
     sacred_of: Option<usize>,
+    /// The state whose classical form it is, if it is one.
+    classical_of: Option<usize>,
+    /// The classical form its speakers write, or wrote before writing
+    /// their own speech.
+    high: Option<usize>,
+    /// When its speakers began to write their own speech in place of
+    /// `high`.
+    vernacular: Option<u32>,
+    /// 0–1: how much of the core vocabulary its speech still shares with
+    /// `high`, while it is spoken.
+    kept_from_high: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -1846,11 +1872,21 @@ struct StateView {
     standard: Option<u32>,
     /// 0–1: how closely its standard is guarded against foreign words.
     purism: f32,
+    /// Its standard frozen as a classical form, once fixed.
+    classical: Option<ClassicalView>,
     /// How many live in its city, the rulers its tribute feeds.
     city: f32,
     /// Every land it holds: its rulers' and its subjects'. Empty once it
     /// has fallen.
     lands: Vec<usize>,
+}
+
+#[derive(Serialize)]
+struct ClassicalView {
+    variety: usize,
+    fixed: u32,
+    /// "age" when grammarians fixed it, "fall" when its state fell.
+    how: umran_sim::Fixing,
 }
 
 #[derive(Serialize)]
@@ -2017,6 +2053,11 @@ fn state_views(world: &World) -> Vec<StateView> {
                 },
                 standard: s.standard,
                 purism: s.purism,
+                classical: s.classical.map(|k| ClassicalView {
+                    variety: k.variety,
+                    fixed: k.fixed,
+                    how: k.how,
+                }),
                 city: world.city(id),
                 lands,
             }
@@ -2044,11 +2085,14 @@ fn craft_description(craft: Craft) -> &'static str {
 }
 
 /// A language's name for display: a faith's sacred language is the
-/// founder's speech as it stood, so it is marked as such.
+/// founder's speech as it stood, and a classical form a standard as it
+/// stood when fixed, so each is marked as such.
 pub(crate) fn language_label(world: &World, variety: usize) -> String {
     let title = world.language_title(variety);
     if world.religions.iter().any(|r| r.sacred == variety) {
         format!("Sacred {title}")
+    } else if world.classical_of(variety).is_some() {
+        format!("Classical {title}")
     } else {
         title
     }

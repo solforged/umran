@@ -48,6 +48,11 @@ writes its own history.
   dialects toward it, and draws subjects of other families to shift to
   it. Some standards keep foreign words out. When the state falls, its
   dialects drift apart again, as Latin did into the Romance languages.
+- **Classical languages.** A written standard is in time fixed as it
+  stood, by grammarians or by its state's fall, and people go on writing
+  it while their speech moves on, as Latin was written over Romance
+  Europe. It lends learned words to its daughters until they are written
+  in their own right, by a new state or a translated scripture.
 - **Crafts, faiths, and writing.** Metalworking, riding, seafaring, and
   writing begin where they can and pass from people to people, and each
   brings words a language lacked: borrowed from the teachers, stretched
@@ -136,7 +141,7 @@ AGENTS.md          architecture notes and the rules every change keeps
 ## Status
 
 Umran is a work in progress. Not yet modelled: stress, tone, vowel harmony,
-inflection, syntax, rivers, climates, and diglossia, among others. The full
+inflection, syntax, rivers, and climates, among others. The full
 list is at the end of
 [`docs/engine.md`](docs/engine.md#not-yet-modelled).
 

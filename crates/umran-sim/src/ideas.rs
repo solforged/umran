@@ -20,6 +20,7 @@
 
 use crate::adapt::Adapter;
 use crate::concepts::{CONCEPTS, Concept, Relation, by_id, related};
+use crate::diglossia::Vernacular;
 use crate::form::Form;
 use crate::geography::Terrain;
 use crate::lexicon::{Entry, Event, LexemeId, Origin};
@@ -401,7 +402,7 @@ impl World {
         k.crafts.sort();
         let v = k.variety;
         if craft == Craft::Writing {
-            self.varieties[v].written.get_or_insert(self.generation);
+            self.begin_writing(v);
         }
         self.events.push((
             self.generation,
@@ -415,12 +416,13 @@ impl World {
 
     /// Every people that holds an idea has words for its meanings. Where
     /// its language has none yet, it finds one (`find_word`). A language
-    /// is written from when a people speaking it first writes.
+    /// is written from when a people speaking it first writes, unless they
+    /// write a classical form instead.
     pub(crate) fn learn_words(&mut self) {
         for c in self.living().collect::<Vec<_>>() {
             let v = self.communities[c].variety;
             if self.holds(c, Need::Craft(Craft::Writing)) {
-                self.varieties[v].written.get_or_insert(self.generation);
+                self.begin_writing(v);
             }
             for concept in CONCEPTS {
                 let Some(need) = need(concept) else { continue };
@@ -748,6 +750,11 @@ impl World {
         self.religions[index].name = self.faith_name(community, &founder, &mut rng);
         self.events
             .push((generation, WorldEvent::Revealed { religion: index }));
+        // He teaches in his own speech, as the Buddha did in a vernacular
+        // rather than Sanskrit; written down, it is written in its own right.
+        if self.religions[index].scripture {
+            self.write_vernacular(v, Vernacular::Scripture { religion: index });
+        }
         index
     }
 
@@ -886,7 +893,8 @@ impl World {
     /// a faith that keeps its sacred language may turn their old god into
     /// a demon and their old priest into a sorcerer, taking the sacred
     /// words in their place. They take names from the faith, and may
-    /// learn to write with its scripture.
+    /// learn to write with its scripture; a scripture translated into
+    /// their speech has them write their own speech.
     pub fn convert(&mut self, community: usize, religion: usize, from: Option<usize>) {
         let old = self.communities[community].faith;
         if old == Some(religion) {
@@ -938,6 +946,9 @@ impl World {
         }
         if r.scripture && rng.r#gen::<f32>() < SCRIPTURE {
             self.learn(community, Craft::Writing, from);
+        }
+        if r.scripture && r.translates {
+            self.write_vernacular(v, Vernacular::Scripture { religion });
         }
     }
 

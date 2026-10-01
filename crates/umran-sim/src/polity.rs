@@ -11,6 +11,7 @@
 //! rulers, so borrowing, waves, and shift work through it as through any
 //! contact. When that contact ends, the subject has thrown off the rule.
 
+use crate::diglossia::{Classical, Vernacular};
 use crate::ideas::WRITTEN_PACE;
 use crate::names::{MAX_PEOPLE_NAME, Name, clipped};
 use crate::rng::{key, stream};
@@ -87,6 +88,8 @@ pub struct State {
     pub standard: Option<u32>,
     /// 0–1: how closely its standard is guarded against foreign words.
     pub purism: f32,
+    /// Its standard frozen as a classical form, once fixed.
+    pub classical: Option<Classical>,
 }
 
 /// A people under a state's rule.
@@ -227,9 +230,12 @@ impl World {
     }
 
     /// How fast variety `v` takes up sound laws and new words: slower if
-    /// it is a standing state's standard, and slower still if written.
+    /// it is a standing state's standard, and slower still if written; at
+    /// the ordinary pace again once its speakers write a classical form
+    /// instead, since the brake is then on the classical form.
     pub(crate) fn pace(&self, v: usize) -> f32 {
         match self.standard_state(v) {
+            Some(_) if self.diglossic(v) => 1.0,
             Some(_) if self.varieties[v].written.is_some() => STANDARD_PACE * WRITTEN_PACE,
             Some(_) => STANDARD_PACE,
             None => 1.0,
@@ -307,6 +313,7 @@ impl World {
             fell: None,
             standard: None,
             purism,
+            classical: None,
         });
         self.events
             .push((self.generation, WorldEvent::Rose { state: index }));
@@ -408,8 +415,9 @@ impl World {
         }
     }
 
-    /// State `s` falls: its subjects are freed.
-    fn fall(&mut self, s: usize, how: Fall) {
+    /// State `s` falls: its subjects are freed, and its written standard
+    /// is left behind as a classical form.
+    pub(crate) fn fall(&mut self, s: usize, how: Fall) {
         let subjects: Vec<usize> = self.states[s].subjects().collect();
         for c in subjects {
             self.leave(s, c);
@@ -417,6 +425,7 @@ impl World {
         self.states[s].fell = Some((self.generation, how));
         self.events
             .push((self.generation, WorldEvent::Fell { state: s }));
+        self.fix_at_fall(s);
     }
 
     /// Keeps states true to the peoples they hold: a subject that came to
@@ -568,11 +577,19 @@ impl World {
                 ],
             );
             if rng.r#gen::<f32>() < STANDARD_CHANCE {
-                self.states[s].standard = Some(self.generation);
-                self.events
-                    .push((self.generation, WorldEvent::Standard { state: s }));
+                self.adopt_standard(s);
             }
         }
+    }
+
+    /// State `s` takes its court speech as its standard. If its speakers
+    /// wrote a classical form, they now write their own speech.
+    pub(crate) fn adopt_standard(&mut self, s: usize) {
+        self.states[s].standard = Some(self.generation);
+        self.events
+            .push((self.generation, WorldEvent::Standard { state: s }));
+        let v = self.communities[self.states[s].rulers].variety;
+        self.write_vernacular(v, Vernacular::Standard { state: s });
     }
 }
 
