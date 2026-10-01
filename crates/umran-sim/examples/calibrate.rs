@@ -1,9 +1,9 @@
 //! Averages drift statistics over many seeds, for tuning `Params`.
 //!
-//! cargo run --release -p langgen-sim --example calibrate -- [seeds] [generations] [preset]
+//! cargo run --release -p umran-sim --example calibrate -- [seeds] [generations] [preset]
 
-use langgen_sim::{Lexicon, Params, SoundProfile, World};
 use std::collections::HashMap;
+use umran_sim::{Lexicon, Params, SoundProfile, World};
 
 fn kept(lexicon: &Lexicon, ranks: std::ops::RangeInclusive<u8>) -> f32 {
     let slots: Vec<_> = lexicon
@@ -44,7 +44,7 @@ fn main() {
             .filter(|s| lexicon.keeps_founding_word(s.concept))
             .count() as f32
             / culture.len() as f32;
-        let mut forms: HashMap<&langgen_sim::Form, usize> = HashMap::new();
+        let mut forms: HashMap<&umran_sim::Form, usize> = HashMap::new();
         for slot in &lexicon.slots {
             if let Some(id) = slot.dominant() {
                 *forms.entry(&lexicon.get(id).form).or_default() += 1;

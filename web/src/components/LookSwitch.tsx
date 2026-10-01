@@ -10,6 +10,7 @@ const LOOKS = [
   ["workshop", "Plain workshop"],
 ] as const;
 
+// Kept from the project's first name so the chosen look survives the rename.
 const KEY = "langgen.look";
 
 function saved(): string {

@@ -1,4 +1,4 @@
-// Presentation types mirroring `crates/langgen-web`. The engine owns all
+// Presentation types mirroring `crates/umran-web`. The engine owns all
 // linguistic state; these are read-only views of one generation.
 
 export type ContactKind = "neighbours" | "trade" | "rule" | "religion" | "intermarriage";

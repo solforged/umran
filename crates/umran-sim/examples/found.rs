@@ -1,9 +1,9 @@
 //! Prints a newly founded variety: inventory, then every root by field.
 //!
-//! cargo run -p langgen-sim --example found -- [seed] [profile] [flavor...]
+//! cargo run -p umran-sim --example found -- [seed] [profile] [flavor...]
 
-use langgen_sim::{CATALOG, Flavor, Form, Origin, SoundProfile, Variety};
 use std::collections::HashMap;
+use umran_sim::{CATALOG, Flavor, Form, Origin, SoundProfile, Variety};
 
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -24,7 +24,7 @@ fn main() {
     });
     let variety = Variety::found(seed, &profile);
 
-    let ipa = |ids: &[langgen_sim::PhonemeId]| -> Vec<&str> {
+    let ipa = |ids: &[umran_sim::PhonemeId]| -> Vec<&str> {
         ids.iter().map(|id| CATALOG.get(*id).ipa()).collect()
     };
     println!("{} · seed {seed}", profile.name);

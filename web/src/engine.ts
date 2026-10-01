@@ -1,4 +1,4 @@
-import init, { Workbench } from "./wasm/langgen_web";
+import init, { Workbench } from "./wasm/umran_web";
 import type {
   Naming,
   Action,

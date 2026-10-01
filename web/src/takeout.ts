@@ -21,7 +21,7 @@ export function fileName(title: string, extension: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
-  return `${slug || "langgen"}.${extension}`;
+  return `${slug || "umran"}.${extension}`;
 }
 
 export function origin(row: LexiconRow): string {

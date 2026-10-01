@@ -31,10 +31,12 @@ still works but the UI warns that its words may differ. Resolved-state saves
 remain possible later work if exact preservation across versions matters.
 
 The browser keeps a shelf of saved worlds (`web/src/shelf.ts`): each
-world's history autosaves under localStorage key `langgen.book.<id>` (the
-key predates worlds and stays, so older saves open), and
+world's history autosaves under localStorage key `langgen.book.<id>`, and
 `langgen.shelf.v1` lists them with their titles and the one last open.
-The single-world save `langgen.sim.v1` is copied onto the shelf once as "An
+These keys, the look key `langgen.look`, and the recipe format
+`langgen-sim-recipe` keep the project's first name and the shelf's first
+metaphor, so saves made before Umran was renamed still open. The
+single-world save `langgen.sim.v1` is copied onto the shelf once as "An
 earlier history" and left in place, as is the older `langgen.workbench.v2`.
 Worlds leave the shelf only when the reader removes one and confirms.
 Unreadable saves or an unreadable shelf open recovery without being

@@ -1,6 +1,6 @@
 # Engine model
 
-How `crates/langgen-sim` models language change. The rules that must
+How `crates/umran-sim` models language change. The rules that must
 always hold are summarized in `AGENTS.md`; this is the fuller picture.
 
 - `World` (`world.rs`) steps communities, varieties, and contacts through
@@ -154,14 +154,14 @@ Each example prints a readable report; profiles are preset ids
 (a flavor such as `familiar`, `germanic`, `semitic`, `polynesian`).
 
 ```sh
-cargo run --release -p langgen-sim --example found -- <seed> <profile>
-cargo run --release -p langgen-sim --example drift -- <seed> <profile> <generations> [flavor...]
-cargo run --release -p langgen-sim --example contact -- <seed> <donor> <recipient> <kind> <generations> <seeds>
-cargo run --release -p langgen-sim --example family -- <seed> <proto> <outsider> <generations>
-cargo run --release -p langgen-sim --example history -- <seed> <generations>
-cargo run --release -p langgen-sim --example calibrate -- <seeds> <generations> [profile]
-cargo run --release -p langgen-sim --example length -- [seeds] [generations]
-cargo run --release -p langgen-sim --example audit -- [seeds] [generations]
+cargo run --release -p umran-sim --example found -- <seed> <profile>
+cargo run --release -p umran-sim --example drift -- <seed> <profile> <generations> [flavor...]
+cargo run --release -p umran-sim --example contact -- <seed> <donor> <recipient> <kind> <generations> <seeds>
+cargo run --release -p umran-sim --example family -- <seed> <proto> <outsider> <generations>
+cargo run --release -p umran-sim --example history -- <seed> <generations>
+cargo run --release -p umran-sim --example calibrate -- <seeds> <generations> [profile]
+cargo run --release -p umran-sim --example length -- [seeds] [generations]
+cargo run --release -p umran-sim --example audit -- [seeds] [generations]
 ```
 
 ## Not yet modelled

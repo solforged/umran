@@ -235,7 +235,7 @@ export default function App() {
         <p>{view.error}</p>
         <p>It has not been changed or deleted. Download it before going on.</p>
         <div className="row">
-          <button type="button" onClick={() => download("langgen-unreadable.json", view.raw)}>
+          <button type="button" onClick={() => download("umran-unreadable.json", view.raw)}>
             Download saved data
           </button>
           <button type="button" onClick={() => setView({ kind: "shelf" })}>

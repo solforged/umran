@@ -1,9 +1,9 @@
 //! Runs one variety through generations and prints what happened.
 //!
-//! cargo run -p langgen-sim --example drift -- [seed] [profile] [generations] [flavor...]
-//! e.g. cargo run -p langgen-sim --example drift -- 42 neutral 40 pie-like
+//! cargo run -p umran-sim --example drift -- [seed] [profile] [generations] [flavor...]
+//! e.g. cargo run -p umran-sim --example drift -- 42 neutral 40 pie-like
 
-use langgen_sim::{
+use umran_sim::{
     CATALOG, Event, Flavor, Form, Lexeme, Origin, Params, SoundProfile, World, catalog,
 };
 
@@ -42,7 +42,7 @@ fn main() {
         profile.name,
         generations * 25
     );
-    let ipa = |ids: Vec<langgen_sim::PhonemeId>| -> String {
+    let ipa = |ids: Vec<umran_sim::PhonemeId>| -> String {
         ids.iter()
             .map(|id| CATALOG.get(*id).ipa())
             .collect::<Vec<_>>()

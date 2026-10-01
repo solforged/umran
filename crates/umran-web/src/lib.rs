@@ -1,20 +1,20 @@
-//! Browser facade over `langgen-sim`: the history lives here, and the
+//! Browser facade over `umran-sim`: the history lives here, and the
 //! browser asks for presentation-ready views of any generation as JSON.
 
 mod annals;
 
 use annals::{Annal, annals};
-use langgen_sim::compare::intelligibility;
-use langgen_sim::concepts::{by_id, related};
-use langgen_sim::morphology::Slot;
-use langgen_sim::names::PlaceOrigin;
-use langgen_sim::phoneme::{Backness, Manner, Secondary};
-use langgen_sim::{
+use serde::Serialize;
+use umran_sim::compare::intelligibility;
+use umran_sim::concepts::{by_id, related};
+use umran_sim::morphology::Slot;
+use umran_sim::names::PlaceOrigin;
+use umran_sim::phoneme::{Backness, Manner, Secondary};
+use umran_sim::{
     Action, CATALOG, Chronicle, ENGINE_REVISION, Event, FORMAT, Flavor, Form, Lexeme, MapSize,
     Origin, PhonemeId, Recipe, SetAside, Terrain, World, WorldEvent, catalog,
 };
-use langgen_sim::{LanguageDesign, MorphologyKind, Naming, Segment, Variety};
-use serde::Serialize;
+use umran_sim::{LanguageDesign, MorphologyKind, Naming, Segment, Variety};
 use wasm_bindgen::prelude::*;
 
 /// The browser-facing history; `Bench` holds the logic so it can be tested
@@ -151,7 +151,7 @@ impl Bench {
     /// Restores a saved recipe.
     pub fn load(json: &str) -> Result<Bench, String> {
         let recipe: Recipe =
-            serde_json::from_str(json).map_err(|e| format!("Not a langgen save: {e}"))?;
+            serde_json::from_str(json).map_err(|e| format!("Not an Umran save: {e}"))?;
         let chronicle = Chronicle::from_recipe(&recipe)?;
         Ok(Bench {
             chronicle,
@@ -216,8 +216,8 @@ impl Bench {
                 description: description.into(),
             })
             .collect(),
-            name_places: langgen_sim::names::PLACES.to_vec(),
-            name_epithets: langgen_sim::names::EPITHETS.to_vec(),
+            name_places: umran_sim::names::PLACES.to_vec(),
+            name_epithets: umran_sim::names::EPITHETS.to_vec(),
         })
     }
 
@@ -247,9 +247,9 @@ impl Bench {
         let variety = Variety::found(u64::from(seed), &design.profile());
         let people = naming.coin(&variety, None, 0)?;
         let spelled = variety.title(&people.form);
-        let language = langgen_sim::names::language_name(&variety, &people, &spelled, 0);
+        let language = umran_sim::names::language_name(&variety, &people, &spelled, 0);
         let lexicon = &variety.lexicon;
-        let row = |concept: &'static langgen_sim::Concept| {
+        let row = |concept: &'static umran_sim::Concept| {
             let word = lexicon.word_for(concept)?;
             let from = match word.origin {
                 Origin::Derived { base, relation } => Some(format!(
@@ -268,12 +268,12 @@ impl Bench {
         };
         let words = PREVIEW
             .iter()
-            .filter_map(|id| langgen_sim::concepts::by_id(id))
+            .filter_map(|id| umran_sim::concepts::by_id(id))
             .filter_map(row)
             .collect();
-        let families = langgen_sim::FAMILIES
+        let families = umran_sim::FAMILIES
             .iter()
-            .filter_map(|(_, word, _)| langgen_sim::concepts::by_id(word))
+            .filter_map(|(_, word, _)| umran_sim::concepts::by_id(word))
             .filter_map(row)
             .filter(|w| w.from.is_some())
             .collect();
@@ -303,7 +303,7 @@ impl Bench {
         })
     }
 
-    /// Applies an action (JSON, as `langgen_sim::Action`) at the latest
+    /// Applies an action (JSON, as `umran_sim::Action`) at the latest
     /// generation. Rejected actions change nothing.
     pub fn act(&mut self, action: &str) -> Result<(), String> {
         let action: Action =
@@ -428,7 +428,7 @@ impl Bench {
         };
         // Every language that hears another people's name, built once:
         // building an ear reads its whole lexicon.
-        let mut ears: Vec<Option<langgen_sim::adapt::Adapter>> = vec![None; world.varieties.len()];
+        let mut ears: Vec<Option<umran_sim::adapt::Adapter>> = vec![None; world.varieties.len()];
         for k in &world.contacts {
             for c in [k.a, k.b] {
                 let v = world.communities[c].variety;
@@ -620,7 +620,7 @@ impl Bench {
         variety: usize,
         concept: &str,
     ) -> Result<String, String> {
-        let concept = langgen_sim::concepts::by_id(concept).ok_or("Unknown concept.")?;
+        let concept = umran_sim::concepts::by_id(concept).ok_or("Unknown concept.")?;
         let world = self.world(generation);
         let v = world
             .varieties
@@ -697,7 +697,7 @@ impl Bench {
     /// dialect atlas shows it: words descended from one root share a
     /// group, numbered in order of first appearance.
     pub fn word_map(&mut self, generation: u32, concept: &str) -> Result<String, String> {
-        let concept = langgen_sim::concepts::by_id(concept).ok_or("Unknown concept.")?;
+        let concept = umran_sim::concepts::by_id(concept).ok_or("Unknown concept.")?;
         let world = self.world(generation);
         let mut roots = Vec::new();
         let words = world
@@ -937,7 +937,7 @@ pub(crate) fn specimen(variety: &Variety, generation: u32) -> Vec<SpecimenWord> 
 /// Affixes as "-ka" or "ma-"; patterns with C1 C2 C3 for root consonants.
 /// Each relation's affix or pattern, then the renewing affix.
 fn builders(v: &Variety) -> Vec<Builder> {
-    let affix = |a: &langgen_sim::morphology::Affix| {
+    let affix = |a: &umran_sim::morphology::Affix| {
         let written = v.spell(&a.form);
         if a.suffix {
             format!("-{written}")
@@ -1383,7 +1383,7 @@ const HEIGHTS: [&str; 7] = [
 ];
 
 fn sound_view(id: PhonemeId, seg: Segment) -> SoundView {
-    let share = langgen_sim::typology::share(id);
+    let share = umran_sim::typology::share(id);
     match seg {
         Segment::Consonant(c) => SoundView {
             ipa: c.ipa,
@@ -1689,7 +1689,7 @@ struct MapWord {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use langgen_sim::CONCEPTS;
+    use umran_sim::CONCEPTS;
 
     const PEOPLE: &str = r#"{"kind":"people"}"#;
     const RIVER: &str = r#"{"kind":"place","place":"river"}"#;

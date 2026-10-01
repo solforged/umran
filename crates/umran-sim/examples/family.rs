@@ -2,10 +2,10 @@
 //! borrows from them. An automated comparative method then compares the
 //! daughters without seeing lineage, and is graded against it.
 //!
-//! cargo run --release -p langgen-sim --example family -- [seed] [proto profile] [outsider profile] [generations]
+//! cargo run --release -p umran-sim --example family -- [seed] [proto profile] [outsider profile] [generations]
 
-use langgen_sim::compare::{Pair, Settings, compare, regular_correspondences};
-use langgen_sim::{CATALOG, CONCEPTS, ContactKind, Origin, Params, SoundProfile, World, catalog};
+use umran_sim::compare::{Pair, Settings, compare, regular_correspondences};
+use umran_sim::{CATALOG, CONCEPTS, ContactKind, Origin, Params, SoundProfile, World, catalog};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -63,7 +63,7 @@ fn main() {
         &Settings::default(),
     );
     let show = |p: &Pair| {
-        let s = |x: Option<langgen_sim::PhonemeId>| x.map_or("∅", |p| CATALOG.get(p).ipa());
+        let s = |x: Option<umran_sim::PhonemeId>| x.map_or("∅", |p| CATALOG.get(p).ipa());
         format!("{}:{}", s(p.0), s(p.1))
     };
     let changed = |list: &[(Pair, u32)]| -> Vec<Pair> {
@@ -84,7 +84,7 @@ fn main() {
     );
 
     let east_lexicon = &world.varieties[ev].lexicon;
-    let is_outside_loan = |c: &langgen_sim::Concept| {
+    let is_outside_loan = |c: &umran_sim::Concept| {
         east_lexicon
             .word_for(c)
             .is_some_and(|l| matches!(l.origin, Origin::Borrowed { from, .. } if from == world.communities[outsiders].variety))

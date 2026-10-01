@@ -1,5 +1,5 @@
 [package]
-name = "langgen-sim"
+name = "umran-sim"
 version.workspace = true
 edition.workspace = true
 description = "Contact-aware language change simulator"

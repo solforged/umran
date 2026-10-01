@@ -2,9 +2,9 @@
 //! dominant vocabulary, how many are homophones, and how many were
 //! renewed, for tuning erosion and renewal.
 //!
-//! cargo run --release -p langgen-sim --example length -- [seeds] [generations]
+//! cargo run --release -p umran-sim --example length -- [seeds] [generations]
 
-use langgen_sim::{Origin, Params, SoundProfile, World};
+use umran_sim::{Origin, Params, SoundProfile, World};
 
 /// Generations at which to measure.
 const MARKS: [u32; 6] = [0, 20, 40, 80, 160, 255];
@@ -29,7 +29,7 @@ fn main() {
                             .map(|id| (s.concept, &lexicon.get(id).form, id))
                     })
                     .collect();
-                let syll = |f: &langgen_sim::Form| f.vowel_count() as f32;
+                let syll = |f: &umran_sim::Form| f.vowel_count() as f32;
                 let renewed = words
                     .iter()
                     .filter(|(_, _, id)| matches!(lexicon.get(*id).origin, Origin::Renewed { .. }))

@@ -1,12 +1,12 @@
 //! Two communities in contact: a prestigious donor and an open recipient.
 //!
-//! cargo run --release -p langgen-sim --example contact -- \
+//! cargo run --release -p umran-sim --example contact -- \
 //!     [seed] [donor profile] [recipient profile] [kind] [generations] [seeds for averages]
 //! kind: neighbours | trade | rule | religion | intermarriage
 
-use langgen_sim::wold::{BORROWED_SCORE, spearman};
-use langgen_sim::{CATALOG, ContactKind, Event, Field, Origin, Params, SoundProfile, World};
 use std::collections::BTreeMap;
+use umran_sim::wold::{BORROWED_SCORE, spearman};
+use umran_sim::{CATALOG, ContactKind, Event, Field, Origin, Params, SoundProfile, World};
 
 fn world(
     seed: u64,
@@ -63,13 +63,13 @@ fn main() {
         "{} (prestige 0.8) → {} (prestige 0.3), {kind:?} contact, intensity 0.8 · seed {seed} · {generations} generations",
         donor.name, recipient.name
     );
-    let ipa = |ids: Vec<langgen_sim::PhonemeId>| {
+    let ipa = |ids: Vec<umran_sim::PhonemeId>| {
         ids.iter()
             .map(|id| CATALOG.get(*id).ipa())
             .collect::<Vec<_>>()
             .join(" ")
     };
-    let founding = langgen_sim::Variety::found(0, &recipient);
+    let founding = umran_sim::Variety::found(0, &recipient);
     let _ = founding;
     let (c, v) = rv.inventory();
     println!("recipient consonants now  {}", ipa(c));

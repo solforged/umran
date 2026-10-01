@@ -3,9 +3,9 @@
 //! Reports, for every spoken language, measures that real languages keep
 //! within known bands, then sample words and names to read by eye.
 //!
-//! cargo run --release -p langgen-sim --example audit -- [seeds] [generations]
+//! cargo run --release -p umran-sim --example audit -- [seeds] [generations]
 
-use langgen_sim::{CATALOG, ContactKind, Form, Origin, Params, SoundProfile, Variety, World};
+use umran_sim::{CATALOG, ContactKind, Form, Origin, Params, SoundProfile, Variety, World};
 
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -114,11 +114,11 @@ fn measure(world: &World, v: usize, variety: &Variety) -> Row {
         .filter_map(|s| s.dominant().map(|id| (s.concept, lexicon.get(id))))
         .collect();
     let n = words.len() as f32;
-    let share = |f: &dyn Fn(&(&langgen_sim::Concept, &langgen_sim::Lexeme)) -> bool| {
+    let share = |f: &dyn Fn(&(&umran_sim::Concept, &umran_sim::Lexeme)) -> bool| {
         words.iter().filter(|w| f(w)).count() as f32
     };
     let core = share(&|(c, _)| c.stability.is_some());
-    let loan = |l: &langgen_sim::Lexeme| matches!(l.origin, Origin::Borrowed { .. });
+    let loan = |l: &umran_sim::Lexeme| matches!(l.origin, Origin::Borrowed { .. });
     let (consonants, vowels) = variety.inventory();
     let founding: Vec<_> = variety
         .founding_inventory
@@ -137,13 +137,12 @@ fn measure(world: &World, v: usize, variety: &Variety) -> Row {
         .filter(|c| c.variety == v)
         .map(|c| c.name.form.vowel_count() as f32)
         .collect();
-    let has =
-        |l: &langgen_sim::Lexeme, p: &langgen_sim::PhonemeId| l.form.phones().any(|q| q == *p);
+    let has = |l: &umran_sim::Lexeme, p: &umran_sim::PhonemeId| l.form.phones().any(|q| q == *p);
     let top = consonants
         .iter()
         .map(|p| share(&|(_, l)| has(l, p)))
         .fold(0.0, f32::max);
-    let repeats = |l: &langgen_sim::Lexeme| {
+    let repeats = |l: &umran_sim::Lexeme| {
         let cs: Vec<_> = l
             .form
             .phones()
@@ -197,7 +196,7 @@ fn sample(world: &World, seed: u64) {
             .map(|c| world.community_name(c))
             .collect();
         let (consonants, vowels) = variety.inventory();
-        let ipa = |ids: &[langgen_sim::PhonemeId]| {
+        let ipa = |ids: &[umran_sim::PhonemeId]| {
             ids.iter()
                 .map(|p| CATALOG.get(*p).ipa())
                 .collect::<Vec<_>>()
@@ -222,7 +221,7 @@ fn sample(world: &World, seed: u64) {
         let words: Vec<String> = SAMPLE
             .iter()
             .filter_map(|id| {
-                let concept = langgen_sim::concepts::by_id(id)?;
+                let concept = umran_sim::concepts::by_id(id)?;
                 let word = variety.lexicon.word_for(concept)?;
                 let mark = match word.origin {
                     Origin::Borrowed { .. } => "*",

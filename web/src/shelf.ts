@@ -20,6 +20,8 @@ export interface Shelf {
   last: string | null;
 }
 
+// Stored under the project's first name, langgen, so saves made before the
+// rename still open.
 const INDEX = "langgen.shelf.v1";
 const LEGACY = "langgen.sim.v1";
 const bookKey = (id: string) => `langgen.book.${id}`;

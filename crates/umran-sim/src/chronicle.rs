@@ -16,7 +16,8 @@ use std::collections::BTreeMap;
 /// Bumped whenever an engine change would make an existing recipe replay
 /// differently. Saves record it so a mismatch can be reported.
 pub const ENGINE_REVISION: u32 = 13;
-/// Identifies saved recipes.
+/// Identifies saved recipes. Kept from the project's first name, langgen,
+/// so files saved before the rename still load.
 pub const FORMAT: &str = "langgen-sim-recipe";
 /// Generations between cached checkpoints.
 const CHECKPOINT_EVERY: u32 = 10;

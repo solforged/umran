@@ -69,27 +69,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "langgen-sim"
-version = "0.1.0"
-dependencies = [
- "rand",
- "rand_chacha",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "langgen-web"
-version = "0.1.0"
-dependencies = [
- "getrandom",
- "langgen-sim",
- "serde",
- "serde_json",
- "wasm-bindgen",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -245,6 +224,27 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "umran-sim"
+version = "0.1.0"
+dependencies = [
+ "rand",
+ "rand_chacha",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "umran-web"
+version = "0.1.0"
+dependencies = [
+ "getrandom",
+ "serde",
+ "serde_json",
+ "umran-sim",
+ "wasm-bindgen",
 ]
 
 [[package]]

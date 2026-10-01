@@ -1,9 +1,11 @@
-# langgen
+# Umran
 
 A seeded language-change simulator. Communities with sound preferences grow,
 split, meet, and rule one another, and their languages change in response:
 regular sound change, borrowing, word competition, and language shift. Rust
-engine, browser workbench.
+engine, browser workbench. The name is Ibn Khaldun's *ʿumrān*, settled
+social life, the subject of his *Muqaddimah*. It was called langgen until
+October 2026; saved data keeps that name (see `docs/history.md`).
 
 Read further when the task touches it:
 
@@ -16,8 +18,8 @@ Read further when the task touches it:
 
 ## Architecture
 
-- `crates/langgen-sim`: the engine, independent of the browser.
-- `crates/langgen-web`: `wasm-bindgen` facade. `Bench` holds the logic and
+- `crates/umran-sim`: the engine, independent of the browser.
+- `crates/umran-web`: `wasm-bindgen` facade. `Bench` holds the logic and
   is tested natively; `Workbench` is a thin wrapper, since `JsValue` panics
   off WASM.
 - `web/src`: React, TypeScript, and Vite. `model.ts` mirrors the facade's

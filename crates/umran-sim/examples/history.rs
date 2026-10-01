@@ -2,10 +2,10 @@
 //! language shift: hill farmers, a coastal people, and an empire that rules
 //! the coast.
 //!
-//! cargo run --release -p langgen-sim --example history -- [seed] [generations]
+//! cargo run --release -p umran-sim --example history -- [seed] [generations]
 
-use langgen_sim::compare::intelligibility;
-use langgen_sim::{ContactKind, Params, SoundProfile, World, WorldEvent};
+use umran_sim::compare::intelligibility;
+use umran_sim::{ContactKind, Params, SoundProfile, World, WorldEvent};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();

@@ -5,13 +5,13 @@
 //! draws, and the same history is always told the same way.
 
 use crate::{SpecimenWord, specimen, substrate_label};
-use langgen_sim::names::PlaceOrigin;
-use langgen_sim::rng::{index, key, stream};
-use langgen_sim::world::ContactKind;
-use langgen_sim::{Event, Form, Lexeme, Variety, World, WorldEvent, catalog};
 use serde::Serialize;
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
+use umran_sim::names::PlaceOrigin;
+use umran_sim::rng::{index, key, stream};
+use umran_sim::world::ContactKind;
+use umran_sim::{Event, Form, Lexeme, Variety, World, WorldEvent, catalog};
 
 #[derive(Clone, PartialEq, Serialize)]
 pub(crate) struct Annal {
