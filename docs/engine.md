@@ -44,6 +44,16 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
 - Sound laws (`laws.rs`) apply simultaneously and regularly to every living
   word, never to obsolete ones, and never delete a word's last vowel.
   "No change" competes with them, so a culture is never forced into a law.
+- Each language has a minimal word (`prosody.rs`), drawn at founding: any
+  syllable, a heavy one (two moras), or two syllables, likelier the more
+  disyllabic its roots. A rule that would wear a word below it passes that
+  word by, as apocope spares short words. Words below the minimum, or
+  sounding like another word in use, draw competitors more often and lose
+  usage; about half of those competitors are the old word renewed, with
+  the language's renewing affix (Latin auris > auricula) or compounded
+  with a related concept's word (Mandarin ěr > ěrduo). Renewed words keep
+  their root, so they count as retained. `examples/length.rs` measures
+  word length, homophony, and renewal over time.
 - Borrowability is set per concept (Leipzig–Jakarta rank or `Tier`), never
   per semantic field, so field patterns must emerge. `wold.rs` holds WOLD
   figures for validation only; the model never reads them. Loans adapt to
@@ -80,11 +90,11 @@ cargo run --release -p langgen-sim --example contact -- <seed> <donor> <recipien
 cargo run --release -p langgen-sim --example family -- <seed> <proto> <outsider> <generations>
 cargo run --release -p langgen-sim --example history -- <seed> <generations>
 cargo run --release -p langgen-sim --example calibrate -- <seeds> <generations> [profile]
+cargo run --release -p langgen-sim --example length -- [seeds] [generations]
 ```
 
 ## Not yet modelled
 
-Places and migration (territories stand in for a map), compounding
-outside names, inflection, derivation as a source of new words after
-founding, stress, tone, vowel harmony, consonant length, prenasalized
+Places and migration (territories stand in for a map), compounding and
+derivation after founding beyond renewal, inflection, stress, tone, vowel harmony, consonant length, prenasalized
 stops, syntax and alignment, dialect levelling, personal and place names.

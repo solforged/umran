@@ -45,6 +45,10 @@ pub struct Morphology {
     pub glide: Option<PhonemeId>,
     /// How this language puts words together into names.
     pub names: NameRules,
+    /// The affix that renews a worn or ambiguous word, often a diminutive
+    /// at first: Latin auris "ear" > auricula > French oreille, Mandarin
+    /// -zi in zhuōzi "table". Drawn after the name rules.
+    pub renewing: Affix,
     open_medial: bool,
 }
 
@@ -175,6 +179,7 @@ impl Morphology {
             }
         }
         let names = NameRules::draw(prior, &onsets, vowels, &affixes, rng);
+        let renewing = renewing_affix(prior, &onsets, vowels, &affixes, &names, rng);
         Self {
             kind: prior.kind,
             affixes,
@@ -183,6 +188,7 @@ impl Morphology {
             link,
             glide,
             names,
+            renewing,
             open_medial: tactics.open_medial,
         }
     }
@@ -263,6 +269,15 @@ impl Morphology {
         }
     }
 
+    /// `base` renewed with the renewing affix.
+    pub fn renew(&self, base: &Form) -> Form {
+        if self.renewing.suffix {
+            self.join(base, &self.renewing.form)
+        } else {
+            self.join(&self.renewing.form, base)
+        }
+    }
+
     /// Joins two pieces, recording the boundary. Two vowels meeting lose
     /// the second, or, when it is all the affix has, get a glide between
     /// them; two consonants meeting get the link vowel in a language that
@@ -304,6 +319,37 @@ impl Morphology {
             boundaries: vec![boundary],
         }
     }
+}
+
+/// A consonant-vowel renewing affix, unlike the language's others. It
+/// adds a whole syllable, as renewing affixes do.
+fn renewing_affix(
+    prior: &MorphologyPrior,
+    onsets: &[(PhonemeId, f32)],
+    vowels: &[(PhonemeId, f32)],
+    affixes: &[(Relation, Affix)],
+    names: &NameRules,
+    rng: &mut impl Rng,
+) -> Affix {
+    let pick = |rng: &mut dyn rand::RngCore, list: &[(PhonemeId, f32)]| {
+        list[weighted_index(&mut &mut *rng, list.iter().map(|(_, w)| *w))].0
+    };
+    let suffixing = match prior.kind {
+        MorphologyKind::RootPattern => 1.0,
+        MorphologyKind::Concatenative => prior.suffixing,
+    };
+    let suffix = rng.r#gen::<f32>() < suffixing;
+    let mut form = Form::default();
+    for _ in 0..DISTINCT_TRIES {
+        let c = pick(rng, onsets);
+        let v = pick(rng, vowels);
+        form = Form::from_phones([c, v]);
+        let taken = affixes.iter().any(|(_, a)| a.form == form) || names.belonging.form == form;
+        if !taken {
+            break;
+        }
+    }
+    Affix { form, suffix }
 }
 
 impl NameRules {

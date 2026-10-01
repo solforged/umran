@@ -40,7 +40,8 @@ rules. Bun manages frontend dependencies; Rust is pinned in
   ranges sample 64 bits natively but 32 in WASM, so histories would differ
   between tests and the browser.
 - Sound laws apply regularly to every living word and name, never to
-  obsolete words, and never delete a word's last vowel.
+  obsolete words, never delete a word's last vowel, and never wear a word
+  below its language's minimal word.
 - Borrowability is per concept, never per semantic field. WOLD figures
   (`wold.rs`) are for validation only.
 - The comparative method (`compare.rs`) never reads lineage.

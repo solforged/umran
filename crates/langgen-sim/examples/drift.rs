@@ -116,6 +116,14 @@ fn main() {
             Origin::Borrowed { from, .. } => {
                 format!("borrowed from variety {from}, gen {}", now.born)
             }
+            Origin::Renewed { with, .. } => match with {
+                Some(with) => format!(
+                    "compounded with '{}', gen {}",
+                    lexicon.get(with).first_sense.gloss,
+                    now.born
+                ),
+                None => format!("renewed with an affix, gen {}", now.born),
+            },
         };
         let rank = slot
             .concept

@@ -1,8 +1,9 @@
-use crate::change::{Env, Matcher, Rewrite, SoundChange, apply_all};
+use crate::change::{Env, Matcher, Rewrite, SoundChange};
 use crate::form::Form;
 use crate::inventory::preference;
 use crate::phoneme::{Backness, Height, Manner, PhonemeId, Place, Secondary};
 use crate::profile::InventoryPrior;
+use crate::prosody::MinimalWord;
 use std::collections::HashSet;
 
 /// A named sound law: one or more rules applied in order, each regularly
@@ -48,8 +49,17 @@ impl Assessment {
 }
 
 impl Law {
-    pub fn apply(&self, form: &Form) -> Form {
-        apply_all(form, &self.rules)
+    /// The law's rules in order, each passing by a word it would wear
+    /// below the language's `minimal` size.
+    pub fn apply(&self, form: &Form, minimal: MinimalWord) -> Form {
+        let mut current = form.clone();
+        for rule in &self.rules {
+            let next = rule.apply(&current);
+            if !minimal.blocks(&current, &next) {
+                current = next;
+            }
+        }
+        current
     }
 
     /// `None` when the law would change nothing.
@@ -57,18 +67,24 @@ impl Law {
         &self,
         forms: impl Iterator<Item = &'a Form>,
         prior: &InventoryPrior,
+        minimal: MinimalWord,
     ) -> Option<Assessment> {
         let (mut words, mut total) = (0, 0.0);
         let mut shifts = Vec::new();
         for form in forms {
             // Judge by the real result, so matches blocked by last-vowel
-            // protection do not make a law look applicable.
-            if self.apply(form) == *form {
+            // protection or the minimal word do not make a law look
+            // applicable.
+            if self.apply(form, minimal) == *form {
                 continue;
             }
             words += 1;
             let mut current = form.clone();
             for rule in &self.rules {
+                let next = rule.apply(&current);
+                if minimal.blocks(&current, &next) {
+                    continue;
+                }
                 for (i, out) in rule.hits(&current) {
                     let old = current.segs[i].phone;
                     if let Some(new) = out {
@@ -76,7 +92,7 @@ impl Law {
                     }
                     shifts.push((old, out));
                 }
-                current = rule.apply(&current);
+                current = next;
             }
         }
         (words > 0).then(|| Assessment {
@@ -731,7 +747,8 @@ mod tests {
 
     fn run(id: &str, ipa: &str) -> String {
         let law = catalog().into_iter().find(|l| l.id == id).unwrap();
-        law.apply(&Form::from_ipa(ipa).unwrap()).ipa()
+        law.apply(&Form::from_ipa(ipa).unwrap(), MinimalWord::Syllable)
+            .ipa()
     }
 
     #[test]
@@ -773,10 +790,15 @@ mod tests {
             .find(|l| l.id == "spirantization")
             .unwrap();
         let forms = [Form::from_ipa("pata").unwrap()];
-        let a = law.assess(forms.iter(), &prior).unwrap();
+        let a = law
+            .assess(forms.iter(), &prior, MinimalWord::Syllable)
+            .unwrap();
         assert_eq!(a.words, 1);
         assert!(a.pull < 0.0);
         let untouched = [Form::from_ipa("ama").unwrap()];
-        assert_eq!(law.assess(untouched.iter(), &prior), None);
+        assert_eq!(
+            law.assess(untouched.iter(), &prior, MinimalWord::Syllable),
+            None
+        );
     }
 }

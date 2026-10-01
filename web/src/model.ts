@@ -134,6 +134,8 @@ export interface Variety {
   words: number;
   wordBuilding: string;
   builders: { relation: string; shape: string }[];
+  /// The smallest word sound change leaves, such as "two syllables".
+  minimalWord: string;
 }
 
 export interface Contact {

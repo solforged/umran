@@ -7,6 +7,7 @@ use crate::names::Name;
 use crate::phoneme::PhonemeId;
 use crate::phonotactics::Phonotactics;
 use crate::profile::SoundProfile;
+use crate::prosody::MinimalWord;
 use crate::rng::{key, stream};
 use crate::root::mint_roots;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -24,6 +25,8 @@ pub struct Variety {
     pub lexicon: Lexicon,
     /// How this language builds words from words.
     pub morphology: Morphology,
+    /// The smallest word sound change may leave.
+    pub minimal: MinimalWord,
     /// Sound laws in the order applied, with their generation.
     pub laws: Vec<(u32, &'static str)>,
     /// Where this variety split from, if it did.
@@ -64,6 +67,10 @@ impl Variety {
                 profile.morphology.derivation,
             )),
             morphology,
+            minimal: MinimalWord::draw(
+                profile.phonotactics.disyllabic_roots,
+                &mut stream(seed, &[key("minimal word")]),
+            ),
             founding_inventory: inventory,
             laws: Vec::new(),
             parent: None,

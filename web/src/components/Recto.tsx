@@ -107,6 +107,10 @@ export function Recto({
           <p className="segments">{variety.consonants.join(" ")}</p>
           <h3>Vowels</h3>
           <p className="segments">{variety.vowels.join(" ")}</p>
+          <p className="muted">
+            Sound change never wears a word shorter than {variety.minimalWord}; shorter words are felt as worn and
+            renewed.
+          </p>
           <h3>Word building</h3>
           <p className="muted">Builds words with {variety.wordBuilding}.</p>
           <dl className="facts builders">

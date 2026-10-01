@@ -467,6 +467,7 @@ impl Bench {
                         words: v.lexicon.living().count(),
                         word_building: word_building(v),
                         builders: builders(v),
+                        minimal_word: v.minimal.label(),
                     }
                 })
                 .collect(),
@@ -733,22 +734,24 @@ fn word_building(v: &Variety) -> String {
 }
 
 /// Affixes as "-ka" or "ma-"; patterns with C1 C2 C3 for root consonants.
+/// Each relation's affix or pattern, then the renewing affix.
 fn builders(v: &Variety) -> Vec<Builder> {
-    match v.morphology.kind {
+    let affix = |a: &langgen_sim::morphology::Affix| {
+        let written = v.spell(&a.form);
+        if a.suffix {
+            format!("-{written}")
+        } else {
+            format!("{written}-")
+        }
+    };
+    let mut out: Vec<Builder> = match v.morphology.kind {
         MorphologyKind::Concatenative => v
             .morphology
             .affixes
             .iter()
-            .map(|(r, a)| {
-                let written = v.spell(&a.form);
-                Builder {
-                    relation: r.label(),
-                    shape: if a.suffix {
-                        format!("-{written}")
-                    } else {
-                        format!("{written}-")
-                    },
-                }
+            .map(|(r, a)| Builder {
+                relation: r.label(),
+                shape: affix(a),
             })
             .collect(),
         MorphologyKind::RootPattern => v
@@ -768,7 +771,12 @@ fn builders(v: &Variety) -> Vec<Builder> {
                     .join(""),
             })
             .collect(),
-    }
+    };
+    out.push(Builder {
+        relation: "renewing",
+        shape: affix(&v.morphology.renewing),
+    });
+    out
 }
 
 fn spoken_pairs(world: &World) -> Vec<Pair> {
@@ -832,6 +840,17 @@ fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
             )),
             generation: word.born,
         },
+        Origin::Renewed { base, with } => {
+            let gloss = |id| world.varieties[variety].lexicon.get(id).first_sense.gloss;
+            OriginView {
+                kind: "derived",
+                from: Some(match with {
+                    Some(with) => format!("{} + {}", gloss(with), gloss(base)),
+                    None => format!("{} (renewed)", gloss(base)),
+                }),
+                generation: word.born,
+            }
+        }
         Origin::Borrowed { from, .. } => OriginView {
             kind: "borrowed",
             from: Some(world.language_title(from)),
@@ -887,6 +906,31 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
                     "Built from '{}' with {how}, for '{}'",
                     base.first_sense.gloss, word.first_sense.gloss
                 )
+            }
+            Origin::Renewed { base, with } => {
+                let v = &world.varieties[variety];
+                let old = v.lexicon.get(base);
+                let worn = v.spell(old.form_at(word.born));
+                match with {
+                    Some(with) => format!(
+                        "Compounded from '{}' and the old word {worn}, for '{}'",
+                        v.lexicon.get(with).first_sense.gloss,
+                        word.first_sense.gloss
+                    ),
+                    None => {
+                        let affix = &v.morphology.renewing;
+                        let written = v.spell(&affix.form);
+                        let affix = if affix.suffix {
+                            format!("-{written}")
+                        } else {
+                            format!("{written}-")
+                        };
+                        format!(
+                            "The old word {worn} made fuller with {affix}, for '{}'",
+                            word.first_sense.gloss
+                        )
+                    }
+                }
             }
             Origin::Borrowed { from, .. } if kept_through_shift(world, variety, word) => format!(
                 "Kept from {} when its speakers changed language, for '{}'",
@@ -1211,6 +1255,8 @@ struct VarietyView {
     word_building: String,
     /// Each relation's affix or pattern, as written.
     builders: Vec<Builder>,
+    /// The smallest word sound change leaves: "two syllables".
+    minimal_word: &'static str,
 }
 
 #[derive(Serialize)]

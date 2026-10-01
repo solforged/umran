@@ -2,7 +2,8 @@ use crate::adapt::Adapter;
 use crate::concepts::{CONCEPTS, Concept, Field, related};
 use crate::form::Form;
 use crate::laws::{Law, catalog};
-use crate::lexicon::{Entry, Event, LexemeId, Origin};
+use crate::lexicon::{Entry, Event, LexemeId, Lexicon, Origin};
+use crate::morphology::Morphology;
 use crate::names::{Name, Naming};
 use crate::phoneme::PhonemeId;
 use crate::phonotactics::Phonotactics;
@@ -58,6 +59,14 @@ pub struct Params {
     pub clash_pressure: f32,
     /// Usage disadvantage of a word that sounds like another word in use.
     pub clash_cost: f32,
+    /// Extra innovation hazard for a concept whose dominant word has worn
+    /// below its language's minimal word.
+    pub worn_pressure: f32,
+    /// Usage disadvantage of a word below its language's minimal word.
+    pub worn_cost: f32,
+    /// Share of innovations for a clashing or worn word that rebuild it
+    /// from its own material rather than replace it.
+    pub renewal_share: f32,
     /// Chance per generation that a fully borrowable concept is borrowed
     /// across a contact of intensity 1 by a fully open community of equal
     /// prestige.
@@ -113,6 +122,9 @@ impl Default for Params {
             expressive_share: 0.2,
             clash_pressure: 6.0,
             clash_cost: 0.25,
+            worn_pressure: 6.0,
+            worn_cost: 0.15,
+            renewal_share: 0.5,
             loan_rate: 0.05,
             loan_share: 0.3,
             prestige_pull: 2.0,
@@ -807,7 +819,11 @@ impl World {
             .iter()
             .filter(|law| !applied.contains(law.id))
             .filter_map(|law| {
-                let a = law.assess(variety.lexicon.living().map(|l| &l.form), prior)?;
+                let a = law.assess(
+                    variety.lexicon.living().map(|l| &l.form),
+                    prior,
+                    variety.minimal,
+                )?;
                 let areal: f32 = areal.iter().map(|(target, w)| w * a.toward(target)).sum();
                 let bias = (self.params.preference_pull * a.pull.clamp(-5.0, 3.0)
                     + self.params.areal_pull * areal)
@@ -825,11 +841,12 @@ impl World {
 
         let generation = self.generation;
         let variety = &mut self.varieties[v];
+        let minimal = variety.minimal;
         for lexeme in &mut variety.lexicon.lexemes {
             if lexeme.obsolete.is_some() {
                 continue;
             }
-            let after = law.apply(&lexeme.form);
+            let after = law.apply(&lexeme.form, minimal);
             if after != lexeme.form {
                 let before = std::mem::replace(&mut lexeme.form, after);
                 lexeme.log.push(Entry {
@@ -843,10 +860,10 @@ impl World {
         }
         variety.laws.push((generation, law.id));
         // Names are words too.
-        let after = law.apply(&variety.name.form);
+        let after = law.apply(&variety.name.form, minimal);
         variety.name.change(after, law.id, generation);
         for community in self.communities.iter_mut().filter(|c| c.variety == v) {
-            let after = law.apply(&community.name.form);
+            let after = law.apply(&community.name.form, minimal);
             community.name.change(after, law.id, generation);
         }
     }
@@ -963,7 +980,9 @@ impl World {
     /// Concepts gain native competitors: usually a word for a related
     /// concept extends to cover it (sun > day, see > know), otherwise a new
     /// root is coined from the language's current sounds, avoiding forms
-    /// its semantic field already uses.
+    /// its semantic field already uses. A word that sounds like another or
+    /// has worn below the minimal word draws competitors more often, and
+    /// some of them are the word itself renewed.
     fn innovate(&mut self, v: usize, clashes: &HashSet<LexemeId>) {
         let generation = self.generation;
         let step = self.at(v);
@@ -971,22 +990,29 @@ impl World {
         let params = &self.params;
         let spelling = self.varieties[v].profile.spelling.clone();
         let morphology = self.varieties[v].morphology.clone();
+        let minimal = self.varieties[v].minimal;
         let lexicon = &mut self.varieties[v].lexicon;
         let observed = Phonotactics::observe(lexicon.living().map(|l| &l.form));
         for (i, concept) in CONCEPTS.iter().enumerate() {
             let mut rng = step.rng(&[key("innovate"), key(concept.id)]);
-            let clash = lexicon.slots[i]
-                .dominant()
-                .is_some_and(|id| clashes.contains(&id));
-            let pressure = if clash {
-                1.0 + params.clash_pressure
-            } else {
-                1.0
-            };
+            let dominant = lexicon.slots[i].dominant();
+            let clash = dominant.is_some_and(|id| clashes.contains(&id));
+            let worn = dominant.is_some_and(|id| minimal.worn(&lexicon.get(id).form));
+            let pressure = 1.0
+                + f32::from(u8::from(clash)) * params.clash_pressure
+                + f32::from(u8::from(worn)) * params.worn_pressure;
             if rng.r#gen::<f32>() >= hazards[i] * pressure {
                 continue;
             }
             if lexicon.slots[i].variants.len() >= MAX_VARIANTS {
+                continue;
+            }
+            let renewed = dominant
+                .filter(|_| clash || worn)
+                .and_then(|base| renewal(lexicon, &morphology, &step, concept, base, params));
+            if let Some((form, origin)) = renewed {
+                let id = lexicon.coin(form, origin, concept, generation);
+                lexicon.slots[i].introduce(id, params.newcomer_share);
                 continue;
             }
             let mut donors: Vec<LexemeId> = related(concept)
@@ -1037,6 +1063,7 @@ impl World {
         let params = &self.params;
         let n = params.speakers.max(1);
         let own = prestige[v];
+        let minimal = self.varieties[v].minimal;
         let lexicon = &mut self.varieties[v].lexicon;
         let fitness: Vec<f32> = lexicon
             .lexemes
@@ -1047,13 +1074,18 @@ impl World {
                 } else {
                     1.0
                 };
+                let worn = if minimal.worn(&l.form) {
+                    1.0 - params.worn_cost
+                } else {
+                    1.0
+                };
                 let loan = match l.origin {
                     Origin::Borrowed { from, .. } => (1.0
                         + params.prestige_selection * (prestige[from] - own))
                         .max(MIN_LOAN_FITNESS),
                     _ => 1.0,
                 };
-                clash * loan
+                clash * worn * loan
             })
             .collect();
         for (i, concept) in CONCEPTS.iter().enumerate() {
@@ -1109,6 +1141,43 @@ impl World {
             }
         }
     }
+}
+
+/// A worn or clashing word rebuilt from its own material, drawn from the
+/// renewal stream: compounded with a related concept's word when there is
+/// one and the draw falls that way, otherwise given the renewing affix.
+/// `None` when the result would sound like a word already in use, or
+/// when the draw keeps the usual ways of innovating.
+fn renewal(
+    lexicon: &Lexicon,
+    morphology: &Morphology,
+    step: &Step,
+    concept: &'static Concept,
+    base: LexemeId,
+    params: &Params,
+) -> Option<(Form, Origin)> {
+    let mut rng = step.rng(&[key("renew"), key(concept.id)]);
+    if rng.r#gen::<f32>() >= params.renewal_share {
+        return None;
+    }
+    let mut partners: Vec<LexemeId> = related(concept)
+        .filter_map(|other| lexicon.slot(other).dominant())
+        .filter(|&id| id != base)
+        .collect();
+    partners.sort();
+    partners.dedup();
+    let old = &lexicon.get(base).form;
+    let (form, with) = if !partners.is_empty() && rng.r#gen::<bool>() {
+        let with = partners[crate::rng::index(&mut rng, partners.len())];
+        (
+            morphology.compound(&lexicon.get(with).form, old),
+            Some(with),
+        )
+    } else {
+        (morphology.renew(old), None)
+    };
+    let taken = lexicon.living().any(|l| l.form == form);
+    (!taken).then_some((form, Origin::Renewed { base, with }))
 }
 
 #[cfg(test)]
@@ -1712,6 +1781,57 @@ mod tests {
         );
     }
 
+    /// Mean syllables of the dominant words, and the share of distinct
+    /// dominant words that sound like another.
+    fn shape(world: &World) -> (f32, f32) {
+        let lexicon = &world.varieties[0].lexicon;
+        let mut words: Vec<LexemeId> = lexicon
+            .slots
+            .iter()
+            .filter_map(crate::lexicon::Slot::dominant)
+            .collect();
+        words.sort();
+        words.dedup();
+        let form = |id: LexemeId| &lexicon.get(id).form;
+        let syllables = words
+            .iter()
+            .map(|&id| form(id).vowel_count() as f32)
+            .sum::<f32>();
+        let homophones = words
+            .iter()
+            .filter(|&&a| words.iter().any(|&b| a != b && form(a) == form(b)))
+            .count();
+        let n = words.len() as f32;
+        (syllables / n, homophones as f32 / n)
+    }
+
+    #[test]
+    fn worn_words_are_renewed_and_word_shapes_persist() {
+        let mean = |preset: &str| {
+            let (mut length, mut homophony) = (0.0, 0.0);
+            for seed in 0..12 {
+                let profile = SoundProfile::by_id(preset).unwrap();
+                let mut world = World::solo(seed, &profile, Params::static_society());
+                world.run(160);
+                let (l, h) = shape(&world);
+                length += l / 12.0;
+                homophony += h / 12.0;
+            }
+            (length, homophony)
+        };
+        let (long, long_homophony) = mean("polynesian");
+        let (short, short_homophony) = mean("pie-like");
+        // After four thousand years, languages of long words keep them and
+        // languages of short roots stay short, rather than all converging.
+        assert!(long > 1.75, "polynesian words wore down to {long:.2}");
+        assert!(short < 1.5, "pie-like words grew to {short:.2}");
+        assert!(long - short > 0.4);
+        assert!(
+            long_homophony < 0.05 && short_homophony < 0.05,
+            "homophony {long_homophony:.3}, {short_homophony:.3}"
+        );
+    }
+
     #[test]
     fn names_undergo_sound_change() {
         let mut world = World::new(5, Params::static_society());
@@ -1720,16 +1840,12 @@ mod tests {
         world.run(80);
         let name = &world.communities[0].name;
         let word = world.variety_of(0).lexicon.slot(concept);
-        // While "people" keeps its founding word, the name moves with it.
-        if world.variety_of(0).lexicon.keeps_founding_word(concept) {
-            assert_eq!(
-                name.form,
-                world
-                    .variety_of(0)
-                    .lexicon
-                    .get(word.dominant().unwrap())
-                    .form
-            );
+        // While "people" keeps its founding word, unrenewed, the name moves
+        // with it.
+        let lexicon = &world.variety_of(0).lexicon;
+        let now = lexicon.get(word.dominant().unwrap());
+        if now.born == 0 && lexicon.keeps_founding_word(concept) {
+            assert_eq!(name.form, now.form);
         }
         assert!(!name.log.is_empty() || world.variety_of(0).laws.is_empty());
     }

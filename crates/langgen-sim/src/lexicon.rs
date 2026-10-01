@@ -17,6 +17,13 @@ pub enum Origin {
     Borrowed { from: usize, source: LexemeId },
     /// Built from another word of the same language: fish > fishing.
     Derived { base: LexemeId, relation: Relation },
+    /// Rebuilt from a word that had worn too short or come to sound like
+    /// another: with the renewing affix (Latin auris > auricula, "ear"),
+    /// or compounded `with` a related word (Mandarin ěr > ěrduo).
+    Renewed {
+        base: LexemeId,
+        with: Option<LexemeId>,
+    },
 }
 
 /// One word: a form plus its history. Meanings live in `Slot`s, so a
@@ -32,6 +39,20 @@ pub struct Lexeme {
     /// Generation the word stopped being used for any concept.
     pub obsolete: Option<u32>,
     pub log: Vec<Entry>,
+}
+
+impl Lexeme {
+    /// The form the word had at `generation`, before any later sound law.
+    pub fn form_at(&self, generation: u32) -> &Form {
+        self.log
+            .iter()
+            .filter(|e| e.generation > generation)
+            .find_map(|e| match &e.event {
+                Event::SoundLaw { before, .. } => Some(before),
+                _ => None,
+            })
+            .unwrap_or(&self.form)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -237,9 +258,14 @@ impl Lexicon {
     }
 
     /// Whether `concept` is still dominated by the word it was founded with,
-    /// a root or a word derived at founding.
+    /// a root or a word derived at founding. A renewed word keeps its old
+    /// root, as French oreille keeps Latin auris, so it counts as kept.
     pub fn keeps_founding_word(&self, concept: &Concept) -> bool {
-        self.word_for(concept).is_some_and(|l| {
+        let mut word = self.word_for(concept);
+        while let Some(Origin::Renewed { base, .. }) = word.map(|l| l.origin) {
+            word = Some(self.get(base));
+        }
+        word.is_some_and(|l| {
             l.born == 0
                 && matches!(l.origin, Origin::Founding | Origin::Derived { .. })
                 && l.first_sense.id == concept.id
