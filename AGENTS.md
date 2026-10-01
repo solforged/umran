@@ -36,13 +36,19 @@ before development or production builds.
   `Slot`s, where words compete for each concept with usage weights. Words
   keep a log of every sound law, borrowing, extension, and loss.
 - `SoundProfile`s are numbers; the four packs (`elvish`, `kuo-toa`,
-  `illithid`, `neutral`) are only examples. A `Flavor` is stored adjustments
-  written from a plain brief, which the engine never reads. One preference
-  score drives inventories, sound-law odds, and acceptance of foreign sounds.
+  `illithid`, `neutral`) are only examples, and `neutral` has flat tastes so
+  world frequencies decide. A `Flavor` is stored adjustments written from a
+  plain brief (`familiar` targets English readers), which the engine never
+  reads. One preference score, taste plus cross-linguistic frequency from
+  PHOIBLE (`typology.rs`), drives inventories, how often sounds are used,
+  sound-law odds, and acceptance of foreign sounds.
 - Concepts (`concepts.rs`): the Leipzig–Jakarta 100 in rank order plus
-  cultural concepts with a `Tier`. Founding roots are CV, CVC, or CVCV with
-  an onset, unique within a semantic field, with a weak sound-symbolic bias.
-  New words come from curated semantic shifts (`RELATED`) or fresh roots.
+  cultural concepts with a `Tier`. Founding roots are CV, CVC, CVCV, or
+  CVCVC with an onset, unique within a semantic field, usually without a
+  repeated consonant, with a weak sound-symbolic bias. Minting skips
+  spellings that read as English vulgarities, a courtesy rather than a
+  linguistic claim. New words come from curated semantic shifts (`RELATED`)
+  or fresh roots.
 - Sound laws (`laws.rs`) apply simultaneously and regularly to every living
   word, never to obsolete ones, and never delete a word's last vowel.
   "No change" competes with them, so a culture is never forced into a law.
@@ -64,8 +70,10 @@ before development or production builds.
 ## History and saving
 
 A history is a seed plus ordered `Action`s (`chronicle.rs`): found, connect,
-split, shift, run. Any past generation is recovered by replaying them, with
-checkpoints every 10 generations; the timeline needs no separate data.
+split, shift, run. Consecutive runs merge, so playing stays one action and
+undo removes the whole stretch. Any past generation is recovered by
+replaying, with checkpoints every 10 generations; the timeline needs no
+separate data. Play and "next event" work only at the present.
 Acting while viewing the past discards the later history after confirmation.
 
 Saves are recipes (`Recipe`: format, `ENGINE_REVISION`, seed, actions), not

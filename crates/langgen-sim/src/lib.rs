@@ -19,6 +19,7 @@ pub mod profile;
 pub mod rng;
 pub mod root;
 mod spelling;
+pub mod typology;
 pub mod variety;
 pub mod wold;
 pub mod world;

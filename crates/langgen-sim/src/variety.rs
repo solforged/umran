@@ -47,7 +47,7 @@ impl Variety {
         Self {
             name: String::new(),
             profile: profile.clone(),
-            lexicon: Lexicon::found(mint_roots(seed, &phonotactics)),
+            lexicon: Lexicon::found(mint_roots(seed, &phonotactics, &profile.spelling)),
             founding_inventory: inventory,
             laws: Vec::new(),
             parent: None,

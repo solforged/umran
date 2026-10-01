@@ -41,8 +41,12 @@ pub struct PhonotacticPrior {
     pub open_medial: bool,
     pub preferred_onsets: Vec<String>,
     pub preferred_codas: Vec<String>,
-    /// Chance that a founding root is CVCV rather than CV or CVC.
+    /// Chance that a founding root has two syllables (CVCV or CVCVC)
+    /// rather than one.
     pub disyllabic_roots: f32,
+    /// Chance a root may repeat a consonant (as in "kika"). Most languages
+    /// avoid it in roots; echoing, reduplicating styles tolerate it.
+    pub identical_consonants: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -169,6 +173,7 @@ fn elvish() -> SoundProfile {
             ]),
             preferred_codas: ipas(&["n", "r", "l", "s", "θ"]),
             disyllabic_roots: 0.3,
+            identical_consonants: 0.1,
         },
         spelling: Spelling {
             overrides: pairs(&[("k", "c"), ("x", "ch")]),
@@ -244,6 +249,7 @@ fn kuo_toa() -> SoundProfile {
             preferred_onsets: ipas(&["bl", "pl", "gl", "b", "p", "m", "g", "l", "n"]),
             preferred_codas: ipas(&["p", "b", "l", "m", "ŋ", "lp"]),
             disyllabic_roots: 0.25,
+            identical_consonants: 0.5,
         },
         spelling: Spelling {
             overrides: vec![],
@@ -322,6 +328,7 @@ fn illithid() -> SoundProfile {
             ]),
             preferred_codas: ipas(&["θ", "n", "k", "l", "s", "d"]),
             disyllabic_roots: 0.1,
+            identical_consonants: 0.1,
         },
         spelling: Spelling {
             overrides: vec![],
@@ -338,54 +345,66 @@ fn neutral() -> SoundProfile {
     use Height::*;
     use Manner::*;
     use Place::*;
+    // Flat tastes: which sounds appear, and how often, comes mostly from how
+    // common they are across the world's languages (see `typology`).
     SoundProfile {
         id: "neutral".into(),
         name: "Neutral".into(),
-        description: "A bland human baseline; fork this when inventing a new vibe.".into(),
+        description: "A typical human language: sounds weighted by how common they are worldwide."
+            .into(),
         inventory: InventoryPrior {
-            consonant_count: (11, 14),
-            vowel_count: (5, 5),
+            consonant_count: (14, 20),
+            vowel_count: (5, 7),
             manner: vec![
-                (Stop, 1.1),
-                (Nasal, 0.9),
-                (Fricative, 0.4),
-                (Lateral, 0.6),
-                (Approximant, 0.35),
-                (Trill, 0.3),
-                (Affricate, -5.0),
-                (Ejective, -8.0),
-                (Implosive, -8.0),
+                (Stop, 1.0),
+                (Nasal, 1.0),
+                (Fricative, 1.0),
+                (Affricate, 1.0),
+                (Lateral, 1.0),
+                (Approximant, 1.0),
+                (Trill, 1.0),
+                (Tap, 1.0),
+                (LateralFricative, 0.6),
+                (Ejective, 0.6),
+                (Implosive, 0.6),
             ],
             place: vec![
-                (Alveolar, 1.1),
-                (Bilabial, 0.7),
-                (Velar, 0.7),
-                (Labiodental, 0.15),
-                (Glottal, -1.0),
-                (Uvular, -6.0),
-                (Dental, -3.0),
-                (Palatal, -2.0),
+                (Bilabial, 1.0),
+                (Labiodental, 1.0),
+                (Dental, 1.0),
+                (Alveolar, 1.0),
+                (Postalveolar, 1.0),
+                (Palatal, 1.0),
+                (Velar, 1.0),
+                (Uvular, 1.0),
+                (Pharyngeal, 1.0),
+                (Glottal, 1.0),
             ],
             voiced: 0.0,
-            height: vec![(Close, 0.5), (CloseMid, 0.5), (Open, 0.5)],
-            backness: vec![(Front, 0.4), (Back, 0.4), (Central, -3.0)],
+            height: vec![
+                (Close, 1.0),
+                (NearClose, 0.6),
+                (CloseMid, 1.0),
+                (Mid, 0.8),
+                (OpenMid, 1.0),
+                (NearOpen, 0.6),
+                (Open, 1.0),
+            ],
+            backness: vec![(Front, 1.0), (Central, 0.8), (Back, 1.0)],
             rounded: 0.0,
             extra: vec![],
-            required: ipas(&[
-                "p", "t", "k", "m", "n", "s", "l", "r", "i", "e", "a", "o", "u",
-            ]),
-            forbidden: marked(&[
-                "ð", "ʃ", "ʒ", "tʃ", "dʒ", "θ", "ŋ", "ɲ", "ʔ", "ɛ", "ɔ", "ɑ", "ɣ", "x",
-            ]),
+            required: ipas(&["p", "t", "k", "m", "n", "i", "a", "u"]),
+            forbidden: vec![],
         },
         phonotactics: PhonotacticPrior {
             max_onset: 2,
             max_coda: 1,
-            final_coda: 0.5,
+            final_coda: 0.45,
             open_medial: false,
-            preferred_onsets: ipas(&["t", "k", "s", "n", "m", "p", "l", "r", "st", "tr", "pl"]),
-            preferred_codas: ipas(&["n", "k", "t", "s", "m"]),
-            disyllabic_roots: 0.15,
+            preferred_onsets: vec![],
+            preferred_codas: ipas(&["n", "m", "ŋ", "l", "r", "s", "k", "t"]),
+            disyllabic_roots: 0.25,
+            identical_consonants: 0.1,
         },
         spelling: Spelling {
             overrides: vec![],

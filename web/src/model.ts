@@ -117,6 +117,7 @@ export interface WordDetail {
 export interface Engine {
   act(action: Action): void;
   undo(): boolean;
+  runUntilEvent(limit: number): number;
   branch(generation: number): void;
   latest(): number;
   overview(generation: number): Overview;

@@ -87,7 +87,7 @@ fn union(dest: &mut Vec<String>, add: &[String]) {
 impl Flavor {
     /// Example flavors written by Claude from Sol's briefs. Adjust freely.
     pub fn examples() -> Vec<Flavor> {
-        vec![fish_mouthed(), pie_like()]
+        vec![fish_mouthed(), pie_like(), familiar()]
     }
 
     pub fn by_id(id: &str) -> Option<Flavor> {
@@ -152,6 +152,48 @@ fn pie_like() -> Flavor {
         disyllabic_roots: Some(0.0),
         preferred_onsets: strings(&["kw", "gw", "st", "sk", "tr", "pr"]),
         preferred_codas: strings(&["r", "n", "m", "s", "t", "k"]),
+        ..Flavor::default()
+    }
+}
+
+/// English-like consonants and plain five-vowel spelling; drops sounds an
+/// English reader has no letters or habits for.
+fn familiar() -> Flavor {
+    Flavor {
+        id: "familiar".into(),
+        name: "Familiar".into(),
+        brief: "Sound more familiar to an English speaker.".into(),
+        segments: weighted(&[
+            ("p", 0.8),
+            ("t", 0.8),
+            ("k", 0.8),
+            ("b", 0.8),
+            ("d", 0.8),
+            ("g", 0.8),
+            ("f", 0.8),
+            ("v", 0.6),
+            ("s", 0.8),
+            ("z", 0.4),
+            ("m", 0.8),
+            ("n", 0.8),
+            ("l", 0.8),
+            ("r", 0.8),
+            ("w", 0.6),
+            ("h", 0.6),
+            ("ʃ", 0.4),
+            ("tʃ", 0.4),
+            ("dʒ", 0.4),
+            ("a", 0.5),
+            ("e", 0.5),
+            ("i", 0.5),
+            ("o", 0.5),
+            ("u", 0.5),
+        ]),
+        forbid: strings(&[
+            "q", "ʔ", "pʼ", "tʼ", "kʼ", "ɓ", "ɗ", "ɬ", "ʎ", "ɣ", "x", "ø", "y", "ɨ", "ɲ", "ɪ", "ʊ",
+            "ə", "æ", "ɑ",
+        ]),
+        final_coda: Some(0.6),
         ..Flavor::default()
     }
 }

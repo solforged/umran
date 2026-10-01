@@ -1,6 +1,7 @@
 use crate::concepts::{CONCEPTS, Concept, Field};
 use crate::form::Form;
 use crate::phonotactics::Phonotactics;
+use crate::profile::Spelling;
 use crate::rng::{key, stream};
 use rand::Rng;
 use std::collections::{HashMap, HashSet};
@@ -15,7 +16,11 @@ const FIELD_TRIES: usize = 256;
 
 /// One root per concept. Each concept draws from its own random stream, so
 /// adding concepts later never changes how earlier draws begin.
-pub fn mint_roots(seed: u64, tactics: &Phonotactics) -> Vec<(&'static Concept, Form)> {
+pub fn mint_roots(
+    seed: u64,
+    tactics: &Phonotactics,
+    spelling: &Spelling,
+) -> Vec<(&'static Concept, Form)> {
     let mut used: HashSet<Form> = HashSet::new();
     let mut by_field: HashMap<Field, HashSet<Form>> = HashMap::new();
     CONCEPTS
@@ -23,7 +28,7 @@ pub fn mint_roots(seed: u64, tactics: &Phonotactics) -> Vec<(&'static Concept, F
         .map(|concept| {
             let mut rng = stream(seed, &[key("root"), key(concept.id)]);
             let field = by_field.entry(concept.field).or_default();
-            let form = mint_one(&mut rng, tactics, concept, &used, field);
+            let form = mint_one(&mut rng, tactics, spelling, concept, &used, field);
             used.insert(form.clone());
             field.insert(form.clone());
             (concept, form)
@@ -36,6 +41,7 @@ pub fn mint_roots(seed: u64, tactics: &Phonotactics) -> Vec<(&'static Concept, F
 pub(crate) fn mint_one(
     rng: &mut impl Rng,
     tactics: &Phonotactics,
+    spelling: &Spelling,
     concept: &Concept,
     used: &HashSet<Form>,
     field: &HashSet<Form>,
@@ -46,7 +52,7 @@ pub(crate) fn mint_one(
             attempt >= FIELD_TRIES / 2 || rng.r#gen::<f32>() < tactics.disyllabic_roots;
         form = tactics.root(rng, concept.iconic, disyllabic);
         let fresh_enough = attempt >= FRESH_TRIES || !used.contains(&form);
-        if fresh_enough && !field.contains(&form) {
+        if fresh_enough && !field.contains(&form) && !spelling.unfortunate(&form) {
             break;
         }
     }
@@ -71,7 +77,7 @@ mod tests {
         for profile in SoundProfile::examples() {
             for seed in 0..1000 {
                 let tactics = tactics(seed, &profile);
-                let roots = mint_roots(seed, &tactics);
+                let roots = mint_roots(seed, &tactics, &profile.spelling);
                 let mut seen: HashSet<(Field, &Form)> = HashSet::new();
                 for (concept, form) in &roots {
                     assert!(
@@ -96,10 +102,10 @@ mod tests {
     #[test]
     fn minting_is_reproducible() {
         let profile = SoundProfile::by_id("elvish").unwrap();
-        let a = mint_roots(42, &tactics(42, &profile));
-        let b = mint_roots(42, &tactics(42, &profile));
+        let a = mint_roots(42, &tactics(42, &profile), &profile.spelling);
+        let b = mint_roots(42, &tactics(42, &profile), &profile.spelling);
         assert_eq!(a, b);
-        let c = mint_roots(43, &tactics(43, &profile));
+        let c = mint_roots(43, &tactics(43, &profile), &profile.spelling);
         assert_ne!(a, c);
     }
 
@@ -112,7 +118,7 @@ mod tests {
         let (mut small, mut other, mut other_total) = (0, 0, 0);
         let seeds = 2000;
         for seed in 0..seeds {
-            for (concept, form) in mint_roots(seed, &tactics(seed, &profile)) {
+            for (concept, form) in mint_roots(seed, &tactics(seed, &profile), &profile.spelling) {
                 let has_i = form.phones().any(|p| p == i);
                 match concept.id {
                     "small" => small += usize::from(has_i),

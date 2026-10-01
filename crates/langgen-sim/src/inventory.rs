@@ -8,6 +8,19 @@ use serde::{Deserialize, Serialize};
 const MIN_SCORE: f32 = 0.45;
 /// Weight floor so a required but dispreferred segment still gets used.
 const MIN_WEIGHT: f32 = 0.08;
+/// How strongly cross-linguistic frequency weighs on which segments an
+/// inventory samples: a segment in half the world's languages is neutral,
+/// rarer ones are discounted, commoner ones favoured.
+const SAMPLING_TYPICALITY: f32 = 1.0;
+/// The same, for how often an inventory's segments are used in words.
+const USAGE_TYPICALITY: f32 = 0.7;
+
+/// Frequency multiplier relative to a segment found in half of all
+/// languages, raised to `strength`.
+fn typicality(id: PhonemeId, strength: f32) -> f32 {
+    (crate::typology::share(id) / 0.5).powf(strength)
+}
+
 /// Score for a manner or height a prior does not list.
 pub(crate) const UNLISTED_PRIMARY: f32 = -0.9;
 /// Score for a place or backness a prior does not list.
@@ -32,7 +45,10 @@ impl Inventory {
         let weights = consonants
             .iter()
             .chain(&vowels)
-            .map(|&id| (id, score(prior, CATALOG.get(id)).max(MIN_WEIGHT)))
+            .map(|&id| {
+                let taste = score(prior, CATALOG.get(id)).max(MIN_WEIGHT);
+                (id, taste * typicality(id, USAGE_TYPICALITY))
+            })
             .collect();
         Self {
             consonants,
@@ -74,8 +90,9 @@ fn pick_class(
     let mut pool: Vec<(PhonemeId, f32)> = (0..CATALOG.segments.len())
         .map(|i| PhonemeId(i as u16))
         .filter(|&id| allowed(id) && !chosen.contains(&id))
-        .map(|id| (id, score(prior, CATALOG.get(id))))
-        .filter(|&(_, s)| s > MIN_SCORE)
+        .map(|id| (id, score(prior, CATALOG.get(id)), id))
+        .filter(|&(_, s, _)| s > MIN_SCORE)
+        .map(|(id, s, _)| (id, s * typicality(id, SAMPLING_TYPICALITY)))
         .collect();
     let target = (rng.gen_range(lo..=hi) as usize).max(chosen.len());
     while chosen.len() < target && !pool.is_empty() {
@@ -85,17 +102,23 @@ fn pick_class(
     chosen
 }
 
-/// Preference score for a segment that may already be in use, treating
-/// anything the culture forbids as strongly dispreferred: a sound change or
-/// a loan can still bring it in, but rarely.
+/// Preference score for a segment that may already be in use: the
+/// culture's taste plus how common the segment is across languages, since
+/// sound changes and loans tend to end in common sounds. Anything the
+/// culture forbids is strongly dispreferred: a change or a loan can still
+/// bring it in, but rarely.
 pub fn preference(prior: &InventoryPrior, id: PhonemeId) -> f32 {
     let seg = CATALOG.get(id);
     if prior.forbidden.iter().any(|f| f == seg.ipa()) {
         FORBIDDEN_SCORE
     } else {
-        score(prior, seg)
+        score(prior, seg) + CHANGE_TYPICALITY * (crate::typology::share(id) / 0.5).ln()
     }
 }
+
+/// Weight of cross-linguistic frequency in `preference`, per natural-log
+/// unit of frequency relative to a segment found in half of languages.
+const CHANGE_TYPICALITY: f32 = 0.5;
 
 const FORBIDDEN_SCORE: f32 = -4.0;
 
@@ -189,5 +212,28 @@ mod tests {
                 assert!(inv.consonants.len() >= prior.consonant_count.0 as usize);
             }
         }
+    }
+
+    /// The plausibility check: a Neutral language's sounds follow how common
+    /// they are across the world's languages.
+    #[test]
+    fn neutral_inventories_track_world_frequencies() {
+        let prior = SoundProfile::by_id("neutral").unwrap().inventory;
+        let seeds = 300;
+        let mut counts = vec![0u32; CATALOG.segments.len()];
+        for seed in 0..seeds {
+            let inv = Inventory::sample(&prior, &mut stream(seed, &[]));
+            for id in inv.consonants.iter().chain(&inv.vowels) {
+                counts[id.0 as usize] += 1;
+            }
+        }
+        let pairs: Vec<(f32, f32)> = (0..CATALOG.segments.len())
+            .map(|i| {
+                let id = PhonemeId(i as u16);
+                (counts[i] as f32 / seeds as f32, crate::typology::share(id))
+            })
+            .collect();
+        let rho = crate::wold::spearman(&pairs);
+        assert!(rho >= 0.7, "Spearman {rho:.2} against PHOIBLE");
     }
 }

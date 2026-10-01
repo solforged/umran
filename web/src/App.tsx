@@ -7,6 +7,7 @@ import { Communities } from "./components/Communities";
 import { Inspector } from "./components/Inspector";
 import { Lexicon } from "./components/Lexicon";
 import { Modal } from "./components/Modal";
+import { RunControls } from "./components/RunControls";
 import { Timeline } from "./components/Timeline";
 
 // The previous workbench used `langgen.workbench.v2`; that data is left
@@ -48,6 +49,7 @@ export default function App() {
   const [pending, setPending] = useState<Action | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
   const persist = useCallback(() => {
@@ -115,6 +117,39 @@ export default function App() {
       else run(action);
     },
     [generation, run],
+  );
+
+  // One generation at the present, for play; saving waits until play stops.
+  const tick = useCallback((): boolean => {
+    const current = engine.current;
+    if (!current) return false;
+    try {
+      current.act({ kind: "run", generations: 1 });
+      setViewing(null);
+      setVersion((v) => v + 1);
+      return true;
+    } catch (e) {
+      setError(message(e));
+      return false;
+    }
+  }, []);
+
+  const nextEvent = useCallback(
+    (limit: number) => {
+      const current = engine.current;
+      if (!current) return;
+      const before = current.latest();
+      const ran = current.runUntilEvent(limit);
+      setViewing(null);
+      setVersion((v) => v + 1);
+      persist();
+      setInfo(
+        ran >= limit
+          ? `Nothing happened in ${limit} generations.`
+          : `Something happened after ${ran} generation${ran === 1 ? "" : "s"} (generation ${before + ran}).`,
+      );
+    },
+    [persist],
   );
 
   const startWorld = useCallback(
@@ -195,11 +230,14 @@ export default function App() {
           <span> · about {generation * YEARS} years</span>
         </div>
         <div className="row">
-          {[1, 10, 40].map((n) => (
-            <button key={n} type="button" className="primary" onClick={() => perform({ kind: "run", generations: n })}>
-              Run {n}
-            </button>
-          ))}
+          <RunControls
+            generation={generation}
+            atPresent={generation === latest}
+            onRun={(generations) => perform({ kind: "run", generations })}
+            onTick={tick}
+            onNextEvent={nextEvent}
+            onStop={persist}
+          />
           <button
             type="button"
             disabled={overview.timeline.length <= 1}
@@ -252,6 +290,11 @@ export default function App() {
         </p>
       ) : null}
       {saveError ? <p className="notice error">{saveError}</p> : null}
+      {info ? (
+        <p className="notice" role="status">
+          {info} <button type="button" className="link" onClick={() => setInfo(null)}>Dismiss</button>
+        </p>
+      ) : null}
 
       <main className="panes">
         <Communities

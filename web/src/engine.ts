@@ -17,6 +17,7 @@ function wrap(bench: Workbench): Engine {
   return {
     act: (action: Action) => bench.act(JSON.stringify(action)),
     undo: () => bench.undo(),
+    runUntilEvent: (limit) => bench.runUntilEvent(limit),
     branch: (generation) => bench.branch(generation),
     latest: () => bench.latest(),
     overview: (generation) => JSON.parse(bench.overview(generation)) as Overview,

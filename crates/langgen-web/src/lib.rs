@@ -48,6 +48,11 @@ impl Workbench {
         self.bench.undo()
     }
 
+    #[wasm_bindgen(js_name = runUntilEvent)]
+    pub fn run_until_event(&mut self, limit: u32) -> u32 {
+        self.bench.run_until_event(limit)
+    }
+
     pub fn branch(&mut self, generation: u32) {
         self.bench.branch(generation)
     }
@@ -173,6 +178,11 @@ impl Bench {
     pub fn undo(&mut self) -> bool {
         self.cached = None;
         self.chronicle.undo().is_some()
+    }
+
+    pub fn run_until_event(&mut self, limit: u32) -> u32 {
+        self.cached = None;
+        self.chronicle.run_until_event(limit)
     }
 
     /// Discards everything after `generation`.

@@ -193,6 +193,14 @@ select {
   font-variant-numeric: tabular-nums;
 }
 
+.run-controls form {
+  gap: 0.35rem;
+}
+
+.run-controls .year {
+  width: 6.5rem;
+}
+
 .notice {
   margin: 0;
   padding: 0.4rem 1rem;

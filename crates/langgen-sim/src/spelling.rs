@@ -2,7 +2,20 @@ use crate::form::{Form, Seg};
 use crate::phoneme::CATALOG;
 use crate::profile::{LongVowel, Spelling};
 
+/// Spellings that read as English vulgarities or slurs. Minting avoids
+/// them as a courtesy to readers, not as a claim about the languages.
+const UNFORTUNATE: &[&str] = &[
+    "shit", "shite", "fuck", "fuk", "cunt", "kunt", "piss", "cock", "dick", "twat", "wank", "slut",
+    "whore", "fag", "rape", "nazi", "porn", "nigga", "niga",
+];
+
 impl Spelling {
+    /// Whether the written form reads as an English vulgarity.
+    pub fn unfortunate(&self, form: &Form) -> bool {
+        let written = self.write(form).to_lowercase();
+        UNFORTUNATE.contains(&written.as_str())
+    }
+
     /// The form in this variety's romanization.
     pub fn write(&self, form: &Form) -> String {
         let ipa = |i: usize| CATALOG.get(form.segs[i].phone).ipa();

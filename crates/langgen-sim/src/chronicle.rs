@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 /// Bumped whenever an engine change would make an existing recipe replay
 /// differently. Saves record it so a mismatch can be reported.
-pub const ENGINE_REVISION: u32 = 1;
+pub const ENGINE_REVISION: u32 = 2;
 /// Identifies saved recipes.
 pub const FORMAT: &str = "langgen-sim-recipe";
 /// Generations between cached checkpoints.
@@ -110,13 +110,32 @@ impl Chronicle {
     }
 
     /// Applies `action` to the latest world and records it, or explains why
-    /// it cannot happen and changes nothing.
+    /// it cannot happen and changes nothing. A run straight after another
+    /// run extends it, so playing generation by generation stays one action.
     pub fn act(&mut self, action: Action) -> Result<(), String> {
         let mut next = self.latest.clone();
         apply(&mut next, &action)?;
         self.latest = next;
-        self.actions.push(action);
+        match (self.actions.last_mut(), &action) {
+            (Some(Action::Run { generations }), Action::Run { generations: more }) => {
+                *generations += more;
+            }
+            _ => self.actions.push(action),
+        }
         Ok(())
+    }
+
+    /// Runs one generation at a time until a split or shift happens, or
+    /// `limit` generations pass; returns how many ran.
+    pub fn run_until_event(&mut self, limit: u32) -> u32 {
+        let before = self.latest.events.len();
+        let mut ran = 0;
+        while ran < limit && self.latest.events.len() == before {
+            self.act(Action::Run { generations: 1 })
+                .expect("a one-generation run is always valid");
+            ran += 1;
+        }
+        ran
     }
 
     /// Removes the last action.
@@ -410,6 +429,25 @@ mod tests {
         assert!(c.act(found("", "neutral")).is_err());
         assert!(c.act(found("X", "no-such-profile")).is_err());
         assert_eq!(c.actions().len(), before, "rejected actions change nothing");
+    }
+
+    #[test]
+    fn consecutive_runs_merge_and_events_stop_a_run() {
+        let mut c = sample();
+        let before = c.actions().len();
+        c.act(Action::Run { generations: 1 }).unwrap();
+        c.act(Action::Run { generations: 1 }).unwrap();
+        assert_eq!(c.actions().len(), before, "runs extend the last run");
+        assert_eq!(c.actions().last(), Some(&Action::Run { generations: 24 }));
+        // Replaying the merged run gives the same world as stepping did.
+        let mut cold = Chronicle::from_recipe(&c.recipe()).unwrap();
+        assert!(same(&cold.world_at(39), c.latest()));
+
+        let mut world = Chronicle::new(1);
+        world.act(found("Hill", "neutral")).unwrap();
+        let ran = world.run_until_event(400);
+        assert!(ran < 400, "a growing community eventually splits");
+        assert_eq!(world.latest().events.len(), 1);
     }
 
     #[test]

@@ -8,6 +8,10 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// Draws a root gets to avoid repeating a consonant.
+const REPEAT_TRIES: usize = 8;
+/// Repeat tolerance for roots coined from a language's current sounds.
+const OBSERVED_REPEATS: f32 = 0.1;
 /// Weight added to a preferred onset or coda already in the inventory;
 /// a preferred cluster enters with `PREFERRED_WEIGHT + 1`.
 const PREFERRED_WEIGHT: f32 = 6.0;
@@ -24,6 +28,8 @@ pub struct Phonotactics {
     pub final_coda: f32,
     pub open_medial: bool,
     pub disyllabic_roots: f32,
+    /// Chance a root may repeat a consonant.
+    pub identical_consonants: f32,
 }
 
 impl Phonotactics {
@@ -57,25 +63,34 @@ impl Phonotactics {
             final_coda: prior.final_coda.clamp(0.0, 1.0),
             open_medial: prior.open_medial,
             disyllabic_roots: prior.disyllabic_roots.clamp(0.0, 1.0),
+            identical_consonants: prior.identical_consonants.clamp(0.0, 1.0),
         }
     }
 
-    /// A founding root: CV or CVC, or CVCV when `disyllabic`. Roots always
-    /// have an onset and use single consonants only.
+    /// A founding root: CV or CVC, or CVCV or CVCVC when `disyllabic`.
+    /// Roots have onsets (while the language has any), use single
+    /// consonants, and usually avoid repeating one.
     pub fn root(&self, rng: &mut impl Rng, iconic: Option<Iconic>, disyllabic: bool) -> Form {
         let onsets = singles(&self.onsets);
         let codas = singles(&self.codas);
-        let mut phones = Vec::with_capacity(4);
-        for _ in 0..if disyllabic { 2 } else { 1 } {
-            // A language that has lost every initial consonant coins
-            // vowel-initial words.
-            if !onsets.is_empty() {
-                phones.push(pick(rng, &onsets, iconic));
+        let mut phones = Vec::with_capacity(5);
+        for _ in 0..REPEAT_TRIES {
+            phones.clear();
+            for _ in 0..if disyllabic { 2 } else { 1 } {
+                // A language that has lost every initial consonant coins
+                // vowel-initial words.
+                if !onsets.is_empty() {
+                    phones.push(pick(rng, &onsets, iconic));
+                }
+                phones.push(pick(rng, &self.nuclei, iconic));
             }
-            phones.push(pick(rng, &self.nuclei, iconic));
-        }
-        if !disyllabic && !codas.is_empty() && rng.r#gen::<f32>() < self.final_coda {
-            phones.push(pick(rng, &codas, iconic));
+            if !codas.is_empty() && rng.r#gen::<f32>() < self.final_coda {
+                phones.push(pick(rng, &codas, iconic));
+            }
+            // Most languages avoid repeating a consonant within a root.
+            if !repeats_consonant(&phones) || rng.r#gen::<f32>() < self.identical_consonants {
+                break;
+            }
         }
         Form::from_phones(phones)
     }
@@ -113,6 +128,7 @@ impl Phonotactics {
             final_coda: if words > 0.0 { closed / words } else { 0.0 },
             open_medial: false,
             disyllabic_roots: if words > 0.0 { longer / words } else { 0.0 },
+            identical_consonants: OBSERVED_REPEATS,
         }
     }
 
@@ -124,7 +140,7 @@ impl Phonotactics {
         };
         let shape_ok = match syllables.len() {
             1 => syllables[0].coda.len() <= 1,
-            2 => syllables.iter().all(|s| s.coda.is_empty()),
+            2 => syllables[0].coda.is_empty() && syllables[1].coda.len() <= 1,
             _ => false,
         };
         shape_ok
@@ -142,6 +158,18 @@ impl Phonotactics {
                         .all(|i| single(&self.codas, form.segs[i].phone))
             })
     }
+}
+
+fn repeats_consonant(phones: &[PhonemeId]) -> bool {
+    let consonants: Vec<PhonemeId> = phones
+        .iter()
+        .copied()
+        .filter(|p| !CATALOG.get(*p).is_vowel())
+        .collect();
+    consonants
+        .iter()
+        .enumerate()
+        .any(|(i, c)| consonants[i + 1..].contains(c))
 }
 
 fn singles(list: &[(Vec<PhonemeId>, f32)]) -> Vec<(PhonemeId, f32)> {
