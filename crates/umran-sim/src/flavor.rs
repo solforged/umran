@@ -143,8 +143,8 @@ fn pie_like() -> Flavor {
     use Place::*;
     Flavor {
         id: "pie-like".into(),
-        name: "PIE-like".into(),
-        brief: "Give it more of a Proto-Indo-European vibe.".into(),
+        name: "Hard, with stops and closed roots".into(),
+        brief: "Like Proto-Indo-European: voiced and plain stops, e and o, closed roots.".into(),
         manner: vec![(Stop, 1.2), (Fricative, -1.0)],
         place: vec![(Velar, 1.0)],
         segments: weighted(&[
@@ -170,8 +170,8 @@ fn pie_like() -> Flavor {
 fn familiar() -> Flavor {
     Flavor {
         id: "familiar".into(),
-        name: "Familiar".into(),
-        brief: "Sound more familiar to an English speaker.".into(),
+        name: "Plain, easy on an English ear".into(),
+        brief: "Only sounds an English reader has letters for, spelled with five vowels.".into(),
         segments: weighted(&[
             ("p", 0.8),
             ("t", 0.8),

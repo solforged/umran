@@ -59,8 +59,8 @@ pub fn all() -> Vec<Flavor> {
 fn indic() -> Flavor {
     Flavor {
         id: "indic".into(),
-        name: "Indic".into(),
-        brief: "Make it more like Sanskrit.".into(),
+        name: "Breathy, with stops let out in a puff".into(),
+        brief: "Like Sanskrit: aspirated and breathy stops, retroflexes, long vowels.".into(),
         segments: weighted(&[
             ("pʰ", 2.0),
             ("tʰ", 2.0),
@@ -113,8 +113,8 @@ fn indic() -> Flavor {
 fn iranian() -> Flavor {
     Flavor {
         id: "iranian".into(),
-        name: "Iranian".into(),
-        brief: "Make it sound more like Old Persian.".into(),
+        name: "Soft-spoken, rich in f, th, and kh".into(),
+        brief: "Like Old Persian: fricatives where others have stops, three vowels.".into(),
         segments: weighted(&[
             ("f", 1.5),
             ("θ", 3.0),
@@ -150,8 +150,8 @@ fn iranian() -> Flavor {
 fn germanic() -> Flavor {
     Flavor {
         id: "germanic".into(),
-        name: "Germanic".into(),
-        brief: "Make it sound more like Old English.".into(),
+        name: "Clipped, with th and short closed syllables".into(),
+        brief: "Like Old English: θ, ð, æ, y, closed syllables, Old English spelling.".into(),
         segments: weighted(&[
             ("f", 1.2),
             ("θ", 3.0),
@@ -202,8 +202,8 @@ fn semitic() -> Flavor {
     use Place::*;
     Flavor {
         id: "semitic".into(),
-        name: "Semitic".into(),
-        brief: "Give it a Semitic, triconsonantal feel, like Arabic or Hebrew.".into(),
+        name: "Guttural, built on roots of three consonants".into(),
+        brief: "Like Arabic or Hebrew: consonant roots, pharyngeals, three vowels.".into(),
         manner: vec![(Fricative, 0.8)],
         place: vec![(Uvular, 1.5), (Pharyngeal, 2.0), (Glottal, 1.5)],
         segments: weighted(&[
@@ -241,8 +241,8 @@ fn semitic() -> Flavor {
 fn nahuatl() -> Flavor {
     Flavor {
         id: "nahuatl".into(),
-        name: "Nahuatl-like".into(),
-        brief: "Give it Nahuatl-like sounds.".into(),
+        name: "Full of tl and tz, without b, d, or g".into(),
+        brief: "Like Classical Nahuatl: tl, tz, kw, no voiced stops or r, four vowels.".into(),
         segments: weighted(&[
             ("tɬ", 8.0),
             ("ts", 2.0),
@@ -293,8 +293,8 @@ fn nahuatl() -> Flavor {
 fn bantu() -> Flavor {
     Flavor {
         id: "bantu".into(),
-        name: "Bantu-like".into(),
-        brief: "Make it more Bantu-like.".into(),
+        name: "Rounded and open, every syllable ending in a vowel".into(),
+        brief: "Like the Bantu languages: open syllables, two-syllable roots, prefixes.".into(),
         segments: weighted(&[
             ("m", 0.5),
             ("n", 0.5),
@@ -328,8 +328,8 @@ fn polynesian() -> Flavor {
     use Manner::*;
     Flavor {
         id: "polynesian".into(),
-        name: "Polynesian-like".into(),
-        brief: "Make it more Polynesian.".into(),
+        name: "Spare and open, with few consonants".into(),
+        brief: "Like Hawaiian or Māori: few sounds, open syllables, reduplication.".into(),
         manner: vec![(Fricative, -1.0), (Affricate, -3.0)],
         segments: weighted(&[
             ("p", 1.0),
@@ -376,8 +376,8 @@ fn finnic() -> Flavor {
     use Height::*;
     Flavor {
         id: "finnic".into(),
-        name: "Finnic".into(),
-        brief: "Make it more like Finnish.".into(),
+        name: "Bright, with ä, ö, and doubled vowels".into(),
+        brief: "Like Finnish: ä, ö, and y, long vowels written double, only suffixes.".into(),
         height: vec![(Close, 0.5), (CloseMid, 0.5), (NearOpen, 1.0)],
         backness: vec![(Front, 0.5)],
         segments: weighted(&[
@@ -419,8 +419,8 @@ fn finnic() -> Flavor {
 fn caucasian() -> Flavor {
     Flavor {
         id: "caucasian".into(),
-        name: "Caucasian".into(),
-        brief: "Give it a Caucasian edge: ejectives, uvulars, few vowels.".into(),
+        name: "Harsh, crowded with popped stops".into(),
+        brief: "Like the languages of the Caucasus: ejectives, uvulars, few vowels.".into(),
         segments: weighted(&[
             ("pʼ", 4.0),
             ("tʼ", 4.0),
