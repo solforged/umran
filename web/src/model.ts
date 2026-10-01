@@ -173,7 +173,7 @@ export interface TellingView {
 /// One chronicle entry; `variety` is set for a sound law.
 export interface Annal {
   generation: number;
-  kind: "found" | "split" | "shift" | "contact" | "law";
+  kind: "found" | "split" | "shift" | "contact" | "parted" | "conquest" | "law";
   /// The annalist's words; words of the language are marked *thus*.
   text: string;
   /// The apparatus: what a linguist would note, such as sound laws.

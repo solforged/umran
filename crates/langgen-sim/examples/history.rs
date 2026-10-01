@@ -53,6 +53,27 @@ fn main() {
                 name(*community),
                 name(*toward)
             ),
+            WorldEvent::Met { a, b, kind } => {
+                println!(
+                    "  gen {generation:>3}  {} and {} meet ({kind:?})",
+                    name(*a),
+                    name(*b)
+                )
+            }
+            WorldEvent::Parted { a, b, kind } => {
+                println!(
+                    "  gen {generation:>3}  {} and {} part ({kind:?})",
+                    name(*a),
+                    name(*b)
+                )
+            }
+            WorldEvent::Conquered { ruler, ruled } => {
+                println!(
+                    "  gen {generation:>3}  {} conquers {}",
+                    name(*ruler),
+                    name(*ruled)
+                )
+            }
         }
     }
 

@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 #[derive(Clone, PartialEq, Serialize)]
 pub(crate) struct Annal {
     pub generation: u32,
-    /// "found", "split", "shift", "contact", or "law".
+    /// "found", "split", "shift", "contact", "parted", "conquest", or "law".
     pub kind: &'static str,
     /// The annalist's words. Words of the language are marked `*thus*`.
     pub text: String,
@@ -80,6 +80,37 @@ fn contact_wording(contact: ContactKind) -> &'static [&'static str] {
     }
 }
 
+fn parting_wording(contact: ContactKind) -> &'static [&'static str] {
+    match contact {
+        ContactKind::Neighbours => &[
+            "The {a} and the {b} drifted apart and had little more to do with one another.",
+            "The {a} and the {b} ceased to be neighbours.",
+        ],
+        ContactKind::Trade => &[
+            "The road between the {a} and the {b} fell out of use, and their trade ended.",
+            "Trade between the {a} and the {b} failed.",
+        ],
+        ContactKind::Rule => &[
+            "The {b} threw off the rule of the {a}.",
+            "The rule of the {a} over the {b} came to an end.",
+        ],
+        ContactKind::Religion => &[
+            "The {a} and the {b} no longer kept the same feasts.",
+            "The {a} and the {b} went their own ways in worship.",
+        ],
+        ContactKind::Intermarriage => &[
+            "The {a} and the {b} ceased to marry one another.",
+            "Marriages between the {a} and the {b} grew rare, then stopped.",
+        ],
+    }
+}
+
+const CONQUEST: &[&str] = &[
+    "The {a} conquered the {b} and ruled over them.",
+    "The {b} fell under the rule of the {a}.",
+    "The {a} made themselves masters of the {b}.",
+];
+
 /// One of `options` for the entry `keys` identify, filled in.
 fn tell(world: &World, keys: &[u64], options: &[&str], fill: &[(&str, &str)]) -> String {
     let mut all = vec![key("annal")];
@@ -94,10 +125,7 @@ fn tell(world: &World, keys: &[u64], options: &[&str], fill: &[(&str, &str)]) ->
 
 /// Everything that happened in `world`, as chronicle entries in order.
 /// Names are written as they were said at the time of each entry.
-pub(crate) fn annals(
-    world: &World,
-    connections: &[(u32, usize, usize, ContactKind)],
-) -> Vec<Annal> {
+pub(crate) fn annals(world: &World) -> Vec<Annal> {
     let meaning = |c: usize| world.communities[c].name.meaning.as_str();
     let mut out: Vec<Annal> = Vec::new();
     let entry = |generation, kind, text| Annal {
@@ -109,6 +137,15 @@ pub(crate) fn annals(
     };
     for &(generation, ref event) in &world.events {
         let name = |c: usize| world.community_name_at(c, generation);
+        let pair = |kind: &'static str, options: &[&str], a: usize, b: usize| {
+            let mut all = vec![key(kind), u64::from(generation)];
+            all.extend([a as u64, b as u64]);
+            entry(
+                generation,
+                kind,
+                tell(world, &all, options, &[("a", &name(a)), ("b", &name(b))]),
+            )
+        };
         let tongue = |c: usize| world.language_title_at(world.communities[c].variety, generation);
         let g = u64::from(generation);
         out.push(match *event {
@@ -162,25 +199,10 @@ pub(crate) fn annals(
                     ],
                 ),
             ),
+            WorldEvent::Met { a, b, kind } => pair("contact", contact_wording(kind), a, b),
+            WorldEvent::Parted { a, b, kind } => pair("parted", parting_wording(kind), a, b),
+            WorldEvent::Conquered { ruler, ruled } => pair("conquest", CONQUEST, ruler, ruled),
         });
-    }
-    for &(generation, a, b, contact) in connections {
-        if generation > world.generation || a.max(b) >= world.communities.len() {
-            continue;
-        }
-        out.push(entry(
-            generation,
-            "contact",
-            tell(
-                world,
-                &[key("contact"), u64::from(generation), a as u64, b as u64],
-                contact_wording(contact),
-                &[
-                    ("a", &world.community_name_at(a, generation)),
-                    ("b", &world.community_name_at(b, generation)),
-                ],
-            ),
-        ));
     }
     out.extend(sound_changes(world));
     out.sort_by_key(|a| (a.generation, a.kind == "law"));

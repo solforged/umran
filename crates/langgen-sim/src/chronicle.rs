@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 
 /// Bumped whenever an engine change would make an existing recipe replay
 /// differently. Saves record it so a mismatch can be reported.
-pub const ENGINE_REVISION: u32 = 8;
+pub const ENGINE_REVISION: u32 = 9;
 /// Identifies saved recipes.
 pub const FORMAT: &str = "langgen-sim-recipe";
 /// Generations between cached checkpoints.
@@ -163,7 +163,7 @@ impl Chronicle {
         Ok(())
     }
 
-    /// Runs one generation at a time until a split or shift happens, or
+    /// Runs one generation at a time until a world event happens, or
     /// `limit` generations pass; returns how many ran.
     pub fn run_until_event(&mut self, limit: u32) -> u32 {
         let before = self.latest.events.len();

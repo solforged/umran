@@ -32,6 +32,13 @@ const INITIAL_SIZE: f32 = 1000.0;
 const SHIFT_MIN_GAP: f32 = 0.2;
 /// Contact intensity between the halves of a community that just split.
 const FISSION_CONTACT: f32 = 0.5;
+/// Prestige gap below which no people conquers another.
+const CONQUEST_MIN_GAP: f32 = 0.3;
+/// How much longer rule lasts per unit of prestige gap between ruler and
+/// ruled: an empire far stronger than its subjects holds them longer.
+const RULE_HOLD: f32 = 3.0;
+/// Intensity of rule after a conquest, at least.
+const CONQUEST_INTENSITY: f32 = 0.6;
 
 /// Rates per generation. Defaults are calibrated so an isolated variety
 /// keeps about 84% of its core list per 40 generations.
@@ -108,6 +115,18 @@ pub struct Params {
     /// Scales the chance that a shifting community keeps its old word for
     /// a concept, by borrowability and how local the concept is.
     pub substrate_words: f32,
+    /// Scales how soon contacts end of themselves; 1 gives each kind its
+    /// typical lifespan, 0 makes contacts last for ever.
+    pub contact_turnover: f32,
+    /// Chance per generation that peoples sharing land and out of contact
+    /// come to deal with each other as neighbours again.
+    pub neighbour_rate: f32,
+    /// Chance per generation that a people opens trade with another it
+    /// has no dealings with.
+    pub trade_rate: f32,
+    /// Chance per generation, per unit of prestige gap beyond
+    /// `CONQUEST_MIN_GAP`, that a people comes to rule one it deals with.
+    pub conquest_rate: f32,
 }
 
 impl Default for Params {
@@ -139,6 +158,10 @@ impl Default for Params {
             shift_rate: 0.02,
             substrate_merge: 0.6,
             substrate_words: 0.5,
+            contact_turnover: 1.0,
+            neighbour_rate: 0.1,
+            trade_rate: 0.01,
+            conquest_rate: 0.05,
         }
     }
 }
@@ -151,6 +174,10 @@ impl Params {
             growth_rate: 0.0,
             fission_rate: 0.0,
             shift_rate: 0.0,
+            contact_turnover: 0.0,
+            neighbour_rate: 0.0,
+            trade_rate: 0.0,
+            conquest_rate: 0.0,
             ..Self::default()
         }
     }
@@ -219,6 +246,19 @@ impl ContactKind {
             (Intermarriage, _) => 1.0,
         }
     }
+
+    /// Generations this kind of contact typically lasts before it ends of
+    /// itself: trade routes fail and empires fall within centuries, while
+    /// neighbours and shared gods last far longer.
+    pub fn lifespan(self) -> f32 {
+        match self {
+            ContactKind::Trade => 12.0,
+            ContactKind::Rule => 16.0,
+            ContactKind::Intermarriage => 20.0,
+            ContactKind::Religion => 30.0,
+            ContactKind::Neighbours => 40.0,
+        }
+    }
 }
 
 /// Something that happened to communities rather than to words.
@@ -235,6 +275,21 @@ pub enum WorldEvent {
         toward: usize,
         variety: usize,
     },
+    /// `a` and `b` came into contact, by an author's hand or the world's.
+    Met {
+        a: usize,
+        b: usize,
+        kind: ContactKind,
+    },
+    /// The contact between `a` and `b` ended of itself. For rule, `a` is
+    /// the side that ruled.
+    Parted {
+        a: usize,
+        b: usize,
+        kind: ContactKind,
+    },
+    /// `ruler` came to rule `ruled`, with whom it already had dealings.
+    Conquered { ruler: usize, ruled: usize },
 }
 
 /// Ongoing contact between two communities, in both directions.
@@ -245,6 +300,8 @@ pub struct Contact {
     /// 0–1: how much the communities deal with each other.
     pub intensity: f32,
     pub kind: ContactKind,
+    /// The generation it began.
+    pub since: u32,
 }
 
 /// Communities, their varieties, and the contacts between them, stepping
@@ -361,7 +418,22 @@ impl World {
             None => self.daughter_naming(community),
         };
         let base = &self.communities[community].name;
-        let name = self.coin(&daughter, &naming, Some((base, &self.varieties[parent])));
+        let taken = |name: &Name| {
+            self.communities
+                .iter()
+                .any(|c| c.name.form.segs == name.form.segs)
+        };
+        let mut name = self.coin(&daughter, &naming, Some((base, &self.varieties[parent])));
+        // A clipped name can come out as an existing one ("the new Tinea"
+        // clipped back to "Tinea"); a place name tells them apart instead.
+        if taken(&name) {
+            let other = crate::names::PLACES
+                .iter()
+                .map(|p| Naming::Place { place: (*p).into() })
+                .map(|n| self.coin(&daughter, &n, None))
+                .find(|n| !taken(n));
+            name = other.unwrap_or(name);
+        }
         daughter.name = self.language_name(&daughter, &name);
         self.varieties.push(daughter);
         self.communities[community].size /= 2.0;
@@ -371,7 +443,7 @@ impl World {
         self.communities.push(new);
         let index = self.communities.len() - 1;
         if intensity > 0.0 {
-            self.connect(community, index, intensity, ContactKind::Neighbours);
+            self.link(community, index, intensity, ContactKind::Neighbours);
         }
         self.events.push((
             self.generation,
@@ -407,12 +479,22 @@ impl World {
         }
     }
 
+    /// Brings `a` and `b` into contact, as an event of the world's history.
     pub fn connect(&mut self, a: usize, b: usize, intensity: f32, kind: ContactKind) {
+        self.link(a, b, intensity, kind);
+        self.events
+            .push((self.generation, WorldEvent::Met { a, b, kind }));
+    }
+
+    /// A contact with no event of its own, as between the halves of a
+    /// split, which the split's event already tells.
+    fn link(&mut self, a: usize, b: usize, intensity: f32, kind: ContactKind) {
         self.contacts.push(Contact {
             a,
             b,
             intensity: intensity.clamp(0.0, 1.0),
             kind,
+            since: self.generation,
         });
     }
 
@@ -447,6 +529,8 @@ impl World {
         self.grow();
         self.split_large();
         self.shift_languages();
+        self.end_contacts();
+        self.make_contacts();
     }
 
     /// Which varieties some community still speaks. Unspoken varieties are
@@ -644,6 +728,127 @@ impl World {
             if total > 0.0 && rng.r#gen::<f32>() < total {
                 let target = options[weighted_index(&mut rng, options.iter().map(|(_, h)| *h))].0;
                 self.shift(c, target);
+            }
+        }
+    }
+
+    /// Contacts end of themselves, each kind after its typical lifespan
+    /// on average: routes fail, empires fall, distant neighbours drift
+    /// apart, though peoples sharing land stay neighbours. Rule
+    /// lasts longer the further its ruler stands above the ruled. Rule and
+    /// intermarriage leave the peoples neighbours, at half the intensity.
+    fn end_contacts(&mut self) {
+        let generation = self.generation;
+        let mut ended = Vec::new();
+        for (i, contact) in self.contacts.iter().enumerate() {
+            let mut rng = stream(
+                self.seed,
+                &[
+                    key("step"),
+                    u64::from(generation),
+                    key("contact end"),
+                    contact.a as u64,
+                    contact.b as u64,
+                    key(&format!("{:?}", contact.kind)),
+                ],
+            );
+            let gap =
+                (self.communities[contact.a].prestige - self.communities[contact.b].prestige).abs();
+            let (ca, cb) = (&self.communities[contact.a], &self.communities[contact.b]);
+            let hold = match contact.kind {
+                // Peoples on the same land stay neighbours.
+                ContactKind::Neighbours if ca.territory == cb.territory => continue,
+                ContactKind::Rule => 1.0 + RULE_HOLD * gap,
+                _ => 1.0,
+            };
+            // A contact lasts a third of its lifespan before it can end, so
+            // routes and alliances are not made and lost within a lifetime.
+            let lifespan = contact.kind.lifespan() * hold;
+            let settled = generation - contact.since >= (lifespan / 3.0) as u32;
+            let hazard = self.params.contact_turnover * 1.5 / lifespan;
+            if settled && rng.r#gen::<f32>() < hazard {
+                ended.push(i);
+            }
+        }
+        for &i in ended.iter().rev() {
+            let Contact {
+                a,
+                b,
+                kind,
+                intensity,
+                ..
+            } = self.contacts.remove(i);
+            // Peoples that ruled or married one another still live near
+            // each other afterwards.
+            if matches!(kind, ContactKind::Rule | ContactKind::Intermarriage) {
+                self.link(a, b, intensity / 2.0, ContactKind::Neighbours);
+            }
+            let ruler_first = self.communities[a].prestige >= self.communities[b].prestige;
+            let (a, b) = if kind == ContactKind::Rule && !ruler_first {
+                (b, a)
+            } else {
+                (a, b)
+            };
+            self.events
+                .push((generation, WorldEvent::Parted { a, b, kind }));
+        }
+    }
+
+    /// The world makes contacts of its own: peoples sharing land deal with
+    /// each other again, peoples open trade, and a people far above one
+    /// it deals with may come to rule it.
+    fn make_contacts(&mut self) {
+        let in_touch = |contacts: &[Contact], a: usize, b: usize| {
+            contacts
+                .iter()
+                .any(|k| (k.a, k.b) == (a, b) || (k.a, k.b) == (b, a))
+        };
+        for c in 0..self.communities.len() {
+            let mut rng = self.community_rng(c, "contact");
+            let strangers: Vec<usize> = (0..self.communities.len())
+                .filter(|&o| o != c && !in_touch(&self.contacts, c, o))
+                .collect();
+            for &o in strangers.iter().filter(|&&o| o > c) {
+                let shared = self.communities[o].territory == self.communities[c].territory;
+                if shared && rng.r#gen::<f32>() < self.params.neighbour_rate {
+                    let intensity = rng.gen_range(0.3..0.7);
+                    self.connect(c, o, intensity, ContactKind::Neighbours);
+                }
+            }
+            let strangers: Vec<usize> = strangers
+                .into_iter()
+                .filter(|&o| !in_touch(&self.contacts, c, o))
+                .collect();
+            if !strangers.is_empty() && rng.r#gen::<f32>() < self.params.trade_rate {
+                let o = strangers[crate::rng::index(&mut rng, strangers.len())];
+                let intensity = rng.gen_range(0.2..0.6);
+                self.connect(c, o, intensity, ContactKind::Trade);
+            }
+            let me = self.communities[c].prestige;
+            let ruled: Vec<usize> = self
+                .contacts
+                .iter()
+                .enumerate()
+                .filter(|(_, k)| k.kind != ContactKind::Rule && (k.a == c || k.b == c))
+                .filter_map(|(i, k)| {
+                    let other = if k.a == c { k.b } else { k.a };
+                    let gap = me - self.communities[other].prestige - CONQUEST_MIN_GAP;
+                    let rules_already = self
+                        .contacts
+                        .iter()
+                        .any(|r| r.kind == ContactKind::Rule && (r.a == other || r.b == other));
+                    let hazard = self.params.conquest_rate * gap;
+                    (gap > 0.0 && !rules_already && rng.r#gen::<f32>() < hazard).then_some(i)
+                })
+                .collect();
+            if let Some(&i) = ruled.first() {
+                let contact = &mut self.contacts[i];
+                let ruled = if contact.a == c { contact.b } else { contact.a };
+                contact.kind = ContactKind::Rule;
+                contact.intensity = contact.intensity.max(CONQUEST_INTENSITY);
+                contact.since = self.generation;
+                self.events
+                    .push((self.generation, WorldEvent::Conquered { ruler: c, ruled }));
             }
         }
     }
@@ -1676,7 +1881,9 @@ mod tests {
                 world.varieties[v].parent.is_some()
             })
             .count();
-        assert!(shifted >= 10, "{shifted} of 20 shifted");
+        // Rule ends in time, so many subjects outlast their rulers, as the
+        // Britons, Greeks, and Persians did; a sizable share still shift.
+        assert!((5..=15).contains(&shifted), "{shifted} of 20 shifted");
     }
 
     #[test]
@@ -1822,6 +2029,76 @@ mod tests {
             long_homophony < 0.05 && short_homophony < 0.05,
             "homophony {long_homophony:.3}, {short_homophony:.3}"
         );
+    }
+
+    /// Contacts come and go: a trade route between peoples on different
+    /// lands ends within centuries and leaves an event, rule fades into
+    /// neighbourhood, and a static society keeps its contacts for ever.
+    #[test]
+    fn contacts_end_and_the_world_makes_new_ones() {
+        let (mut ended, mut freed, mut met) = (0, 0, 0);
+        for seed in 0..20 {
+            let mut world = World::new(seed, Params::default());
+            let a = world.found(&SoundProfile::by_id("germanic").unwrap(), 0.5, 0.5);
+            let b = world.found(&SoundProfile::by_id("finnic").unwrap(), 0.5, 0.5);
+            let c = world.found(&SoundProfile::by_id("semitic").unwrap(), 0.5, 0.5);
+            world.connect(a, b, 0.5, ContactKind::Trade);
+            world.connect(a, c, 0.5, ContactKind::Rule);
+            let made = world.events.len();
+            world.run(40);
+            let events = &world.events[made..];
+            ended += usize::from(events.iter().any(|(_, e)| {
+                matches!(
+                    e,
+                    WorldEvent::Parted {
+                        kind: ContactKind::Trade,
+                        ..
+                    }
+                )
+            }));
+            freed += usize::from(events.iter().any(|(_, e)| {
+                matches!(
+                    e,
+                    WorldEvent::Parted {
+                        kind: ContactKind::Rule,
+                        ..
+                    }
+                )
+            }));
+            met += usize::from(
+                events
+                    .iter()
+                    .any(|(_, e)| matches!(e, WorldEvent::Met { .. })),
+            );
+            for (_, e) in events {
+                if let WorldEvent::Parted {
+                    a,
+                    b,
+                    kind: ContactKind::Rule,
+                } = *e
+                {
+                    let pair = |x: usize, y: usize| (x, y) == (a, b) || (y, x) == (a, b);
+                    let neighbours = world
+                        .contacts
+                        .iter()
+                        .any(|k| k.kind == ContactKind::Neighbours && pair(k.a, k.b));
+                    let since = world.events.iter().any(|(_, later)| {
+                        matches!(*later, WorldEvent::Parted { a: x, b: y, kind: ContactKind::Neighbours } if pair(x, y))
+                    });
+                    assert!(neighbours || since, "rule left no neighbourhood");
+                }
+            }
+        }
+        assert!(ended >= 15, "trade ended in {ended} of 20");
+        assert!(freed >= 8, "rule ended in {freed} of 20");
+        assert!(met >= 5, "the world made contacts in {met} of 20");
+
+        let mut world = World::new(1, Params::static_society());
+        let a = world.found(&SoundProfile::by_id("germanic").unwrap(), 0.5, 0.5);
+        let b = world.found(&SoundProfile::by_id("finnic").unwrap(), 0.5, 0.5);
+        world.connect(a, b, 0.5, ContactKind::Trade);
+        world.run(100);
+        assert_eq!(world.contacts.len(), 1);
     }
 
     /// Peoples split again and again over a long history, yet their names

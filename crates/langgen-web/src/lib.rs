@@ -8,7 +8,6 @@ use langgen_sim::compare::intelligibility;
 use langgen_sim::concepts::related;
 use langgen_sim::morphology::Slot;
 use langgen_sim::phoneme::{Backness, Manner, Secondary};
-use langgen_sim::world::ContactKind;
 use langgen_sim::{
     Action, CATALOG, Chronicle, ENGINE_REVISION, Event, FORMAT, Flavor, Form, Lexeme, Origin,
     PhonemeId, Recipe, SetAside, World, WorldEvent, catalog,
@@ -319,7 +318,7 @@ impl Bench {
     /// does not, up to `generation` when viewing the past.
     fn tellings(&mut self, generation: u32) -> Vec<TellingView> {
         let current = self.chronicle.actions().to_vec();
-        let present = annals(self.chronicle.latest(), &connections(&self.chronicle));
+        let present = annals(self.chronicle.latest());
         let until = if generation < self.latest() {
             generation
         } else {
@@ -374,10 +373,9 @@ impl Bench {
         let timeline = self.timeline();
         let seed = self.chronicle.seed;
         let saved_revision = self.saved_revision;
-        let connections = connections(&self.chronicle);
         let tellings = self.tellings(generation);
         let world = self.world(generation);
-        let annals = annals(world, &connections);
+        let annals = annals(world);
         let spoken = world.spoken();
         let laws = catalog();
         let law_label = |id: &str| {
@@ -597,23 +595,12 @@ impl Bench {
         let mut out: Vec<Marker> = Vec::new();
         for (generation, action) in self.chronicle.timeline() {
             let label = match action {
-                Action::Connect {
-                    a,
-                    b,
-                    contact,
-                    intensity,
-                } => {
-                    format!(
-                        "{} and {} in {} contact ({:.0}%)",
-                        name(*a),
-                        name(*b),
-                        kebab(&format!("{contact:?}")),
-                        intensity * 100.0
-                    )
-                }
                 Action::Run { generations } => format!("Ran {generations} generations"),
-                // Foundings, splits and shifts appear as world events below.
-                Action::Found { .. } | Action::Split { .. } | Action::Shift { .. } => continue,
+                // Everything else appears as world events below.
+                Action::Found { .. }
+                | Action::Connect { .. }
+                | Action::Split { .. }
+                | Action::Shift { .. } => continue,
             };
             let kind = match action {
                 Action::Run { .. } => "run",
@@ -650,6 +637,21 @@ impl Bench {
                         name(*toward)
                     )
                 }
+                WorldEvent::Met { a, b, kind } => format!(
+                    "{} and {} in {} contact",
+                    name(*a),
+                    name(*b),
+                    kebab(&format!("{kind:?}"))
+                ),
+                WorldEvent::Parted { a, b, kind } => format!(
+                    "{} and {} ended their {} contact",
+                    name(*a),
+                    name(*b),
+                    kebab(&format!("{kind:?}"))
+                ),
+                WorldEvent::Conquered { ruler, ruled } => {
+                    format!("{} conquered {}", name(*ruler), name(*ruled))
+                }
             };
             out.push(Marker {
                 generation: *generation,
@@ -664,18 +666,6 @@ impl Bench {
 
 /// The world's history up to now as annal entries: peoples appearing,
 /// parting, meeting, and changing tongues, plus each language's sound laws.
-/// Contacts made by hand, with when, from a history's actions.
-fn connections(chronicle: &Chronicle) -> Vec<(u32, usize, usize, ContactKind)> {
-    chronicle
-        .timeline()
-        .into_iter()
-        .filter_map(|(g, action)| match action {
-            Action::Connect { a, b, contact, .. } => Some((g, *a, *b, *contact)),
-            _ => None,
-        })
-        .collect()
-}
-
 /// The annals a telling set aside would have written, or none if it no
 /// longer replays on this engine.
 fn tell(seed: u64, actions: &[Action]) -> Vec<Annal> {
@@ -687,7 +677,7 @@ fn tell(seed: u64, actions: &[Action]) -> Vec<Annal> {
         tellings: Vec::new(),
     };
     match Chronicle::from_recipe(&recipe) {
-        Ok(chronicle) => annals(chronicle.latest(), &connections(&chronicle)),
+        Ok(chronicle) => annals(chronicle.latest()),
         Err(_) => Vec::new(),
     }
 }
@@ -1402,6 +1392,29 @@ mod tests {
         )
         .unwrap();
         assert_eq!(again["annals"], overview["annals"]);
+    }
+
+    #[test]
+    fn the_chronicle_tells_contacts_beginning_and_ending() {
+        let mut w = Bench::new(5);
+        w.act(&found("Hill", "familiar")).unwrap();
+        w.act(&found("Coast", "polynesian")).unwrap();
+        w.act(r#"{"kind":"connect","a":0,"b":1,"intensity":0.6,"contact":"trade"}"#)
+            .unwrap();
+        w.act(r#"{"kind":"run","generations":80}"#).unwrap();
+        let overview: serde_json::Value =
+            serde_json::from_str(&w.overview(w.latest()).unwrap()).unwrap();
+        let annals = overview["annals"].as_array().unwrap();
+        let first = |kind: &str| {
+            annals
+                .iter()
+                .find(|a| a["kind"] == kind)
+                .map(|a| a["text"].as_str().unwrap().to_string())
+        };
+        let met = first("contact").expect("the trade is told");
+        assert!(!met.contains('{'), "{met}");
+        let parted = first("parted").expect("the trade ends within 2000 years");
+        assert!(!parted.contains('{'), "{parted}");
     }
 
     #[test]

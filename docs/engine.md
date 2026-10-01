@@ -76,6 +76,16 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   take prestige from authored `power` plus relative size. A community shifts
   language only to another family's, keeping its own sound preferences and
   some old words as a substrate. Unspoken varieties are extinct and frozen.
+- Contacts come and go (`end_contacts`, `make_contacts`). Each kind has a
+  typical lifespan (trade 12 generations, rule 16, intermarriage 20,
+  religion 30, distant neighbours 40) and cannot end in its first third.
+  Rule lasts longer the further its ruler stands above the ruled, and rule
+  and intermarriage leave the peoples neighbours. Peoples on the same land
+  stay neighbours. The world makes contacts of its own: peoples sharing
+  land become neighbours, peoples open trade, and a people far above one
+  it deals with may conquer it. Each beginning, ending, and conquest is a
+  `WorldEvent`, so it is told in the chronicle and stops "until something
+  happens". `Params::static_society()` turns all of this off.
 - Social identity, territory, ancestry, and language are independent.
 - Every random draw comes from a ChaCha8 stream keyed by purpose
   (`rng.rs`), so adding a process never shifts existing draws.
