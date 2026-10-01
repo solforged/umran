@@ -1818,6 +1818,13 @@ button.icon,
   overflow: hidden;
 }
 
+/* Under a sound change in the feed: the specimen words it reached. */
+.feed .specimen-line {
+  grid-column: 3;
+  font-size: 0.88em;
+  color: var(--ink-soft);
+}
+
 /* The encyclopedia: one card at a time, every name a way onward. */
 .pedia {
   grid-area: pedia;
@@ -1878,6 +1885,110 @@ button.icon,
 
 .card .small {
   font-size: 0.9em;
+}
+
+/* A language's specimen: a few basic words, each under its meaning. */
+.specimen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1rem;
+  margin: 0.5rem 0 0.6rem;
+}
+
+.specimen > div {
+  display: grid;
+}
+
+.specimen dt {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.specimen dd {
+  margin: 0;
+  font-style: italic;
+}
+
+.specimen dd button.link {
+  color: var(--ink);
+  text-decoration-color: var(--line);
+}
+
+/* Beside a sound change, the words it reached stand out and show how
+   they sounded before; the rest step back. */
+.specimen.changes > div:not(.reached) {
+  opacity: 0.5;
+}
+
+.specimen .reached dd button.link {
+  color: var(--accent);
+}
+
+.specimen .was {
+  color: var(--ink-soft);
+}
+
+.roster .specimen {
+  margin: 0.1rem 0 0.4rem;
+  font-size: 0.9em;
+}
+
+/* Words compared: a row per language, a column per meaning, cognates
+   shaded alike. */
+.compared {
+  overflow-x: auto;
+  margin: 0.4rem 0;
+}
+
+.compared table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88em;
+}
+
+.stage .compared th,
+.stage .compared td {
+  padding: 0.15rem 0.35rem;
+  border: 0;
+  background: none;
+  text-align: left;
+  white-space: nowrap;
+  font-style: normal;
+  font-variant: normal;
+  letter-spacing: normal;
+}
+
+.stage .compared thead th {
+  font-size: 0.7rem;
+  font-weight: normal;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.stage .compared tbody th {
+  font-weight: normal;
+}
+
+.compared tbody th button.link {
+  color: inherit;
+}
+
+.stage .compared td {
+  background: color-mix(in srgb, var(--root, transparent) 24%, transparent);
+  border: 1px solid var(--paper-raised);
+}
+
+.compared td button.link {
+  color: var(--ink);
+  font-style: italic;
+  text-decoration: none;
+}
+
+.compared td button.link:hover {
+  text-decoration: underline;
 }
 
 /* Lists of dated moments read a step smaller than the card's text. */

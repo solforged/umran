@@ -20,6 +20,7 @@ import type { DialogKind } from "./ActionDialog";
 import { Told } from "./Chronicle";
 import { MapView, type Tint } from "./MapView";
 import { Pedia, type Focus } from "./Pedia";
+import { SpecimenChanges } from "./Specimen";
 
 const KIND_ICON: Record<Annal["kind"], LucideIcon> = {
   found: Flag,
@@ -394,6 +395,7 @@ function Feed({
               <span className="feed-text">
                 <Told text={a.text} />
               </span>
+              {a.kind === "law" ? <SpecimenChanges words={a.specimen} /> : null}
             </button>
           </li>
         );

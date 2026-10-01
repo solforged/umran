@@ -147,6 +147,18 @@ export interface Variety {
   builders: { relation: string; shape: string }[];
   /// The smallest word sound change leaves, such as "two syllables".
   minimalWord: string;
+  /// A few basic words, to know the language by.
+  specimen: SpecimenWord[];
+}
+
+/// One of the few basic words shown wherever a language appears.
+export interface SpecimenWord {
+  concept: string;
+  gloss: string;
+  spelled: string;
+  ipa: string;
+  /// In a sound change's entry, how it was spelled before, if it changed.
+  was: string | null;
 }
 
 export interface Contact {
@@ -231,6 +243,8 @@ export interface Annal {
   lands: number[];
   /// The sound laws it tells of, by id.
   laws: string[];
+  /// For a sound change, the language's specimen words after it.
+  specimen: SpecimenWord[];
 }
 
 export interface Origin {

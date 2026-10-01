@@ -4,7 +4,7 @@
 //! is drawn from the annals' own stream, so it never moves the world's
 //! draws, and the same history is always told the same way.
 
-use crate::substrate_label;
+use crate::{SpecimenWord, specimen, substrate_label};
 use langgen_sim::names::PlaceOrigin;
 use langgen_sim::rng::{index, key, stream};
 use langgen_sim::world::ContactKind;
@@ -32,6 +32,9 @@ pub(crate) struct Annal {
     pub lands: Vec<usize>,
     /// The sound laws it tells of, by id.
     pub laws: Vec<&'static str>,
+    /// For a sound change, the language's specimen words after it, with
+    /// how those it reached sounded before.
+    pub specimen: Vec<SpecimenWord>,
 }
 
 const FOUND: &[&str] = &[
@@ -161,6 +164,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
         peoples: peoples.to_vec(),
         lands: lands.to_vec(),
         laws: Vec::new(),
+        specimen: Vec::new(),
     };
     for &(generation, ref event) in &world.events {
         let name = |c: usize| world.community_name_at(c, generation);
@@ -375,6 +379,7 @@ fn sound_changes(world: &World) -> Vec<Annal> {
                     .collect(),
                 lands: Vec::new(),
                 laws: ids,
+                specimen: specimen(variety, generation),
             });
         }
     }

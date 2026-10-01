@@ -28,7 +28,9 @@ Read further when the task touches it:
   `MapView`, the feed and time bar in `Stage`, and the encyclopedia cards
   in `Pedia`), the older book pages and atlas, the appendix, and dialogs.
   Annals carry the peoples, lands, and laws they tell of, so every entry
-  can link to their cards.
+  can link to their cards. Every language view carries a specimen, a few
+  basic words chosen by `SPECIMEN` in the facade (`Specimen.tsx` shows
+  them), and sound-change annals carry it with each word's form before.
 
 All linguistic logic runs in Rust. Presentation code never mints or changes
 words, and there is no backend or second implementation of linguistic

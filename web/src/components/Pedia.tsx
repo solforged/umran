@@ -1,6 +1,6 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { ArrowLeft, Globe } from "lucide-react";
-import type { Annal, Community, Engine, Overview, WordMap, WorldMap } from "../model";
+import type { Annal, Community, Engine, Overview, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { CONTACT_NAME, howCame, howNamed, hue, TERMS, TERRAIN_NAME, type Term } from "../lore";
 import { bond } from "../words";
@@ -8,6 +8,7 @@ import type { DialogKind } from "./ActionDialog";
 import { Told } from "./Chronicle";
 import { Dictionary } from "./Dictionary";
 import { peoplesByRegion } from "./MapView";
+import { Specimen } from "./Specimen";
 import { WordGloss } from "./WordGloss";
 
 /// What the encyclopedia is open at.
@@ -173,6 +174,78 @@ function Story({ annals, context }: { annals: Annal[]; context: Context }) {
   );
 }
 
+/// A language's specimen, each word opening its own card.
+function LanguageSpecimen({ variety, context }: { variety: number; context: Context }) {
+  return (
+    <Specimen
+      words={context.overview.varieties[variety].specimen}
+      onWord={(concept) => context.go({ kind: "word", variety, concept })}
+    />
+  );
+}
+
+/// The specimen of every living language side by side, family by family,
+/// with words from one root shaded alike: a comparative word list, the
+/// table a linguist starts from to find which languages are kin.
+function WordsCompared({ spoken, context }: { spoken: Variety[]; context: Context }) {
+  const { engine, version, generation, overview } = context;
+  const concepts = spoken[0]?.specimen.map((w) => w.concept) ?? [];
+  const groups = useMemo(() => {
+    const speaker = new Map(overview.communities.map((c) => [c.id, c.variety]));
+    return new Map(
+      concepts.map((concept) => [
+        concept,
+        new Map(engine.wordMap(generation, concept).words.map((w) => [speaker.get(w.community), w.group])),
+      ]),
+    );
+    // `version` changes whenever the history does.
+  }, [engine, generation, version, concepts.join()]);
+  const rows = [...spoken].sort((a, b) => a.family - b.family || a.id - b.id);
+  return (
+    <div className="compared">
+      <table>
+        <thead>
+          <tr>
+            <th />
+            {concepts.map((c) => (
+              <th key={c} scope="col">
+                {c}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((v) => (
+            <tr key={v.id}>
+              <th scope="row" style={{ color: hue(v.family) }}>
+                <LanguageLink variety={v.id} context={context} />
+              </th>
+              {concepts.map((concept) => {
+                const w = v.specimen.find((s) => s.concept === concept);
+                const group = groups.get(concept)?.get(v.id);
+                return (
+                  <td key={concept} style={group === undefined ? undefined : ({ "--root": hue(group) } as CSSProperties)}>
+                    {w ? (
+                      <button
+                        type="button"
+                        className="link word"
+                        title={`/${w.ipa}/`}
+                        onClick={() => context.go({ kind: "word", variety: v.id, concept })}
+                      >
+                        {w.spelled}
+                      </button>
+                    ) : null}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function WorldCard({ context }: { context: Context }) {
   const { overview, map } = context;
   const peoples = [...overview.communities].sort((a, b) => b.size - a.size);
@@ -202,6 +275,16 @@ function WorldCard({ context }: { context: Context }) {
           </li>
         ))}
       </ul>
+      {spoken.length > 1 ? (
+        <>
+          <h3>Words compared</h3>
+          <p className="muted small">
+            Words shaded alike come from one root: they are{" "}
+            <Explained term="cognate">cognates</Explained>.
+          </p>
+          <WordsCompared spoken={spoken} context={context} />
+        </>
+      ) : null}
       {silent.length > 0 ? (
         <>
           <h3>Languages no longer spoken</h3>
@@ -240,6 +323,7 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
         {TERRAIN_NAME[region.terrain].toLowerCase()} in <LandLink region={c.region} context={context} />, speaking{" "}
         <LanguageLink variety={c.variety} context={context} />.
       </p>
+      <LanguageSpecimen variety={c.variety} context={context} />
       {c.exonyms.length > 0 ? (
         <p className="muted">
           <Explained term="exonym">Called by others</Explained>:{" "}
@@ -326,6 +410,7 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
           "No longer spoken."
         )}
       </p>
+      <LanguageSpecimen variety={variety} context={context} />
       {v.parent !== null ? (
         <p className="muted">
           A daughter of <LanguageLink variety={v.parent} context={context} />, parted in year{" "}
@@ -584,6 +669,13 @@ function EventCard({ annal, context }: { annal: Annal; context: Context }) {
       <p className="event-text">
         <Told text={annal.text} />
       </p>
+      {annal.variety !== null && annal.specimen.length > 0 ? (
+        <Specimen
+          words={annal.specimen}
+          changes
+          onWord={(concept) => context.go({ kind: "word", variety: annal.variety as number, concept })}
+        />
+      ) : null}
       {annal.notes.length > 0 ? (
         <ul className="apparatus">
           {annal.notes.map((note) => (
@@ -616,6 +708,9 @@ function EventCard({ annal, context }: { annal: Annal; context: Context }) {
             {peoples.map((id) => (
               <li key={id}>
                 <PeopleLink c={overview.communities[id]} context={context} />
+                {annal.kind === "law" ? null : (
+                  <LanguageSpecimen variety={overview.communities[id].variety} context={context} />
+                )}
               </li>
             ))}
           </ul>

@@ -5,7 +5,7 @@ mod annals;
 
 use annals::{Annal, annals};
 use langgen_sim::compare::intelligibility;
-use langgen_sim::concepts::related;
+use langgen_sim::concepts::{by_id, related};
 use langgen_sim::morphology::Slot;
 use langgen_sim::names::PlaceOrigin;
 use langgen_sim::phoneme::{Backness, Manner, Secondary};
@@ -482,6 +482,7 @@ impl Bench {
                         word_building: word_building(v),
                         builders: builders(v),
                         minimal_word: v.minimal.label(),
+                        specimen: specimen(v, world.generation),
                     }
                 })
                 .collect(),
@@ -810,6 +811,49 @@ fn word_building(v: &Variety) -> String {
             }
         }
     }
+}
+
+/// A few basic meanings shown wherever a language appears, so each one can
+/// be recognized at a glance and families compared side by side, as in a
+/// linguist's comparative word list.
+const SPECIMEN: [&str; 6] = ["water", "fire", "stone", "eye", "hand", "night"];
+
+#[derive(Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SpecimenWord {
+    concept: &'static str,
+    gloss: &'static str,
+    spelled: String,
+    ipa: String,
+    /// How it was spelled before `generation`'s sound changes, if they
+    /// changed it.
+    was: Option<String>,
+}
+
+/// `variety`'s specimen as it stood after `generation`'s sound changes,
+/// through the words it uses now. Words it took up only later are left
+/// out.
+pub(crate) fn specimen(variety: &Variety, generation: u32) -> Vec<SpecimenWord> {
+    SPECIMEN
+        .iter()
+        .filter_map(|id| {
+            let concept = by_id(id).expect("specimen meanings are concepts");
+            let word = variety
+                .lexicon
+                .word_for(concept)
+                .filter(|w| w.born <= generation)?;
+            let form = word.form_at(generation);
+            let spelled = variety.spell(form);
+            let was = variety.spell(word.form_at(generation.saturating_sub(1)));
+            Some(SpecimenWord {
+                concept: concept.id,
+                gloss: concept.gloss,
+                ipa: form.ipa(),
+                was: (was != spelled).then_some(was),
+                spelled,
+            })
+        })
+        .collect()
 }
 
 /// Affixes as "-ka" or "ma-"; patterns with C1 C2 C3 for root consonants.
@@ -1450,6 +1494,8 @@ struct VarietyView {
     builders: Vec<Builder>,
     /// The smallest word sound change leaves: "two syllables".
     minimal_word: &'static str,
+    /// A few basic words, to know the language by.
+    specimen: Vec<SpecimenWord>,
 }
 
 #[derive(Serialize)]
@@ -1640,6 +1686,64 @@ mod tests {
         )
         .unwrap();
         assert_eq!(again["annals"], overview["annals"]);
+    }
+
+    #[test]
+    fn sound_change_entries_tell_the_specimen_words_they_reached() {
+        use std::collections::BTreeMap;
+        let mut w = bench();
+        w.act(r#"{"kind":"run","generations":60}"#).unwrap();
+        let overview: serde_json::Value =
+            serde_json::from_str(&w.overview(w.latest()).unwrap()).unwrap();
+        let words = |specimen: &serde_json::Value| -> BTreeMap<String, (String, Option<String>)> {
+            specimen
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|s| {
+                    (
+                        s["concept"].as_str().unwrap().to_string(),
+                        (
+                            s["spelled"].as_str().unwrap().to_string(),
+                            s["was"].as_str().map(str::to_string),
+                        ),
+                    )
+                })
+                .collect()
+        };
+        let entries: Vec<_> = overview["annals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|a| a["kind"] == "law" && a["variety"] == 0)
+            .map(|a| words(&a["specimen"]))
+            .collect();
+        assert!(entries.len() > 3);
+        assert!(
+            entries
+                .iter()
+                .flat_map(|e| e.values())
+                .any(|(_, was)| was.is_some()),
+            "some change reaches a specimen word"
+        );
+        // Each entry picks up where the language's previous one left off,
+        // and the last leaves the words as the language says them now.
+        let now = words(&overview["varieties"][0]["specimen"]);
+        let mut left: BTreeMap<String, String> = BTreeMap::new();
+        for entry in &entries {
+            for (concept, (spelled, was)) in entry {
+                if let Some(before) = left.get(concept) {
+                    assert_eq!(was.as_ref().unwrap_or(spelled), before, "{concept}");
+                }
+                left.insert(concept.clone(), spelled.clone());
+            }
+        }
+        for (concept, (spelled, _)) in &now {
+            // A word taken up after the last change has no entry yet.
+            if let Some(last) = left.get(concept) {
+                assert_eq!(last, spelled, "{concept}");
+            }
+        }
     }
 
     #[test]
