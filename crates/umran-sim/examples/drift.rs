@@ -61,10 +61,10 @@ fn main() {
             .lexemes
             .iter()
             .filter_map(|l| {
-                let at = l
-                    .log
-                    .iter()
-                    .position(|e| matches!(&e.event, Event::SoundLaw { law, .. } if *law == id))?;
+                let at = l.log.iter().position(|e| {
+                    e.generation == generation
+                        && matches!(&e.event, Event::SoundLaw { law, .. } if *law == id)
+                })?;
                 let Event::SoundLaw { before, .. } = &l.log[at].event else {
                     unreachable!()
                 };

@@ -30,11 +30,12 @@ pub struct Variety {
     pub morphology: Morphology,
     /// The smallest word sound change may leave.
     pub minimal: MinimalWord,
-    /// Sound laws in the order applied, with their generation.
+    /// Sound laws in the order applied, with their generation. A law may
+    /// appear more than once: kinds of change recur over long spans.
     pub laws: Vec<(u32, &'static str)>,
     /// Laws among `laws` that reached it from a neighbour rather than
-    /// arising in it, with the variety each came from.
-    pub waves: Vec<(&'static str, usize)>,
+    /// arising in it, by generation, with the variety each came from.
+    pub waves: Vec<(u32, &'static str, usize)>,
     /// Where this variety split from, if it did.
     pub parent: Option<Fork>,
     /// How its speakers build given names, and the names in fashion now.

@@ -58,6 +58,11 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
 - Sound laws (`laws.rs`) apply simultaneously and regularly to every living
   word, never to obsolete ones, and never delete a word's last vowel.
   "No change" competes with them, so a culture is never forced into a law.
+  A catalog law may recur after sixty generations (1,500 years) if it
+  would change living words again. Intervening changes and new words can
+  restore its input sounds, as related consonant shifts happened in
+  Germanic and later High German. The quiet span applies to inherited
+  laws and incoming waves too; the full history keeps every occurrence.
 - Sound laws also spread as waves (`spread_waves`), as the wave model of
   language change describes: a law that took hold in a variety in the
   last ten generations may pass to a variety in contact with it. The
@@ -67,10 +72,10 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   receivers' taste, and above all with kinship: dialects that have just
   parted take up each other's changes readily, half as readily after 20
   generations apart, and unrelated languages seldom (`KIN_STRANGERS`).
-  A variety takes at most one wave per generation and records where each
-  came from (`Variety::waves`). Waves make related languages share
-  changes their common ancestor never had, leaving isoglosses (the lines
-  where a change stopped) that cut across the family tree.
+  A variety takes at most one wave per generation and records each
+  arrival's generation and source (`Variety::waves`). Waves make related
+  languages share changes their common ancestor never had, leaving
+  isoglosses (the lines where a change stopped) across the family tree.
 - Each language has a minimal word (`prosody.rs`), drawn at founding: any
   syllable, a heavy one (two moras), or two syllables, likelier the more
   disyllabic its roots. A rule that would wear a word below it passes that
@@ -314,8 +319,5 @@ cargo run --release -p umran-sim --example audit -- [seeds] [generations]
 Rivers, climates, cities with speech of their own (a city's speech is
 its court's; no koiné), purism within a classical form, compounding and
 derivation after founding beyond renewal and new meanings, inflection,
-stress, tone, vowel harmony, consonant length, prenasalized stops,
-syntax and alignment, rival doctrines within a faith. Each catalog law
-happens at most once in a lineage, so over long spans languages run
-short of changes they have not had, and waves grow rarer with them; real
-sound change goes on recycling the same kinds of change.
+stress, tone, vowel harmony, consonant length, prenasalized stops, syntax
+and alignment, rival doctrines within a faith.

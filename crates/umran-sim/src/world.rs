@@ -81,6 +81,11 @@ const PLACE_KEEP_UNKNOWN: f32 = 0.4;
 /// variety, its pull fading over them: a wave runs for a few centuries,
 /// then the change is simply part of the language.
 const WAVE_SPAN: u32 = 10;
+/// Generations after a law last took hold in a variety before it may take
+/// hold there again. Kinds of change recur: Germanic consonants shifted
+/// under Grimm's law and again, in High German, some fifteen centuries
+/// later, and vowels lengthen and shorten by turns.
+const LAW_RECURRENCE: u32 = 60;
 /// Generations apart at which two varieties take up each other's sound
 /// changes half as readily as twin dialects do.
 const KIN_SPAN: f32 = 20.0;
@@ -2362,7 +2367,8 @@ impl World {
     }
 
     /// Maybe applies one new sound law to every living word. Laws that
-    /// would change nothing are skipped; laws that move sounds toward the
+    /// would change nothing are skipped, as are laws that took hold here
+    /// lately (`LAW_RECURRENCE`); laws that move sounds toward the
     /// culture's preferences, or toward the sounds of its contacts, are
     /// likelier.
     fn sound_change(&mut self, v: usize, areal: &[(HashSet<PhonemeId>, f32)]) {
@@ -2371,12 +2377,12 @@ impl World {
             return;
         }
         let variety = &self.varieties[v];
-        let applied: HashSet<&str> = variety.laws.iter().map(|(_, id)| *id).collect();
+        let recent = self.recent_laws(v);
         let prior = &variety.profile.inventory;
         let candidates: Vec<(&Law, f32)> = self
             .laws
             .iter()
-            .filter(|law| !applied.contains(law.id))
+            .filter(|law| !recent.contains(law.id))
             .filter_map(|law| {
                 let a = law.assess(
                     variety.lexicon.living().map(|l| &l.form),
@@ -2473,7 +2479,7 @@ impl World {
 
     /// Sound changes spread like waves. A law that took hold in a variety
     /// in the last `WAVE_SPAN` generations may pass to a variety in
-    /// contact with it that has not had it: likelier through close
+    /// contact with it that has not had it recently: likelier through close
     /// dealings between near land, between close kin (dialects that parted
     /// lately), from the more prestigious side, while the change is fresh,
     /// and when the receiving speakers like what it does. At most one law
@@ -2486,7 +2492,7 @@ impl World {
         let generation = self.generation;
         let mut arrivals: Vec<(usize, Law, usize)> = Vec::new();
         for v in (0..self.varieties.len()).filter(|&v| spoken[v]) {
-            let applied: HashSet<&str> = self.varieties[v].laws.iter().map(|(_, id)| *id).collect();
+            let recent = self.recent_laws(v);
             // A standard is held in place against its neighbours' changes
             // as against its own.
             let pace = self.pace(v);
@@ -2515,7 +2521,7 @@ impl World {
                         };
                     for &(g, id) in &self.varieties[o.variety].laws {
                         let age = generation.saturating_sub(g);
-                        if age >= WAVE_SPAN || applied.contains(id) {
+                        if age >= WAVE_SPAN || recent.contains(id) {
                             continue;
                         }
                         let h = pull * (1.0 - age as f32 / WAVE_SPAN as f32);
@@ -2555,8 +2561,20 @@ impl World {
         }
         for (v, law, from) in arrivals {
             self.apply_law(v, &law);
-            self.varieties[v].waves.push((law.id, from));
+            self.varieties[v].waves.push((generation, law.id, from));
         }
+    }
+
+    /// Laws that took hold in variety `v` within the last
+    /// `LAW_RECURRENCE` generations, which may not take hold again yet.
+    fn recent_laws(&self, v: usize) -> HashSet<&'static str> {
+        let generation = self.generation;
+        self.varieties[v]
+            .laws
+            .iter()
+            .filter(|&&(g, _)| generation.saturating_sub(g) < LAW_RECURRENCE)
+            .map(|&(_, id)| id)
+            .collect()
     }
 
     /// How readily varieties `a` and `b` take up each other's sound
@@ -3122,6 +3140,70 @@ mod tests {
         );
         let (w_neutral, w_fishy) = (rate(&neutral, "w-fortition"), rate(&fishy, "w-fortition"));
         assert!(w_fishy < 0.5 * w_neutral, "{w_fishy} vs {w_neutral}");
+    }
+
+    #[test]
+    fn a_sound_law_recurs_in_a_lineage_only_after_its_quiet_span() {
+        let params = Params {
+            sound_change_rate: 1.0,
+            preference_pull: 0.0,
+            areal_pull: 0.0,
+            ..Params::static_society()
+        };
+        let mut world = World::solo(0, &SoundProfile::base(), params);
+        let mut law = catalog()
+            .into_iter()
+            .find(|law| law.id == "w-fortition")
+            .unwrap();
+        law.commonness = 1_000_000.0;
+        world.laws = vec![law];
+        let word = world.varieties[0].lexicon.living().next().unwrap().id;
+        let before = Form::from_ipa("wawa").unwrap();
+        let after = Form::from_ipa("vava").unwrap();
+        world.varieties[0].lexicon.get_mut(word).form = before.clone();
+        world.sound_change(0, &[]);
+        assert_eq!(world.varieties[0].lexicon.get(word).form, after);
+
+        let daughter = world.split(0, None, 0.0);
+        let v = world.communities[daughter].variety;
+        // Later words can reintroduce w, but the inherited law is still recent.
+        world.varieties[v].lexicon.get_mut(word).form = before.clone();
+        for generation in 1..LAW_RECURRENCE {
+            world.generation = generation;
+            world.sound_change(v, &[]);
+            assert_eq!(world.varieties[v].lexicon.get(word).form, before);
+            assert_eq!(world.varieties[v].laws, vec![(0, "w-fortition")]);
+        }
+        // A fresh wave obeys the same quiet span as a local change.
+        let mut wave = world.clone();
+        wave.params.wave_rate = 1_000_000.0;
+        let source = wave.found(&SoundProfile::base(), 0.9, 0.5);
+        let from = wave.communities[source].variety;
+        wave.connect(daughter, source, 1.0, ContactKind::Neighbours);
+        let law = wave.laws[0].clone();
+        wave.apply_law(from, &law);
+        wave.spread_waves(&wave.spoken());
+        assert_eq!(wave.varieties[v].lexicon.get(word).form, before);
+        assert_eq!(wave.varieties[v].laws, vec![(0, "w-fortition")]);
+        wave.generation = LAW_RECURRENCE;
+        wave.spread_waves(&wave.spoken());
+        assert_eq!(wave.varieties[v].lexicon.get(word).form, after);
+        assert_eq!(
+            wave.varieties[v].laws,
+            vec![(0, "w-fortition"), (LAW_RECURRENCE, "w-fortition")]
+        );
+        assert_eq!(
+            wave.varieties[v].waves,
+            vec![(LAW_RECURRENCE, "w-fortition", from)]
+        );
+
+        world.generation = LAW_RECURRENCE;
+        world.sound_change(v, &[]);
+        assert_eq!(world.varieties[v].lexicon.get(word).form, after);
+        assert_eq!(
+            world.varieties[v].laws,
+            vec![(0, "w-fortition"), (LAW_RECURRENCE, "w-fortition")]
+        );
     }
 
     /// A prestigious donor and an open recipient in contact for 40
@@ -4133,11 +4215,8 @@ mod tests {
             let source = world.communities[home].variety;
             for (who, count) in [(dialect, &mut kin), (stranger, &mut strangers)] {
                 let v = world.variety_of(who);
-                for &(id, from) in &v.waves {
-                    assert!(
-                        v.laws.iter().any(|(_, l)| *l == id),
-                        "a wave is a law undergone"
-                    );
+                for &(g, id, from) in &v.waves {
+                    assert!(v.laws.contains(&(g, id)), "a wave is a law undergone");
                     *count += usize::from(from == source);
                 }
             }

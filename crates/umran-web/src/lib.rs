@@ -557,7 +557,11 @@ impl Bench {
                                 generation,
                                 id: law,
                                 label: law_label(law),
-                                from: v.waves.iter().find(|(w, _)| *w == law).map(|(_, f)| *f),
+                                from: v
+                                    .waves
+                                    .iter()
+                                    .find(|&&(g, w, _)| (g, w) == (generation, law))
+                                    .map(|&(_, _, f)| f),
                             })
                             .collect(),
                         words: v.lexicon.living().count(),

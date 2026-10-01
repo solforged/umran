@@ -1250,8 +1250,12 @@ fn sound_changes(world: &World) -> Vec<Annal> {
                 None => tell(world, &keys, LAW_UNSEEN, &[("p", &people)]),
             };
             // A change that spread from a neighbour says where it came from.
-            let note = |id: &str| match variety.waves.iter().find(|(w, _)| *w == id) {
-                Some(&(_, source)) => format!(
+            let note = |id: &str| match variety
+                .waves
+                .iter()
+                .find(|&&(g, w, _)| (g, w) == (generation, id))
+            {
+                Some(&(_, _, source)) => format!(
                     "{}, spreading from {}",
                     label(id),
                     speakers(world, &shifts, source, generation)
