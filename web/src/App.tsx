@@ -3,6 +3,7 @@ import { createEngine, loadCatalog, loadEngine, message } from "./engine";
 import type { Action, Catalog, Engine } from "./model";
 import { YEARS } from "./model";
 import { ActionDialog, type DialogKind } from "./components/ActionDialog";
+import { Appendix } from "./components/Appendix";
 import { Designer, type Founding } from "./components/Designer";
 import { Modal } from "./components/Modal";
 import { Recto } from "./components/Recto";
@@ -12,6 +13,7 @@ import { Timeline } from "./components/Timeline";
 import { TitlePage } from "./components/TitlePage";
 import { Verso } from "./components/Verso";
 import { sampleBook } from "./sample";
+import { download } from "./takeout";
 import {
   describe,
   loadShelf,
@@ -38,15 +40,6 @@ function foundingAction(f: Founding): Action {
   return { kind: "found", naming: f.naming, design: f.design, seed: f.seed, power: f.power, openness: f.openness };
 }
 
-function download(name: string, text: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = name;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
 export default function App() {
   const [view, setView] = useState<View>({ kind: "loading" });
   const [catalog, setCatalog] = useState<Catalog | null>(null);
@@ -57,6 +50,7 @@ export default function App() {
   const [community, setCommunity] = useState(0);
   const [concept, setConcept] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogKind | null>(null);
+  const [appendix, setAppendix] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -89,6 +83,7 @@ export default function App() {
     setCommunity(0);
     setConcept(null);
     setDialog(null);
+    setAppendix(false);
     setError(null);
     setInfo(null);
     setVersion((v) => v + 1);
@@ -334,11 +329,8 @@ export default function App() {
           >
             Undo
           </button>
-          <button
-            type="button"
-            onClick={() => engine.current && download(`langgen-${overview.seed}.json`, engine.current.save())}
-          >
-            Export
+          <button type="button" aria-pressed={appendix} onClick={() => setAppendix((a) => !a)}>
+            Appendix
           </button>
         </div>
       </header>
@@ -363,33 +355,45 @@ export default function App() {
         </p>
       ) : null}
 
-      <main className="book">
-        <Verso
-          overview={overview}
-          selected={selected}
-          atPresent={generation === latest}
-          onSelect={(id) => setCommunity(id)}
-          onScrub={scrub}
-          onRestore={restore}
-          onDialog={setDialog}
-          onStep={() => perform({ kind: "run", generations: 1 })}
-          onNextEvent={() => nextEvent(EVENT_LIMIT)}
-        />
-        <Recto
+      {appendix ? (
+        <Appendix
           engine={engine.current}
           version={version}
           generation={generation}
           overview={overview}
-          selected={selected}
-          concept={concept}
-          onConcept={setConcept}
-          onScrub={scrub}
-          onOpenVariety={(v) => {
-            const owner = overview.communities.find((c) => c.variety === v);
-            if (owner) setCommunity(owner.id);
-          }}
+          title={title}
+          variety={overview.communities[selected].variety}
+          onBack={() => setAppendix(false)}
         />
-      </main>
+      ) : (
+        <main className="book">
+          <Verso
+            overview={overview}
+            selected={selected}
+            atPresent={generation === latest}
+            onSelect={(id) => setCommunity(id)}
+            onScrub={scrub}
+            onRestore={restore}
+            onDialog={setDialog}
+            onStep={() => perform({ kind: "run", generations: 1 })}
+            onNextEvent={() => nextEvent(EVENT_LIMIT)}
+          />
+          <Recto
+            engine={engine.current}
+            version={version}
+            generation={generation}
+            overview={overview}
+            selected={selected}
+            concept={concept}
+            onConcept={setConcept}
+            onScrub={scrub}
+            onOpenVariety={(v) => {
+              const owner = overview.communities.find((c) => c.variety === v);
+              if (owner) setCommunity(owner.id);
+            }}
+          />
+        </main>
+      )}
 
       {dialog === "found" ? (
         <Modal open wide title="A new people arrives" onClose={() => setDialog(null)}>

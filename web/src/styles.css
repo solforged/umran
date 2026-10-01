@@ -1206,3 +1206,73 @@ table.preview tr {
   font-style: italic;
   color: var(--danger);
 }
+
+/* The appendix: everything ready to take out. */
+
+.appendix {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem 1.4rem 3rem;
+  max-width: 72rem;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.appendix section {
+  margin-top: 1.5rem;
+}
+
+.appendix h3 {
+  margin: 0;
+}
+
+.appendix .spread {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.names-table td {
+  vertical-align: top;
+}
+
+.glossary {
+  columns: 18rem;
+  column-gap: 2rem;
+  margin: 0;
+}
+
+.glossary div {
+  break-inside: avoid;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.15rem 0;
+  border-bottom: 1px dotted var(--line);
+}
+
+.glossary dd {
+  margin: 0;
+  color: var(--ink-soft);
+  text-align: right;
+}
+
+.takeout {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+@media (max-width: 960px) {
+  .names-table {
+    display: block;
+    overflow-x: auto;
+  }
+}
+
+.appendix-head h2 {
+  margin-top: 0.75rem;
+}

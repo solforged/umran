@@ -97,8 +97,8 @@ export function Shelf({
         }
       >
         <p>
-          {removing?.title} will be deleted from this browser. Open it and use Export first if you might want it
-          again.
+          {removing?.title} will be deleted from this browser. If you might want it again, open it and take
+          “The book itself” from its Appendix first.
         </p>
       </Modal>
     </main>

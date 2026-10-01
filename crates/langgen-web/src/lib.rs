@@ -401,10 +401,18 @@ impl Bench {
                     meaning: c.name.meaning.clone(),
                     ipa: c.name.form.ipa(),
                     coined: c.name.coined,
-                    once: c.name.log.first().and_then(|e| match &e.event {
-                        Event::SoundLaw { before, .. } => Some(world.variety_of(id).title(before)),
-                        _ => None,
-                    }),
+                    // Only when it was written differently, not just said so.
+                    once: c
+                        .name
+                        .log
+                        .first()
+                        .and_then(|e| match &e.event {
+                            Event::SoundLaw { before, .. } => {
+                                Some(world.variety_of(id).title(before))
+                            }
+                            _ => None,
+                        })
+                        .filter(|once| *once != world.community_name(id)),
                     exonyms: world
                         .contacts
                         .iter()
@@ -417,6 +425,8 @@ impl Bench {
                             by,
                             name: world.exonym(id, by),
                         })
+                        // A neighbour that says the name as they do adds nothing.
+                        .filter(|e| e.name != world.community_name(id))
                         .collect(),
                     variety: c.variety,
                     size: c.size,
@@ -1455,7 +1465,8 @@ mod tests {
         assert_eq!(tellings(&mut w), serde_json::json!([]));
         // Writing on from an earlier year is another telling.
         w.branch(5);
-        w.act(r#"{"kind":"shift","community":0,"toward":1}"#).unwrap();
+        w.act(r#"{"kind":"shift","community":0,"toward":1}"#)
+            .unwrap();
         assert_eq!(tellings(&mut w)[0]["why"], "rewritten");
         assert_eq!(tellings(&mut w)[0]["from"], 5);
         let saved = Bench::load(&w.save().unwrap()).unwrap().save().unwrap();

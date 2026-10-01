@@ -22,8 +22,9 @@ Read further when the task touches it:
   off WASM.
 - `web/src`: React, TypeScript, and Vite. `model.ts` mirrors the facade's
   JSON views; `engine.ts` adapts the WASM; `shelf.ts` stores the books;
-  `App.tsx` holds view state and actions; `components/` holds the shelf,
-  title page, the book's two pages, and dialogs.
+  `takeout.ts` formats exports; `App.tsx` holds view state and actions;
+  `components/` holds the shelf, title page, the book's two pages, the
+  appendix, and dialogs.
 
 All linguistic logic runs in Rust. Presentation code never mints or changes
 words, and there is no backend or second implementation of linguistic
