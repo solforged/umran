@@ -275,6 +275,33 @@
   box-shadow: none;
 }
 
+/* The head reads as a chart's border: the name in spaced capitals, the
+   world's title in old type, the way back and out kept quiet. */
+:root .stage-head .brand {
+  color: var(--ink);
+}
+:root .stage-head nav button.link:not(.brand) {
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+:root .stage-head nav button.link:hover {
+  color: var(--accent);
+}
+:root .stage-title {
+  font-family: var(--display);
+  font-style: normal;
+  font-size: 1.25rem;
+}
+
+/* The feed is a slip of paper laid on the chart. */
+:root .feed {
+  background: var(--paper-raised);
+  border: 1px solid color-mix(in srgb, var(--ink) 45%, transparent);
+  border-radius: 0;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.22);
+  backdrop-filter: none;
+}
+
 /* ---------- The map as an old chart ---------- */
 
 .chart-dress path {
@@ -382,7 +409,7 @@
   color: var(--desk-ink);
   background: var(--desk);
 }
-:root :is(.setup, .shelf) .brand {
+:root .brand {
   font-family: var(--caps);
   letter-spacing: 0.3em;
   color: var(--desk-ink);
@@ -434,6 +461,15 @@
 :root .shelf {
   background: var(--desk);
   color: var(--desk-ink);
+}
+/* The switch docks in the top corner, as on the setup's desk. */
+:root:has(main.shelf) .light-switch {
+  top: 0.4rem;
+  bottom: auto;
+  right: 0.8rem;
+  padding: 0.1rem 0.3rem;
+  border: 0;
+  box-shadow: none;
 }
 :root:has(main.shelf) .light-switch,
 :root:has(main.shelf) .light-switch select {

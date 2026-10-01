@@ -278,7 +278,7 @@ export function WorldSetup({
             >
               {sampling ? "playing four thousand years…" : "read a chronicle already written"}
             </button>
-            : three peoples, four thousand years on, their families spread and one ruling another.
+            : three peoples, four thousand years on, one ruling another and a faith born among the ruled.
           </p>
         </header>
 

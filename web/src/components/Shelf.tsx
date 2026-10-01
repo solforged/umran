@@ -79,7 +79,7 @@ export function Shelf({
           <button type="button" className="sheet-open" onClick={onSample}>
             <span className="sheet-title">
               <strong>A chronicle already written</strong>
-              <span>Four thousand years of three peoples, one ruling another.</span>
+              <span>Four thousand years, a conquest, and a new faith.</span>
             </span>
           </button>
         </li>
