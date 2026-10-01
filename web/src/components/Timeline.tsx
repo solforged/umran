@@ -1,5 +1,5 @@
 import type { Overview } from "../model";
-import { YEARS } from "../model";
+import { era, year } from "../words";
 
 /// The scrubber: every generation since the founding, with markers where
 /// someone acted or the world changed on its own.
@@ -26,7 +26,7 @@ export function Timeline({
           value={generation}
           disabled={latest === 0}
           aria-label="Generation"
-          aria-valuetext={`Year ${generation * YEARS} of ${latest * YEARS}`}
+          aria-valuetext={era(overview, generation)}
           onChange={(e) => onScrub(Number(e.target.value))}
         />
         <div className="ticks" aria-hidden="true">
@@ -37,7 +37,7 @@ export function Timeline({
               tabIndex={-1}
               className={`tick tick-${m.kind}`}
               style={{ left: `${(m.generation / span) * 100}%` }}
-              title={`Year ${m.generation * YEARS}: ${m.label}`}
+              title={`In ${year(m.generation)}: ${m.label}`}
               onClick={() => onScrub(m.generation)}
             />
           ))}
@@ -45,11 +45,11 @@ export function Timeline({
       </div>
       <div className="timeline-foot">
         <span>
-          {here.length > 0 ? here.map((m) => m.label).join(" · ") : `Year ${generation * YEARS} of ${latest * YEARS}`}
+          {here.map((m) => m.label).join(" · ")}
         </span>
         {generation < latest ? (
           <button type="button" className="link" onClick={() => onScrub(latest)}>
-            Back to the present
+            Turn to the present
           </button>
         ) : null}
       </div>

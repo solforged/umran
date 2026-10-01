@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Engine, Overview } from "../model";
 import { YEARS } from "../model";
+import { bond } from "../words";
 import { Dictionary } from "./Dictionary";
 import { WordGloss } from "./WordGloss";
 
@@ -50,10 +51,15 @@ export function Recto({
         </p>
         {contacts.length > 0 ? (
           <p className="muted small">
-            In touch with{" "}
-            {contacts
-              .map((c) => `the ${name(c.a === selected ? c.b : c.a)} (${c.kind}, ${Math.round(c.intensity * 100)}%)`)
-              .join(", ")}
+            They{" "}
+            {contacts.map((c, i) => (
+              <span key={i}>
+                {i === 0 ? "" : i === contacts.length - 1 ? " and " : ", "}
+                <span title={`${c.kind}, ${Math.round(c.intensity * 100)}%`}>
+                  {bond(c.kind, c.intensity)} the {name(c.a === selected ? c.b : c.a)}
+                </span>
+              </span>
+            ))}
             .
           </p>
         ) : null}

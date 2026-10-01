@@ -7,13 +7,13 @@ import { Appendix } from "./components/Appendix";
 import { Designer, type Founding } from "./components/Designer";
 import { Modal } from "./components/Modal";
 import { Recto } from "./components/Recto";
-import { RunControls } from "./components/RunControls";
 import { Shelf } from "./components/Shelf";
 import { Timeline } from "./components/Timeline";
 import { TitlePage } from "./components/TitlePage";
 import { Verso } from "./components/Verso";
 import { sampleBook } from "./sample";
 import { download } from "./takeout";
+import { era } from "./words";
 import {
   describe,
   loadShelf,
@@ -201,7 +201,7 @@ export default function App() {
       setViewing(null);
       setVersion((v) => v + 1);
       persist();
-      setInfo(ran >= limit ? `Nothing happened in ${limit * YEARS} years.` : null);
+      setInfo(ran >= limit ? `${limit * YEARS} years passed, and nothing of note befell.` : null);
     },
     [persist],
   );
@@ -274,6 +274,7 @@ export default function App() {
     return (
       <>
         <Shelf
+          revision={catalog.revision}
           books={shelf.books}
           onOpen={openBook}
           onBegin={() => setView({ kind: "title" })}
@@ -296,44 +297,32 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="top">
-        <div className="brand">
-          <button type="button" className="link" onClick={toShelf} title="Back to the shelf">
-            <strong>Langgen</strong>
-          </button>
-          <span className="book-title">{title}</span>
-        </div>
-        <div className="clock">
-          Year {generation * YEARS}
-          {generation < latest ? <span> of {latest * YEARS}</span> : null}
-        </div>
-        <div className="row">
-          <RunControls
-            generation={generation}
-            atPresent={generation === latest}
-            onRun={(generations) => perform({ kind: "run", generations })}
-            onTick={tick}
-            onNextEvent={nextEvent}
-            onStop={persist}
-          />
-          <button
-            type="button"
-            title="Strike out the last thing written; it stays in the chronicle, struck through"
-            disabled={overview.timeline.length <= 1}
-            onClick={() => {
-              engine.current?.undo();
-              setViewing(null);
-              setVersion((v) => v + 1);
-              persist();
-            }}
-          >
-            Undo
-          </button>
-          <button type="button" aria-pressed={appendix} onClick={() => setAppendix((a) => !a)}>
-            Appendix
-          </button>
-        </div>
+      <header className="running-head">
+        <button type="button" className="link brand" onClick={toShelf} title="Back to the shelf">
+          Langgen
+        </button>
+        <span className="book-title">{title}</span>
+        <span className="folio">
+          {era(overview, generation)}
+          {generation < latest ? (
+            <>
+              {" · "}
+              <button type="button" className="link" onClick={() => setViewing(null)}>
+                to the present
+              </button>
+            </>
+          ) : null}
+        </span>
       </header>
+
+      <nav className="thumbs" aria-label="Sections of the book">
+        <button type="button" aria-current={!appendix} onClick={() => setAppendix(false)}>
+          Chronicle
+        </button>
+        <button type="button" aria-current={appendix} onClick={() => setAppendix(true)}>
+          Appendix
+        </button>
+      </nav>
 
       <Timeline overview={overview} generation={generation} onScrub={scrub} />
 
@@ -375,8 +364,17 @@ export default function App() {
             onScrub={scrub}
             onRestore={restore}
             onDialog={setDialog}
-            onStep={() => perform({ kind: "run", generations: 1 })}
+            canStrike={overview.timeline.length > 1}
+            onRun={(generations) => perform({ kind: "run", generations })}
+            onTick={tick}
+            onStop={persist}
             onNextEvent={() => nextEvent(EVENT_LIMIT)}
+            onStrike={() => {
+              engine.current?.undo();
+              setViewing(null);
+              setVersion((v) => v + 1);
+              persist();
+            }}
           />
           <Recto
             engine={engine.current}

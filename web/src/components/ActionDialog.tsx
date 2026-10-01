@@ -143,7 +143,7 @@ export function ActionDialog({
             Cancel
           </button>
           <button type="submit" form={`form-${kind}`} className="primary">
-            Do it
+            Write it down
           </button>
         </>
       }

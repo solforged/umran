@@ -997,7 +997,7 @@ impl World {
             donors.dedup();
 
             let newcomer = if !donors.is_empty() && rng.r#gen::<f32>() >= params.expressive_share {
-                let id = donors[rng.gen_range(0..donors.len())];
+                let id = donors[crate::rng::index(&mut rng, donors.len())];
                 lexicon.get_mut(id).log.push(Entry {
                     generation,
                     event: Event::Extended { to: concept },

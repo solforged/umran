@@ -167,38 +167,69 @@ select {
   height: 100%;
 }
 
-.top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+/* The running head: a book's top line, with its title and the year. */
+
+.running-head {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: baseline;
   gap: 1rem;
-  flex-wrap: wrap;
-  padding: 0.6rem 1rem;
+  padding: 0.55rem 1.4rem 0.45rem;
   border-bottom: 1px solid var(--line);
-  background: var(--paper-raised);
 }
 
-.brand strong {
+.running-head .brand {
+  justify-self: start;
   font-family: var(--serif);
-  font-size: 1.3rem;
-  margin-right: 0.6rem;
+  font-size: 1rem;
+  color: var(--ink-soft);
+  text-decoration: none;
 }
 
-.brand span,
-.clock span {
+.running-head .book-title {
+  font-style: italic;
+  font-size: 1.05rem;
+  text-align: center;
+}
+
+.running-head .folio {
+  justify-self: end;
+  text-align: right;
+  font-size: 0.92rem;
   color: var(--ink-soft);
 }
 
-.clock {
-  font-variant-numeric: tabular-nums;
+/* The thumb index: tabs on the book's edge for its sections. */
+
+.thumbs {
+  position: fixed;
+  right: 0;
+  top: 40%;
+  z-index: 20;
+  display: grid;
+  gap: 0.3rem;
 }
 
-.run-controls form {
-  gap: 0.35rem;
+.thumbs button {
+  writing-mode: vertical-rl;
+  padding: 0.8rem 0.3rem;
+  border-radius: 6px 0 0 6px;
+  border-right: none;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
 }
 
-.run-controls .year {
-  width: 6.5rem;
+.thumbs button[aria-current="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.book,
+.appendix {
+  padding-right: 2rem;
 }
 
 .notice {
@@ -1275,4 +1306,99 @@ table.preview tr {
 
 .appendix-head h2 {
   margin-top: 0.75rem;
+}
+
+/* The apparatus: the linguist's notes beneath an entry. */
+
+.apparatus {
+  list-style: none;
+  margin: 0.1rem 0 0.35rem 1.1rem;
+  padding: 0;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+.apparatus li::before {
+  content: "§ ";
+  opacity: 0.7;
+}
+
+.annals .entry p {
+  margin: 0;
+}
+
+.annals .entry {
+  margin: 0.3rem 0;
+}
+
+/* Controls written into the sentence of "And then…". */
+
+select.inline,
+input.inline {
+  font: inherit;
+  padding: 0 0.2rem;
+  border: none;
+  border-bottom: 1px dotted var(--ink-soft);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+}
+
+input.inline {
+  width: 4.5rem;
+}
+
+.inline-form {
+  display: inline;
+}
+
+.and-then .strike {
+  margin: 0.75rem 0 0;
+  font-size: 0.9rem;
+}
+
+.and-then .strike button {
+  color: var(--danger);
+}
+
+.colophon {
+  margin-top: 3rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+  max-width: 40rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+@media (max-width: 960px) {
+  .running-head {
+    grid-template-columns: 1fr;
+    gap: 0.1rem;
+    text-align: center;
+  }
+
+  .running-head .brand,
+  .running-head .folio {
+    justify-self: center;
+    text-align: center;
+  }
+
+  .thumbs {
+    position: static;
+    display: flex;
+    justify-content: center;
+    padding: 0.4rem 0;
+  }
+
+  .thumbs button {
+    writing-mode: horizontal-tb;
+    border-radius: 0 0 6px 6px;
+    border-right: 1px solid var(--line);
+    padding: 0.2rem 0.8rem;
+  }
+
+  .book,
+  .appendix {
+    padding-right: 0;
+  }
 }

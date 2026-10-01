@@ -29,6 +29,14 @@ fn splitmix(x: u64) -> u64 {
     z ^ (z >> 31)
 }
 
+/// A uniform index below `len`. Drawn as a `u32` because sampling a
+/// `usize` range draws 64 bits natively but 32 in WASM, which would make
+/// the same seed tell a different history in the browser.
+pub fn index(rng: &mut impl rand::Rng, len: usize) -> usize {
+    let len = u32::try_from(len).expect("fewer than 2^32 choices");
+    rng.gen_range(0..len) as usize
+}
+
 /// Index into `weights` chosen proportionally; non-positive weights never win
 /// unless every weight is non-positive.
 pub fn weighted_index(
@@ -38,7 +46,7 @@ pub fn weighted_index(
     let total: f32 = weights.clone().map(|w| w.max(0.0)).sum();
     let count = weights.clone().count();
     if total <= 0.0 {
-        return rng.gen_range(0..count);
+        return index(rng, count);
     }
     let mut x = rng.r#gen::<f32>() * total;
     for (i, w) in weights.enumerate() {

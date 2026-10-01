@@ -36,6 +36,9 @@ rules. Bun manages frontend dependencies; Rust is pinned in
 - Every random draw comes from a ChaCha8 stream keyed by purpose
   (`rng.rs`); a new process gets its own stream or draws after existing
   ones, so it never shifts earlier draws.
+- Draw indices with `rng::index`, never `gen_range` over `usize`: `usize`
+  ranges sample 64 bits natively but 32 in WASM, so histories would differ
+  between tests and the browser.
 - Sound laws apply regularly to every living word and name, never to
   obsolete words, and never delete a word's last vowel.
 - Borrowability is per concept, never per semantic field. WOLD figures

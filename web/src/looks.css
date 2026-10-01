@@ -103,34 +103,10 @@
   margin-right: 0.08em;
 }
 
-[data-look="scriptorium"] .top,
 [data-look="scriptorium"] .timeline,
 [data-look="scriptorium"] th,
 [data-look="scriptorium"] .modal {
   background: transparent;
-}
-
-[data-look="scriptorium"] .top {
-  border-bottom: 3px double var(--line);
-}
-
-[data-look="scriptorium"] .brand strong {
-  font-size: 1.7rem;
-  color: var(--accent);
-  font-variant: small-caps;
-  letter-spacing: 0.06em;
-}
-
-[data-look="scriptorium"] .brand strong {
-  font-family: var(--initial);
-  font-variant: normal;
-  letter-spacing: 0.02em;
-}
-
-[data-look="scriptorium"] .brand strong::before {
-  content: "❦ ";
-  font-size: 0.8em;
-  color: var(--gold);
 }
 
 [data-look="scriptorium"] .timeline {
@@ -283,18 +259,10 @@
   margin: 1rem 0 0.25rem;
   font-weight: 600;
 }
-.annals .entry {
-  margin: 0.2rem 0;
-}
-.annals .entry-law {
-  margin-left: 1.1rem;
-  font-size: 0.88em;
-  font-style: italic;
-  color: var(--ink-soft);
-}
-.annals .entry-law::before {
+/* Changes of speech are the annalist's too now, marked with a leaf; the
+   linguist's account sits beneath in the apparatus. */
+.annals .entry-law > p::before {
   content: "☙ ";
-  font-style: normal;
   color: var(--accent);
 }
 .annals .fresh {
@@ -376,13 +344,6 @@
 [data-look="scriptorium"] .margin h3 {
   font-variant: normal;
   font-style: italic;
-}
-[data-look="scriptorium"] .brand button.link {
-  font-variant: normal;
-}
-[data-look="scriptorium"] .book-title {
-  font-style: italic;
-  margin-left: 0.6rem;
 }
 
 /* The ribbon bookmark marks the year being read. */
@@ -497,4 +458,72 @@
   letter-spacing: 0;
   color: var(--ink-soft);
   text-decoration: underline dotted;
+}
+
+/* The running head, set like a manuscript's: a rubricated title between
+   a quiet mark of the house and the year. */
+[data-look="scriptorium"] .running-head {
+  border-bottom: 3px double var(--line);
+}
+[data-look="scriptorium"] .running-head .brand {
+  font-family: var(--initial);
+  font-variant: normal;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+}
+[data-look="scriptorium"] .running-head .brand::before {
+  content: "❦ ";
+  color: var(--gold);
+}
+[data-look="scriptorium"] .running-head .book-title {
+  font-variant: small-caps;
+  font-style: normal;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+[data-look="scriptorium"] .running-head .folio {
+  font-style: italic;
+}
+[data-look="scriptorium"] .running-head .folio button.link {
+  font-variant: normal;
+  letter-spacing: 0;
+  color: var(--accent);
+}
+
+/* Thumb tabs as leather tabs glued to the fore-edge. */
+[data-look="scriptorium"] .thumbs button {
+  font-family: var(--initial);
+  font-variant: normal;
+  letter-spacing: 0.04em;
+  font-size: 0.95rem;
+  border-color: var(--line);
+  background: var(--paper-raised);
+  box-shadow: -2px 2px 0 var(--line);
+}
+[data-look="scriptorium"] .thumbs button[aria-current="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--gold);
+}
+
+/* The apparatus, in a smaller hand. */
+[data-look="scriptorium"] .apparatus {
+  font-style: italic;
+}
+[data-look="scriptorium"] .apparatus li::before {
+  color: var(--accent);
+  font-style: normal;
+}
+[data-look="scriptorium"] .annals .entry i.word {
+  font-size: 1em;
+  color: var(--accent);
+}
+[data-look="scriptorium"] select.inline {
+  font-variant: normal;
+  color: var(--ink);
+}
+[data-look="scriptorium"] .and-then .strike button.link {
+  font-style: italic;
+  color: var(--accent);
+  text-decoration-color: var(--accent);
 }

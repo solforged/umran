@@ -90,6 +90,8 @@ export interface Catalog {
   contacts: Choice[];
   namePlaces: string[];
   nameEpithets: string[];
+  /// The engine revision, for the colophon.
+  revision: number;
 }
 
 export interface Marker {
@@ -170,7 +172,10 @@ export interface TellingView {
 export interface Annal {
   generation: number;
   kind: "found" | "split" | "shift" | "contact" | "law";
+  /// The annalist's words; words of the language are marked *thus*.
   text: string;
+  /// The apparatus: what a linguist would note, such as sound laws.
+  notes: string[];
   variety: number | null;
 }
 

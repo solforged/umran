@@ -1,6 +1,9 @@
 //! Browser facade over `langgen-sim`: the history lives here, and the
 //! browser asks for presentation-ready views of any generation as JSON.
 
+mod annals;
+
+use annals::{Annal, annals};
 use langgen_sim::compare::intelligibility;
 use langgen_sim::concepts::related;
 use langgen_sim::morphology::Slot;
@@ -146,6 +149,7 @@ impl Bench {
     /// Sound profiles, flavors, and contact kinds to offer in forms.
     pub fn catalog() -> Result<String, String> {
         to_json(&CatalogView {
+            revision: ENGINE_REVISION,
             sounds: CATALOG
                 .segments
                 .iter()
@@ -708,114 +712,6 @@ fn divergence(a: &[Action], b: &[Action]) -> u32 {
     generation
 }
 
-fn annals(world: &World, connections: &[(u32, usize, usize, ContactKind)]) -> Vec<Annal> {
-    // Names are written as they were said at the time of each entry.
-    let meaning = |c: usize| &world.communities[c].name.meaning;
-    let mut out: Vec<Annal> = Vec::new();
-    for &(generation, ref event) in &world.events {
-        let name = |c: usize| world.community_name_at(c, generation);
-        let tongue = |c: usize| world.language_title_at(world.communities[c].variety, generation);
-        let (kind, text) = match *event {
-            WorldEvent::Found { community } => (
-                "found",
-                format!(
-                    "The {} first appear, calling themselves {}, “{}”, and their speech {}.",
-                    name(community),
-                    name(community),
-                    meaning(community),
-                    tongue(community)
-                ),
-            ),
-            WorldEvent::Split {
-                community,
-                daughter,
-            } => (
-                "split",
-                format!(
-                    "Some of the {} go out from among them and take the name {}, “{}”.",
-                    name(community),
-                    name(daughter),
-                    meaning(daughter)
-                ),
-            ),
-            WorldEvent::Shift {
-                community,
-                toward,
-                variety,
-                ..
-            } => (
-                "shift",
-                format!(
-                    "The {} forsake their old speech for that of the {}, and call it {}.",
-                    name(community),
-                    name(toward),
-                    world.language_title_at(variety, generation)
-                ),
-            ),
-        };
-        out.push(Annal {
-            generation,
-            kind,
-            text,
-            variety: None,
-        });
-    }
-    for &(generation, a, b, contact) in connections {
-        if generation > world.generation || a.max(b) >= world.communities.len() {
-            continue;
-        }
-        let how = match contact {
-            ContactKind::Neighbours => "come to live as neighbours",
-            ContactKind::Trade => "begin to trade",
-            ContactKind::Rule => "are joined under one rule",
-            ContactKind::Religion => "come to share their gods",
-            ContactKind::Intermarriage => "begin to marry one another",
-        };
-        out.push(Annal {
-            generation,
-            kind: "contact",
-            text: format!(
-                "The {} and the {} {how}.",
-                world.community_name_at(a, generation),
-                world.community_name_at(b, generation)
-            ),
-            variety: None,
-        });
-    }
-    let laws = catalog();
-    for (v, variety) in world.varieties.iter().enumerate() {
-        // A daughter's inherited laws are told in its parent's annals.
-        let from = variety.parent.map_or(0, |f| f.generation + 1);
-        for &(generation, id) in variety.laws.iter().filter(|(g, _)| *g >= from) {
-            let label = laws
-                .iter()
-                .find(|l| l.id == id)
-                .map_or_else(|| substrate_label(id), |l| l.label.to_string());
-            out.push(Annal {
-                generation,
-                kind: "law",
-                text: format!(
-                    "In {}: {}.",
-                    // The name before this law touched it.
-                    world.language_title_at(v, generation.saturating_sub(1)),
-                    lowercase_first(&label)
-                ),
-                variety: Some(v),
-            });
-        }
-    }
-    out.sort_by_key(|a| (a.generation, a.kind == "law"));
-    out
-}
-
-fn lowercase_first(text: &str) -> String {
-    let mut chars = text.chars();
-    match chars.next() {
-        Some(first) => first.to_lowercase().chain(chars).collect(),
-        None => String::new(),
-    }
-}
-
 fn word_building(v: &Variety) -> String {
     match v.morphology.kind {
         MorphologyKind::RootPattern => "vowel patterns over consonant roots".into(),
@@ -1037,7 +933,7 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
     out
 }
 
-fn substrate_label(id: &str) -> String {
+pub(crate) fn substrate_label(id: &str) -> String {
     if id == "substrate" {
         "Speakers' old accent merged a sound".into()
     } else {
@@ -1103,6 +999,8 @@ struct CatalogView {
     /// What a people can be named for, and the epithets it can take.
     name_places: Vec<&'static str>,
     name_epithets: Vec<&'static str>,
+    /// The engine revision, for the colophon.
+    revision: u32,
 }
 
 /// One catalog segment, placed for the sound chart.
@@ -1261,16 +1159,6 @@ struct TellingView {
     /// The generation from which it tells otherwise.
     from: u32,
     struck: Vec<Annal>,
-}
-
-#[derive(Clone, PartialEq, Serialize)]
-struct Annal {
-    generation: u32,
-    /// "found", "split", "shift", "contact", or "law".
-    kind: &'static str,
-    text: String,
-    /// The variety a sound law changed, so a view can show one language's.
-    variety: Option<usize>,
 }
 
 #[derive(Serialize)]
@@ -1437,6 +1325,43 @@ mod tests {
     }
 
     #[test]
+    fn the_chronicle_tells_sound_changes_through_words() {
+        let mut w = bench();
+        let overview: serde_json::Value =
+            serde_json::from_str(&w.overview(w.latest()).unwrap()).unwrap();
+        let annals = overview["annals"].as_array().unwrap();
+        let laws: Vec<_> = annals.iter().filter(|a| a["kind"] == "law").collect();
+        assert!(!laws.is_empty());
+        for law in &laws {
+            // One entry per language and year, with the laws as notes.
+            assert!(!law["notes"].as_array().unwrap().is_empty());
+        }
+        assert!(
+            laws.iter()
+                .any(|a| a["text"].as_str().unwrap().contains('*')),
+            "changes are shown through a word"
+        );
+        let years = |v: u64| {
+            laws.iter()
+                .filter(|a| a["variety"] == v)
+                .map(|a| a["generation"].as_u64().unwrap())
+                .collect::<Vec<_>>()
+        };
+        let mut unique = years(0);
+        unique.dedup();
+        assert_eq!(unique, years(0));
+        // The same history is always told in the same words.
+        let again: serde_json::Value = serde_json::from_str(
+            &Bench::load(&w.save().unwrap())
+                .unwrap()
+                .overview(22)
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(again["annals"], overview["annals"]);
+    }
+
+    #[test]
     fn set_aside_histories_stay_visible_struck_through() {
         let tellings = |w: &mut Bench| -> serde_json::Value {
             let overview: serde_json::Value =
@@ -1451,13 +1376,13 @@ mod tests {
         let struck = tellings(&mut w);
         assert_eq!(struck[0]["why"], "undone");
         assert_eq!(struck[0]["from"], 12);
-        let texts: Vec<&str> = struck[0]["struck"]
+        let kinds: Vec<&str> = struck[0]["struck"]
             .as_array()
             .unwrap()
             .iter()
-            .map(|a| a["text"].as_str().unwrap())
+            .map(|a| a["kind"].as_str().unwrap())
             .collect();
-        assert!(texts.iter().any(|t| t.contains("go out from among them")));
+        assert!(kinds.contains(&"split"));
         // The struck entries come from the same telling, so restoring it
         // brings them back as the present.
         w.restore(0).unwrap();

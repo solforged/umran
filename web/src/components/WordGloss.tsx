@@ -27,7 +27,7 @@ export function WordGloss({
     [engine, generation, variety, concept, version],
   );
   if (!detail) {
-    return <p className="muted gloss-hint">Choose a word to read its story here.</p>;
+    return <p className="muted gloss-hint">Choose a word, and its history will be noted here.</p>;
   }
 
   return (

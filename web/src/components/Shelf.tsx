@@ -6,6 +6,7 @@ import { Modal } from "./Modal";
 /// The books, newest first, with ways to begin, read the sample, or bring
 /// one in from a file.
 export function Shelf({
+  revision,
   books,
   onOpen,
   onBegin,
@@ -13,6 +14,8 @@ export function Shelf({
   onImport,
   onRemove,
 }: {
+  /// The engine revision, for the colophon.
+  revision: number;
   books: BookEntry[];
   onOpen: (id: string) => void;
   onBegin: () => void;
@@ -73,6 +76,14 @@ export function Shelf({
           />
         </label>
       </p>
+
+      <footer className="colophon">
+        <p>
+          Written with langgen, engine revision {revision}. Books are kept in this browser alone; to keep one safe or
+          take it elsewhere, take “The book itself” from its Appendix. The same book, opened on the same revision, tells
+          the same history word for word.
+        </p>
+      </footer>
 
       <Modal
         open={removing !== null}

@@ -83,8 +83,8 @@ export function TitlePage({
                   setSeed(randomSeed());
                 }}
               >
-                <strong>Surprise me</strong>
-                <span>Any sound and any name.</span>
+                <strong>Let chance decide</strong>
+                <span>Any sounds and any name.</span>
               </button>
             </div>
           </fieldset>

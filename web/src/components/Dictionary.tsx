@@ -99,7 +99,7 @@ export function Dictionary({
               <th>Word</th>
               <th>IPA</th>
               <th>Origin</th>
-              <th title="Sound changes the word has undergone">Δ</th>
+              <th title="Sound changes the word has undergone">Changes</th>
             </tr>
           </thead>
           <tbody ref={tableRef}>
