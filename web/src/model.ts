@@ -152,6 +152,15 @@ export interface Overview {
   varieties: Variety[];
   contacts: Contact[];
   intelligibility: { a: number; b: number; score: number }[];
+  annals: Annal[];
+}
+
+/// One chronicle entry; `variety` is set for a sound law.
+export interface Annal {
+  generation: number;
+  kind: "found" | "split" | "shift" | "contact" | "law";
+  text: string;
+  variety: number | null;
 }
 
 export interface Origin {

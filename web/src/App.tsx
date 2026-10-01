@@ -314,6 +314,7 @@ export default function App() {
           generation={generation}
           variety={variety}
           concept={concept}
+          annals={overview.annals}
           onScrub={(g) => setViewing(g >= latest ? null : g)}
           onOpenVariety={(v) => {
             const owner = overview.communities.find((c) => c.variety === v);
@@ -323,7 +324,7 @@ export default function App() {
       </main>
 
       {dialog === "world" || dialog === "found" ? (
-        <Modal open wide title={dialog === "world" ? "New world" : "Found a community"} onClose={() => setDialog(null)}>
+        <Modal open wide title={dialog === "world" ? "A new world" : "A new people"} onClose={() => setDialog(null)}>
           <Designer
             catalog={catalog}
             newWorld={dialog === "world"}

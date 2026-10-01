@@ -5,6 +5,7 @@ use langgen_sim::compare::intelligibility;
 use langgen_sim::concepts::related;
 use langgen_sim::morphology::Slot;
 use langgen_sim::phoneme::{Backness, Manner, Secondary};
+use langgen_sim::world::ContactKind;
 use langgen_sim::{
     Action, CATALOG, Chronicle, ENGINE_REVISION, Event, Flavor, Form, Lexeme, Origin, PhonemeId,
     Recipe, World, WorldEvent, catalog,
@@ -308,7 +309,17 @@ impl Bench {
         let timeline = self.timeline();
         let seed = self.chronicle.seed;
         let saved_revision = self.saved_revision;
+        let connections: Vec<(u32, usize, usize, ContactKind)> = self
+            .chronicle
+            .timeline()
+            .into_iter()
+            .filter_map(|(g, action)| match action {
+                Action::Connect { a, b, contact, .. } => Some((g, *a, *b, *contact)),
+                _ => None,
+            })
+            .collect();
         let world = self.world(generation);
+        let annals = annals(world, &connections);
         let spoken = world.spoken();
         let laws = catalog();
         let law_label = |id: &str| {
@@ -399,6 +410,7 @@ impl Bench {
                 })
                 .collect(),
             intelligibility: spoken_pairs(world),
+            annals,
         };
         to_json(&view)
     }
@@ -577,6 +589,110 @@ impl Bench {
         }
         out.sort_by_key(|m| m.generation);
         out
+    }
+}
+
+/// The world's history up to now as annal entries: peoples appearing,
+/// parting, meeting, and changing tongues, plus each language's sound laws.
+fn annals(world: &World, connections: &[(u32, usize, usize, ContactKind)]) -> Vec<Annal> {
+    let name = |c: usize| world.community_name(c);
+    let meaning = |c: usize| &world.communities[c].name.meaning;
+    let tongue = |c: usize| world.language_title(world.communities[c].variety);
+    let mut out: Vec<Annal> = Vec::new();
+    for (generation, event) in &world.events {
+        let (kind, text) = match *event {
+            WorldEvent::Found { community } => (
+                "found",
+                format!(
+                    "The {} first appear, calling themselves {}, “{}”, and their speech {}.",
+                    name(community),
+                    name(community),
+                    meaning(community),
+                    tongue(community)
+                ),
+            ),
+            WorldEvent::Split {
+                community,
+                daughter,
+            } => (
+                "split",
+                format!(
+                    "Some of the {} go out from among them and take the name {}, “{}”.",
+                    name(community),
+                    name(daughter),
+                    meaning(daughter)
+                ),
+            ),
+            WorldEvent::Shift {
+                community,
+                toward,
+                variety,
+                ..
+            } => (
+                "shift",
+                format!(
+                    "The {} forsake their old speech for that of the {}, and call it {}.",
+                    name(community),
+                    name(toward),
+                    world.language_title(variety)
+                ),
+            ),
+        };
+        out.push(Annal {
+            generation: *generation,
+            kind,
+            text,
+            variety: None,
+        });
+    }
+    for &(generation, a, b, contact) in connections {
+        if generation > world.generation || a.max(b) >= world.communities.len() {
+            continue;
+        }
+        let how = match contact {
+            ContactKind::Neighbours => "come to live as neighbours",
+            ContactKind::Trade => "begin to trade",
+            ContactKind::Rule => "are joined under one rule",
+            ContactKind::Religion => "come to share their gods",
+            ContactKind::Intermarriage => "begin to marry one another",
+        };
+        out.push(Annal {
+            generation,
+            kind: "contact",
+            text: format!("The {} and the {} {how}.", name(a), name(b)),
+            variety: None,
+        });
+    }
+    let laws = catalog();
+    for (v, variety) in world.varieties.iter().enumerate() {
+        // A daughter's inherited laws are told in its parent's annals.
+        let from = variety.parent.map_or(0, |f| f.generation + 1);
+        for &(generation, id) in variety.laws.iter().filter(|(g, _)| *g >= from) {
+            let label = laws
+                .iter()
+                .find(|l| l.id == id)
+                .map_or_else(|| substrate_label(id), |l| l.label.to_string());
+            out.push(Annal {
+                generation,
+                kind: "law",
+                text: format!(
+                    "In {}: {}.",
+                    world.language_title(v),
+                    lowercase_first(&label)
+                ),
+                variety: Some(v),
+            });
+        }
+    }
+    out.sort_by_key(|a| (a.generation, a.kind == "law"));
+    out
+}
+
+fn lowercase_first(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_lowercase().chain(chars).collect(),
+        None => String::new(),
     }
 }
 
@@ -1012,6 +1128,18 @@ struct Overview {
     varieties: Vec<VarietyView>,
     contacts: Vec<ContactView>,
     intelligibility: Vec<Pair>,
+    /// What happened, in order, told as a chronicle.
+    annals: Vec<Annal>,
+}
+
+#[derive(Serialize)]
+struct Annal {
+    generation: u32,
+    /// "found", "split", "shift", "contact", or "law".
+    kind: &'static str,
+    text: String,
+    /// The variety a sound law changed, so a view can show one language's.
+    variety: Option<usize>,
 }
 
 #[derive(Serialize)]

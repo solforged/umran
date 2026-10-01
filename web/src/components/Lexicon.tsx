@@ -66,7 +66,7 @@ export function Lexicon({
     <section className="pane lexicon" aria-label="Lexicon">
       <div className="pane-head">
         <div>
-          <h2>{variety.name}</h2>
+          <h2 className={`hand-${variety.family % 5}`}>{variety.name}</h2>
           <p className="muted">
             {variety.meaning ? `“${variety.meaning}” · ` : ""}spoken by {community.name} · {rows.length} meanings, {counts.borrowed} loans,{" "}
             {counts.coined} coinages

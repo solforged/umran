@@ -1,0 +1,353 @@
+/* The Scriptorium look: a manuscript, rubricated, in the spirit of
+   Pentiment. It sets `data-look="scriptorium"` on <html>; `data-theme`
+   forces day or candlelight, otherwise the system setting decides.
+   "workshop" is the plain base styles.css. */
+
+/* ---------- Scriptorium: a manuscript, rubricated ---------- */
+
+:root[data-look="scriptorium"] {
+  --paper: #efe5cf;
+  --paper-raised: #f6eedb;
+  --ink: #2b1d12;
+  --ink-soft: #6f5a42;
+  --line: #c9b38c;
+  --accent: #9b2c1c;
+  --accent-ink: #fbf3e2;
+  --accent-mute: #ead2bd;
+  --danger: #9b2c1c;
+  --loan: #2f4a8a;
+  --coined: #8a5a0f;
+  --event: #9b2c1c;
+  --serif: "EB Garamond", "Iowan Old Style", Palatino, Georgia, serif;
+  --sans: "EB Garamond", "Iowan Old Style", Palatino, Georgia, serif;
+  --mono: "Gentium Book Plus", "EB Garamond", Georgia, serif;
+  --gold: #a87d24;
+  --initial: "Grenze Gotisch", "EB Garamond", serif;
+  --vignette: rgb(120 80 30 / 0.16);
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.45 0 0 0 0 0.32 0 0 0 0 0.15 0 0 0 0.09 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+  color-scheme: light;
+}
+
+/* By candlelight: dark vellum, sepia-light ink, vermilion and gold. */
+@media (prefers-color-scheme: dark) {
+  :root[data-look="scriptorium"]:not([data-theme="light"]) {
+    --paper: #1b130c;
+    --paper-raised: #231910;
+    --ink: #ecdcbc;
+    --ink-soft: #a99272;
+    --line: #4a3824;
+    --accent: #e2643f;
+    --accent-ink: #1b130c;
+    --accent-mute: rgb(226 100 63 / 0.16);
+    --danger: #ef7a5c;
+    --loan: #93acea;
+    --coined: #d9a54a;
+    --event: #e2643f;
+    --gold: #d6aa48;
+    --vignette: rgb(0 0 0 / 0.55);
+    --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.9 0 0 0 0 0.75 0 0 0 0 0.5 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+    color-scheme: dark;
+  }
+}
+
+:root[data-look="scriptorium"][data-theme="dark"] {
+  --paper: #1b130c;
+  --paper-raised: #231910;
+  --ink: #ecdcbc;
+  --ink-soft: #a99272;
+  --line: #4a3824;
+  --accent: #e2643f;
+  --accent-ink: #1b130c;
+  --accent-mute: rgb(226 100 63 / 0.16);
+  --danger: #ef7a5c;
+  --loan: #93acea;
+  --coined: #d9a54a;
+  --event: #e2643f;
+  --gold: #d6aa48;
+  --vignette: rgb(0 0 0 / 0.55);
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.9 0 0 0 0 0.75 0 0 0 0 0.5 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+  color-scheme: dark;
+}
+
+[data-look="scriptorium"] body {
+  font-size: 17px;
+  background-color: var(--paper);
+  background-image:
+    radial-gradient(ellipse at 50% 40%, transparent 55%, var(--vignette) 100%),
+    var(--grain);
+  background-attachment: fixed;
+}
+
+[data-look="scriptorium"] h1,
+[data-look="scriptorium"] h2,
+[data-look="scriptorium"] h3 {
+  color: var(--accent);
+  font-weight: 500;
+  font-variant: small-caps;
+  letter-spacing: 0.04em;
+}
+
+/* Pane titles open with a boxed, gilded initial. */
+[data-look="scriptorium"] h2::first-letter,
+[data-look="scriptorium"] .splash h1::first-letter {
+  font-family: var(--initial);
+  font-variant: normal;
+  font-size: 1.45em;
+  line-height: 1;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border: 2px solid var(--gold);
+  padding: 0.02em 0.14em 0.06em;
+  margin-right: 0.08em;
+}
+
+[data-look="scriptorium"] .top,
+[data-look="scriptorium"] .timeline,
+[data-look="scriptorium"] th,
+[data-look="scriptorium"] .modal {
+  background: transparent;
+}
+
+[data-look="scriptorium"] .top {
+  border-bottom: 3px double var(--line);
+}
+
+[data-look="scriptorium"] .brand strong {
+  font-size: 1.7rem;
+  color: var(--accent);
+  font-variant: small-caps;
+  letter-spacing: 0.06em;
+}
+
+[data-look="scriptorium"] .brand strong {
+  font-family: var(--initial);
+  font-variant: normal;
+  letter-spacing: 0.02em;
+}
+
+[data-look="scriptorium"] .brand strong::before {
+  content: "❦ ";
+  font-size: 0.8em;
+  color: var(--gold);
+}
+
+[data-look="scriptorium"] .timeline {
+  border-bottom: 3px double var(--line);
+}
+
+[data-look="scriptorium"] .tick {
+  width: 7px;
+  height: 7px;
+  border-radius: 0;
+  transform: translateX(-3px) rotate(45deg);
+}
+
+[data-look="scriptorium"] .pane + .pane {
+  border-left: 3px double var(--line);
+}
+
+[data-look="scriptorium"] button {
+  border-radius: 2px;
+  border-color: var(--ink-soft);
+  background: transparent;
+  font-variant: small-caps;
+  letter-spacing: 0.04em;
+}
+
+[data-look="scriptorium"] button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+[data-look="scriptorium"] .item {
+  border: none;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  font-variant: normal;
+  letter-spacing: 0;
+  padding-left: 1.2rem;
+}
+
+[data-look="scriptorium"] .item.selected {
+  background: transparent;
+  position: relative;
+}
+
+[data-look="scriptorium"] .item.selected::before {
+  content: "☞";
+  position: absolute;
+  left: 0;
+  top: 0.45rem;
+  color: var(--accent);
+}
+
+[data-look="scriptorium"] .item-title {
+  font-size: 1.15rem;
+}
+
+[data-look="scriptorium"] th {
+  font-style: italic;
+  text-transform: none;
+  font-variant: small-caps;
+  font-size: 0.95rem;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--ink-soft);
+  background: var(--paper);
+}
+
+[data-look="scriptorium"] td {
+  border-bottom: 1px dotted var(--line);
+}
+
+[data-look="scriptorium"] tbody tr.selected {
+  background: rgb(155 44 28 / 0.08);
+}
+
+[data-look="scriptorium"] .word {
+  font-style: italic;
+  font-size: 1.15rem;
+}
+
+[data-look="scriptorium"] .word.big {
+  font-size: 2.6rem;
+  color: var(--accent);
+}
+
+[data-look="scriptorium"] .ipa,
+[data-look="scriptorium"] .segments {
+  font-size: 0.95rem;
+}
+
+[data-look="scriptorium"] .modal {
+  background: var(--paper-raised);
+  border: 3px double var(--ink-soft);
+  border-radius: 0;
+}
+
+[data-look="scriptorium"] .chip {
+  border-radius: 0;
+}
+
+/* Ticks and inline links are buttons too; keep them out of each look's
+   button styling. */
+[data-look] .tick {
+  background: var(--accent);
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+[data-look] .tick-event {
+  background: var(--event);
+}
+
+[data-look] button.link {
+  border: none;
+  background: none;
+  box-shadow: none;
+  padding: 0;
+  border-radius: 0;
+}
+
+/* The look switcher itself, kept quiet in every look. */
+.look-switch {
+  position: fixed;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 50;
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.15);
+}
+
+.look-switch select {
+  border: none;
+  background: transparent;
+  font-size: 0.85rem;
+}
+
+/* Each language family writes in its own hand, as Pentiment marks a
+   speaker's station by script. */
+[data-look="scriptorium"] .hand-0 {
+  font-family: "Grenze Gotisch", var(--serif);
+}
+[data-look="scriptorium"] .hand-1 {
+  font-family: "Uncial Antiqua", var(--serif);
+}
+[data-look="scriptorium"] .hand-2 {
+  font-family: "IM Fell English", var(--serif);
+  font-style: italic;
+}
+[data-look="scriptorium"] .hand-3 {
+  font-family: "UnifrakturCook", var(--serif);
+}
+[data-look="scriptorium"] .hand-4 {
+  font-family: "Almendra", var(--serif);
+}
+
+/* The chronicle: dated entries, sound changes as marginal notes. */
+.annals {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.annals .year {
+  margin: 1rem 0 0.25rem;
+  font-weight: 600;
+}
+.annals .entry {
+  margin: 0.2rem 0;
+}
+.annals .entry-law {
+  margin-left: 1.1rem;
+  font-size: 0.88em;
+  font-style: italic;
+  color: var(--ink-soft);
+}
+.annals .entry-law::before {
+  content: "☙ ";
+  font-style: normal;
+  color: var(--accent);
+}
+.annals .fresh {
+  animation: write-on 1.6s steps(28, end) both;
+}
+@keyframes write-on {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .annals .fresh {
+    animation: none;
+  }
+}
+[data-look="scriptorium"] .annals .year {
+  font-family: var(--initial);
+  color: var(--accent);
+  font-size: 1.15rem;
+}
+[data-look="scriptorium"] .annals .entry:not(.entry-law)::first-letter {
+  color: var(--accent);
+  font-weight: 600;
+}
+[data-look="scriptorium"] [class*="hand-"] {
+  font-variant: normal;
+  letter-spacing: 0.01em;
+}
+[data-look="scriptorium"] .annals .year button {
+  font-variant: normal;
+  text-decoration: none;
+  color: inherit;
+}

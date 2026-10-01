@@ -28,7 +28,7 @@ export function Communities({
 
   return (
     <aside className="pane communities">
-      <h2>Communities</h2>
+      <h2>Peoples</h2>
       <ul className="list" role="listbox" aria-label="Communities">
         {overview.communities.map((c) => (
           <li key={c.id}>
@@ -39,7 +39,7 @@ export function Communities({
               className={c.id === selected ? "item selected" : "item"}
               onClick={() => onSelect(c.id)}
             >
-              <span className="item-title">{c.name}</span>
+              <span className={`item-title hand-${overview.varieties[c.variety].family % 5}`}>{c.name}</span>
               <span className="item-sub">{overview.varieties[c.variety].name}</span>
               <span className="item-meta">
                 {Math.round(c.size).toLocaleString()} people · prestige {c.prestige.toFixed(2)}
@@ -49,17 +49,17 @@ export function Communities({
         ))}
       </ul>
       <div className="actions">
-        <button type="button" onClick={() => onDialog("found")}>Found</button>
-        <button type="button" onClick={() => onDialog("split")}>Split</button>
+        <button type="button" onClick={() => onDialog("found")} title="Found a new people with a language of its own">A new people</button>
+        <button type="button" onClick={() => onDialog("split")} title="Split this people in two">Part ways</button>
         <button type="button" onClick={() => onDialog("connect")} disabled={overview.communities.length < 2}>
-          Connect
+          Bring together
         </button>
         <button type="button" onClick={() => onDialog("shift")} disabled={overview.communities.length < 2}>
-          Shift
+          Change tongue
         </button>
       </div>
 
-      <h3>{current.name}</h3>
+      <h3 className={`hand-${overview.varieties[current.variety].family % 5}`}>{current.name}</h3>
       <p className="muted small">
         “{current.meaning}”{current.once ? `, once ${current.once}` : ""} · speaks {overview.varieties[current.variety].name}
         {overview.varieties[current.variety].meaning ? ` (“${overview.varieties[current.variety].meaning}”)` : ""}

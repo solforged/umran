@@ -1,14 +1,16 @@
-import { useMemo, useState } from "react";
-import type { Engine, Variety } from "../model";
+import { useEffect, useMemo, useState } from "react";
+import type { Annal, Engine, Variety } from "../model";
+import { Chronicle } from "./Chronicle";
 import { YEARS } from "../model";
 
-/// One word in depth, or the language's sound system.
+/// The chronicle, one word in depth, or the language's sound system.
 export function Inspector({
   engine,
   version,
   generation,
   variety,
   concept,
+  annals,
   onScrub,
   onOpenVariety,
 }: {
@@ -17,10 +19,14 @@ export function Inspector({
   generation: number;
   variety: Variety;
   concept: string | null;
+  annals: Annal[];
   onScrub: (generation: number) => void;
   onOpenVariety: (variety: number) => void;
 }) {
-  const [tab, setTab] = useState<"word" | "sound">("word");
+  const [tab, setTab] = useState<"chronicle" | "word" | "sound">("chronicle");
+  useEffect(() => {
+    if (concept) setTab("word");
+  }, [concept]);
   const detail = useMemo(
     () => (concept ? engine.word(generation, variety.id, concept) : null),
     [engine, generation, variety.id, concept, version],
@@ -29,6 +35,9 @@ export function Inspector({
   return (
     <aside className="pane inspector">
       <div className="tabs" role="tablist">
+        <button type="button" role="tab" aria-selected={tab === "chronicle"} onClick={() => setTab("chronicle")}>
+          Chronicle
+        </button>
         <button type="button" role="tab" aria-selected={tab === "word"} onClick={() => setTab("word")}>
           Word
         </button>
@@ -37,7 +46,9 @@ export function Inspector({
         </button>
       </div>
 
-      {tab === "sound" ? (
+      {tab === "chronicle" ? (
+        <Chronicle annals={annals} variety={variety.id} onScrub={onScrub} />
+      ) : tab === "sound" ? (
         <div role="tabpanel">
           <h2>{variety.name}</h2>
           <p className="muted">Sound preferences: {variety.profile}</p>

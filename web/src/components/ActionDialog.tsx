@@ -7,9 +7,9 @@ import { Modal } from "./Modal";
 export type DialogKind = "world" | "found" | "split" | "connect" | "shift";
 
 const TITLES: Record<"split" | "connect" | "shift", string> = {
-  split: "Split a community",
-  connect: "Bring two communities into contact",
-  shift: "Shift a community's language",
+  split: "A people parts ways",
+  connect: "Two peoples meet",
+  shift: "A people changes its tongue",
 };
 
 /// Forms for splitting, connecting, and shifting. Each validates the
