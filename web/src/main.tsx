@@ -4,6 +4,7 @@ import App from "./App";
 import "./styles.css";
 import "./chart.css";
 import { LightSwitch } from "./components/LightSwitch";
+import { PwaNotice } from "./components/PwaNotice";
 
 const root = document.getElementById("root");
 if (!root) {
@@ -14,5 +15,6 @@ createRoot(root).render(
   <StrictMode>
     <App />
     <LightSwitch />
+    <PwaNotice />
   </StrictMode>,
 );

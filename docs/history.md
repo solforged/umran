@@ -49,3 +49,14 @@ overwritten; save failures stay visible and export still works. Storage is
 local to the browser, not synced. The sample world (`web/src/sample.ts`)
 is a fixed recipe of four thousand years, offered on the shelf and at the
 top of world setup; opening it puts a fresh copy on the shelf.
+
+The production workbench is also an installable offline app. Its service
+worker caches the app shell and WebAssembly engine, not worlds; saved
+recipes keep the same localStorage keys. Worker cache cleanup never
+touches the shelf. Worlds created or advanced offline save normally.
+Updates wait for "Save and reload", which saves even an actively playing
+world before reloading. A failed save blocks the reload and leaves export
+available. Accepting an update in one window does not force other open
+windows to reload. Installing does not sync worlds between browsers or
+devices; where an installed app has separate storage, move worlds by
+exporting and importing recipes.

@@ -57,15 +57,27 @@ export default function App() {
   const bookId = view.kind === "book" ? view.id : null;
 
   const persist = useCallback(() => {
-    if (!engine.current || bookId === null) return;
+    if (!engine.current || bookId === null) return true;
     try {
       const entry = describe(bookId, engine.current.overview(engine.current.latest()));
-      setShelf((current) => saveBook(current, entry, engine.current!.save()));
+      setShelf(saveBook(shelf, entry, engine.current.save()));
       setSaveError(null);
+      return true;
     } catch (e) {
       setSaveError(`Not saved in this browser: ${message(e)}. Export still works.`);
+      return false;
     }
-  }, [bookId]);
+  }, [bookId, shelf]);
+
+  useEffect(() => {
+    // Playback saves when it stops; an accepted update also saves its latest
+    // generation. A full or unavailable store must not cause a lossy reload.
+    const beforeUpdate = (event: Event) => {
+      if (!persist()) event.preventDefault();
+    };
+    window.addEventListener("umran:before-update", beforeUpdate);
+    return () => window.removeEventListener("umran:before-update", beforeUpdate);
+  }, [persist]);
 
   // Saving needs the book open first, so new books save on the next render.
   const [unsaved, setUnsaved] = useState(false);

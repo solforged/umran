@@ -11,7 +11,7 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "allowImportingTsExtensions": true,
-    "types": ["vite/client"]
+    "types": ["vite/client", "vite-plugin-pwa/react"]
   },
   "include": ["web/src", "vite.config.ts"]
 }

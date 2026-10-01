@@ -112,6 +112,29 @@ A few decisions do most of the work:
 and [`docs/history.md`](docs/history.md) covers replay, branching, and
 saving.
 
+## Install and use offline
+
+Umran is a progressive web app. Open it online once and wait for
+"Umran is ready offline"; the app and its WebAssembly engine can then
+reopen and run without a connection.
+
+- **Chrome or Edge:** choose "Install Umran" when offered, or use the
+  browser's install menu.
+- **iPhone or iPad:** open it in Safari, then choose Share → Add to Home
+  Screen.
+- **Safari on Mac:** choose File → Add to Dock.
+
+Worlds stay in local browser storage; installing does not upload or sync
+them. Some browsers keep an installed app's storage separate from its
+browser tab, so export a recipe and import it in the app if needed. Keep
+exported backups; clearing site data can remove both worlds and offline
+files.
+
+New editions offer "Save and reload" rather than interrupting playback.
+Reloading first saves the latest generation; if saving fails, the update
+waits so you can export the world. Other open windows wait for their own
+reload.
+
 ## Run it locally
 
 You need [rustup](https://rustup.rs/) (the Rust version is pinned in
@@ -123,6 +146,13 @@ bun run dev         # builds the WebAssembly and serves http://127.0.0.1:5173
 bun run build       # a static site in dist/, all that deployment needs
 cargo test --workspace
 ```
+
+To check the PWA locally, run `bun run build` followed by `bun run preview`
+and open `http://127.0.0.1:4173/`. Offline support is enabled only in
+production builds; deployment requires HTTPS (localhost also works).
+The manifest, icons, and service worker support subpaths such as `/umran/`.
+Fonts fetched while the worker is active are cached too; fonts not yet
+cached fall back to local serif faces when offline.
 
 The engine also has command-line examples for studying one mechanism at a
 time, such as how fast words wear down or how a family drifts apart. They

@@ -1,0 +1,34 @@
+.pwa-notice {
+  position: fixed;
+  z-index: 60;
+  left: max(0.75rem, env(safe-area-inset-left));
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+  width: min(27rem, calc(100vw - 1.5rem));
+  padding: 0.75rem 1rem;
+  color: var(--ink);
+  background: var(--paper-raised);
+  border: 3px double var(--ink-soft);
+  box-shadow: 0 3px 18px rgb(0 0 0 / 0.2);
+}
+
+.pwa-notice p {
+  margin: 0 0 0.5rem;
+}
+
+.pwa-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* Keep playback controls reachable while an update is waiting. */
+:root:has(.stage) .pwa-notice {
+  top: 4.5rem;
+  bottom: auto;
+}
+
+@media (max-width: 600px) {
+  .pwa-notice {
+    bottom: max(3rem, env(safe-area-inset-bottom));
+  }
+}
