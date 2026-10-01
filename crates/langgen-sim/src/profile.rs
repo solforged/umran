@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 /// The full numbers behind a sound system: segment preferences, syllable
 /// shapes, word building, and spelling. Languages are founded from a
 /// `LanguageDesign`, which resolves to one of these; presets come from the
-/// typical base with a flavor applied.
+/// base with a flavor applied.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SoundProfile {
     pub id: String,
@@ -105,27 +105,25 @@ pub enum LongVowel {
 }
 
 impl SoundProfile {
-    /// A typical human language: flat tastes, so world frequencies decide.
-    /// The base every preset and "fill typical" starts from.
-    pub fn typical() -> SoundProfile {
-        typical()
+    /// The common ground every flavor starts from: flat tastes, so how
+    /// common each sound is worldwide decides. It is not offered as a
+    /// language of its own, since there is no typical human language.
+    pub fn base() -> SoundProfile {
+        base()
     }
 
-    /// Ready-made starting points: typical, and typical with each example
-    /// flavor applied.
+    /// Ready-made starting points: the base with each example flavor.
     pub fn presets() -> Vec<SoundProfile> {
-        let base = typical();
-        std::iter::once(base.clone())
-            .chain(Flavor::examples().iter().map(|f| base.flavored(f)))
+        let base = base();
+        Flavor::examples()
+            .iter()
+            .map(|f| base.flavored(f))
             .collect()
     }
 
-    /// A preset by id: "typical", or a flavor's id ("indic", "semitic"...).
+    /// A preset by its flavor's id ("indic", "semitic"...).
     pub fn by_id(id: &str) -> Option<SoundProfile> {
-        if id == "typical" {
-            return Some(typical());
-        }
-        Flavor::by_id(id).map(|f| typical().flavored(&f))
+        Flavor::by_id(id).map(|f| base().flavored(&f))
     }
 }
 
@@ -133,7 +131,7 @@ fn ipas(list: &[&str]) -> Vec<String> {
     list.iter().map(|s| s.to_string()).collect()
 }
 
-fn typical() -> SoundProfile {
+fn base() -> SoundProfile {
     use Backness::*;
     use Height::*;
     use Manner::*;
@@ -141,10 +139,9 @@ fn typical() -> SoundProfile {
     // Flat tastes: which sounds appear, and how often, comes mostly from how
     // common they are across the world's languages (see `typology`).
     SoundProfile {
-        id: "typical".into(),
-        name: "Typical".into(),
-        description: "A typical human language: sounds weighted by how common they are worldwide."
-            .into(),
+        id: "base".into(),
+        name: "Base".into(),
+        description: "Sounds weighted by how common they are worldwide.".into(),
         inventory: InventoryPrior {
             exact: false,
             consonant_count: (14, 20),

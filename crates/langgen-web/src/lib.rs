@@ -52,9 +52,9 @@ impl Workbench {
         Bench::design(preset, seed).map_err(fail)
     }
 
-    #[wasm_bindgen(js_name = typicalDesign)]
-    pub fn typical_design(seed: u32, consonants: u8, vowels: u8) -> Result<String, JsValue> {
-        Bench::typical_design(seed, consonants, vowels).map_err(fail)
+    #[wasm_bindgen(js_name = frequencyDesign)]
+    pub fn frequency_design(seed: u32, consonants: u8, vowels: u8) -> Result<String, JsValue> {
+        Bench::frequency_design(seed, consonants, vowels).map_err(fail)
     }
 
     /// Sample words from a design, and the names its people would take,
@@ -159,17 +159,14 @@ impl Bench {
             places: PLACES.to_vec(),
             manners: MANNERS.to_vec(),
             heights: HEIGHTS.to_vec(),
-            presets: std::iter::once(Choice {
-                id: "typical".into(),
-                name: "Typical".into(),
-                description: "Sounds chosen by how common they are worldwide.".into(),
-            })
-            .chain(Flavor::examples().into_iter().map(|f| Choice {
-                id: f.id,
-                name: f.name,
-                description: f.brief,
-            }))
-            .collect(),
+            presets: Flavor::examples()
+                .into_iter()
+                .map(|f| Choice {
+                    id: f.id,
+                    name: f.name,
+                    description: f.brief,
+                })
+                .collect(),
             contacts: [
                 (
                     "neighbours",
@@ -211,8 +208,8 @@ impl Bench {
         to_json(&design)
     }
 
-    pub fn typical_design(seed: u32, consonants: u8, vowels: u8) -> Result<String, String> {
-        to_json(&LanguageDesign::typical(
+    pub fn frequency_design(seed: u32, consonants: u8, vowels: u8) -> Result<String, String> {
+        to_json(&LanguageDesign::by_frequency(
             u64::from(seed),
             consonants,
             vowels,
@@ -1359,7 +1356,7 @@ mod tests {
 
     fn bench() -> Bench {
         let mut w = Bench::new(5);
-        w.act(&found("Hill", "typical")).unwrap();
+        w.act(&found("Hill", "familiar")).unwrap();
         w.act(&found("Coast", "polynesian")).unwrap();
         w.act(r#"{"kind":"connect","a":0,"b":1,"intensity":0.6,"contact":"trade"}"#)
             .unwrap();
@@ -1485,9 +1482,9 @@ mod tests {
             serde_json::from_str(&Bench::preview(&design, 3, PEOPLE).unwrap()).unwrap();
         assert!(preview["words"].as_array().unwrap().len() > 20);
         assert!(!preview["families"].as_array().unwrap().is_empty());
-        let typical: serde_json::Value =
-            serde_json::from_str(&Bench::typical_design(4, 15, 5).unwrap()).unwrap();
-        assert_eq!(typical["sounds"].as_array().unwrap().len(), 20);
+        let drawn: serde_json::Value =
+            serde_json::from_str(&Bench::frequency_design(4, 15, 5).unwrap()).unwrap();
+        assert_eq!(drawn["sounds"].as_array().unwrap().len(), 20);
         assert!(Bench::preview("{}", 1, PEOPLE).is_err());
         assert!(Bench::preview(&design, 1, r#"{"kind":"place","place":"moon"}"#).is_err());
         let catalog: serde_json::Value = serde_json::from_str(&Bench::catalog().unwrap()).unwrap();

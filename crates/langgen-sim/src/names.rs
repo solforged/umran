@@ -30,8 +30,15 @@ pub enum Naming {
 pub const PLACES: [&str; 5] = ["hill", "mountain", "river", "sea", "island"];
 /// Words a people's name can be qualified with.
 pub const EPITHETS: [&str; 7] = ["new", "far", "small", "big", "old", "red", "black"];
-/// Syllables beyond which a name takes no further epithet.
-const MAX_EPITHET_BASE: usize = 3;
+/// Syllables beyond which a name takes no further epithet, so epithets
+/// do not stack over many splits: there were Ostrogoths and Visigoths,
+/// never "far East Goths".
+const MAX_EPITHET_BASE: usize = 2;
+/// Most syllables a people's name keeps, and a language's. Names said
+/// every day are short, and long ones are clipped in use: Deutsch,
+/// English, Magyar, Suomi, Kiswahili.
+const MAX_PEOPLE_NAME: usize = 3;
+const MAX_LANGUAGE_NAME: usize = 4;
 /// Epithets a group that moves off tends to take.
 const DAUGHTER_EPITHETS: [&str; 3] = ["new", "far", "small"];
 
@@ -172,7 +179,7 @@ impl Naming {
             }
         };
         Ok(Name {
-            form,
+            form: clipped(form, MAX_PEOPLE_NAME),
             meaning,
             coined: generation,
             log: Vec::new(),
@@ -180,16 +187,36 @@ impl Naming {
     }
 }
 
+/// `form` cut after its `max`th vowel if it has more, as long names are
+/// clipped in use. Ending on a vowel keeps the clipped name pronounceable
+/// in any language.
+fn clipped(form: Form, max: usize) -> Form {
+    let Some(&end) = form.syllables().get(max).map(|s| &s.onset.start) else {
+        return form;
+    };
+    let nucleus = form.syllables()[max - 1].nucleus;
+    let end = end.min(nucleus + 1);
+    Form {
+        boundaries: form
+            .boundaries
+            .iter()
+            .copied()
+            .filter(|&b| b < end)
+            .collect(),
+        segs: form.segs[..end].to_vec(),
+    }
+}
+
 /// A language's name from its speakers' name: with the belonging affix,
-/// or compounded with a word for speech.
+/// or compounded with a word for speech unless that would make it too
+/// long to say every day.
 pub fn language_name(variety: &Variety, people: &Name, spelled: &str, generation: u32) -> Name {
     let morphology = &variety.morphology;
     let speech = morphology.names.speech.and_then(|id| {
         let concept = by_id(id)?;
-        Some((
-            variety.lexicon.word_for(concept)?.form.clone(),
-            concept.gloss,
-        ))
+        let word = variety.lexicon.word_for(concept)?.form.clone();
+        let fits = morphology.compound(&people.form, &word).vowel_count() <= MAX_LANGUAGE_NAME;
+        fits.then_some((word, concept.gloss))
     });
     let (form, meaning) = match speech {
         Some((word, gloss)) => (
@@ -202,7 +229,7 @@ pub fn language_name(variety: &Variety, people: &Name, spelled: &str, generation
         ),
     };
     Name {
-        form,
+        form: clipped(form, MAX_LANGUAGE_NAME),
         meaning,
         coined: generation,
         log: Vec::new(),
@@ -229,7 +256,7 @@ mod tests {
 
     #[test]
     fn names_are_built_from_the_languages_own_words() {
-        let v = variety("typical", 3);
+        let v = variety("familiar", 3);
         let people = Naming::People.coin(&v, None, 0).unwrap();
         let word = |id| v.lexicon.word_for(by_id(id).unwrap()).unwrap().form.clone();
         assert_eq!(people.form, word("people"));
@@ -271,7 +298,7 @@ mod tests {
     fn languages_are_named_for_their_speakers() {
         let mut affixed = 0;
         for seed in 0..40 {
-            let v = variety("typical", seed);
+            let v = variety("familiar", seed);
             let people = Naming::People.coin(&v, None, 0).unwrap();
             let language = language_name(&v, &people, "Kawa", 0);
             assert!(language.form.segs.len() > people.form.segs.len());
@@ -293,7 +320,7 @@ mod tests {
 
     #[test]
     fn names_remember_their_older_forms() {
-        let v = variety("typical", 3);
+        let v = variety("familiar", 3);
         let mut name = Naming::People.coin(&v, None, 0).unwrap();
         let first = name.form.clone();
         let mut second = first.clone();
@@ -307,6 +334,17 @@ mod tests {
         assert_eq!(name.form_at(4), &second);
         assert_eq!(name.form_at(8), &second);
         assert_eq!(name.form_at(9), &third);
+    }
+
+    #[test]
+    fn long_names_are_clipped_after_a_vowel() {
+        let form = |ipa| Form::from_ipa(ipa).unwrap();
+        assert_eq!(clipped(form("kawatenulo"), 3).ipa(), "kawate");
+        assert_eq!(clipped(form("kastanpurla"), 2).ipa(), "kasta");
+        assert_eq!(clipped(form("kawa"), 3).ipa(), "kawa");
+        let mut joined = form("kawatenu");
+        joined.boundaries = vec![2, 6];
+        assert_eq!(clipped(joined, 3).boundaries, vec![2]);
     }
 
     #[test]

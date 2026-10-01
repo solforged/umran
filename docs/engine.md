@@ -13,8 +13,8 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   suffixing, derivation) and spelling. It resolves to an internal
   `SoundProfile`: chosen sounds exactly, favoured ones preferred, absent
   ones discouraged but reachable by sound change. There are no named
-  culture packs; `SoundProfile::typical()` is the plain base for "fill
-  typical", and presets (typical, or typical plus a `Flavor` from
+  culture packs; `SoundProfile::base()` weights sounds by world frequency
+  for "draw by world frequency", and presets (the base plus a `Flavor` from
   `flavor.rs` or `palettes.rs`) only produce starting designs to edit.
 - One preference score, taste plus cross-linguistic frequency from PHOIBLE
   (`typology.rs`), drives inventories, how often sounds are used, sound-law
@@ -63,8 +63,10 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   or an epithet on an older name), and its language is named after it
   with the language's belonging affix or a compound with "tongue" or
   "word" (`NameRules` in `morphology.rs`, drawn after all other founding
-  draws). Names then undergo the same sound laws as their variety's
-  words. Split-off peoples name themselves; a people that shifts keeps
+  draws). Names are clipped to three syllables for a people and four for
+  a language, as names said every day are, and epithets go only on short
+  names, so they do not stack over many splits. Names then undergo the
+  same sound laws as their variety's words. Split-off peoples name themselves; a people that shifts keeps
   its name and names its new speech after itself. Exonyms are the name
   adapted to a contact's sounds, computed from current forms.
 - Varieties fork on splits and shifts and keep their lineage (`Fork`);
@@ -81,7 +83,7 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
 ## Studying one mechanism
 
 Each example prints a readable report; profiles are preset ids
-(`typical`, or a palette such as `germanic`, `semitic`, `polynesian`).
+(a flavor such as `familiar`, `germanic`, `semitic`, `polynesian`).
 
 ```sh
 cargo run --release -p langgen-sim --example found -- <seed> <profile>
@@ -91,6 +93,7 @@ cargo run --release -p langgen-sim --example family -- <seed> <proto> <outsider>
 cargo run --release -p langgen-sim --example history -- <seed> <generations>
 cargo run --release -p langgen-sim --example calibrate -- <seeds> <generations> [profile]
 cargo run --release -p langgen-sim --example length -- [seeds] [generations]
+cargo run --release -p langgen-sim --example audit -- [seeds] [generations]
 ```
 
 ## Not yet modelled

@@ -14,7 +14,7 @@ fn main() {
 
     let profile = |id: &str| SoundProfile::by_id(id).unwrap();
     let mut world = World::new(seed, Params::default());
-    let hill = world.found(&profile("typical"), 0.5, 0.4);
+    let hill = world.found(&profile("familiar"), 0.5, 0.4);
     let coast = world.found(&profile("polynesian"), 0.4, 0.6);
     let empire = world.found(&profile("iranian"), 0.85, 0.3);
     world.connect(hill, coast, 0.5, ContactKind::Trade);

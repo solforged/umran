@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 
 /// Bumped whenever an engine change would make an existing recipe replay
 /// differently. Saves record it so a mismatch can be reported.
-pub const ENGINE_REVISION: u32 = 7;
+pub const ENGINE_REVISION: u32 = 8;
 /// Identifies saved recipes.
 pub const FORMAT: &str = "langgen-sim-recipe";
 /// Generations between cached checkpoints.
@@ -419,7 +419,7 @@ mod tests {
         Action::Found {
             naming: Naming::People,
             design: LanguageDesign::preset(preset, 0)
-                .unwrap_or_else(|| LanguageDesign::typical(0, 14, 5)),
+                .unwrap_or_else(|| LanguageDesign::by_frequency(0, 14, 5)),
             seed: name.len() as u64,
             power: 0.5,
             openness: 0.5,
@@ -438,7 +438,7 @@ mod tests {
 
     fn sample() -> Chronicle {
         let mut c = Chronicle::new(7);
-        c.act(found("Hill", "typical")).unwrap();
+        c.act(found("Hill", "familiar")).unwrap();
         c.act(found("Coast", "polynesian")).unwrap();
         c.act(Action::Run { generations: 15 }).unwrap();
         c.act(Action::Connect {
@@ -463,7 +463,7 @@ mod tests {
         let mut c = sample();
         let mut direct = World::new(7, Params::default());
         let design = |p: &str| LanguageDesign::preset(p, 0).unwrap().profile();
-        direct.found_seeded(&Naming::People, &design("typical"), 4, 0.5, 0.5);
+        direct.found_seeded(&Naming::People, &design("familiar"), 4, 0.5, 0.5);
         direct.found_seeded(&Naming::People, &design("polynesian"), 5, 0.5, 0.5);
         direct.run(12);
         assert!(same(&c.world_at(12), &direct));
@@ -568,14 +568,14 @@ mod tests {
             })
             .is_err()
         );
-        let mut unnamed = found("X", "typical");
+        let mut unnamed = found("X", "familiar");
         if let Action::Found { naming, .. } = &mut unnamed {
             *naming = Naming::Place {
                 place: "moon".into(),
             };
         }
         assert!(c.act(unnamed).is_err());
-        let mut bad = found("X", "typical");
+        let mut bad = found("X", "familiar");
         if let Action::Found { design, .. } = &mut bad {
             design.sounds.clear();
         }
@@ -596,7 +596,7 @@ mod tests {
         assert!(same(&cold.world_at(39), c.latest()));
 
         let mut world = Chronicle::new(1);
-        world.act(found("Hill", "typical")).unwrap();
+        world.act(found("Hill", "familiar")).unwrap();
         let ran = world.run_until_event(400);
         assert!(ran < 400, "a growing community eventually splits");
         assert_eq!(world.latest().events.len(), 2, "the founding and the split");

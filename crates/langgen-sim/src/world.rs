@@ -1224,10 +1224,10 @@ mod tests {
     fn core_retention_per_millennium_matches_glottochronology() {
         let seeds = 60;
         let (mut total, mut top, mut bottom) = (0.0, 0.0, 0.0);
-        // Calibrated on a typical language; inventories much larger or
-        // smaller than typical make fewer or more homophones, and so fewer or
+        // Calibrated on the base profile; inventories much larger or
+        // smaller than its make fewer or more homophones, and so fewer or
         // more clash-driven replacements.
-        for (n, profile) in std::iter::repeat_n(SoundProfile::typical(), seeds).enumerate() {
+        for (n, profile) in std::iter::repeat_n(SoundProfile::base(), seeds).enumerate() {
             let mut sim = World::solo(n as u64, &profile, Params::default());
             sim.run(40);
             let lexicon = &sim.varieties[0].lexicon;
@@ -1272,7 +1272,7 @@ mod tests {
                 .count();
             hits as f32 / seeds as f32
         };
-        let neutral = SoundProfile::by_id("typical").unwrap();
+        let neutral = SoundProfile::base();
         let illithid = SoundProfile::by_id("iranian").unwrap();
         let fishy = neutral.flavored(&crate::flavor::Flavor::by_id("nahuatl").unwrap());
         let (spir_neutral, spir_illithid) = (
@@ -1539,11 +1539,7 @@ mod tests {
 
     #[test]
     fn daughters_share_inherited_words_until_they_diverge() {
-        let mut world = World::solo(
-            9,
-            &SoundProfile::by_id("typical").unwrap(),
-            Params::default(),
-        );
+        let mut world = World::solo(9, &SoundProfile::base(), Params::default());
         world.run(3);
         let east = world.split(0, None, 0.0);
         let (a, b) = (
@@ -1574,9 +1570,9 @@ mod tests {
     fn contact_pulls_sound_systems_together() {
         let overlap = |areal_pull: f32| {
             let pairs = [
-                ("typical", "germanic"),
+                ("familiar", "germanic"),
                 ("iranian", "polynesian"),
-                ("typical", "iranian"),
+                ("familiar", "iranian"),
             ];
             let mut total = 0.0;
             for seed in 0..30u64 {
@@ -1608,11 +1604,7 @@ mod tests {
 
     #[test]
     fn communities_grow_split_and_rank_by_size() {
-        let mut world = World::solo(
-            4,
-            &SoundProfile::by_id("typical").unwrap(),
-            Params::default(),
-        );
+        let mut world = World::solo(4, &SoundProfile::base(), Params::default());
         world.run(200);
         assert!(
             world.communities.len() > 1,
@@ -1691,7 +1683,7 @@ mod tests {
     fn intelligibility_falls_as_daughters_diverge() {
         use crate::compare::intelligibility;
         let mut world = World::new(2, Params::static_society());
-        let west = world.found(&SoundProfile::by_id("typical").unwrap(), 0.5, 0.5);
+        let west = world.found(&SoundProfile::base(), 0.5, 0.5);
         let other = world.found(&SoundProfile::by_id("iranian").unwrap(), 0.5, 0.5);
         let east = world.split(west, None, 0.0);
         let score = |w: &World, a: usize, b: usize| {
@@ -1711,7 +1703,7 @@ mod tests {
     fn intelligibility_is_symmetric_and_near_zero_for_strangers() {
         use crate::compare::intelligibility;
         let mut world = World::new(6, Params::static_society());
-        let a = world.found(&SoundProfile::by_id("typical").unwrap(), 0.5, 0.5);
+        let a = world.found(&SoundProfile::base(), 0.5, 0.5);
         let b = world.found(&SoundProfile::by_id("germanic").unwrap(), 0.5, 0.5);
         world.run(20);
         let (la, lb) = (&world.variety_of(a).lexicon, &world.variety_of(b).lexicon);
@@ -1736,7 +1728,7 @@ mod tests {
     #[test]
     fn peoples_name_themselves_and_their_speech() {
         let mut world = World::new(3, Params::static_society());
-        let a = world.found(&SoundProfile::typical(), 0.5, 0.5);
+        let a = world.found(&SoundProfile::base(), 0.5, 0.5);
         let b = world.found(&SoundProfile::by_id("iranian").unwrap(), 0.9, 0.5);
         assert_eq!(world.communities[a].name.meaning, "the people");
         let people = |w: &World, c: usize| {
@@ -1832,10 +1824,32 @@ mod tests {
         );
     }
 
+    /// Peoples split again and again over a long history, yet their names
+    /// stay short enough to say: epithets do not stack and long names are
+    /// clipped.
+    #[test]
+    fn names_stay_short_over_many_splits() {
+        for seed in 0..4 {
+            let mut world = World::new(seed, Params::default());
+            let a = world.found(&SoundProfile::by_id("finnic").unwrap(), 0.5, 0.5);
+            let b = world.found(&SoundProfile::by_id("semitic").unwrap(), 0.8, 0.3);
+            world.connect(a, b, 0.6, ContactKind::Rule);
+            world.run(150);
+            assert!(world.communities.len() > 2, "no splits to test");
+            for c in &world.communities {
+                assert!(c.name.form.vowel_count() <= 3, "{}", c.name.form.ipa());
+            }
+            for (v, spoken) in world.spoken().into_iter().enumerate() {
+                let name = &world.varieties[v].name.form;
+                assert!(!spoken || name.vowel_count() <= 4, "{}", name.ipa());
+            }
+        }
+    }
+
     #[test]
     fn names_undergo_sound_change() {
         let mut world = World::new(5, Params::static_society());
-        world.found(&SoundProfile::typical(), 0.5, 0.5);
+        world.found(&SoundProfile::base(), 0.5, 0.5);
         let concept = crate::concepts::by_id("people").unwrap();
         world.run(80);
         let name = &world.communities[0].name;
@@ -1852,11 +1866,7 @@ mod tests {
 
     #[test]
     fn splitting_shares_land_instead_of_multiplying_it() {
-        let mut world = World::solo(
-            8,
-            &SoundProfile::by_id("typical").unwrap(),
-            Params::default(),
-        );
+        let mut world = World::solo(8, &SoundProfile::base(), Params::default());
         world.run(300);
         let total: f32 = world.communities.iter().map(|c| c.size).sum();
         assert!(total < world.params.capacity * 1.2, "population {total}");

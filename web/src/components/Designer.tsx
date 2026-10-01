@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { presetDesign, preview, typicalDesign } from "../engine";
+import { frequencyDesign, presetDesign, preview } from "../engine";
 import type { Catalog, LanguageDesign, LongVowelStyle, Naming, SoundInfo } from "../model";
 import { NamingSelect } from "./NamingSelect";
 
@@ -40,7 +40,7 @@ export function Designer({
   const [seed, setSeed] = useState(() => initial?.seed ?? randomSeed());
   const [consonants, setConsonants] = useState(18);
   const [vowels, setVowels] = useState(5);
-  const [design, setDesign] = useState<LanguageDesign>(() => initial?.design ?? typicalDesign(seed, 18, 5));
+  const [design, setDesign] = useState<LanguageDesign>(() => initial?.design ?? frequencyDesign(seed, 18, 5));
   const [naming, setNaming] = useState<Naming>(initial?.naming ?? { kind: "people" });
   const [power, setPower] = useState(initial?.power ?? 0.5);
   const [openness, setOpenness] = useState(initial?.openness ?? 0.5);
@@ -142,8 +142,8 @@ export function Designer({
             Vowels <output>{vowels}</output>
             <input type="range" min={2} max={10} value={vowels} onChange={(e) => setVowels(Number(e.target.value))} />
           </label>
-          <button type="button" onClick={() => setDesign(typicalDesign(seed, consonants, vowels))}>
-            Fill typical
+          <button type="button" onClick={() => setDesign(frequencyDesign(seed, consonants, vowels))}>
+            Draw by world frequency
           </button>
         </section>
 

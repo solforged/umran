@@ -89,8 +89,8 @@ impl SoundProfile {
         morph.suffixing = flavor.suffixing.unwrap_or(morph.suffixing);
         morph.derivation = flavor.derivation.unwrap_or(morph.derivation);
 
-        out.id = format!("{}+{}", out.id, flavor.id);
-        out.name = format!("{}, {}", out.name, flavor.name);
+        out.id = flavor.id.clone();
+        out.name = flavor.name.clone();
         out
     }
 }
@@ -226,11 +226,11 @@ mod tests {
 
     #[test]
     fn flavors_shift_inventories_without_replacing_them() {
-        let neutral = SoundProfile::typical();
+        let neutral = SoundProfile::base();
         let familiar = neutral.flavored(&Flavor::by_id("familiar").unwrap());
         assert!(rate(&familiar, "b") > rate(&neutral, "b"));
         assert!(rate(&familiar, "ʔ") < rate(&neutral, "ʔ"));
-        assert_eq!(familiar.id, "typical+familiar");
+        assert_eq!(familiar.id, "familiar");
 
         let pie = neutral.flavored(&Flavor::by_id("pie-like").unwrap());
         assert_eq!(rate(&pie, "s"), 1.0);

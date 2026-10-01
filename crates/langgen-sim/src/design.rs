@@ -1,6 +1,6 @@
 //! A language as a person designs it before founding: the exact sounds
 //! (each used or favoured), a few knobs for word shape and word building,
-//! and spelling. Presets and "fill typical" produce designs; a design then
+//! and spelling. Presets and drawing by world frequency produce designs; a design then
 //! resolves to the `SoundProfile` the engine runs on.
 
 use crate::inventory::Inventory;
@@ -51,27 +51,27 @@ pub struct LanguageDesign {
 }
 
 impl LanguageDesign {
-    /// A typical language with the given numbers of consonants and vowels,
-    /// chosen by how common sounds are worldwide.
-    pub fn typical(seed: u64, consonants: u8, vowels: u8) -> Self {
-        let mut profile = SoundProfile::typical();
+    /// A language with the given numbers of consonants and vowels, chosen
+    /// by how common sounds are worldwide.
+    pub fn by_frequency(seed: u64, consonants: u8, vowels: u8) -> Self {
+        let mut profile = SoundProfile::base();
         profile.inventory.consonant_count = (consonants, consonants);
         profile.inventory.vowel_count = (vowels, vowels);
         Self::from_profile(&profile, seed)
     }
 
-    /// A preset resolved into an editable design: "typical", or a flavor id
-    /// ("indic", "semitic", ...).
+    /// A preset resolved into an editable design, by flavor id ("indic",
+    /// "semitic", ...).
     pub fn preset(id: &str, seed: u64) -> Option<Self> {
         SoundProfile::by_id(id).map(|p| Self::from_profile(&p, seed))
     }
 
     /// Samples a profile's inventory and copies its knobs. Sounds the
-    /// profile strongly boosts or requires beyond the typical base are
+    /// profile strongly boosts or requires beyond the base are
     /// marked favoured.
     pub fn from_profile(profile: &SoundProfile, seed: u64) -> Self {
         let inventory = Inventory::sample(&profile.inventory, &mut stream(seed, &[key("design")]));
-        let base = SoundProfile::typical();
+        let base = SoundProfile::base();
         let favoured = |ipa: &str| {
             let extra = profile
                 .inventory
@@ -149,7 +149,7 @@ impl LanguageDesign {
     /// The profile the engine runs on: exactly these sounds, favoured ones
     /// preferred, absent ones discouraged, and the knobs as set.
     pub fn profile(&self) -> SoundProfile {
-        let mut profile = SoundProfile::typical();
+        let mut profile = SoundProfile::base();
         profile.id = "designed".into();
         profile.name = "Designed".into();
         profile.description = String::new();
@@ -198,7 +198,7 @@ mod tests {
 
     #[test]
     fn designs_found_exactly_their_sounds() {
-        let design = LanguageDesign::typical(7, 12, 5);
+        let design = LanguageDesign::by_frequency(7, 12, 5);
         assert!(design.validate().is_ok());
         let variety = Variety::found(7, &design.profile());
         let (c, v) = variety.inventory();
@@ -239,18 +239,18 @@ mod tests {
 
     #[test]
     fn bad_designs_are_explained() {
-        let mut design = LanguageDesign::typical(1, 10, 5);
+        let mut design = LanguageDesign::by_frequency(1, 10, 5);
         design.sounds.push(Sound {
             ipa: "nope".into(),
             favoured: false,
         });
         assert!(design.validate().unwrap_err().contains("nope"));
-        let mut design = LanguageDesign::typical(1, 10, 5);
+        let mut design = LanguageDesign::by_frequency(1, 10, 5);
         design
             .sounds
             .retain(|s| !CATALOG.get(CATALOG.id_by_ipa(&s.ipa).unwrap()).is_vowel());
         assert!(design.validate().unwrap_err().contains("vowels"));
-        let mut design = LanguageDesign::typical(1, 10, 5);
+        let mut design = LanguageDesign::by_frequency(1, 10, 5);
         design.word_length = 1.5;
         assert!(design.validate().is_err());
     }

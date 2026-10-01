@@ -33,7 +33,7 @@ export function TitlePage({
   onBegin: (founding: Founding) => void;
   onCancel?: () => void;
 }) {
-  const [preset, setPreset] = useState("typical");
+  const [preset, setPreset] = useState(() => pick(catalog.presets).id);
   const [seed, setSeed] = useState(() => randomSeed());
   const [worldSeed] = useState(() => randomSeed());
   const [naming, setNaming] = useState<Naming>({ kind: "people" });

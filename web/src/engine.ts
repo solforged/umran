@@ -64,8 +64,9 @@ export function presetDesign(preset: string, seed: number): LanguageDesign {
   return JSON.parse(Workbench.design(preset, seed)) as LanguageDesign;
 }
 
-export function typicalDesign(seed: number, consonants: number, vowels: number): LanguageDesign {
-  return JSON.parse(Workbench.typicalDesign(seed, consonants, vowels)) as LanguageDesign;
+/// Sounds drawn by how common they are worldwide, in the numbers given.
+export function frequencyDesign(seed: number, consonants: number, vowels: number): LanguageDesign {
+  return JSON.parse(Workbench.frequencyDesign(seed, consonants, vowels)) as LanguageDesign;
 }
 
 /// Sample words for a design, or the reason it cannot found a language.

@@ -276,7 +276,7 @@ mod tests {
     /// vowel, often doubled.
     #[test]
     fn parent_words_follow_the_nursery_pattern() {
-        let profile = SoundProfile::by_id("typical").unwrap();
+        let profile = SoundProfile::base();
         let (mut nasal_mother, mut stop_father, mut open) = (0, 0, 0);
         let seeds = 300;
         for seed in 0..seeds {
@@ -311,7 +311,7 @@ mod tests {
     /// Basic meanings get shorter words than specialist ones.
     #[test]
     fn common_meanings_get_shorter_words() {
-        let profile = SoundProfile::by_id("typical").unwrap();
+        let profile = SoundProfile::base();
         let (mut core, mut core_n, mut special, mut special_n) = (0, 0, 0, 0);
         for seed in 0..200 {
             for m in mint(seed, &profile)
@@ -342,7 +342,7 @@ mod tests {
     /// Repeated consonants and reduplication cluster in expressive meanings.
     #[test]
     fn repeats_belong_to_expressive_meanings() {
-        let profile = SoundProfile::by_id("typical").unwrap();
+        let profile = SoundProfile::base();
         let repeats = |f: &Form| {
             let cs: Vec<_> = f.phones().filter(|p| !CATALOG.get(*p).is_vowel()).collect();
             cs.iter().enumerate().any(|(i, c)| cs[i + 1..].contains(c))
@@ -377,7 +377,7 @@ mod tests {
     /// share its consonant skeleton in a root-and-pattern one.
     #[test]
     fn word_families_show_their_bases() {
-        let neutral = SoundProfile::by_id("typical").unwrap();
+        let neutral = SoundProfile::base();
         let semitic = neutral.flavored(&Flavor::by_id("semitic").unwrap());
         let mut derived = 0;
         for seed in 0..100 {

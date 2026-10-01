@@ -266,7 +266,7 @@ mod tests {
     /// they are across the world's languages.
     #[test]
     fn neutral_inventories_track_world_frequencies() {
-        let prior = SoundProfile::by_id("typical").unwrap().inventory;
+        let prior = SoundProfile::base().inventory;
         let seeds = 300;
         let mut counts = vec![0u32; CATALOG.segments.len()];
         for seed in 0..seeds {
@@ -289,7 +289,7 @@ mod tests {
     /// frequency alone would make it.
     #[test]
     fn inventories_fill_out_series() {
-        let prior = SoundProfile::by_id("typical").unwrap().inventory;
+        let prior = SoundProfile::base().inventory;
         let id = |s: &str| CATALOG.id_by_ipa(s).unwrap();
         let (mut both, mut both_with_d, mut neither, mut neither_with_d) = (0, 0, 0, 0);
         for seed in 0..600 {

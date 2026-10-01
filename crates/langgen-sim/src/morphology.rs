@@ -427,7 +427,7 @@ mod tests {
 
     #[test]
     fn affixes_are_distinct_and_attach_at_a_boundary() {
-        let profile = SoundProfile::by_id("typical").unwrap();
+        let profile = SoundProfile::base();
         for seed in 0..50 {
             let (m, _) = morphology(&profile, MorphologyKind::Concatenative, seed);
             let forms: Vec<&Form> = m.affixes.iter().map(|(_, a)| &a.form).collect();
@@ -447,7 +447,7 @@ mod tests {
 
     #[test]
     fn root_patterns_share_a_skeleton() {
-        let profile = SoundProfile::by_id("typical").unwrap();
+        let profile = SoundProfile::base();
         let (m, _) = morphology(&profile, MorphologyKind::RootPattern, 3);
         let base = Form::from_ipa("katab").unwrap();
         let place = m.derive(&base, None, Relation::Place).unwrap();
@@ -467,12 +467,7 @@ mod tests {
 
     #[test]
     fn junctions_follow_the_language() {
-        let mut m = morphology(
-            &SoundProfile::by_id("typical").unwrap(),
-            MorphologyKind::Concatenative,
-            1,
-        )
-        .0;
+        let mut m = morphology(&SoundProfile::base(), MorphologyKind::Concatenative, 1).0;
         m.link = CATALOG.id_by_ipa("a");
         m.open_medial = true;
         let f = |s: &str| Form::from_ipa(s).unwrap();

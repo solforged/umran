@@ -11,7 +11,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let arg = |i: usize, default: &str| args.get(i).cloned().unwrap_or_else(|| default.into());
     let seed: u64 = arg(0, "42").parse().expect("seed");
-    let proto = SoundProfile::by_id(&arg(1, "typical")).expect("proto profile");
+    let proto = SoundProfile::by_id(&arg(1, "familiar")).expect("proto profile");
     let outsider = SoundProfile::by_id(&arg(2, "iranian")).expect("outsider profile");
     let generations: u32 = arg(3, "40").parse().expect("generations");
 
