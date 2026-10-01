@@ -158,9 +158,44 @@ export interface Overview {
   varieties: Variety[];
   contacts: Contact[];
   intelligibility: { a: number; b: number; score: number }[];
+  /// What each land that has been held is called, through history.
+  places: Place[];
+  /// Peoples going to new land: migrations, and split-offs settling away.
+  moves: Move[];
   annals: Annal[];
   /// Histories set aside, with what they told that this one does not.
   tellings: TellingView[];
+}
+
+/// A land's names, oldest first; the last is its name now.
+export interface Place {
+  region: number;
+  names: PlaceName[];
+}
+
+export interface PlaceName {
+  /// The generation its speakers came to hold the land.
+  since: number;
+  variety: number;
+  /// The language it is a name in, as that language was called then.
+  language: string;
+  spelled: string;
+  ipa: string;
+  meaning: string;
+  origin: "coined" | "inherited" | "kept" | "borrowed";
+  /// Who coined it, for a coined name.
+  by: number | null;
+  /// How it was spelled when its speakers took it up, if it has changed.
+  once: string | null;
+}
+
+export interface Move {
+  generation: number;
+  community: number;
+  from: number;
+  to: number;
+  kind: "migration" | "split";
+  overseas: boolean;
 }
 
 /// A history set aside by undoing, or by writing on from an earlier year.
@@ -175,7 +210,7 @@ export interface TellingView {
 /// One chronicle entry; `variety` is set for a sound law.
 export interface Annal {
   generation: number;
-  kind: "found" | "split" | "shift" | "contact" | "parted" | "conquest" | "law";
+  kind: "found" | "split" | "migration" | "shift" | "contact" | "parted" | "conquest" | "law";
   /// The annalist's words; words of the language are marked *thus*.
   text: string;
   /// The apparatus: what a linguist would note, such as sound laws.
@@ -236,6 +271,8 @@ export interface Region {
   site: [number, number];
   outline: [number, number][];
   coastal: boolean;
+  /// Land on a body of land of at most two regions.
+  island: boolean;
 }
 
 /// The land a book's history plays out on; it never changes.

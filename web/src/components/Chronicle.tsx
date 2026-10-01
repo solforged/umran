@@ -26,13 +26,16 @@ function Told({ text }: { text: string }) {
   return <>{parts}</>;
 }
 
-/// The linguist's notes on an entry, kept small and to the side.
+/// The linguist's notes on an entry, kept small and to the side; words of
+/// the language are marked *thus*, as in the text.
 function Apparatus({ notes }: { notes: string[] }) {
   if (notes.length === 0) return null;
   return (
     <ul className="apparatus" aria-label="Notes">
       {notes.map((note) => (
-        <li key={note}>{note}</li>
+        <li key={note}>
+          <Told text={note} />
+        </li>
       ))}
     </ul>
   );

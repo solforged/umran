@@ -1,12 +1,18 @@
-//! What peoples call themselves and their speech. A name is coined from
-//! the language's own words when a people forms, then lives on as a word
-//! of its own: sound laws reshape it like any other, even after the words
-//! it was built from have changed or gone (English from Engle "Angles").
+//! What peoples call themselves, their speech, and their land. A name is
+//! coined from the language's own words when a people forms or first
+//! holds a land, then lives on as a word of its own: sound laws reshape
+//! it like any other, even after the words it was built from have changed
+//! or gone (English from Engle "Angles"). Place names outlast their
+//! coiners: newcomers mostly take over the name of the land they come to,
+//! fitted to their own sounds, as English kept the Celtic Thames.
 
 use crate::concepts::{Relation, by_id};
 use crate::form::Form;
+use crate::geography::Terrain;
 use crate::lexicon::{Entry, Event};
+use crate::rng::{index, weighted_index};
 use crate::variety::Variety;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 /// What a people's name means, which decides how it is built.
@@ -41,6 +47,18 @@ const MAX_PEOPLE_NAME: usize = 3;
 const MAX_LANGUAGE_NAME: usize = 4;
 /// Epithets a group that moves off tends to take.
 const DAUGHTER_EPITHETS: [&str; 3] = ["new", "far", "small"];
+/// Most syllables a place name keeps.
+const MAX_PLACE_NAME: usize = 4;
+/// How often a land is named, in turn: for what it is ("the hill"), for
+/// what it is like ("the black hill"), as the place of something, or for
+/// the people who hold it ("the land of the Angles").
+const PLACE_KINDS: [f32; 4] = [0.15, 0.55, 0.1, 0.2];
+/// Qualities any land can be named for.
+const PLACE_QUALITIES: [&str; 10] = [
+    "big", "small", "old", "new", "long", "wide", "black", "red", "dark", "good",
+];
+/// Things the coast is named for.
+const COAST_THINGS: [&str; 3] = ["sea", "fish", "salt"];
 
 /// A name: its current form, what it meant when coined, and the sound
 /// laws it has undergone since.
@@ -234,6 +252,134 @@ pub fn language_name(variety: &Variety, people: &Name, spelled: &str, generation
         coined: generation,
         log: Vec::new(),
     }
+}
+
+/// What a land is like, which decides what it can be named for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Landscape {
+    pub terrain: Terrain,
+    pub coastal: bool,
+    pub island: bool,
+}
+
+impl Landscape {
+    /// What the land itself is called: the head of its name.
+    fn heads(self) -> &'static [&'static str] {
+        if self.island {
+            return &["island"];
+        }
+        match self.terrain {
+            Terrain::Plains | Terrain::Steppe => &["field", "soil"],
+            Terrain::Forest => &["wood", "tree"],
+            Terrain::Hills => &["hill"],
+            Terrain::Mountains => &["mountain", "stone"],
+            Terrain::Desert => &["sand"],
+            Terrain::Sea => &["sea"],
+        }
+    }
+
+    /// Things found there that it can be named for.
+    fn things(self) -> Vec<&'static str> {
+        let inland: &[&str] = match self.terrain {
+            Terrain::Plains => &["grain", "cattle", "horse", "river", "water", "stone"],
+            Terrain::Forest => &["bird", "shadow", "tree", "river"],
+            Terrain::Steppe => &["horse", "wind", "cattle", "salt", "sun"],
+            Terrain::Hills => &["stone", "cattle", "wind", "river"],
+            Terrain::Mountains => &["stone", "iron", "gold", "god", "sky", "wind"],
+            Terrain::Desert => &["salt", "sun", "stone"],
+            Terrain::Sea => &[],
+        };
+        let coast: &[&str] = if self.coastal { &COAST_THINGS } else { &[] };
+        inland.iter().chain(coast).copied().collect()
+    }
+}
+
+/// What `variety`'s speakers call a land like `land` on first holding it.
+/// `settlers` is their own name, spelled for the gloss, for lands named
+/// after their people. `None` if the language has no word for any kind
+/// of land.
+pub fn place_name(
+    variety: &Variety,
+    land: Landscape,
+    settlers: (&Name, &str),
+    rng: &mut impl Rng,
+    generation: u32,
+) -> Option<Name> {
+    let word = |id: &'static str| Some((id, variety.lexicon.word_for(by_id(id)?)?.form.clone()));
+    let mut heads: Vec<(&str, Form)> = land.heads().iter().filter_map(|&id| word(id)).collect();
+    if heads.is_empty() {
+        heads.extend(word("soil"));
+    }
+    if heads.is_empty() {
+        return None;
+    }
+    let (head_id, head) = heads.swap_remove(index(rng, heads.len()));
+    let things: Vec<(&str, Form)> = land
+        .things()
+        .into_iter()
+        .filter(|&id| id != head_id)
+        .filter_map(word)
+        .collect();
+    let qualities: Vec<(&str, Form)> = PLACE_QUALITIES.iter().filter_map(|&id| word(id)).collect();
+    let morphology = &variety.morphology;
+    let (form, meaning) = match weighted_index(rng, PLACE_KINDS.iter().copied()) {
+        1 if !things.is_empty() || !qualities.is_empty() => {
+            let all: Vec<&(&str, Form)> = things.iter().chain(&qualities).collect();
+            let (id, modifier) = all[index(rng, all.len())];
+            (
+                morphology.compound(modifier, &head),
+                format!("the {id} {head_id}"),
+            )
+        }
+        2 if !things.is_empty() => {
+            let (id, thing) = &things[index(rng, things.len())];
+            match morphology.derive(thing, None, Relation::Place) {
+                Some(form) => (form, format!("the place of {id}")),
+                None => (
+                    morphology.compound(thing, &head),
+                    format!("the {id} {head_id}"),
+                ),
+            }
+        }
+        // A land named for its people only if the name stays whole: clipped,
+        // "the hill of the Hifis" would be just "Hifis" again.
+        3 if morphology.compound(&settlers.0.form, &head).vowel_count() <= MAX_PLACE_NAME => (
+            morphology.compound(&settlers.0.form, &head),
+            format!("the {head_id} of the {}", settlers.1),
+        ),
+        _ => (head, format!("the {head_id}")),
+    };
+    Some(Name {
+        form: clipped(form, MAX_PLACE_NAME),
+        meaning,
+        coined: generation,
+        log: Vec::new(),
+    })
+}
+
+/// How a land came by one of its names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlaceOrigin {
+    /// Given by `community` when its people came to hold the land.
+    Coined { community: usize },
+    /// Came down with the language from an ancestor that held the land.
+    Inherited,
+    /// Kept by the people holding the land when their speech changed.
+    Kept,
+    /// Learned from the land's earlier name, fitted to the newcomers'
+    /// sounds.
+    Borrowed,
+}
+
+/// One language's name for a land, from when its speakers came to hold
+/// it. Each name after a land's first comes from the one before it, unless
+/// it was coined afresh.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlaceName {
+    pub variety: usize,
+    pub since: u32,
+    pub name: Name,
+    pub origin: PlaceOrigin,
 }
 
 /// `text` with its first letter capitalized, for names.

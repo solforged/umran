@@ -1343,6 +1343,15 @@ table.preview tr {
   vector-effect: non-scaling-stroke;
 }
 
+.land.open {
+  cursor: pointer;
+}
+
+.land.shown {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+
 .terrain-sea {
   fill: color-mix(in srgb, #3f7896 32%, var(--paper));
 }
@@ -1368,6 +1377,41 @@ table.preview tr {
 .claim {
   fill-opacity: 0.3;
   pointer-events: none;
+}
+
+/* Names of lands, as an old map letters them: small, spaced, italic. */
+.place-names text {
+  font-family: var(--serif);
+  font-size: 0.17px;
+  font-style: italic;
+  letter-spacing: 0.01px;
+  text-anchor: middle;
+  dominant-baseline: auto;
+  fill: color-mix(in srgb, var(--ink) 70%, transparent);
+  paint-order: stroke;
+  stroke: color-mix(in srgb, var(--paper) 70%, transparent);
+  stroke-width: 0.04px;
+  pointer-events: none;
+}
+.place-names text.left {
+  fill: color-mix(in srgb, var(--ink) 40%, transparent);
+}
+
+.route {
+  fill: none;
+  stroke: var(--ink-soft);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+.route.overseas {
+  stroke-dasharray: 2 3;
+  stroke-linecap: round;
+}
+.route.chosen {
+  stroke-width: 3;
+}
+.route-head {
+  fill: var(--ink-soft);
 }
 
 .dealing {
@@ -1474,6 +1518,14 @@ table.preview tr {
 .atlas-partners {
   margin: 0.3rem 0 0.6rem;
   padding-left: 1.1rem;
+}
+
+.place-history {
+  margin: 0.3rem 0 0;
+  padding-left: 1.3rem;
+}
+.place-history li {
+  margin-bottom: 0.25rem;
 }
 
 @media (max-width: 960px) {

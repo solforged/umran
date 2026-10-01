@@ -7,6 +7,7 @@ use annals::{Annal, annals};
 use langgen_sim::compare::intelligibility;
 use langgen_sim::concepts::related;
 use langgen_sim::morphology::Slot;
+use langgen_sim::names::PlaceOrigin;
 use langgen_sim::phoneme::{Backness, Manner, Secondary};
 use langgen_sim::{
     Action, CATALOG, Chronicle, ENGINE_REVISION, Event, FORMAT, Flavor, Form, Lexeme, MapSize,
@@ -493,6 +494,8 @@ impl Bench {
                 })
                 .collect(),
             intelligibility: spoken_pairs(world),
+            places: place_views(world),
+            moves: move_views(world),
             annals,
             tellings,
         };
@@ -606,6 +609,7 @@ impl Bench {
                     site: r.site,
                     outline: r.outline.clone(),
                     coastal: map.coastal(id),
+                    island: map.island(id),
                 })
                 .collect(),
         })
@@ -700,8 +704,17 @@ impl Bench {
                 WorldEvent::Split {
                     community,
                     daughter,
+                    ..
                 } => {
                     format!("{} split from {}", name(*daughter), name(*community))
+                }
+                WorldEvent::Migrated { community, to, .. } => {
+                    let place = latest.place_at(*to, *generation);
+                    format!(
+                        "{} moved to {}",
+                        name(*community),
+                        place.as_deref().unwrap_or("new land")
+                    )
                 }
                 WorldEvent::Shift {
                     community, toward, ..
@@ -840,6 +853,75 @@ fn builders(v: &Variety) -> Vec<Builder> {
         shape: affix(&v.morphology.renewing),
     });
     out
+}
+
+/// Every land that has been held, with all its names.
+fn place_views(world: &World) -> Vec<PlaceView> {
+    world
+        .places
+        .iter()
+        .enumerate()
+        .filter(|(_, names)| !names.is_empty())
+        .map(|(region, names)| PlaceView {
+            region,
+            names: names
+                .iter()
+                .map(|p| {
+                    let speech = &world.varieties[p.variety];
+                    let spelled = speech.title(&p.name.form);
+                    PlaceNameView {
+                        since: p.since,
+                        variety: p.variety,
+                        language: world.language_title_at(p.variety, p.since),
+                        ipa: p.name.form.ipa(),
+                        meaning: p.name.meaning.clone(),
+                        origin: match p.origin {
+                            PlaceOrigin::Coined { .. } => "coined",
+                            PlaceOrigin::Inherited => "inherited",
+                            PlaceOrigin::Kept => "kept",
+                            PlaceOrigin::Borrowed => "borrowed",
+                        },
+                        by: match p.origin {
+                            PlaceOrigin::Coined { community } => Some(community),
+                            _ => None,
+                        },
+                        once: Some(speech.title(p.name.form_at(p.since)))
+                            .filter(|once| *once != spelled),
+                        spelled,
+                    }
+                })
+                .collect(),
+        })
+        .collect()
+}
+
+/// Every people's going to new land, in order.
+fn move_views(world: &World) -> Vec<MoveView> {
+    world
+        .events
+        .iter()
+        .filter_map(|&(generation, ref event)| {
+            let (community, from, to, kind) = match *event {
+                WorldEvent::Migrated {
+                    community,
+                    from,
+                    to,
+                } => (community, from, to, "migration"),
+                WorldEvent::Split {
+                    daughter, from, to, ..
+                } if from != to => (daughter, from, to, "split"),
+                _ => return None,
+            };
+            Some(MoveView {
+                generation,
+                community,
+                from,
+                to,
+                kind,
+                overseas: world.map.overseas(from, to),
+            })
+        })
+        .collect()
 }
 
 fn spoken_pairs(world: &World) -> Vec<Pair> {
@@ -1253,6 +1335,11 @@ struct Overview {
     varieties: Vec<VarietyView>,
     contacts: Vec<ContactView>,
     intelligibility: Vec<Pair>,
+    /// What each land that has been held is called, through history.
+    places: Vec<PlaceView>,
+    /// Peoples going to new land: migrations, and split-offs settling
+    /// away from home.
+    moves: Vec<MoveView>,
     /// What happened, in order, told as a chronicle.
     annals: Vec<Annal>,
     /// Tellings set aside, with what they told that this one does not.
@@ -1266,6 +1353,44 @@ struct TellingView {
     /// The generation from which it tells otherwise.
     from: u32,
     struck: Vec<Annal>,
+}
+
+#[derive(Serialize)]
+struct PlaceView {
+    region: usize,
+    /// Its names, oldest first; the last is its name now.
+    names: Vec<PlaceNameView>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PlaceNameView {
+    /// The generation its speakers came to hold the land.
+    since: u32,
+    variety: usize,
+    /// The language it is a name in, as that language was called then.
+    language: String,
+    spelled: String,
+    ipa: String,
+    meaning: String,
+    /// "coined", "inherited", "kept", or "borrowed".
+    origin: &'static str,
+    /// Who coined it, for a coined name.
+    by: Option<usize>,
+    /// How it was spelled when its speakers took it up, if it has changed.
+    once: Option<String>,
+}
+
+#[derive(Serialize)]
+struct MoveView {
+    generation: u32,
+    community: usize,
+    from: usize,
+    to: usize,
+    /// "migration" or "split".
+    kind: &'static str,
+    /// Whether they crossed the sea.
+    overseas: bool,
 }
 
 #[derive(Serialize)]
@@ -1421,6 +1546,8 @@ struct RegionView {
     site: [f32; 2],
     outline: Vec<[f32; 2]>,
     coastal: bool,
+    /// Land on a body of land of at most two regions.
+    island: bool,
 }
 
 #[derive(Serialize)]

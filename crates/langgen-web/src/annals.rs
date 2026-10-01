@@ -5,6 +5,7 @@
 //! draws, and the same history is always told the same way.
 
 use crate::substrate_label;
+use langgen_sim::names::PlaceOrigin;
 use langgen_sim::rng::{index, key, stream};
 use langgen_sim::world::ContactKind;
 use langgen_sim::{Event, Form, Lexeme, Variety, World, WorldEvent, catalog};
@@ -15,7 +16,8 @@ use std::collections::BTreeMap;
 #[derive(Clone, PartialEq, Serialize)]
 pub(crate) struct Annal {
     pub generation: u32,
-    /// "found", "split", "shift", "contact", "parted", "conquest", or "law".
+    /// "found", "split", "migration", "shift", "contact", "parted",
+    /// "conquest", or "law".
     pub kind: &'static str,
     /// The annalist's words. Words of the language are marked `*thus*`.
     pub text: String,
@@ -36,6 +38,22 @@ const SPLIT: &[&str] = &[
     "Some of the {p} went out from among them and took the name {d}, “{m}”.",
     "A part of the {p} went away and called themselves {d}, “{m}”.",
     "That year the {p} were divided, and those who left were called {d}, “{m}”.",
+];
+
+const SPLIT_OVERSEAS: &[&str] = &[
+    "Some of the {p} put out to sea and settled in {to}, calling themselves {d}, “{m}”.",
+    "A part of the {p} sailed away to {to} and called themselves {d}, “{m}”.",
+];
+
+const MIGRATION: &[&str] = &[
+    "The {p} left {from} and settled in {to}.",
+    "The {p} took to the road, leaving {from} for {to}.",
+    "The {p} went out from {from} and made {to} their home.",
+];
+
+const MIGRATION_OVERSEAS: &[&str] = &[
+    "The {p} took to their boats and crossed the sea from {from} to {to}.",
+    "The {p} sailed from {from} and made a new home in {to}.",
 ];
 
 const SHIFT: &[&str] = &[
@@ -166,20 +184,57 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
             WorldEvent::Split {
                 community,
                 daughter,
-            } => entry(
-                generation,
-                "split",
-                tell(
-                    world,
-                    &[key("split"), g, daughter as u64],
-                    SPLIT,
-                    &[
-                        ("p", &name(community)),
-                        ("d", &name(daughter)),
-                        ("m", meaning(daughter)),
-                    ],
-                ),
-            ),
+                from,
+                to,
+            } => {
+                let overseas = world.map.overseas(from, to);
+                let mut annal = entry(
+                    generation,
+                    "split",
+                    tell(
+                        world,
+                        &[key("split"), g, daughter as u64],
+                        if overseas { SPLIT_OVERSEAS } else { SPLIT },
+                        &[
+                            ("p", &name(community)),
+                            ("d", &name(daughter)),
+                            ("m", meaning(daughter)),
+                            ("to", &place(world, to, generation)),
+                        ],
+                    ),
+                );
+                if from != to {
+                    annal.notes.extend(place_note(world, to, generation));
+                }
+                annal
+            }
+            WorldEvent::Migrated {
+                community,
+                from,
+                to,
+            } => {
+                let overseas = world.map.overseas(from, to);
+                let mut annal = entry(
+                    generation,
+                    "migration",
+                    tell(
+                        world,
+                        &[key("migration"), g, community as u64],
+                        if overseas {
+                            MIGRATION_OVERSEAS
+                        } else {
+                            MIGRATION
+                        },
+                        &[
+                            ("p", &name(community)),
+                            ("from", &place_before(world, from, generation)),
+                            ("to", &place(world, to, generation)),
+                        ],
+                    ),
+                );
+                annal.notes.extend(place_note(world, to, generation));
+                annal
+            }
             WorldEvent::Shift {
                 community,
                 toward,
@@ -207,6 +262,44 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
     out.extend(sound_changes(world));
     out.sort_by_key(|a| (a.generation, a.kind == "law"));
     out
+}
+
+/// What `region` was called at the end of `generation`.
+fn place(world: &World, region: usize, generation: u32) -> String {
+    world
+        .place_at(region, generation)
+        .unwrap_or_else(|| "a land without a name".into())
+}
+
+/// What `region` was called before anything that happened in
+/// `generation`, or at its end if it had no name before.
+fn place_before(world: &World, region: usize, generation: u32) -> String {
+    match generation.checked_sub(1) {
+        Some(g) if world.place_at(region, g).is_some() => place(world, region, g),
+        _ => place(world, region, generation),
+    }
+}
+
+/// The linguist's note on how `region` came by the name it took in
+/// `generation`: what it meant when coined, or what it was borrowed from.
+fn place_note(world: &World, region: usize, generation: u32) -> Option<String> {
+    let names = &world.places[region];
+    let i = names.iter().rposition(|p| p.since == generation)?;
+    let now = &names[i];
+    let spelled = world.varieties[now.variety].title(now.name.form_at(generation));
+    match now.origin {
+        PlaceOrigin::Coined { .. } => Some(format!("*{spelled}*: “{}”.", now.name.meaning)),
+        PlaceOrigin::Borrowed => {
+            let before = &names[i.checked_sub(1)?];
+            Some(format!(
+                "*{spelled}*: from {} *{}*, “{}”.",
+                world.language_title_at(before.variety, generation),
+                world.varieties[before.variety].title(before.name.form_at(generation)),
+                before.name.meaning
+            ))
+        }
+        PlaceOrigin::Inherited | PlaceOrigin::Kept => None,
+    }
 }
 
 /// One entry per language and generation in which its sounds changed,

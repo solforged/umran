@@ -11,10 +11,14 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   (`MapSize`): regions are Voronoi cells around jittered hex-grid points,
   so each borders about six others. Terrain (sea, plains, forest, steppe,
   hills, mountains, desert) comes from smooth noise ranked into fixed
-  shares, and sets how many a region feeds (`fertility`) and how hard it
-  is to cross (`travel`). Travel distances between all regions are
-  precomputed. Map generation uses only arithmetic and square roots, so
-  native and WASM draw the same map.
+  shares, half of it sea, and sets how many a region feeds (`fertility`),
+  how hard it is to cross (`travel`), and how readily its people move
+  (`mobility`: steppe and desert herders most, mountain folk least). Land
+  falls toward the map's edges but is rough enough that larger maps
+  usually have islands; each land region knows its `landmass`, so
+  crossing between landmasses means crossing the sea. Travel distances
+  between all regions are precomputed. Map generation uses only arithmetic
+  and square roots, so native and WASM draw the same map.
 - Languages are founded from a `LanguageDesign` (`design.rs`): the exact
   sounds, each used or favoured, plus knobs (word length, final consonants,
   inner clusters, repetition, long vowels, affixes or root-and-pattern,
@@ -74,9 +78,22 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   draws). Names are clipped to three syllables for a people and four for
   a language, as names said every day are, and epithets go only on short
   names, so they do not stack over many splits. Names then undergo the
-  same sound laws as their variety's words. Split-off peoples name themselves; a people that shifts keeps
-  its name and names its new speech after itself. Exonyms are the name
-  adapted to a contact's sounds, computed from current forms.
+  same sound laws as their variety's words. Split-off peoples name
+  themselves; a people that shifts keeps its name and names its new
+  speech after itself. Exonyms are the name adapted to a contact's sounds,
+  computed from current forms.
+- Lands are named too (`World::places`). The largest people on a land
+  names it on first holding it, from its own words: for what the land is
+  ("the hill"), what it is like ("the black hill", "the horse field"), as
+  the place of something, or after the people ("the field of the Angles",
+  only when that fits in four syllables). The name follows its holders'
+  sound laws and stays frozen while no one lives there. It passes to
+  another people only once that people outnumbers the namers twice over.
+  A people speaking a daughter of the namers' language inherits it, a
+  people that shifts language keeps it, and newcomers otherwise borrow it,
+  fitted to their sounds (85% when they dealt with the namers, 40% when
+  the namers were gone and unknown), or coin their own. Each land keeps
+  every name it has had, with where each came from.
 - Varieties fork on splits and shifts and keep their lineage (`Fork`);
   `World::cognate` and `root_of` give true descent. The comparative method
   (`compare.rs`) must never read lineage; it is only graded against it.
@@ -85,10 +102,18 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   peoples. Communities grow toward their region's capacity (`capacity`
   times its terrain's fertility, shared by everyone on it), split when
   large, and the leavers take the roomiest bordering land when it has
-  more room than home, so peoples spread across the map. Prestige comes
-  from authored `power` plus relative size. A community shifts
-  language only to another family's, keeping its own sound preferences and
-  some old words as a substrate. Unspoken varieties are extinct and frozen.
+  more room than home. When the land beside is full, a coastal people
+  sends them along or over the sea instead, to the coast with the most
+  room for the voyage, as Greek cities sent out colonies. Whole peoples
+  also migrate (`migration_rate`): likelier the more crowded home is, the
+  more mobile its terrain makes them, and when a stronger people shares
+  it. They go to better land within reach (about five plains, or across
+  the sea), counting half of a weaker people's land as free, so strong
+  peoples push into good land others hold, and they meet those already
+  there as neighbours. Prestige comes from authored `power` plus relative
+  size. A community shifts language only to another family's, keeping its
+  own sound preferences and some old words as a substrate. Unspoken
+  varieties are extinct and frozen.
 - Contacts come and go (`end_contacts`, `make_contacts`). Each kind has a
   typical lifespan (trade 12 generations, rule 16, intermarriage 20,
   religion 30, distant neighbours 40) and cannot end in its first third.
@@ -123,8 +148,9 @@ cargo run --release -p langgen-sim --example audit -- [seeds] [generations]
 
 ## Not yet modelled
 
-Migration after settling (whole peoples moving), seafaring and sea
-routes, rivers, place names, compounding and derivation after founding
-beyond renewal, inflection, stress, tone, vowel harmony, consonant length,
-prenasalized stops, syntax and alignment, dialect levelling, sound changes
-spreading between neighbours as waves, personal names.
+Rivers, seafaring as a skill of particular peoples, extinction of whole
+peoples, compounding and derivation after founding beyond renewal,
+inflection, stress, tone, vowel harmony, consonant length, prenasalized
+stops, syntax and alignment, dialect levelling, sound changes spreading
+between neighbours as waves, personal names, different names for one
+land in each neighbouring language (only the holders' name is kept).

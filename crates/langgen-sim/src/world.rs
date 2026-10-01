@@ -5,7 +5,7 @@ use crate::geography::{Map, MapSize};
 use crate::laws::{Law, catalog};
 use crate::lexicon::{Entry, Event, LexemeId, Lexicon, Origin};
 use crate::morphology::Morphology;
-use crate::names::{Name, Naming};
+use crate::names::{Landscape, Name, Naming, PlaceName, PlaceOrigin, place_name};
 use crate::phoneme::PhonemeId;
 use crate::phonotactics::Phonotactics;
 use crate::profile::SoundProfile;
@@ -44,6 +44,27 @@ const CONQUEST_INTENSITY: f32 = 0.6;
 /// Travel effort beyond which a founding people no longer prefers land
 /// further from others: far enough to be its own.
 const SETTLE_APART: f32 = 8.0;
+/// Furthest a migrating people travels, in travel effort: about five
+/// open plains, or a long way across the steppe.
+const MIGRATION_REACH: f32 = 6.0;
+/// How much likelier a people is to leave land it shares with a stronger
+/// people.
+const PUSHED: f32 = 2.0;
+/// Share of a weaker people's land a stronger newcomer counts as free:
+/// the locals make room, or are made to.
+const YIELD: f32 = 0.5;
+/// Furthest a coastal people sends a colony along or across the sea when
+/// the land beside it is full, in travel effort: one or two sea regions.
+const COLONY_REACH: f32 = 8.0;
+/// How many times larger than the land's namers a people must grow before
+/// its own word for the land takes over, so names do not flip back and
+/// forth between peoples of about the same size.
+const PLACE_HOLD: f32 = 2.0;
+/// Chance that newcomers keep a land's old name, fitted to their sounds,
+/// rather than coin their own: likelier when they had dealings with the
+/// namers, as most river names in England are Celtic.
+const PLACE_KEEP_KNOWN: f32 = 0.85;
+const PLACE_KEEP_UNKNOWN: f32 = 0.4;
 
 /// Rates per generation. Defaults are calibrated so an isolated variety
 /// keeps about 84% of its core list per 40 generations.
@@ -132,6 +153,10 @@ pub struct Params {
     /// Chance per generation, per unit of prestige gap beyond
     /// `CONQUEST_MIN_GAP`, that a people comes to rule one it deals with.
     pub conquest_rate: f32,
+    /// Chance per generation that a people leaves its land for better land
+    /// within reach, scaled by how crowded home is, how mobile its terrain
+    /// makes it, and whether a stronger people shares it.
+    pub migration_rate: f32,
 }
 
 impl Default for Params {
@@ -167,6 +192,7 @@ impl Default for Params {
             neighbour_rate: 0.1,
             trade_rate: 0.01,
             conquest_rate: 0.05,
+            migration_rate: 0.02,
         }
     }
 }
@@ -183,6 +209,7 @@ impl Params {
             neighbour_rate: 0.0,
             trade_rate: 0.0,
             conquest_rate: 0.0,
+            migration_rate: 0.0,
             ..Self::default()
         }
     }
@@ -272,8 +299,14 @@ impl ContactKind {
 pub enum WorldEvent {
     /// `community` was founded with a new language.
     Found { community: usize },
-    /// `daughter` split off from `community`, speaking a new variety.
-    Split { community: usize, daughter: usize },
+    /// `daughter` split off from `community`, speaking a new variety, and
+    /// settled region `to`; `from` is the parent's land.
+    Split {
+        community: usize,
+        daughter: usize,
+        from: usize,
+        to: usize,
+    },
     /// `community` abandoned variety `from` for a daughter of `toward`'s.
     Shift {
         community: usize,
@@ -296,6 +329,12 @@ pub enum WorldEvent {
     },
     /// `ruler` came to rule `ruled`, with whom it already had dealings.
     Conquered { ruler: usize, ruled: usize },
+    /// The whole of `community` left region `from` for region `to`.
+    Migrated {
+        community: usize,
+        from: usize,
+        to: usize,
+    },
 }
 
 /// Ongoing contact between two communities, in both directions.
@@ -322,8 +361,13 @@ pub struct World {
     pub varieties: Vec<Variety>,
     pub contacts: Vec<Contact>,
     pub params: Params,
-    /// Splits and shifts, with the generation they happened in.
+    /// Things that happened to communities, with the generation they
+    /// happened in.
     pub events: Vec<(u32, WorldEvent)>,
+    /// What each region is called, by every language that has held it,
+    /// oldest first; the last is its name now. Empty for land no one has
+    /// held, and for the sea.
+    pub places: Vec<Vec<PlaceName>>,
     laws: Vec<Law>,
 }
 
@@ -355,10 +399,12 @@ impl World {
 
     /// A world on a map of `size`, drawn from `seed`.
     pub fn with_map(seed: u64, params: Params, size: MapSize) -> Self {
+        let map = Map::generate(seed, size);
         Self {
             seed,
             generation: 0,
-            map: Arc::new(Map::generate(seed, size)),
+            places: vec![Vec::new(); map.regions.len()],
+            map: Arc::new(map),
             communities: Vec::new(),
             varieties: Vec::new(),
             contacts: Vec::new(),
@@ -413,6 +459,7 @@ impl World {
         });
         self.events
             .push((self.generation, WorldEvent::Found { community: index }));
+        self.hold_places();
         index
     }
 
@@ -501,13 +548,29 @@ impl World {
         daughter.name = self.language_name(&daughter, &name);
         self.varieties.push(daughter);
         // The leavers take the roomiest land beside home if it has more
-        // room than home, judged before they go.
+        // room than home, judged before they go. When the land beside is
+        // full, a coastal people sends them along or over the sea instead,
+        // to the coast with the most room for the voyage, as Greek cities
+        // sent out colonies.
         let home = self.communities[community].region;
         let occupied = self.occupation();
         let room = |r: usize| self.capacity(r) - occupied.get(&r).copied().unwrap_or(0.0);
+        let colony = || {
+            let map = &self.map;
+            (0..map.regions.len())
+                .filter(|&r| map.coastal(home) && map.coastal(r) && r != home)
+                .filter(|&r| !map.regions[home].neighbours.contains(&r))
+                .filter(|&r| map.distance(home, r) <= COLONY_REACH && room(r) > room(home))
+                .map(|r| (r, room(r) / (1.0 + map.distance(home, r))))
+                .fold(None, |best: Option<(usize, f32)>, (r, score)| match best {
+                    Some((_, s)) if s >= score => best,
+                    _ => Some((r, score)),
+                })
+                .map(|(r, _)| r)
+        };
         let region = match self.roomiest(&self.map.regions[home].neighbours) {
             Some(beside) if room(beside) > room(home) => beside,
-            _ => home,
+            _ => colony().unwrap_or(home),
         };
         self.communities[community].size /= 2.0;
         let mut new = self.communities[community].clone();
@@ -524,8 +587,11 @@ impl World {
             WorldEvent::Split {
                 community,
                 daughter: index,
+                from: home,
+                to: region,
             },
         ));
+        self.hold_places();
         index
     }
 
@@ -602,9 +668,11 @@ impl World {
         }
         self.grow();
         self.split_large();
+        self.migrate();
         self.shift_languages();
         self.end_contacts();
         self.make_contacts();
+        self.hold_places();
     }
 
     /// Which varieties some community still speaks. Unspoken varieties are
@@ -661,6 +729,211 @@ impl World {
                 self.split(c, None, FISSION_CONTACT);
             }
         }
+    }
+
+    /// Peoples sometimes leave their land for better land within reach:
+    /// likelier the more crowded home is, the more mobile its terrain makes
+    /// them, and when a stronger people shares it. A stronger people counts
+    /// part of a weaker people's land as free for the taking, so invaders
+    /// seek out good land others hold. The newcomers come to deal with
+    /// those already there as neighbours.
+    fn migrate(&mut self) {
+        for c in 0..self.communities.len() {
+            let home = self.communities[c].region;
+            let (size, prestige) = (self.communities[c].size, self.communities[c].prestige);
+            let others = |r: usize| {
+                self.communities
+                    .iter()
+                    .enumerate()
+                    .filter(move |&(o, k)| o != c && k.region == r)
+                    .map(|(_, k)| k)
+            };
+            let crowding = (size + others(home).map(|k| k.size).sum::<f32>()) / self.capacity(home);
+            let pushed = if others(home).any(|k| k.prestige > prestige && k.size > size) {
+                PUSHED
+            } else {
+                1.0
+            };
+            let mobility = self.map.regions[home].terrain.mobility();
+            let hazard = self.params.migration_rate * mobility * crowding * pushed;
+            let mut rng = self.community_rng(c, "migrate");
+            if rng.r#gen::<f32>() >= hazard {
+                continue;
+            }
+            let free = |r: usize| {
+                let held: f32 = others(r)
+                    .map(|k| {
+                        if k.prestige >= prestige {
+                            k.size
+                        } else {
+                            k.size * YIELD
+                        }
+                    })
+                    .sum();
+                self.capacity(r) - held
+            };
+            let stay = self.capacity(home) - others(home).map(|k| k.size).sum::<f32>();
+            let options: Vec<(usize, f32)> = (0..self.map.regions.len())
+                .filter(|&r| r != home && self.map.regions[r].terrain.is_land())
+                .filter(|&r| self.map.distance(home, r) <= MIGRATION_REACH)
+                .filter(|&r| free(r) > stay && free(r) >= size / 2.0)
+                .map(|r| {
+                    let d = self.map.distance(home, r);
+                    (r, (free(r) - stay) / ((1.0 + d) * (1.0 + d)))
+                })
+                .collect();
+            if options.is_empty() {
+                continue;
+            }
+            let to = options[weighted_index(&mut rng, options.iter().map(|(_, w)| *w))].0;
+            self.communities[c].region = to;
+            self.events.push((
+                self.generation,
+                WorldEvent::Migrated {
+                    community: c,
+                    from: home,
+                    to,
+                },
+            ));
+            let locals: Vec<usize> = (0..self.communities.len())
+                .filter(|&o| o != c && self.communities[o].region == to)
+                .filter(|&o| {
+                    !self
+                        .contacts
+                        .iter()
+                        .any(|k| (k.a, k.b) == (c, o) || (k.a, k.b) == (o, c))
+                })
+                .collect();
+            for o in locals {
+                let intensity = rng.gen_range(0.3..0.7);
+                self.connect(c, o, intensity, ContactKind::Neighbours);
+            }
+        }
+    }
+
+    /// Each land is called what the people holding it calls it: the
+    /// largest people living there, once it outnumbers the land's namers
+    /// `PLACE_HOLD` times over. A people whose language descends from the
+    /// namers' inherits the name; others mostly keep it, fitted to their
+    /// own sounds, or coin their own. Land no one lives on keeps its last
+    /// name unchanged.
+    fn hold_places(&mut self) {
+        let generation = self.generation;
+        for r in 0..self.map.regions.len() {
+            let here = || {
+                self.communities
+                    .iter()
+                    .enumerate()
+                    .filter(move |(_, k)| k.region == r)
+            };
+            let largest = here().fold(None, |best: Option<(usize, f32)>, (i, k)| match best {
+                Some((_, s)) if s >= k.size => best,
+                _ => Some((i, k.size)),
+            });
+            let Some((holder, size)) = largest else {
+                continue;
+            };
+            let variety = self.communities[holder].variety;
+            let mut rng = stream(
+                self.seed,
+                &[
+                    key("place"),
+                    r as u64,
+                    u64::from(generation),
+                    variety as u64,
+                ],
+            );
+            let before = self.places[r].last();
+            let origin = match before {
+                None => None,
+                Some(p) if p.variety == variety => continue,
+                Some(p) => {
+                    let namers: f32 = here()
+                        .filter(|(_, k)| k.variety == p.variety)
+                        .map(|(_, k)| k.size)
+                        .sum();
+                    if size < namers * PLACE_HOLD {
+                        continue;
+                    }
+                    if self.descends(variety, p.variety) {
+                        Some(PlaceOrigin::Inherited)
+                    } else {
+                        let knew = namers > 0.0
+                            || self.contacts.iter().any(|k| {
+                                let other = match (k.a == holder, k.b == holder) {
+                                    (true, _) => k.b,
+                                    (_, true) => k.a,
+                                    _ => return false,
+                                };
+                                self.communities[other].variety == p.variety
+                            });
+                        let keep = if knew {
+                            PLACE_KEEP_KNOWN
+                        } else {
+                            PLACE_KEEP_UNKNOWN
+                        };
+                        (rng.r#gen::<f32>() < keep).then_some(PlaceOrigin::Borrowed)
+                    }
+                }
+            };
+            let speech = &self.varieties[variety];
+            let name = match (origin, before) {
+                (Some(PlaceOrigin::Inherited), Some(p)) => p.name.clone(),
+                (Some(PlaceOrigin::Borrowed), Some(p)) => {
+                    let adapter = Adapter::new(
+                        speech.lexicon.living().map(|l| &l.form),
+                        &speech.profile.inventory,
+                    );
+                    Name {
+                        form: adapter.adapt(&p.name.form, 0.0, &mut rng),
+                        meaning: p.name.meaning.clone(),
+                        coined: generation,
+                        log: Vec::new(),
+                    }
+                }
+                _ => {
+                    let land = Landscape {
+                        terrain: self.map.regions[r].terrain,
+                        coastal: self.map.coastal(r),
+                        island: self.map.island(r),
+                    };
+                    let people = &self.communities[holder].name;
+                    let spelled = speech.title(&people.form);
+                    let coined = place_name(speech, land, (people, &spelled), &mut rng, generation);
+                    let Some(name) = coined else { continue };
+                    name
+                }
+            };
+            let origin = origin.unwrap_or(PlaceOrigin::Coined { community: holder });
+            self.places[r].push(PlaceName {
+                variety,
+                since: generation,
+                name,
+                origin,
+            });
+        }
+    }
+
+    /// Whether `variety` descends from `ancestor` through splits and shifts.
+    pub fn descends(&self, variety: usize, ancestor: usize) -> bool {
+        let mut at = variety;
+        while let Some(fork) = self.varieties[at].parent {
+            if fork.variety == ancestor {
+                return true;
+            }
+            at = fork.variety;
+        }
+        false
+    }
+
+    /// What region `region` was called at `generation`, spelled in the
+    /// language that held it then; `None` if no one had named it yet.
+    pub fn place_at(&self, region: usize, generation: u32) -> Option<String> {
+        let place = self.places[region]
+            .iter()
+            .rev()
+            .find(|p| p.since <= generation)?;
+        Some(self.varieties[place.variety].title(place.name.form_at(generation)))
     }
 
     /// What a group leaving `community` calls itself: an epithet on the
@@ -1028,6 +1301,17 @@ impl World {
         new.name = self.language_name(&new, &self.communities[community].name);
         self.varieties.push(new);
         self.communities[community].variety = new_index;
+        // So does its name for the land it holds.
+        let region = self.communities[community].region;
+        if let Some(p) = self.places[region].last().filter(|p| p.variety == old) {
+            let kept = PlaceName {
+                variety: new_index,
+                since: generation,
+                name: p.name.clone(),
+                origin: PlaceOrigin::Kept,
+            };
+            self.places[region].push(kept);
+        }
         self.events.push((
             generation,
             WorldEvent::Shift {
@@ -1037,6 +1321,7 @@ impl World {
                 variety: new_index,
             },
         ));
+        self.hold_places();
         new_index
     }
 
@@ -1147,6 +1432,16 @@ impl World {
         for community in self.communities.iter_mut().filter(|c| c.variety == v) {
             let after = law.apply(&community.name.form, minimal);
             community.name.change(after, law.id, generation);
+        }
+        // And so are the names of the lands its speakers hold.
+        for community in self.communities.iter().filter(|c| c.variety == v) {
+            if let Some(p) = self.places[community.region]
+                .last_mut()
+                .filter(|p| p.variety == v)
+            {
+                let after = law.apply(&p.name.form, minimal);
+                p.name.change(after, law.id, generation);
+            }
         }
     }
 
@@ -1898,8 +2193,19 @@ mod tests {
                 .expect("split communities speak daughters");
             assert!(fork.generation > 0, "community {i}");
         }
-        // With equal power, the larger community has at least the prestige.
-        let mut by_size = world.communities.clone();
+        // With equal power, the larger community has at least the prestige,
+        // among those that did not split since prestige was last reckoned.
+        let split_now = |i: usize| {
+            world.events.iter().any(|(g, e)| {
+                *g == world.generation
+                    && matches!(*e, WorldEvent::Split { community, daughter, .. }
+                        if community == i || daughter == i)
+            })
+        };
+        let mut by_size: Vec<&Community> = (0..world.communities.len())
+            .filter(|&i| !split_now(i))
+            .map(|i| &world.communities[i])
+            .collect();
         by_size.sort_by(|a, b| a.size.total_cmp(&b.size));
         assert!(by_size.last().unwrap().prestige >= by_size[0].prestige);
     }
@@ -1918,7 +2224,12 @@ mod tests {
         world.run(10);
         let old = world.communities[subjects].variety;
         let ruling = world.communities[rulers].variety;
+        let land = world.communities[subjects].region;
+        let land_name = world.places[land].last().unwrap().name.form.clone();
         let new = world.shift(subjects, rulers);
+        let kept = world.places[land].last().unwrap();
+        assert_eq!((kept.variety, kept.origin), (new, PlaceOrigin::Kept));
+        assert_eq!(kept.name.form, land_name, "they keep their land's name");
         let shifted = &world.varieties[new];
         assert_eq!(shifted.parent.map(|f| f.variety), Some(ruling));
         assert_eq!(
@@ -2219,7 +2530,7 @@ mod tests {
     }
 
     #[test]
-    fn peoples_spread_to_bordering_land_without_overfilling_it() {
+    fn split_offs_settle_bordering_land_or_coastal_colonies() {
         for seed in [8, 9, 10] {
             let mut world = World::solo(seed, &SoundProfile::base(), Params::default());
             world.run(300);
@@ -2231,20 +2542,89 @@ mod tests {
             }
             let mut moved = false;
             for (_, event) in &world.events {
-                if let WorldEvent::Split {
-                    community,
-                    daughter,
-                } = *event
-                {
-                    let (from, to) = (
-                        world.communities[community].region,
-                        world.communities[daughter].region,
-                    );
-                    assert!(from == to || world.map.regions[from].neighbours.contains(&to));
+                if let WorldEvent::Split { from, to, .. } = *event {
+                    let map = &world.map;
+                    let colony = map.coastal(from)
+                        && map.coastal(to)
+                        && map.distance(from, to) <= COLONY_REACH;
+                    assert!(from == to || map.regions[from].neighbours.contains(&to) || colony);
                     moved |= from != to;
                 }
             }
             assert!(moved, "seed {seed}: no people ever left home");
         }
+    }
+
+    #[test]
+    fn place_names_change_with_their_holders_speech_and_freeze_when_left() {
+        let mut world = World::new(5, Params::static_society());
+        world.found(&SoundProfile::base(), 0.5, 0.5);
+        let home = world.communities[0].region;
+        let first = world.places[home][0].clone();
+        assert_eq!(first.origin, PlaceOrigin::Coined { community: 0 });
+        assert_eq!(first.variety, world.communities[0].variety);
+        world.run(80);
+        let named = &world.places[home][0].name;
+        assert!(!named.log.is_empty() || world.variety_of(0).laws.is_empty());
+
+        let elsewhere = (0..world.map.regions.len())
+            .find(|&r| r != home && world.map.regions[r].terrain.is_land())
+            .unwrap();
+        world.communities[0].region = elsewhere;
+        let left = world.places[home][0].name.form.clone();
+        world.run(80);
+        assert_eq!(world.places[home][0].name.form, left);
+        assert_eq!(world.places[elsewhere].len(), 1, "they name their new land");
+    }
+
+    #[test]
+    fn newcomers_mostly_keep_the_name_of_land_they_take_over() {
+        let mut kept = 0;
+        for seed in 0..40 {
+            let mut world = World::new(seed, Params::static_society());
+            let natives = world.found(&SoundProfile::base(), 0.2, 0.5);
+            let comers = world.found(&SoundProfile::by_id("iranian").unwrap(), 0.9, 0.5);
+            world.connect(natives, comers, 0.5, ContactKind::Trade);
+            let land = world.communities[natives].region;
+            world.communities[comers].region = land;
+            world.communities[comers].size = world.communities[natives].size * PLACE_HOLD * 1.5;
+            world.step();
+            let names = &world.places[land];
+            assert_eq!(
+                names.len(),
+                2,
+                "seed {seed}: the larger people's name takes over"
+            );
+            assert_eq!(names[1].variety, world.communities[comers].variety);
+            match names[1].origin {
+                PlaceOrigin::Borrowed => {
+                    kept += 1;
+                    assert_eq!(names[1].name.meaning, names[0].name.meaning);
+                }
+                PlaceOrigin::Coined { community } => assert_eq!(community, comers),
+                other => panic!("seed {seed}: {other:?}"),
+            }
+        }
+        assert!((28..=39).contains(&kept), "{kept} of 40 kept the old name");
+    }
+
+    #[test]
+    fn peoples_migrate_onto_land_within_reach() {
+        let mut moved = 0;
+        for seed in 0..6 {
+            let mut world = World::new(seed, Params::default());
+            for preset in ["familiar", "polynesian", "iranian", "finnic"] {
+                world.found(&SoundProfile::by_id(preset).unwrap(), 0.5, 0.5);
+            }
+            world.run(120);
+            for (_, event) in &world.events {
+                if let WorldEvent::Migrated { from, to, .. } = *event {
+                    moved += 1;
+                    assert!(from != to && world.map.regions[to].terrain.is_land());
+                    assert!(world.map.distance(from, to) <= MIGRATION_REACH);
+                }
+            }
+        }
+        assert!(moved >= 3, "{moved} migrations in 6 books");
     }
 }

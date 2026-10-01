@@ -28,6 +28,7 @@ fn main() {
     );
     println!("Events");
     let name = |c: usize| world.community_name(c);
+    let place = |r: usize, g: u32| world.place_at(r, g).unwrap_or_else(|| format!("land {r}"));
     for (generation, event) in &world.events {
         match event {
             WorldEvent::Found { community } => {
@@ -36,13 +37,31 @@ fn main() {
             WorldEvent::Split {
                 community,
                 daughter,
+                to,
+                ..
             } => {
                 println!(
-                    "  gen {generation:>3}  {} splits; {} founded",
+                    "  gen {generation:>3}  {} splits; {} founded in {}",
                     name(*community),
-                    name(*daughter)
+                    name(*daughter),
+                    place(*to, *generation)
                 )
             }
+            WorldEvent::Migrated {
+                community,
+                from,
+                to,
+            } => println!(
+                "  gen {generation:>3}  {} leave {} for {}{}",
+                name(*community),
+                place(*from, generation.saturating_sub(1)),
+                place(*to, *generation),
+                if world.map.overseas(*from, *to) {
+                    " by sea"
+                } else {
+                    ""
+                }
+            ),
             WorldEvent::Shift {
                 community,
                 toward,
@@ -94,6 +113,31 @@ fn main() {
             lineage.join(" ← "),
             world.language_title(c.variety),
             language.meaning,
+        );
+    }
+
+    println!("\nPlaces");
+    for (r, names) in world.places.iter().enumerate() {
+        if names.is_empty() {
+            continue;
+        }
+        let told: Vec<String> = names
+            .iter()
+            .map(|p| {
+                format!(
+                    "{} ({:?} g{}, v{})",
+                    world.varieties[p.variety].title(&p.name.form),
+                    p.origin,
+                    p.since,
+                    p.variety
+                )
+            })
+            .collect();
+        println!(
+            "  {r:>3} {:<10} \"{}\": {}",
+            format!("{:?}", world.map.regions[r].terrain),
+            names[0].name.meaning,
+            told.join(" → ")
         );
     }
 

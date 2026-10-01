@@ -17,7 +17,7 @@ const ROW: f64 = 0.866_025_403_784_438_6;
 /// Furthest a point strays from its grid position, in grid units.
 const JITTER: f64 = 0.3;
 /// Share of regions under water.
-const SEA: f64 = 0.4;
+const SEA: f64 = 0.5;
 /// Shares of land that are mountain and hill, by height.
 const MOUNTAINS: f64 = 0.1;
 const HILLS: f64 = 0.15;
@@ -30,6 +30,13 @@ const FOREST: f64 = 0.3;
 const PLAIN_CLOSENESS: f32 = 0.8;
 /// Closest any two regions can be, short of being the same land.
 const MAX_CLOSENESS: f32 = 0.9;
+/// Most regions a body of land can have and still count as an island.
+const ISLAND: usize = 2;
+/// How steeply land falls toward the map's edges: higher gives one round
+/// continent, lower scatters land into islands.
+const FALLOFF: f64 = 0.6;
+/// Weight of small-scale noise in elevation, which breaks up coasts.
+const ROUGHNESS: f64 = 0.7;
 
 /// How large a world is: how many regions its map has.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -97,6 +104,21 @@ impl Terrain {
     pub fn is_land(self) -> bool {
         self != Terrain::Sea
     }
+
+    /// How readily a people living on it takes to the road, relative to
+    /// farmers on open plain: herders on the steppe and in the desert move
+    /// often, as the peoples of the Eurasian steppe did again and again;
+    /// mountain folk seldom do.
+    pub fn mobility(self) -> f32 {
+        match self {
+            Terrain::Steppe => 3.0,
+            Terrain::Desert => 2.0,
+            Terrain::Plains | Terrain::Hills => 1.0,
+            Terrain::Forest => 0.8,
+            Terrain::Mountains => 0.5,
+            Terrain::Sea => 0.0,
+        }
+    }
 }
 
 /// One region of the map.
@@ -109,6 +131,9 @@ pub struct Region {
     pub terrain: Terrain,
     /// Regions sharing a border with it, in increasing order.
     pub neighbours: Vec<usize>,
+    /// The body of land it belongs to, numbered from 0; `None` for sea.
+    /// Land in different bodies can only be reached by crossing the sea.
+    pub landmass: Option<usize>,
 }
 
 /// The world's land and sea.
@@ -147,14 +172,14 @@ impl Map {
             .collect();
         let neighbours = symmetric(cells.iter().map(|(_, n)| n.clone()).collect());
 
-        // A continent: higher toward the middle of the map, falling to sea
-        // at its edges, roughened by noise.
+        // Land rises toward the middle of the map and falls to sea at its
+        // edges, roughened by noise enough to leave bays and islands.
         let elevation: Vec<f64> = sites
             .iter()
             .map(|&[x, y]| {
                 let dx = (x - width / 2.0) / (width / 2.0);
                 let dy = (y - height / 2.0) / (height / 2.0);
-                broad.at(x, y) + 0.5 * fine.at(x, y) - 0.9 * (dx * dx + dy * dy)
+                broad.at(x, y) + ROUGHNESS * fine.at(x, y) - FALLOFF * (dx * dx + dy * dy)
             })
             .collect();
         let mut terrain = vec![Terrain::Plains; sites.len()];
@@ -204,6 +229,7 @@ impl Map {
             terrain[i] = Terrain::Forest;
         }
 
+        let landmass = landmasses(&terrain, &neighbours);
         let regions: Vec<Region> = cells
             .into_iter()
             .zip(neighbours)
@@ -213,6 +239,7 @@ impl Map {
                 outline: outline.iter().map(|&[x, y]| [x as f32, y as f32]).collect(),
                 terrain: terrain[i],
                 neighbours,
+                landmass: landmass[i],
             })
             .collect();
         let distance = travel_distances(&regions);
@@ -254,6 +281,47 @@ impl Map {
                 .iter()
                 .any(|&n| self.regions[n].terrain == Terrain::Sea)
     }
+
+    /// Whether going from region `a` to region `b` means crossing the sea.
+    pub fn overseas(&self, a: usize, b: usize) -> bool {
+        self.regions[a].landmass != self.regions[b].landmass
+    }
+
+    /// Whether region `r` is land on a body of land of at most two regions.
+    pub fn island(&self, r: usize) -> bool {
+        let Some(mass) = self.regions[r].landmass else {
+            return false;
+        };
+        self.regions
+            .iter()
+            .filter(|o| o.landmass == Some(mass))
+            .count()
+            <= ISLAND
+    }
+}
+
+/// Each land region's body of land, numbered in order of its lowest
+/// region; `None` for sea.
+fn landmasses(terrain: &[Terrain], neighbours: &[Vec<usize>]) -> Vec<Option<usize>> {
+    let mut out: Vec<Option<usize>> = vec![None; terrain.len()];
+    let mut next = 0;
+    for start in 0..terrain.len() {
+        if !terrain[start].is_land() || out[start].is_some() {
+            continue;
+        }
+        out[start] = Some(next);
+        let mut stack = vec![start];
+        while let Some(r) = stack.pop() {
+            for &n in &neighbours[r] {
+                if terrain[n].is_land() && out[n].is_none() {
+                    out[n] = Some(next);
+                    stack.push(n);
+                }
+            }
+        }
+        next += 1;
+    }
+    out
 }
 
 /// Smooth random values over the plane: random heights at the corners of
@@ -422,6 +490,26 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn bordering_land_shares_a_landmass_and_only_the_sea_parts_them() {
+        let mut parted = 0;
+        for seed in 0..12 {
+            let map = Map::generate(seed, MapSize::Medium);
+            for (i, r) in map.regions.iter().enumerate() {
+                assert_eq!(r.landmass.is_some(), r.terrain.is_land(), "{i}");
+                for &j in &r.neighbours {
+                    if r.terrain.is_land() && map.regions[j].terrain.is_land() {
+                        assert!(!map.overseas(i, j), "{i} and {j} border");
+                    }
+                }
+            }
+            let masses: std::collections::HashSet<Option<usize>> =
+                map.regions.iter().map(|r| r.landmass).collect();
+            parted += usize::from(masses.len() > 2);
+        }
+        assert!(parted >= 4, "{parted} of 12 maps have more than one land");
     }
 
     #[test]
