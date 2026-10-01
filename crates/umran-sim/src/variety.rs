@@ -1,15 +1,18 @@
 use crate::adapt::ESTABLISHED_SHARE;
 use crate::form::Form;
+use crate::ideas::{Need, need};
 use crate::inventory::Inventory;
-use crate::lexicon::Lexicon;
+use crate::lexicon::{Lexeme, Lexicon};
+use crate::livelihood::Livelihood;
 use crate::morphology::Morphology;
-use crate::names::Name;
+use crate::names::{GivenName, Name, NameStyle, given_stock};
 use crate::phoneme::PhonemeId;
 use crate::phonotactics::Phonotactics;
 use crate::profile::SoundProfile;
 use crate::prosody::MinimalWord;
 use crate::rng::{key, stream};
 use crate::root::mint_roots;
+use rand::Rng;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// One language variety: the profile its speakers' preferences come from,
@@ -34,6 +37,12 @@ pub struct Variety {
     pub waves: Vec<(&'static str, usize)>,
     /// Where this variety split from, if it did.
     pub parent: Option<Fork>,
+    /// How its speakers build given names, and the names in fashion now.
+    pub style: NameStyle,
+    pub given: Vec<GivenName>,
+    /// The generation it was first written, or last respelled: words are
+    /// spelled as they sounded then, however they have changed since.
+    pub written: Option<u32>,
 }
 
 /// A variety's descent from another.
@@ -48,9 +57,12 @@ pub struct Fork {
 }
 
 impl Variety {
-    /// A new variety at founding: an inventory sampled from the profile and
-    /// one root per concept. The same seed and profile always agree.
-    pub fn found(seed: u64, profile: &SoundProfile) -> Self {
+    /// A new variety at founding: an inventory sampled from the profile,
+    /// one root per concept its speakers living by `livelihood` know of
+    /// (meanings that wait for a craft or a faith have none yet), and a
+    /// stock of given names. The same seed, profile, and livelihood always
+    /// agree.
+    pub fn found(seed: u64, profile: &SoundProfile, livelihood: Livelihood) -> Self {
         let inventory =
             Inventory::sample(&profile.inventory, &mut stream(seed, &[key("inventory")]));
         let phonotactics = Phonotactics::compile(&profile.phonotactics, &inventory);
@@ -59,16 +71,27 @@ impl Variety {
             &phonotactics,
             &mut stream(seed, &[key("morphology")]),
         );
-        Self {
+        let known = |minted: &crate::root::Minted| match need(minted.concept) {
+            None => true,
+            Some(Need::Livelihood(l)) => l == livelihood,
+            Some(_) => false,
+        };
+        let roots = mint_roots(
+            seed,
+            &phonotactics,
+            &profile.spelling,
+            &morphology,
+            profile.morphology.derivation,
+        );
+        let style = if stream(seed, &[key("given style")]).r#gen::<f32>() < 0.6 {
+            NameStyle::Double
+        } else {
+            NameStyle::Single
+        };
+        let mut variety = Self {
             name: Name::default(),
             profile: profile.clone(),
-            lexicon: Lexicon::found(mint_roots(
-                seed,
-                &phonotactics,
-                &profile.spelling,
-                &morphology,
-                profile.morphology.derivation,
-            )),
+            lexicon: Lexicon::found(roots.into_iter().filter(known)),
             morphology,
             minimal: MinimalWord::draw(
                 profile.phonotactics.disyllabic_roots,
@@ -78,7 +101,12 @@ impl Variety {
             laws: Vec::new(),
             waves: Vec::new(),
             parent: None,
-        }
+            style,
+            given: Vec::new(),
+            written: None,
+        };
+        variety.given = given_stock(&variety, livelihood, &mut stream(seed, &[key("given")]));
+        variety
     }
 
     /// A daughter of this variety, identical at the moment of the split.
@@ -129,6 +157,25 @@ impl Variety {
 
     pub fn spell(&self, form: &Form) -> String {
         self.profile.spelling.write(form)
+    }
+
+    /// How a word is written: as it sounded when the language was first
+    /// written (or last respelled), or when the word came in if later,
+    /// however it sounds now, as English still writes the k of knight.
+    /// Unwritten languages spell words as they sound.
+    pub fn written_word(&self, lexeme: &Lexeme) -> String {
+        match self.written {
+            Some(g) => self.spell(lexeme.form_at(g.max(lexeme.born))),
+            None => self.spell(&lexeme.form),
+        }
+    }
+
+    /// How a name is written, as `written_word` writes words.
+    pub fn written_name(&self, name: &Name) -> String {
+        match self.written {
+            Some(g) => self.spell(name.form_at(g.max(name.coined))),
+            None => self.spell(&name.form),
+        }
     }
 
     /// A name's form spelled and capitalized.

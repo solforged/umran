@@ -6,6 +6,8 @@ export type ContactKind = "neighbours" | "trade" | "rule" | "religion" | "interm
 /// How a people feeds itself, which shapes how many its lands support.
 export type Livelihood = "foraging" | "herding" | "farming";
 
+export type Craft = "metalworking" | "riding" | "seafaring" | "writing";
+
 export type LongVowelStyle = "Acute" | "Double" | "Macron" | "Unmarked";
 
 export interface Spelling {
@@ -88,6 +90,8 @@ export type Action =
   | { kind: "split"; community: number; naming?: Naming; intensity: number }
   | { kind: "shift"; community: number; toward: number }
   | { kind: "state"; community: number; capital?: number }
+  | { kind: "religion"; community: number }
+  | { kind: "craft"; community: number; craft: Craft }
   | { kind: "run"; generations: number };
 
 export interface Choice {
@@ -103,6 +107,9 @@ export interface Catalog {
   heights: string[];
   presets: Choice[];
   contacts: Choice[];
+  crafts: Choice[];
+  /// Most meanings any language can have words for.
+  meanings: number;
   namePlaces: string[];
   nameEpithets: string[];
   /// The engine revision, for the colophon.
@@ -137,6 +144,8 @@ export interface Community {
   lands: number[];
   /// How it feeds itself, which shapes how many its lands support.
   livelihood: Livelihood;
+  faith: number | null;
+  crafts: Craft[];
   /// The generation it ended, or null while it lives.
   ended: number | null;
   /// The people it merged into, or null if it died out.
@@ -156,6 +165,7 @@ export interface StateView {
   ipa: string;
   once: string | null;
   rulers: number;
+  founder: NameView;
   members: MemberView[];
   capital: number;
   rose: number;
@@ -167,6 +177,54 @@ export interface StateView {
   purism: number;
   city: number;
   lands: number[];
+}
+
+export interface ReligionView {
+  id: number;
+  name: string;
+  meaning: string;
+  ipa: string;
+  founder: NameView;
+  people: number;
+  land: number;
+  founded: number;
+  how: "troubles" | "quiet" | "proclaimed";
+  sacred: number;
+  converts: boolean;
+  translates: boolean;
+  scripture: boolean;
+  followers: number[];
+  words: RenderingRow[];
+}
+
+export interface CraftView {
+  id: Craft;
+  name: string;
+  first: number | null;
+  inventors: number[];
+  holders: number[];
+  words: RenderingRow[];
+}
+
+export interface RenderingRow {
+  concept: string;
+  gloss: string;
+  renderings: Rendering[];
+}
+
+export interface Rendering {
+  variety: number;
+  spelled: string;
+  ipa: string;
+  how: "borrowed" | "kept" | "stretched" | "built" | "coined" | "inherited";
+  from: string | null;
+}
+
+export interface GivenView {
+  name: string;
+  ipa: string;
+  meaning: string;
+  from: number | null;
 }
 
 export interface OwnWords {
@@ -211,6 +269,10 @@ export interface Variety {
   specimen: SpecimenWord[];
   standardOf: number | null;
   ownWords: OwnWords;
+  names: GivenView[];
+  nameStyle: "single" | "double";
+  written: number | null;
+  sacredOf: number | null;
 }
 
 /// One of the few basic words shown wherever a language appears.
@@ -246,6 +308,8 @@ export interface Overview {
   communities: Community[];
   varieties: Variety[];
   states: StateView[];
+  religions: ReligionView[];
+  crafts: CraftView[];
   contacts: Contact[];
   /// What each land that has been held is called, through history.
   places: Place[];
@@ -299,7 +363,7 @@ export interface TellingView {
 /// One chronicle entry; `variety` is set for a sound law.
 export interface Annal {
   generation: number;
-  kind: "found" | "split" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "livelihood" | "ended" | "rose" | "fell" | "standard";
+  kind: "found" | "split" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "craft" | "faith" | "conversion" | "meaning" | "respelling";
   /// The annalist's words; words of the language are marked *thus*.
   text: string;
   /// The apparatus: what a linguist would note, such as sound laws.
@@ -311,6 +375,8 @@ export interface Annal {
   lands: number[];
   /// The states it tells of.
   states: number[];
+  religions: number[];
+  crafts: Craft[];
   /// The sound laws it tells of, by id.
   laws: string[];
   /// For a sound change, the language's specimen words after it.
@@ -329,6 +395,7 @@ export interface LexiconRow {
   field: string;
   rank: number | null;
   spelled: string;
+  said: string | null;
   ipa: string;
   origin: Origin;
   changes: number;
@@ -342,6 +409,7 @@ export interface HistoryLine {
 
 export interface Variant {
   spelled: string;
+  said: string | null;
   ipa: string;
   share: number;
   origin: Origin;

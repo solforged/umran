@@ -11,6 +11,7 @@
 //! rulers, so borrowing, waves, and shift work through it as through any
 //! contact. When that contact ends, the subject has thrown off the rule.
 
+use crate::ideas::WRITTEN_PACE;
 use crate::names::{MAX_PEOPLE_NAME, Name, clipped};
 use crate::rng::{key, stream};
 use crate::world::{ContactKind, World, WorldEvent};
@@ -70,6 +71,9 @@ pub struct State {
     /// Coined in the rulers' language, after the rulers ("the realm of the
     /// Ivo"), and changing with it while the state stands.
     pub name: Name,
+    /// Its first ruler, as his name was said then; one of the names in
+    /// fashion among the rulers.
+    pub founder: Name,
     pub rulers: usize,
     /// Every people it has ruled, in the order they came under it.
     pub members: Vec<Member>,
@@ -223,12 +227,12 @@ impl World {
     }
 
     /// How fast variety `v` takes up sound laws and new words: slower if
-    /// it is a standing state's standard.
+    /// it is a standing state's standard, and slower still if written.
     pub(crate) fn pace(&self, v: usize) -> f32 {
-        if self.standard_state(v).is_some() {
-            STANDARD_PACE
-        } else {
-            1.0
+        match self.standard_state(v) {
+            Some(_) if self.varieties[v].written.is_some() => STANDARD_PACE * WRITTEN_PACE,
+            Some(_) => STANDARD_PACE,
+            None => 1.0,
         }
     }
 
@@ -283,8 +287,18 @@ impl World {
         let mut rng = stream(self.seed, &[key("state"), index as u64]);
         // Most standards take words freely; a few guard against them.
         let purism = rng.r#gen::<f32>().powi(2);
+        let stock = &self.varieties[self.communities[rulers].variety].given;
+        let founder = match stock.len() {
+            0 => self.communities[rulers].name.clone(),
+            n => stock[crate::rng::index(&mut rng, n)].name.clone(),
+        };
         self.states.push(State {
             name: self.state_name(rulers),
+            founder: Name {
+                coined: self.generation,
+                log: Vec::new(),
+                ..founder
+            },
             rulers,
             members: Vec::new(),
             capital: capital.unwrap_or_else(|| self.communities[rulers].home()),

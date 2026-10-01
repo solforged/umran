@@ -41,6 +41,7 @@ export function WordGloss({
         <section key={i} className="variant">
           <div className="variant-head">
             <span className="word big">{v.spelled}</span>
+            {v.said !== null ? <span> <span className="muted">· said</span> <span className="word">{v.said}</span></span> : null}
             <span className="ipa">/{v.ipa}/</span>
             {detail.variants.length > 1 ? (
               <meter min={0} max={1} value={v.share} title={`${Math.round(v.share * 100)}% of uses`} />

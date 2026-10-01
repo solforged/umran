@@ -36,7 +36,7 @@ export function Dictionary({
       (r) =>
         (field === "all" || r.field === field) &&
         (origin === "all" || r.origin.kind === origin) &&
-        (q === "" || [r.gloss, r.spelled, r.ipa, r.concept].some((s) => s.toLowerCase().includes(q))),
+        (q === "" || [r.gloss, r.spelled, r.said ?? "", r.ipa, r.concept].some((s) => s.toLowerCase().includes(q))),
     );
   }, [rows, query, field, origin]);
 
@@ -121,7 +121,10 @@ function Row({ row, selected, onSelect }: { row: LexiconRow; selected: boolean; 
         {row.gloss}
         {row.competitors > 0 ? <span className="badge" title="Other words compete for this meaning">+{row.competitors}</span> : null}
       </td>
-      <td className="word">{row.spelled}</td>
+      <td>
+        <span className="word">{row.spelled}</span>
+        {row.said !== null ? <> <span className="muted">· said</span> <span className="word">{row.said}</span></> : null}
+      </td>
       <td className="ipa">/{row.ipa}/</td>
       <td>
         <span className={`origin origin-${row.origin.kind}`}>

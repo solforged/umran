@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Layers, Pause, Play, SkipForward } from "lucide-react";
-import type { Annal, Engine, Overview, WorldMap } from "../model";
+import type { Annal, Catalog, Craft, Engine, Overview, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { EVENT_KIND, hue } from "../lore";
 import { PACES, year } from "../words";
@@ -44,6 +44,7 @@ const TRAIL_LENGTH = 40;
 /// time along the bottom.
 export function Stage({
   engine,
+  catalog,
   map,
   version,
   generation,
@@ -64,6 +65,7 @@ export function Stage({
   onDialog,
 }: {
   engine: Engine;
+  catalog: Catalog;
   map: WorldMap;
   version: number;
   generation: number;
@@ -101,6 +103,8 @@ export function Stage({
 
   // What the map draws beside the lands and peoples.
   const [layers, setLayers] = useState({ names: true, routes: true, contacts: true, states: true });
+  const [landLayer, setLandLayer] = useState<"peoples" | "faiths" | "crafts">("peoples");
+  const [craft, setCraft] = useState<Craft>("metalworking");
 
   // Time passing on its own.
   const [playing, setPlaying] = useState(false);
@@ -155,8 +159,12 @@ export function Stage({
       const had = overview.communities.filter((c) => c.ended === null && overview.varieties[c.variety].laws.some((l) => l.id === law));
       return { kind: "change", had: new Set(had.map((c) => c.id)) };
     }
+    if (focus.kind === "religion") return { kind: "faiths" };
+    if (focus.kind === "craft") return { kind: "crafts", craft: focus.id };
+    if (landLayer === "faiths") return { kind: "faiths" };
+    if (landLayer === "crafts") return { kind: "crafts", craft };
     return { kind: "peoples" };
-  }, [words, law, overview]);
+  }, [words, law, overview, focus, landLayer, craft]);
 
   const highlight = useMemo(() => {
     const site = (region: number | undefined) => (region === undefined ? null : map.regions[region].site);
@@ -169,6 +177,16 @@ export function Stage({
         const state = overview.states[focus.id];
         const chosen = state?.fell === null ? [state.rulers, ...state.members.filter((m) => m.left === null).map((m) => m.community)] : [];
         return { chosen, lands: state?.lands ?? [], point: site(state?.capital) };
+      }
+      case "religion": {
+        const religion = overview.religions[focus.id];
+        const chosen = religion?.followers ?? [];
+        return { chosen, lands: chosen.flatMap((id) => overview.communities[id].lands), point: site(religion?.land) };
+      }
+      case "craft": {
+        const craft = overview.crafts.find((c) => c.id === focus.id);
+        const chosen = craft?.holders ?? [];
+        return { chosen, lands: chosen.flatMap((id) => overview.communities[id].lands), point: null };
       }
       case "land": {
         const here = overview.communities.filter((c) => c.ended === null && c.lands.includes(focus.region)).map((c) => c.id);
@@ -226,11 +244,54 @@ export function Stage({
           onPeople={(id) => go({ kind: "people", id })}
           onLand={(region) => go({ kind: "land", region })}
           onState={(id) => go({ kind: "state", id })}
+          onReligion={(id) => go({ kind: "religion", id })}
+          onCraft={(id) => go({ kind: "craft", id })}
         />
         <details className="map-layers">
           <summary title="What the map shows">
             <Layers size={16} aria-hidden="true" /> Show
           </summary>
+          <label>
+            Colour lands by
+            <select value={tint.kind}
+              onChange={(e) => {
+                setLandLayer(e.target.value as typeof landLayer);
+                if (focus.kind === "religion" || focus.kind === "craft" || focus.kind === "word" || law) go({ kind: "world" });
+              }}>
+              <option value="peoples">Language families</option>
+              <option value="faiths">Faiths</option>
+              <option value="crafts">Crafts</option>
+              {tint.kind === "words" ? <option value="words" disabled>Word roots</option> : null}
+              {tint.kind === "change" ? <option value="change" disabled>Sound change</option> : null}
+            </select>
+          </label>
+          {tint.kind === "crafts" ? (
+            <label>
+              Craft
+              <select value={tint.craft} onChange={(e) => {
+                setCraft(e.target.value as Craft);
+                setLandLayer("crafts");
+                if (focus.kind === "craft") go({ kind: "craft", id: e.target.value as Craft });
+              }}>
+                {catalog.crafts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </label>
+          ) : null}
+          {tint.kind === "faiths" ? (
+            <>
+              <p className="muted small">Grey lands keep their own gods. Diamonds mark founding lands.</p>
+              <ul className="atlas-legend">
+                {overview.religions.map((religion) => (
+                  <li key={religion.id}>
+                    <span className="swatch" style={{ background: hue(religion.id) }} />
+                    <button type="button" className="link word" onClick={() => go({ kind: "religion", id: religion.id })}>{religion.name}</button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : tint.kind === "crafts" ? (
+            <p className="muted small">Orange lands hold this craft. Squares mark inventors at their heart lands.</p>
+          ) : null}
           {(
             [
               ["names", "Names of lands"],
@@ -253,6 +314,8 @@ export function Stage({
           annals={overview.annals}
           overview={overview}
           onState={(id) => go({ kind: "state", id })}
+          onReligion={(id) => go({ kind: "religion", id })}
+          onCraft={(id) => go({ kind: "craft", id })}
           generation={overview.generation}
           open={focus.kind === "event" ? focus.annal : null}
           onPick={(annal) => {
@@ -266,6 +329,7 @@ export function Stage({
         trail={trail}
         onReturn={(i) => setTrail((t) => t.slice(0, i + 1))}
         engine={engine}
+        catalog={catalog}
         version={version}
         generation={generation}
         overview={overview}
@@ -380,6 +444,12 @@ export function Stage({
             <button type="button" onClick={() => onDialog("state")}>
               Found a state
             </button>
+            <button type="button" onClick={() => onDialog("religion")}>
+              Found a religion
+            </button>
+            <button type="button" onClick={() => onDialog("craft")}>
+              Teach a craft
+            </button>
             <button type="button" disabled={!canUndo} onClick={onUndo}>
               Strike out what was last written
             </button>
@@ -395,6 +465,8 @@ function Feed({
   annals,
   overview,
   onState,
+  onReligion,
+  onCraft,
   generation,
   open,
   onPick,
@@ -402,6 +474,8 @@ function Feed({
   annals: Annal[];
   overview: Overview;
   onState: (id: number) => void;
+  onReligion: (id: number) => void;
+  onCraft: (id: Craft) => void;
   generation: number;
   open: Annal | null;
   onPick: (annal: Annal) => void;
@@ -423,11 +497,21 @@ function Feed({
               </span>
               {a.kind === "law" ? <SpecimenChanges words={a.specimen} /> : null}
             </button>
-            {a.states.some((id) => overview.states[id]) ? (
+            {a.states.length + a.religions.length + a.crafts.length > 0 ? (
               <div className="feed-states">
                 {a.states.filter((id) => overview.states[id]).map((id) => (
-                  <button key={id} type="button" className="link word" style={{ color: hue(id) }} onClick={() => onState(id)}>
+                  <button key={`state-${id}`} type="button" className="link word" style={{ color: hue(id) }} onClick={() => onState(id)}>
                     {overview.states[id].name}
+                  </button>
+                ))}
+                {a.religions.filter((id) => overview.religions[id]).map((id) => (
+                  <button key={`religion-${id}`} type="button" className="link word" style={{ color: hue(id) }} onClick={() => onReligion(id)}>
+                    {overview.religions[id].name}
+                  </button>
+                ))}
+                {a.crafts.map((id) => (
+                  <button key={id} type="button" className="link" onClick={() => onCraft(id)}>
+                    {overview.crafts.find((c) => c.id === id)?.name}
                   </button>
                 ))}
               </div>

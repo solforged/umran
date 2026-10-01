@@ -205,6 +205,65 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   less, its loans lose ground in use, and concepts held by loans gain
   native words. When a state falls the pull stops, and its dialects
   drift apart again.
+- People have given names (`names.rs`). Each language keeps a stock of
+  eight in fashion, built from its own words in its own style: one word
+  ("Wolf") or two joined ("Wulf-stan", as Germanic, Slavic, and Greek
+  names were). The meanings are weighted by way of life: herders name
+  children for horses, cattle, and spears, farmers for grain and fields.
+  Names go out of fashion and new ones come (`name_turnover`); sound
+  laws change them like any word. A people of a founded faith names for
+  its god four times as often (theophoric names, as Theodore), and
+  converts take names from the sacred language. Founders of states and
+  faiths are drawn from their people's stock.
+- A way of life shows in words (`ideas::LIVING_RELATED`). Herders stretch
+  "cattle" to cover wealth (Latin *pecunia* from *pecus*) and "herd" to
+  cover priest (Latin *pastor*); farmers stretch "seed" to cover child
+  and "till" to cover worship (Latin *colere*, whence *cult*). Such an
+  apt stretch takes half the meaning's use at once.
+- Ideas (`ideas.rs`) are crafts and founded faiths. Each brings meanings
+  a language has no word for until its people holds the idea: iron,
+  bronze, and smith with metalworking; ride and saddle with riding; sail
+  and ship with seafaring; write, book, and letter with writing; holy,
+  sin, temple, prophet, heaven, demon, and sorcerer with a faith; till
+  with farming and herd with herding. Gods, priests, chiefs, and markets
+  every language has. When the idea arrives the language finds a word:
+  it borrows the teachers' word, stretches one it has ("write" from
+  "scratch", "book" from "tree", as English and Latin did), builds one
+  from its own parts, or coins one. Open peoples borrow; purist
+  standards build.
+- Crafts pass along contacts (`craft_rate`), most readily with traders
+  and rulers, and writing with priests. A people may also come upon one
+  itself (`idea_rate`), but only where it could begin: metalworking
+  among farmers or herders with hills or mountains, riding among herders
+  of the steppe, seafaring on the coast, and writing at the court of a
+  state whose city holds 10,000. Metalworking, and riding for herders,
+  add prestige in war; riding carries a people further and holds it
+  together over more land; only seafarers migrate or send colonies over
+  the sea.
+- Writing fixes spelling. From the generation a language is first
+  written its words keep the spelling they had, while sound laws go on
+  changing speech, so spelling falls behind (as English *knight*). A
+  written standard changes more slowly, and after six laws it may reform
+  its spelling to fit speech again.
+- Founded religions (`ideas::Religion`) begin among subjects of 5,000 or
+  more in a state that has stood eight generations, readily in a time of
+  troubles (bad times on their lands or their rulers', or being crowded
+  off land) and a tenth as readily in quiet (`religion_rate`): Toynbee's
+  universal church. An author can found one among any people. The
+  founder's speech, frozen as it stood, becomes the
+  faith's sacred language, a variety of its own that keeps its prestige.
+  Most faiths seek converts and spread along contacts
+  (`conversion_rate`); a third translate their words, the rest keep the
+  sacred language and lend from it, so converts gain learned doublets
+  beside their inherited words (as English *fragile* beside *frail*). A
+  faith whose teaching is written brings writing to half its converts.
+  Conversion changes old words: converts to a faith that keeps its
+  sacred language may turn their old god into a demon and their old
+  priest into a sorcerer (pejoration, as Greek *daimōn* and Persian
+  *magus*), and a founder's reform may do so to his own people, leaving
+  god and demon as cognates across languages (Sanskrit *deva* "god",
+  Avestan *daēva* "demon"). Rival doctrines and iconoclasm are not yet
+  modelled.
 - Social identity, territory, ancestry, and language are independent.
 - Every random draw comes from a ChaCha8 stream keyed by purpose
   (`rng.rs`), so adding a process never shifts existing draws.
@@ -227,14 +286,13 @@ cargo run --release -p umran-sim --example audit -- [seeds] [generations]
 
 ## Not yet modelled
 
-Rivers, seafaring as a skill of particular peoples, climates, writing,
-cities with speech of their own (a city's speech is its court's),
-diglossia (a standard frozen beside everyday speech), compounding and
-derivation after founding beyond renewal, inflection, stress, tone,
-vowel harmony, consonant length, prenasalized stops, syntax and
-alignment, personal names, different
-names for one land in each neighbouring language (only the holders' name
-is kept). Each catalog law happens at most once in a lineage, so over
-long spans languages run short of changes they have not had, and waves
-grow rarer with them; real sound change goes on recycling the same kinds
-of change.
+Rivers, climates, cities with speech of their own (a city's speech is
+its court's), diglossia (a standard frozen beside everyday speech),
+compounding and derivation after founding beyond renewal and new
+meanings, inflection, stress, tone, vowel harmony, consonant length,
+prenasalized stops, syntax and alignment, rival doctrines within a
+faith, different names for one land in each neighbouring language (only
+the holders' name is kept). Each catalog law happens at most once in a
+lineage, so over long spans languages run short of changes they have not
+had, and waves grow rarer with them; real sound change goes on recycling
+the same kinds of change.

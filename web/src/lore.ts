@@ -16,13 +16,17 @@ import {
   Languages,
   Landmark,
   Sprout,
+  BookOpen,
+  Hammer,
+  Sparkles,
   UserRoundMinus,
   Unlink,
   Users,
   Wind,
+  WholeWord,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, Community, ContactKind, Law, Livelihood, Overview, PlaceName, StateView, Terrain } from "./model";
+import type { Annal, Community, ContactKind, Law, Livelihood, Overview, PlaceName, ReligionView, Rendering, StateView, Terrain } from "./model";
 import { YEARS } from "./model";
 
 export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string }> = {
@@ -43,6 +47,11 @@ export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string 
   rose: { icon: Landmark, name: "A state rises" },
   fell: { icon: CircleX, name: "A state falls" },
   standard: { icon: Languages, name: "A standard language" },
+  craft: { icon: Hammer, name: "A new craft" },
+  faith: { icon: Sparkles, name: "A faith is founded" },
+  conversion: { icon: Sparkles, name: "A people changes faith" },
+  meaning: { icon: WholeWord, name: "A meaning changes" },
+  respelling: { icon: BookOpen, name: "A spelling changes" },
 };
 
 export const TERRAIN_NAME: Record<Terrain, string> = {
@@ -85,6 +94,30 @@ export const FALL_NAME: Record<NonNullable<StateView["fall"]>, string> = {
   conquered: "it was conquered",
   collapsed: "it collapsed",
 };
+
+export const FAITH_HOW: Record<ReligionView["how"], string> = {
+  troubles: "in a time of troubles",
+  quiet: "in a quiet time",
+  proclaimed: "proclaimed",
+};
+
+/// How a language found a word for a craft or a faith.
+export function renderingOrigin(rendering: Rendering): string {
+  switch (rendering.how) {
+    case "borrowed":
+      return rendering.from === null ? "borrowed" : `borrowed from ${rendering.from}`;
+    case "kept":
+      return rendering.from === null ? "kept" : `kept from ${rendering.from}`;
+    case "stretched":
+      return rendering.from === null ? "meaning extended" : `stretched from “${rendering.from}”`;
+    case "built":
+      return rendering.from === null ? "built from another word" : `built on ${rendering.from}`;
+    case "coined":
+      return "new word";
+    case "inherited":
+      return "inherited";
+  }
+}
 
 /// A colour for the `n`th family or root, far from its neighbours in hue.
 export function hue(n: number): string {
@@ -149,6 +182,22 @@ export const TERMS = {
   family: "Languages that descend from one ancestor language.",
   "way of life":
     "How a people gets its food: gathering and hunting, keeping herds, or farming. Farming feeds many more people on each land, helping farmers’ languages spread over those of foragers.",
+  "sacred language":
+    "A language kept for a religion’s teaching and worship. Here its words and sounds stay as they were at the founding, even as the followers’ speech changes.",
+  pejoration:
+    "A word’s meaning becoming worse. A new faith may use an older word for a god to mean a demon.",
+  "learned word":
+    "A word taken back from a sacred or classical language. English fragile came from Latin beside frail, which had already descended from the same Latin word.",
+  doublet:
+    "Two words in one language that came from the same older word by different routes. English frail and fragile are a doublet: one inherited, the other learned from Latin.",
+  "given name":
+    "A personal name used to call someone, such as Wulfstan. Here names come from the language’s words and change with its sounds.",
+  "dithematic name":
+    "A given name made of two meaningful parts, like Wulf-stan, “wolf-stone”. The parts may later wear down until their meanings are hard to hear.",
+  "spelling vs pronunciation":
+    "Writing can keep an older form after speech changes. English knight still writes sounds that are no longer said; respelling brings writing closer to speech again.",
+  "meaning extension by livelihood":
+    "A familiar word taking on a meaning shaped by how people live. Herders may count wealth in cattle: Latin pecunia, “money”, comes from pecus, “cattle”.",
 } as const;
 
 export type Term = keyof typeof TERMS;

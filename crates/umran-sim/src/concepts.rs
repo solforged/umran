@@ -394,6 +394,29 @@ pub static CONCEPTS: &[Concept] = &[
     culture(Basic, "love", "to love", Emotions, V),
     culture(Basic, "fear", "to fear", Emotions, V),
     culture(Basic, "think", "to think", Cognition, V),
+    // Later additions, appended so earlier concepts keep their places. Two
+    // meanings every people has, then meanings a people has words for only
+    // once it holds a craft, a way of life, or a founded faith
+    // (`ideas::NEEDS`).
+    culture(Basic, "scratch", "to scratch", BasicActions, V),
+    culture(Everyday, "wealth", "wealth", Possession, E),
+    culture(Specialized, "bronze", "bronze", PhysicalWorld, E),
+    culture(Specialized, "smith", "smith", BasicActions, E),
+    culture(Everyday, "ride", "to ride", Motion, V),
+    culture(Specialized, "saddle", "saddle", Motion, E),
+    culture(Everyday, "ship", "ship", Motion, E),
+    culture(Specialized, "write", "to write", Speech, V),
+    culture(Specialized, "book", "book", Speech, E),
+    culture(Specialized, "letter", "letter (of writing)", Speech, E),
+    culture(Everyday, "till", "to till", Agriculture, V),
+    culture(Everyday, "herd", "herd, flock", Animals, E),
+    culture(Specialized, "holy", "holy", Religion, P),
+    culture(Specialized, "sin", "sin", Religion, E),
+    culture(Specialized, "temple", "temple", Religion, E),
+    culture(Specialized, "prophet", "prophet", Religion, E),
+    culture(Specialized, "heaven", "heaven", Religion, E),
+    culture(Specialized, "demon", "demon", Religion, E),
+    culture(Specialized, "sorcerer", "sorcerer", Religion, E),
 ];
 
 pub fn by_id(id: &str) -> Option<&'static Concept> {
@@ -427,6 +450,9 @@ pub static RELATED: &[(&str, &str)] = &[
     ("shadow", "spirit"),
     ("life", "spirit"),
     ("chief", "god"),
+    ("sky", "heaven"),
+    ("spirit", "demon"),
+    ("house", "temple"),
     // People and places.
     ("person", "people"),
     ("person", "3sg"),
@@ -448,12 +474,18 @@ pub static RELATED: &[(&str, &str)] = &[
     ("ant", "louse"),
     ("cattle", "horse"),
     ("bread", "food"),
+    ("cattle", "herd"),
     // Things.
     ("spear", "knife"),
     ("bow", "spear"),
     ("shield", "wall"),
     ("net", "rope"),
     ("sail", "cloth"),
+    ("boat", "ship"),
+    // English write and Greek graphein first meant "to scratch"; Latin
+    // liber, "book", was bark, and English book is the beech.
+    ("scratch", "write"),
+    ("tree", "book"),
     // Actions.
     ("see", "know"),
     ("hear", "know"),
@@ -461,6 +493,7 @@ pub static RELATED: &[(&str, &str)] = &[
     ("eat", "bite"),
     ("drink", "suck"),
     ("go", "run"),
+    ("go", "ride"),
     ("go", "come"),
     ("carry", "take"),
     ("take", "buy"),

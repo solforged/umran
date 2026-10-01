@@ -69,8 +69,6 @@ fn main() {
             .collect::<Vec<_>>()
             .join(" ")
     };
-    let founding = umran_sim::Variety::found(0, &recipient);
-    let _ = founding;
     let (c, v) = rv.inventory();
     println!("recipient consonants now  {}", ipa(c));
     println!("recipient vowels now      {}", ipa(v));

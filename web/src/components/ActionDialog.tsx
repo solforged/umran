@@ -1,20 +1,22 @@
 import { useState, type FormEvent, type ReactNode } from "react";
-import type { Action, Catalog, ContactKind, Naming, Overview } from "../model";
+import type { Action, Catalog, ContactKind, Craft, Naming, Overview } from "../model";
 import { NamingSelect } from "./NamingSelect";
 import { Modal } from "./Modal";
 
 /// "found" opens the language designer; the rest are here.
-export type DialogKind = "found" | "split" | "connect" | "shift" | "state";
+export type DialogKind = "found" | "split" | "connect" | "shift" | "state" | "religion" | "craft";
 
 const TITLES: Record<Exclude<DialogKind, "found">, string> = {
   split: "A people parts ways",
   connect: "Two peoples meet",
   shift: "A people takes up another language",
   state: "Found a state",
+  religion: "Found a religion",
+  craft: "Teach a craft",
 };
 
-/// Forms for splitting, connecting, shifting, and founding a state. Each validates the
-/// basics; the engine has the last word and reports anything it rejects.
+/// Forms for shaping a people's history. Each validates the basics;
+/// the engine has the last word and reports anything it rejects.
 export function ActionDialog({
   kind,
   catalog,
@@ -32,7 +34,8 @@ export function ActionDialog({
 }) {
   const communities = overview.communities.filter((c) => c.ended === null &&
     (kind !== "state" || !overview.states.some((s) => s.fell === null &&
-      (s.rulers === c.id || s.members.some((m) => m.community === c.id && m.left === null)))));
+      (s.rulers === c.id || s.members.some((m) => m.community === c.id && m.left === null)))) &&
+    (kind !== "craft" || catalog.crafts.some((craft) => !c.crafts.includes(craft.id as Craft))));
   const first = communities.find((c) => c.id === selected)?.id ?? communities[0]?.id ?? -1;
   const others = communities.filter((c) => c.id !== first);
   const [naming, setNaming] = useState<Naming | null>(null);
@@ -41,9 +44,12 @@ export function ActionDialog({
   const [contact, setContact] = useState<ContactKind>("neighbours");
   const [intensity, setIntensity] = useState(kind === "split" ? 0.4 : 0.6);
   const [capital, setCapital] = useState(overview.communities[first]?.region ?? -1);
+  const [craft, setCraft] = useState<Craft>((catalog.crafts.find((c) =>
+    !overview.communities[first]?.crafts.includes(c.id as Craft))?.id ?? "metalworking") as Craft);
   const people = communities.find((c) => c.id === community);
   const canSubmit = !!people && (kind === "state" ? people.lands.includes(capital) :
-    kind === "split" || communities.some((c) => c.id === other && c.id !== community));
+    kind === "craft" ? !people.crafts.includes(craft) :
+    kind === "split" || kind === "religion" || communities.some((c) => c.id === other && c.id !== community));
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -60,6 +66,12 @@ export function ActionDialog({
         return;
       case "state":
         onAction({ kind: "state", community, capital });
+        return;
+      case "religion":
+        onAction({ kind: "religion", community });
+        return;
+      case "craft":
+        onAction({ kind: "craft", community, craft });
     }
   };
 
@@ -88,6 +100,36 @@ export function ActionDialog({
 
   const body: ReactNode = (() => {
     switch (kind) {
+      case "religion":
+        return communities.length === 0 ? (
+          <p className="muted">No living people can found a religion.</p>
+        ) : (
+          <>
+            {pick("Founder's people", community, setCommunity)}
+            <p className="muted">A founder teaches a new faith. Its sacred language keeps the words and sounds used now.</p>
+          </>
+        );
+      case "craft":
+        return communities.length === 0 ? (
+          <p className="muted">No living people lacks a craft.</p>
+        ) : (
+          <>
+            {pick("People", community, (id) => {
+              setCommunity(id);
+              setCraft(catalog.crafts.find((c) => !overview.communities[id].crafts.includes(c.id as Craft))!.id as Craft);
+            })}
+            <label>
+              Craft
+              <select value={craft} onChange={(e) => setCraft(e.target.value as Craft)}>
+                {catalog.crafts.filter((c) => !people?.crafts.includes(c.id as Craft)).map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <small>{catalog.crafts.find((c) => c.id === craft)?.description}</small>
+            </label>
+            <p className="muted">They come upon this craft and find words for it.</p>
+          </>
+        );
       case "state":
         return (
           <>

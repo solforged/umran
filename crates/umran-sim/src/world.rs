@@ -2,6 +2,7 @@ use crate::adapt::Adapter;
 use crate::concepts::{CONCEPTS, Concept, Field, related};
 use crate::form::Form;
 use crate::geography::{Map, MapSize, Terrain};
+use crate::ideas::{Craft, Religion, SACRED_INTENSITY, SACRED_PRESTIGE, living_related};
 use crate::laws::{Law, catalog};
 use crate::lexicon::{Entry, Event, LexemeId, Lexicon, Origin};
 use crate::livelihood::Livelihood;
@@ -30,6 +31,9 @@ const CULTURAL_RANK: f32 = 100.0;
 const NO_CHANGE_WEIGHT: f32 = 1.0;
 /// Most words competing for one concept at once.
 const MAX_VARIANTS: usize = 3;
+/// Usage share a word stretched to a meaning its speakers' way of life
+/// links it with takes at once: twice an ordinary newcomer's.
+const APT_SHARE: f32 = 0.5;
 /// Floor on a loan's usage fitness, however low its donor's prestige.
 const MIN_LOAN_FITNESS: f32 = 0.2;
 /// Population of a newly founded community.
@@ -230,6 +234,20 @@ pub struct Params {
     /// intensity, how close their land is, how near their kinship, and
     /// which is the more prestigious.
     pub wave_rate: f32,
+    /// Scales the chance per generation that a people comes upon a craft
+    /// its land and life invite (`ideas::Craft`).
+    pub craft_rate: f32,
+    /// Scales the chance per generation that a craft passes along a
+    /// contact, by its intensity and kind.
+    pub idea_rate: f32,
+    /// Chance per generation that a faith is founded among the subjects
+    /// of an old state in a time of troubles; a tenth of it in quiet times.
+    pub religion_rate: f32,
+    /// Scales the chance per generation that a people takes up the faith
+    /// of one it deals with, by the contact's intensity and kind.
+    pub conversion_rate: f32,
+    /// Chance per generation that a language takes up a new given name.
+    pub name_turnover: f32,
 }
 
 impl Default for Params {
@@ -274,6 +292,11 @@ impl Default for Params {
             collapse_rate: 0.02,
             migration_rate: 0.02,
             wave_rate: 1.0,
+            craft_rate: 0.001,
+            idea_rate: 0.02,
+            religion_rate: 0.008,
+            conversion_rate: 0.05,
+            name_turnover: 0.1,
         }
     }
 }
@@ -298,6 +321,11 @@ impl Params {
             collapse_rate: 0.0,
             migration_rate: 0.0,
             wave_rate: 0.0,
+            craft_rate: 0.0,
+            idea_rate: 0.0,
+            religion_rate: 0.0,
+            conversion_rate: 0.0,
+            name_turnover: 0.0,
             ..Self::default()
         }
     }
@@ -327,6 +355,10 @@ pub struct Community {
     /// The generation it came to an end, dying out or merging into
     /// another people; its record stays, but it no longer lives anywhere.
     pub ended: Option<u32>,
+    /// The founded religion it holds, if any, else its own folk religion.
+    pub faith: Option<usize>,
+    /// The crafts it holds, in `Craft` order.
+    pub crafts: Vec<Craft>,
 }
 
 impl Community {
@@ -486,6 +518,33 @@ pub enum WorldEvent {
     Fell { state: usize },
     /// State `state` took its court speech as its standard.
     Standard { state: usize },
+    /// `community` took up `craft`, taught by `from` or by itself.
+    Learnt {
+        community: usize,
+        craft: Craft,
+        from: Option<usize>,
+    },
+    /// Religion `religion` was founded (`Religion::how` says how).
+    Revealed { religion: usize },
+    /// `community` took up `religion`, taught by `from` or by an author.
+    Converted {
+        community: usize,
+        religion: usize,
+        from: Option<usize>,
+    },
+    /// In variety `variety`, spoken by `community`, `word` came to mean
+    /// `to` instead of `from` with a change of faith: the old gods became
+    /// demons.
+    Pejorated {
+        community: usize,
+        variety: usize,
+        word: LexemeId,
+        from: &'static Concept,
+        to: &'static Concept,
+    },
+    /// The state whose standard variety `variety` is spelled it anew, as
+    /// it now sounds.
+    Respelled { variety: usize },
 }
 
 /// What kind of bad times strike a land.
@@ -531,18 +590,20 @@ pub struct World {
     pub places: Vec<Vec<PlaceName>>,
     /// Every state that has stood, in the order they arose.
     pub states: Vec<State>,
+    /// Every religion founded, in order.
+    pub religions: Vec<Religion>,
     laws: Vec<Law>,
 }
 
 /// Per-variety random streams for one generation.
-struct Step {
+pub(crate) struct Step {
     seed: u64,
     generation: u32,
     variety: usize,
 }
 
 impl Step {
-    fn rng(&self, labels: &[u64]) -> ChaCha8Rng {
+    pub(crate) fn rng(&self, labels: &[u64]) -> ChaCha8Rng {
         let mut keys = vec![
             key("step"),
             u64::from(self.generation),
@@ -574,6 +635,7 @@ impl World {
             params,
             events: Vec::new(),
             states: Vec::new(),
+            religions: Vec::new(),
             laws: catalog(),
         }
     }
@@ -620,13 +682,13 @@ impl World {
         livelihood: Option<Livelihood>,
     ) -> usize {
         let index = self.communities.len();
-        let mut variety = Variety::found(variety_seed, profile);
-        let name = self.coin(&variety, naming, None);
-        variety.name = self.language_name(&variety, &name);
-        self.varieties.push(variety);
         let region = region.unwrap_or_else(|| self.homeland(index));
         let livelihood =
             livelihood.unwrap_or_else(|| Livelihood::of_land(self.map.regions[region].terrain));
+        let mut variety = Variety::found(variety_seed, profile, livelihood);
+        let name = self.coin(&variety, naming, None);
+        variety.name = self.language_name(&variety, &name);
+        self.varieties.push(variety);
         self.communities.push(Community {
             name,
             variety: self.varieties.len() - 1,
@@ -637,6 +699,8 @@ impl World {
             lands: vec![region],
             livelihood,
             ended: None,
+            faith: None,
+            crafts: Vec::new(),
         });
         self.events
             .push((self.generation, WorldEvent::Found { community: index }));
@@ -1004,6 +1068,7 @@ impl World {
             self.innovate(v, &clashes);
             self.drift(v, &clashes, &prestige);
             self.retire(v);
+            self.renew_names(v);
         }
         self.grow();
         self.spread();
@@ -1018,6 +1083,11 @@ impl World {
         self.hold_states();
         self.rise_states();
         self.standardize();
+        self.spread_crafts();
+        self.found_religions();
+        self.spread_faiths();
+        self.learn_words();
+        self.reform_spelling();
         self.hold_places();
     }
 
@@ -1099,9 +1169,10 @@ impl World {
             .sum::<f32>()
             / n;
         for c in living {
+            let might = self.might(c);
             let community = &mut self.communities[c];
             let relative = self.params.size_prestige * (community.size.ln() - mean);
-            community.prestige = (community.power + relative).clamp(0.0, 1.0);
+            community.prestige = (community.power + relative + might).clamp(0.0, 1.0);
         }
     }
 
@@ -1185,7 +1256,7 @@ impl World {
             let k = &self.communities[c];
             let livelihood = k.livelihood;
             let mut rng = self.community_rng(c, "spread");
-            if rng.r#gen::<f32>() >= self.params.spread_rate * livelihood.mobility() {
+            if rng.r#gen::<f32>() >= self.params.spread_rate * self.mobility(c) {
                 continue;
             }
             // Settling beside their own, they take only land with room
@@ -1336,7 +1407,7 @@ impl World {
                 .iter()
                 .map(|&r| self.map.distance(heart, r))
                 .fold(0.0, f32::max);
-            let too_far = reach / (self.params.cohesion_reach * k.livelihood.mobility()) - 1.0;
+            let too_far = reach / (self.params.cohesion_reach * self.mobility(c)) - 1.0;
             let strain = too_large.max(0.0) + too_far.max(0.0);
             if strain <= 0.0 {
                 continue;
@@ -1381,7 +1452,7 @@ impl World {
             let fed = self.feeds(home, livelihood).max(1.0);
             let crowding = (size + here) / fed;
             let pushed = if stronger { PUSHED } else { 1.0 };
-            let mobility = self.map.regions[home].terrain.mobility() * livelihood.mobility();
+            let mobility = self.map.regions[home].terrain.mobility() * self.mobility(c);
             let hazard = self.params.migration_rate * mobility * crowding * pushed;
             let mut rng = self.community_rng(c, "migrate");
             if rng.r#gen::<f32>() >= hazard {
@@ -1389,9 +1460,12 @@ impl World {
             }
             let free = self.free_land(c);
             let stay = fed - here;
+            // Only seafarers cross the sea.
+            let sails = self.sails(c);
             let options: Vec<(usize, f32)> = (0..self.map.regions.len())
                 .filter(|&r| r != home && self.map.regions[r].terrain.is_land())
                 .filter(|&r| self.map.distance(home, r) <= MIGRATION_REACH)
+                .filter(|&r| sails || !self.map.overseas(home, r))
                 .filter(|&r| free(r) > stay && free(r) >= size / 2.0)
                 .map(|r| {
                     let d = self.map.distance(home, r);
@@ -1656,7 +1730,7 @@ impl World {
                 (far, leaving, None)
             }
             None => {
-                let region = self.leavers_land(heart, c.livelihood);
+                let region = self.leavers_land(heart, c.livelihood, self.sails(community));
                 (region, vec![region], Some(0.5))
             }
         }
@@ -1664,16 +1738,16 @@ impl World {
 
     /// Where a people leaving `home` goes: the roomiest land beside home if
     /// it has more room than home, judged before they go. When the land
-    /// beside is full, a coastal people sends them along or over the sea
-    /// instead, to the coast with the most room for the voyage, as Greek
-    /// cities sent out colonies.
-    fn leavers_land(&self, home: usize, livelihood: Livelihood) -> usize {
+    /// beside is full, a seafaring coastal people sends them along or over
+    /// the sea instead, to the coast with the most room for the voyage, as
+    /// Greek cities sent out colonies.
+    fn leavers_land(&self, home: usize, livelihood: Livelihood, sails: bool) -> usize {
         let occupied = self.occupation();
         let room = |r: usize| self.feeds(r, livelihood) - occupied.get(&r).copied().unwrap_or(0.0);
         let colony = || {
             let map = &self.map;
             (0..map.regions.len())
-                .filter(|&r| map.coastal(home) && map.coastal(r) && r != home)
+                .filter(|&r| sails && map.coastal(home) && map.coastal(r) && r != home)
                 .filter(|&r| !map.regions[home].neighbours.contains(&r))
                 .filter(|&r| map.distance(home, r) <= COLONY_REACH && room(r) > room(home))
                 .map(|r| (r, room(r) / (1.0 + map.distance(home, r))))
@@ -2165,7 +2239,7 @@ impl World {
         new_index
     }
 
-    fn at(&self, variety: usize) -> Step {
+    pub(crate) fn at(&self, variety: usize) -> Step {
         Step {
             seed: self.seed,
             generation: self.generation,
@@ -2196,7 +2270,8 @@ impl World {
 
     /// Prestige of each variety: the highest among communities at home in
     /// it, and more for a standing state's standard, whose words carry
-    /// the court's standing wherever they go.
+    /// the court's standing wherever they go. A faith's sacred language
+    /// keeps its standing however few speak it.
     fn variety_prestige(&self) -> Vec<f32> {
         let mut out = vec![0.0_f32; self.varieties.len()];
         for c in &self.communities {
@@ -2206,6 +2281,9 @@ impl World {
             if s.is_some() {
                 out[v] += STANDARD_PRESTIGE;
             }
+        }
+        for r in &self.religions {
+            out[r.sacred] = out[r.sacred].max(SACRED_PRESTIGE);
         }
         out
     }
@@ -2256,7 +2334,9 @@ impl World {
     }
 
     /// Applies `law` to every living word of variety `v`, and to the names
-    /// of its language, its peoples, and the lands they hold.
+    /// of its language, its peoples, the given names in fashion, and the
+    /// lands they hold. Names of the dead (founders of states and faiths)
+    /// are kept as they were said.
     fn apply_law(&mut self, v: usize, law: &Law) {
         let generation = self.generation;
         let variety = &mut self.varieties[v];
@@ -2288,6 +2368,11 @@ impl World {
         {
             let after = law.apply(&community.name.form, minimal);
             community.name.change(after, law.id, generation);
+        }
+        // And so are the given names in fashion.
+        for given in &mut self.varieties[v].given {
+            let after = law.apply(&given.name.form, minimal);
+            given.name.change(after, law.id, generation);
         }
         // The name of a state its speakers rule changes with their speech.
         for s in 0..self.states.len() {
@@ -2444,11 +2529,14 @@ impl World {
     }
 
     /// Each contact carries words both ways, mostly from the more
-    /// prestigious side. A concept's chance of being borrowed scales with
-    /// intensity, the recipient's openness, the prestige gap, the contact's
-    /// affinity for its field, and its own borrowability. The donor's
-    /// current word is adapted to the recipient's sounds and enters as a
-    /// competitor; all loans are decided against this generation's state.
+    /// prestigious side, and the faithful take words from their faith's
+    /// sacred language, the more if they read. A concept's chance of being
+    /// borrowed scales with intensity, the recipient's openness, the
+    /// prestige gap, the contact's affinity for its field, and its own
+    /// borrowability. The donor's current word is adapted to the
+    /// recipient's sounds and enters as a competitor; all loans are
+    /// decided against this generation's state. No one borrows a word for
+    /// a meaning its people has no notion of yet.
     fn borrow(&mut self) {
         struct Loan {
             recipient: usize,
@@ -2458,8 +2546,18 @@ impl World {
             source_form: Form,
             form: Form,
         }
-        let mut loans = Vec::new();
-        let mut adapters: Vec<Option<Adapter>> = vec![None; self.varieties.len()];
+        /// Words flowing from a donor variety, with the donor's standing,
+        /// to a people, at an intensity, along a kind of contact, as
+        /// levelling or not.
+        struct Channel {
+            donor: usize,
+            prestige: f32,
+            recipient: usize,
+            intensity: f32,
+            kind: ContactKind,
+            levelled: bool,
+        }
+        let mut channels: Vec<Channel> = Vec::new();
         for contact in &self.contacts {
             for (donor, recipient) in [(contact.a, contact.b), (contact.b, contact.a)] {
                 let (d, r) = (&self.communities[donor], &self.communities[recipient]);
@@ -2467,70 +2565,99 @@ impl World {
                     continue;
                 }
                 // A standard's words reach its subjects' kindred speech far
-                // more readily, even basic words (dialect levelling); a
-                // purist standard keeps foreign words out.
-                let levelled = self.under_standard(recipient, donor)
-                    && self.family(d.variety) == self.family(r.variety);
-                let base = self.params.loan_rate
-                    * contact.intensity
-                    * r.openness
-                    * (self.params.prestige_pull * (d.prestige - r.prestige)).exp()
-                    * if levelled { LEVELLING } else { 1.0 }
-                    * (1.0 - self.purism(r.variety));
-                let keep_foreign = self.params.bilingual_keep * contact.intensity * r.openness;
-                let donor_lexicon = &self.varieties[d.variety].lexicon;
-                let recipient_lexicon = &self.varieties[r.variety].lexicon;
-                for (i, concept) in CONCEPTS.iter().enumerate() {
-                    let borrowability = if levelled {
-                        concept.borrowability().max(LEVEL_FLOOR)
-                    } else {
-                        concept.borrowability()
-                    };
-                    let hazard = base * contact.kind.affinity(concept.field) * borrowability;
-                    let mut rng =
-                        self.at(r.variety)
-                            .rng(&[key("borrow"), d.variety as u64, key(concept.id)]);
-                    if rng.r#gen::<f32>() >= hazard {
-                        continue;
-                    }
-                    let Some(source) = donor_lexicon.slots[i].dominant() else {
-                        continue;
-                    };
-                    // A word the recipient already says alike needs no levelling.
-                    if levelled
-                        && recipient_lexicon.slots[i].dominant().is_some_and(|own| {
-                            recipient_lexicon.get(own).form == donor_lexicon.get(source).form
-                        })
-                    {
-                        continue;
-                    }
-                    let already = recipient_lexicon.slots[i].variants.iter().any(|v| {
-                        recipient_lexicon.get(v.lexeme).origin
-                            == Origin::Borrowed {
-                                from: d.variety,
-                                source,
-                            }
-                    });
-                    if already {
-                        continue;
-                    }
-                    let adapter = adapters[r.variety].get_or_insert_with(|| {
-                        Adapter::new(
-                            recipient_lexicon.living().map(|l| &l.form),
-                            &self.varieties[r.variety].profile.inventory,
-                        )
-                    });
-                    let source_form = donor_lexicon.get(source).form.clone();
-                    let form = adapter.adapt(&source_form, keep_foreign, &mut rng);
-                    loans.push(Loan {
-                        recipient: r.variety,
-                        concept: i,
-                        from: d.variety,
-                        source,
-                        source_form,
-                        form,
-                    });
+                // more readily, even basic words (dialect levelling).
+                channels.push(Channel {
+                    donor: d.variety,
+                    prestige: d.prestige,
+                    recipient,
+                    intensity: contact.intensity,
+                    kind: contact.kind,
+                    levelled: self.under_standard(recipient, donor)
+                        && self.family(d.variety) == self.family(r.variety),
+                });
+            }
+        }
+        for c in self.living() {
+            let Some(faith) = self.communities[c].faith else {
+                continue;
+            };
+            let reads = self.communities[c].crafts.contains(&Craft::Writing);
+            channels.push(Channel {
+                donor: self.religions[faith].sacred,
+                prestige: SACRED_PRESTIGE,
+                recipient: c,
+                intensity: SACRED_INTENSITY * if reads { 2.0 } else { 1.0 },
+                kind: ContactKind::Religion,
+                levelled: false,
+            });
+        }
+        let mut loans = Vec::new();
+        let mut adapters: Vec<Option<Adapter>> = vec![None; self.varieties.len()];
+        for channel in &channels {
+            let r = &self.communities[channel.recipient];
+            let levelled = channel.levelled;
+            // A purist standard keeps foreign words out.
+            let base = self.params.loan_rate
+                * channel.intensity
+                * r.openness
+                * (self.params.prestige_pull * (channel.prestige - r.prestige)).exp()
+                * if levelled { LEVELLING } else { 1.0 }
+                * (1.0 - self.purism(r.variety));
+            let keep_foreign = self.params.bilingual_keep * channel.intensity * r.openness;
+            let donor_lexicon = &self.varieties[channel.donor].lexicon;
+            let recipient_lexicon = &self.varieties[r.variety].lexicon;
+            for (i, concept) in CONCEPTS.iter().enumerate() {
+                let borrowability = if levelled {
+                    concept.borrowability().max(LEVEL_FLOOR)
+                } else {
+                    concept.borrowability()
+                };
+                let hazard = base * channel.kind.affinity(concept.field) * borrowability;
+                let mut rng =
+                    self.at(r.variety)
+                        .rng(&[key("borrow"), channel.donor as u64, key(concept.id)]);
+                if rng.r#gen::<f32>() >= hazard {
+                    continue;
                 }
+                if recipient_lexicon.slots[i].variants.is_empty() {
+                    continue;
+                }
+                let Some(source) = donor_lexicon.slots[i].dominant() else {
+                    continue;
+                };
+                // A word the recipient already says alike is nothing new:
+                // no levelling, and no learned loan of its own old word.
+                if recipient_lexicon.slots[i].dominant().is_some_and(|own| {
+                    recipient_lexicon.get(own).form == donor_lexicon.get(source).form
+                }) {
+                    continue;
+                }
+                let already = recipient_lexicon.slots[i].variants.iter().any(|v| {
+                    recipient_lexicon.get(v.lexeme).origin
+                        == Origin::Borrowed {
+                            from: channel.donor,
+                            source,
+                        }
+                });
+                if already {
+                    continue;
+                }
+                let adapter = adapters[r.variety].get_or_insert_with(|| {
+                    Adapter::new(
+                        recipient_lexicon.living().map(|l| &l.form),
+                        &self.varieties[r.variety].profile.inventory,
+                    )
+                });
+                let source_form = donor_lexicon.get(source).form.clone();
+                let form = adapter.adapt(&source_form, keep_foreign, &mut rng);
+                loans.push(Loan {
+                    recipient: r.variety,
+                    concept: i,
+                    from: channel.donor,
+                    source,
+                    source_form,
+                    form,
+                });
             }
         }
         let generation = self.generation;
@@ -2572,11 +2699,13 @@ impl World {
     }
 
     /// Concepts gain native competitors: usually a word for a related
-    /// concept extends to cover it (sun > day, see > know), otherwise a new
-    /// root is coined from the language's current sounds, avoiding forms
-    /// its semantic field already uses. A word that sounds like another or
-    /// has worn below the minimal word draws competitors more often, and
-    /// some of them are the word itself renewed.
+    /// concept extends to cover it (sun > day, see > know, and for herders
+    /// cattle > wealth), otherwise a new root is coined from the language's
+    /// current sounds, avoiding forms its semantic field already uses. A
+    /// word that sounds like another or has worn below the minimal word
+    /// draws competitors more often, and some of them are the word itself
+    /// renewed. Meanings the language has no word for yet wait for their
+    /// idea (`ideas::NEEDS`).
     fn innovate(&mut self, v: usize, clashes: &HashSet<LexemeId>) {
         let generation = self.generation;
         let step = self.at(v);
@@ -2585,6 +2714,9 @@ impl World {
         // its loans with words of its own.
         let pace = self.pace(v);
         let purism = self.purism(v);
+        let livelihood = self
+            .speakers(v)
+            .map_or(Livelihood::Farming, |c| self.communities[c].livelihood);
         let params = &self.params;
         let spelling = self.varieties[v].profile.spelling.clone();
         let morphology = self.varieties[v].morphology.clone();
@@ -2605,7 +2737,9 @@ impl World {
             if rng.r#gen::<f32>() >= hazards[i] * pressure * pace {
                 continue;
             }
-            if lexicon.slots[i].variants.len() >= MAX_VARIANTS {
+            if lexicon.slots[i].variants.is_empty()
+                || lexicon.slots[i].variants.len() >= MAX_VARIANTS
+            {
                 continue;
             }
             let renewed = dominant
@@ -2617,11 +2751,17 @@ impl World {
                 continue;
             }
             let mut donors: Vec<LexemeId> = related(concept)
+                .chain(living_related(concept, livelihood))
                 .filter_map(|other| lexicon.slot(other).dominant())
                 .filter(|id| !lexicon.slots[i].has(*id))
                 .collect();
             donors.sort();
             donors.dedup();
+            // A word its way of life makes apt (cattle for wealth, among
+            // herders) takes more of the uses from the start.
+            let apt: Vec<LexemeId> = living_related(concept, livelihood)
+                .filter_map(|other| lexicon.slot(other).dominant())
+                .collect();
 
             let newcomer = if !donors.is_empty() && rng.r#gen::<f32>() >= params.expressive_share {
                 let id = donors[crate::rng::index(&mut rng, donors.len())];
@@ -2650,7 +2790,12 @@ impl World {
                 );
                 lexicon.coin(form, Origin::Expressive, concept, generation)
             };
-            lexicon.slots[i].introduce(newcomer, params.newcomer_share);
+            let share = if apt.contains(&newcomer) {
+                APT_SHARE
+            } else {
+                params.newcomer_share
+            };
+            lexicon.slots[i].introduce(newcomer, share);
         }
     }
 
@@ -2805,9 +2950,11 @@ mod tests {
         let mut sim = World::solo(3, &profile, Params::default());
         sim.run(80);
         for slot in &sim.varieties[0].lexicon.slots {
+            // A meaning is either unknown, with no words yet, or shared out
+            // among its words.
             let total: f32 = slot.variants.iter().map(|v| v.weight).sum();
             assert!(
-                (total - 1.0).abs() < 1e-4,
+                slot.variants.is_empty() || (total - 1.0).abs() < 1e-4,
                 "{} sums to {total}",
                 slot.concept.id
             );
@@ -2918,9 +3065,11 @@ mod tests {
     fn field_shares(worlds: &[World]) -> Vec<(Field, f32)> {
         let mut out: Vec<(Field, f32)> = Vec::new();
         for &(field, _) in crate::wold::BORROWED_SCORE {
+            // Meanings every language has: those waiting for an idea have
+            // no word to borrow in a world without ideas.
             let ids: Vec<&str> = CONCEPTS
                 .iter()
-                .filter(|c| c.field == field)
+                .filter(|c| c.field == field && crate::ideas::need(c).is_none())
                 .map(|c| c.id)
                 .collect();
             let loans: usize = worlds
@@ -3150,8 +3299,12 @@ mod tests {
             world.communities[0].variety,
             world.communities[east].variety,
         );
+        let known: Vec<&Concept> = CONCEPTS
+            .iter()
+            .filter(|c| world.varieties[a].lexicon.word_for(c).is_some())
+            .collect();
         assert!(
-            CONCEPTS.iter().all(|c| world.cognate(a, b, c)),
+            known.iter().all(|c| world.cognate(a, b, c)),
             "identical at the split"
         );
         assert_eq!(world.varieties[b].parent.map(|f| f.variety), Some(a));

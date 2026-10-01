@@ -1132,6 +1132,37 @@ table.preview tr {
   stroke: var(--accent-mute);
 }
 
+.founding-marker {
+  cursor: pointer;
+}
+
+.founding-marker path {
+  fill: var(--mark);
+  stroke: var(--paper);
+  stroke-width: 0.035px;
+  paint-order: stroke;
+}
+
+.founding-marker:focus-visible path {
+  stroke: var(--accent);
+  stroke-width: 0.06px;
+}
+
+.renderings td {
+  min-width: 9rem;
+}
+
+.renderings small,
+.given-names small {
+  display: block;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.export-words + .export-words {
+  margin-top: 0.7rem;
+}
+
 .dealing {
   fill: none;
   stroke: var(--ink);
@@ -1863,6 +1894,16 @@ button.icon,
   align-items: center;
   gap: 0.4rem;
   padding: 0.1rem 0;
+}
+
+.map-layers[open] {
+  max-width: min(26rem, calc(100% - 1.2rem));
+  max-height: calc(100% - 1.2rem);
+  overflow-y: auto;
+}
+
+.map-layers select {
+  min-width: 0;
 }
 
 /* A family as a chart of descent: a bar for each language over time. */

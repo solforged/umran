@@ -3,7 +3,7 @@
 //! cargo run -p umran-sim --example found -- [seed] [profile] [flavor...]
 
 use std::collections::HashMap;
-use umran_sim::{CATALOG, Flavor, Form, Origin, SoundProfile, Variety};
+use umran_sim::{CATALOG, Flavor, Form, Livelihood, Origin, SoundProfile, Variety};
 
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -22,7 +22,7 @@ fn main() {
     let profile = flavors.iter().fold(profile, |p, id| {
         p.flavored(&Flavor::by_id(id).unwrap_or_else(|| panic!("unknown flavor {id}")))
     });
-    let variety = Variety::found(seed, &profile);
+    let variety = Variety::found(seed, &profile, Livelihood::Farming);
 
     let ipa = |ids: &[umran_sim::PhonemeId]| -> Vec<&str> {
         ids.iter().map(|id| CATALOG.get(*id).ipa()).collect()

@@ -8,6 +8,7 @@
 
 use crate::design::LanguageDesign;
 use crate::geography::MapSize;
+use crate::ideas::{Craft, Revelation};
 use crate::livelihood::Livelihood;
 use crate::names::Naming;
 use crate::polity::Rise;
@@ -17,7 +18,7 @@ use std::collections::BTreeMap;
 
 /// Bumped whenever an engine change would make an existing recipe replay
 /// differently. Saves record it so a mismatch can be reported.
-pub const ENGINE_REVISION: u32 = 16;
+pub const ENGINE_REVISION: u32 = 17;
 /// Identifies saved recipes. Kept from the project's first name, langgen,
 /// so files saved before the rename still load.
 pub const FORMAT: &str = "langgen-sim-recipe";
@@ -68,6 +69,15 @@ pub enum Action {
         community: usize,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         capital: Option<usize>,
+    },
+    /// A founder arises among a people, and a religion with him.
+    Religion {
+        community: usize,
+    },
+    /// A people comes upon a craft by itself.
+    Craft {
+        community: usize,
+        craft: Craft,
     },
     Run {
         generations: u32,
@@ -472,6 +482,24 @@ fn apply(world: &mut World, action: &Action) -> Result<(), String> {
             }
             world.raise_state(*c, *capital, Rise::Proclaimed);
         }
+        Action::Religion { community: c } => {
+            community(world, *c)?;
+            world.found_religion(*c, Revelation::Proclaimed);
+        }
+        Action::Craft {
+            community: c,
+            craft,
+        } => {
+            community(world, *c)?;
+            if world.communities[*c].crafts.contains(craft) {
+                return Err(format!(
+                    "the {} already know {}",
+                    world.community_name(*c),
+                    craft.label()
+                ));
+            }
+            world.learn(*c, *craft, None);
+        }
         Action::Run { generations } => {
             if *generations == 0 || *generations > MAX_RUN {
                 return Err(format!("run between 1 and {MAX_RUN} generations"));
@@ -503,6 +531,7 @@ mod tests {
         a.generation == b.generation
             && a.communities == b.communities
             && a.states == b.states
+            && a.religions == b.religions
             && a.varieties.len() == b.varieties.len()
             && a.varieties
                 .iter()

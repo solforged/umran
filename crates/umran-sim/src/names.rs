@@ -10,6 +10,7 @@ use crate::concepts::{Relation, by_id};
 use crate::form::Form;
 use crate::geography::Terrain;
 use crate::lexicon::{Entry, Event};
+use crate::livelihood::Livelihood;
 use crate::rng::{index, weighted_index};
 use crate::variety::Variety;
 use rand::Rng;
@@ -445,13 +446,158 @@ pub fn title(text: &str) -> String {
     }
 }
 
+/// How a language builds its people's given names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NameStyle {
+    /// One meaningful word: "Bright", "Wolf".
+    Single,
+    /// Two words joined, as Germanic Wulfstan ("wolf-stone"), Slavic
+    /// Vladimir ("rule-peace"), and Greek Philippos ("lover of horses")
+    /// are built.
+    Double,
+}
+
+/// A given name in a language's stock of names, and the variety it was
+/// taken from, if it came with a faith.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GivenName {
+    pub name: Name,
+    pub from: Option<usize>,
+}
+
+/// Meanings given names are made of, weighted for foragers, herders, and
+/// farmers. Herders name children for horses and cattle, as the Greeks'
+/// Philippos and the Iranians' Vishtaspa ("having horses") show, and
+/// warriors for spears and battle, as Germanic Gunther ("battle-army")
+/// does; farmers name them for grain and fields. "God" makes a name
+/// theophoric, as Theodore and Elijah are.
+const NAME_ELEMENTS: &[(&str, [f32; 3])] = &[
+    ("good", [1.0, 1.0, 1.0]),
+    ("big", [1.0, 1.0, 1.0]),
+    ("light", [1.0, 1.0, 1.0]),
+    ("sun", [1.0, 1.0, 1.0]),
+    ("moon", [0.7, 0.7, 0.7]),
+    ("star", [0.7, 0.7, 0.7]),
+    ("fire", [1.0, 1.0, 1.0]),
+    ("stone", [1.0, 1.0, 1.0]),
+    ("gold", [0.3, 0.8, 1.0]),
+    ("red", [0.7, 0.7, 0.7]),
+    ("hard", [0.7, 0.7, 0.7]),
+    ("heart", [0.7, 0.7, 0.7]),
+    ("life", [0.5, 0.5, 0.5]),
+    ("sky", [0.5, 0.8, 0.5]),
+    ("sea", [0.5, 0.2, 0.5]),
+    ("river", [0.7, 0.3, 0.7]),
+    ("mountain", [0.5, 0.5, 0.3]),
+    ("tree", [1.0, 0.3, 0.6]),
+    ("bird", [1.5, 0.6, 0.6]),
+    ("dog", [0.8, 1.0, 0.4]),
+    ("fish", [1.0, 0.2, 0.3]),
+    ("bow", [1.0, 1.2, 0.5]),
+    ("horse", [0.1, 3.0, 0.5]),
+    ("cattle", [0.1, 2.5, 0.7]),
+    ("grain", [0.1, 0.2, 2.0]),
+    ("field", [0.1, 0.2, 1.5]),
+    ("seed", [0.1, 0.1, 1.0]),
+    ("spear", [1.0, 1.5, 0.8]),
+    ("shield", [0.3, 1.0, 0.8]),
+    ("war", [0.3, 1.5, 1.0]),
+    ("fight", [0.5, 1.2, 0.7]),
+    ("friend", [1.0, 1.0, 1.0]),
+    ("people", [0.7, 0.7, 0.7]),
+    ("chief", [0.3, 1.0, 1.0]),
+    ("god", [1.0, 1.0, 1.0]),
+];
+/// Given names a language has in fashion at once.
+pub(crate) const GIVEN_STOCK: usize = 8;
+/// Most syllables a given name keeps.
+const MAX_GIVEN: usize = 3;
+/// How much likelier a people of a founded faith names children for its
+/// god.
+const DEVOUT: f32 = 4.0;
+
+/// A given name in `variety`'s words, built its way, from meanings a
+/// people living by `livelihood` favours, and for its god the more if it
+/// is `devout`. `None` if the language has no word for any of them.
+pub fn given_name(
+    variety: &Variety,
+    livelihood: Livelihood,
+    devout: bool,
+    rng: &mut impl Rng,
+    generation: u32,
+) -> Option<Name> {
+    let way = match livelihood {
+        Livelihood::Foraging => 0,
+        Livelihood::Herding => 1,
+        Livelihood::Farming => 2,
+    };
+    let elements: Vec<(&str, &Form, f32)> = NAME_ELEMENTS
+        .iter()
+        .filter_map(|(id, weights)| {
+            let word = variety.lexicon.word_for(by_id(id)?)?;
+            let devotion = if devout && *id == "god" { DEVOUT } else { 1.0 };
+            Some((*id, &word.form, weights[way] * devotion))
+        })
+        .collect();
+    if elements.is_empty() {
+        return None;
+    }
+    let a = weighted_index(rng, elements.iter().map(|e| e.2));
+    let b = match variety.style {
+        NameStyle::Single => None,
+        NameStyle::Double => {
+            let b = weighted_index(rng, elements.iter().map(|e| e.2));
+            (b != a).then_some(b)
+        }
+    };
+    let (form, meaning) = match b {
+        Some(b) => (
+            variety.morphology.compound(elements[a].1, elements[b].1),
+            format!("{}-{}", elements[a].0, elements[b].0),
+        ),
+        None => (elements[a].1.clone(), elements[a].0.to_string()),
+    };
+    Some(Name {
+        form: clipped(form, MAX_GIVEN),
+        meaning,
+        coined: generation,
+        log: Vec::new(),
+    })
+}
+
+/// A founding stock of given names for `variety`, drawn from `rng`.
+pub fn given_stock(
+    variety: &Variety,
+    livelihood: Livelihood,
+    rng: &mut impl Rng,
+) -> Vec<GivenName> {
+    let mut stock: Vec<GivenName> = Vec::new();
+    for _ in 0..GIVEN_STOCK * 3 {
+        if stock.len() == GIVEN_STOCK {
+            break;
+        }
+        let Some(name) = given_name(variety, livelihood, false, rng, 0) else {
+            break;
+        };
+        if !stock.iter().any(|g| g.name.form == name.form) {
+            stock.push(GivenName { name, from: None });
+        }
+    }
+    stock
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::profile::SoundProfile;
 
     fn variety(preset: &str, seed: u64) -> Variety {
-        Variety::found(seed, &SoundProfile::by_id(preset).unwrap())
+        Variety::found(
+            seed,
+            &SoundProfile::by_id(preset).unwrap(),
+            Livelihood::Farming,
+        )
     }
 
     #[test]

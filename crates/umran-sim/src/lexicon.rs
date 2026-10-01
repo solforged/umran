@@ -109,8 +109,14 @@ impl Slot {
         self.variants.iter().any(|v| v.lexeme == lexeme)
     }
 
-    /// Adds a newcomer at `weight`, scaling incumbents to make room.
+    /// Adds a newcomer at `weight`, scaling incumbents to make room. The
+    /// first word for a meaning takes all its uses, whatever `weight`.
     pub fn introduce(&mut self, lexeme: LexemeId, weight: f32) {
+        let weight = if self.variants.is_empty() {
+            1.0
+        } else {
+            weight
+        };
         for v in &mut self.variants {
             v.weight *= 1.0 - weight;
         }

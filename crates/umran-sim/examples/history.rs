@@ -154,6 +154,54 @@ fn main() {
                 "  gen {generation:>3}  {} takes its court speech as its standard",
                 world.states[*state].name.meaning
             ),
+            WorldEvent::Learnt {
+                community,
+                craft,
+                from,
+            } => println!(
+                "  gen {generation:>3}  {} learn {}{}",
+                name(*community),
+                craft.label(),
+                from.map_or(String::new(), |f| format!(" from {}", name(f)))
+            ),
+            WorldEvent::Revealed { religion } => {
+                let r = &world.religions[*religion];
+                println!(
+                    "  gen {generation:>3}  {} founds {} among {} ({:?}; converts {}, translates {})",
+                    world.varieties[r.sacred].title(&r.founder.form),
+                    r.name.meaning,
+                    name(r.people),
+                    r.how,
+                    r.converts,
+                    r.translates
+                )
+            }
+            WorldEvent::Converted {
+                community,
+                religion,
+                ..
+            } => println!(
+                "  gen {generation:>3}  {} take up {}",
+                name(*community),
+                world.religions[*religion].name.meaning
+            ),
+            WorldEvent::Pejorated {
+                community,
+                variety,
+                word,
+                from,
+                to,
+            } => println!(
+                "  gen {generation:>3}  among {}, {} turns from {} to {}",
+                name(*community),
+                world.varieties[*variety].spell(&world.varieties[*variety].lexicon.get(*word).form),
+                from.gloss,
+                to.gloss
+            ),
+            WorldEvent::Respelled { variety } => println!(
+                "  gen {generation:>3}  {} is spelled anew",
+                world.language_title(*variety)
+            ),
         }
     }
 

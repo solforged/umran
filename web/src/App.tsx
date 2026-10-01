@@ -346,6 +346,7 @@ export default function App() {
         {notices}
         <Appendix
           engine={engine.current}
+          catalog={catalog}
           version={version}
           generation={generation}
           overview={overview}
@@ -362,6 +363,7 @@ export default function App() {
     <div className="app">
       <Stage
         engine={engine.current}
+        catalog={catalog}
         map={worldMap}
         version={version}
         generation={generation}

@@ -48,6 +48,16 @@ writes its own history.
   dialects toward it, and draws subjects of other families to shift to
   it. Some standards keep foreign words out. When the state falls, its
   dialects drift apart again, as Latin did into the Romance languages.
+- **Crafts, faiths, and writing.** Metalworking, riding, seafaring, and
+  writing begin where they can and pass from people to people, and each
+  brings words a language lacked: borrowed from the teachers, stretched
+  from old words ("write" from "scratch"), or built. A teacher may found a
+  faith whose frozen speech becomes a sacred language, lending learned
+  words long after and turning converts' old gods into demons. Writing
+  fixes spelling while speech moves on, as English *knight* shows.
+- **Personal names.** Each language names its people its own way, from
+  words its way of life favours: herders for horses and cattle, farmers
+  for grain. Kings and prophets carry such names.
 - **Language shift.** A people can give up its language for a more
   prestigious one, keeping its own accent and some old words.
 - **Names are words.** Peoples, languages, and lands are named from the
@@ -126,7 +136,7 @@ AGENTS.md          architecture notes and the rules every change keeps
 ## Status
 
 Umran is a work in progress. Not yet modelled: stress, tone, vowel harmony,
-inflection, syntax, rivers, writing, and diglossia, among others. The full
+inflection, syntax, rivers, climates, and diglossia, among others. The full
 list is at the end of
 [`docs/engine.md`](docs/engine.md#not-yet-modelled).
 

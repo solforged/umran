@@ -8,13 +8,14 @@ use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use umran_sim::compare::intelligibility;
 use umran_sim::concepts::{Concept, by_id, related};
+use umran_sim::ideas::{NEEDS, Need};
 use umran_sim::morphology::Slot;
 use umran_sim::names::PlaceOrigin;
 use umran_sim::phoneme::{Backness, Manner, Secondary};
 use umran_sim::{
-    Action, CATALOG, Challenge, Chronicle, ENGINE_REVISION, Event, FORMAT, Fall, Flavor, Form,
-    Lexeme, LexemeId, Livelihood, MapSize, Origin, PhonemeId, Recipe, Rise, SetAside, Terrain,
-    World, WorldEvent, catalog,
+    Action, CATALOG, CONCEPTS, Challenge, Chronicle, Craft, ENGINE_REVISION, Event, FORMAT, Fall,
+    Flavor, Form, Lexeme, LexemeId, Livelihood, MapSize, NameStyle, Origin, PhonemeId, Recipe,
+    Revelation, Rise, SetAside, Terrain, World, WorldEvent, catalog,
 };
 use umran_sim::{LanguageDesign, MorphologyKind, Naming, Segment, Variety};
 use wasm_bindgen::prelude::*;
@@ -220,6 +221,15 @@ impl Bench {
             .collect(),
             name_places: umran_sim::names::PLACES.to_vec(),
             name_epithets: umran_sim::names::EPITHETS.to_vec(),
+            crafts: Craft::ALL
+                .iter()
+                .map(|&craft| Choice {
+                    id: craft.label().into(),
+                    name: craft_name(craft).into(),
+                    description: craft_description(craft).into(),
+                })
+                .collect(),
+            meanings: CONCEPTS.len(),
         })
     }
 
@@ -246,7 +256,7 @@ impl Bench {
         let naming: Naming =
             serde_json::from_str(naming).map_err(|e| format!("Malformed naming: {e}"))?;
         naming.validate()?;
-        let variety = Variety::found(u64::from(seed), &design.profile());
+        let variety = Variety::found(u64::from(seed), &design.profile(), Livelihood::Farming);
         let people = naming.coin(&variety, None, 0)?;
         let spelled = variety.title(&people.form);
         let language = umran_sim::names::language_name(&variety, &people, &spelled, 0);
@@ -458,6 +468,8 @@ impl Bench {
                     meaning: c.name.meaning.clone(),
                     ipa: c.name.form.ipa(),
                     coined: c.name.coined,
+                    faith: c.faith,
+                    crafts: c.crafts.clone(),
                     // Only when it was written differently, not just said so.
                     once: c
                         .name
@@ -514,7 +526,7 @@ impl Bench {
                     let (consonants, vowels) = v.inventory();
                     VarietyView {
                         id,
-                        name: world.language_title(id),
+                        name: language_label(world, id),
                         meaning: v.name.meaning.clone(),
                         parent: v.parent.map(|f| f.variety),
                         forked_at: v.parent.map(|f| f.generation),
@@ -555,10 +567,25 @@ impl Bench {
                         specimen: specimen(v, world.generation),
                         standard_of: standards[id],
                         own_words: own_words(world, id),
+                        names: v
+                            .given
+                            .iter()
+                            .map(|g| GivenView {
+                                name: v.title(&g.name.form),
+                                ipa: g.name.form.ipa(),
+                                meaning: g.name.meaning.clone(),
+                                from: g.from,
+                            })
+                            .collect(),
+                        name_style: v.style,
+                        written: v.written,
+                        sacred_of: world.religions.iter().position(|r| r.sacred == id),
                     }
                 })
                 .collect(),
             states: state_views(world),
+            religions: religion_views(world),
+            crafts: craft_views(world),
             contacts: world
                 .contacts
                 .iter()
@@ -613,12 +640,14 @@ impl Bench {
             .iter()
             .filter_map(|slot| {
                 let word = v.lexicon.get(slot.dominant()?);
+                let (spelled, said) = written_and_said(v, word);
                 Some(LexiconRow {
                     concept: slot.concept.id,
                     gloss: slot.concept.gloss,
                     field: slot.concept.field.label(),
                     rank: slot.concept.stability,
-                    spelled: v.spell(&word.form),
+                    spelled,
+                    said,
                     ipa: word.form.ipa(),
                     origin: origin_view(world, variety, word),
                     changes: word
@@ -653,8 +682,10 @@ impl Bench {
             .iter()
             .map(|var| {
                 let word = v.lexicon.get(var.lexeme);
+                let (spelled, said) = written_and_said(v, word);
                 VariantView {
-                    spelled: v.spell(&word.form),
+                    spelled,
+                    said,
                     ipa: word.form.ipa(),
                     share: var.weight,
                     origin: origin_view(world, variety, word),
@@ -783,7 +814,9 @@ impl Bench {
                 | Action::Connect { .. }
                 | Action::Split { .. }
                 | Action::Shift { .. }
-                | Action::State { .. } => continue,
+                | Action::State { .. }
+                | Action::Religion { .. }
+                | Action::Craft { .. } => continue,
             };
             let kind = match action {
                 Action::Run { .. } => "run",
@@ -874,8 +907,26 @@ impl Bench {
                 WorldEvent::Standard { state } => {
                     format!("{} took a standard", latest.states[*state].name.meaning)
                 }
+                WorldEvent::Learnt {
+                    community,
+                    craft,
+                    from: None,
+                } => format!("{} came upon {}", name(*community), craft.label()),
+                WorldEvent::Revealed { religion } => {
+                    let r = &latest.religions[*religion];
+                    format!(
+                        "{} taught {}",
+                        latest.varieties[r.sacred].title(&r.founder.form),
+                        r.name.meaning
+                    )
+                }
                 // Too frequent to mark: told in the annals instead.
-                WorldEvent::Spread { .. } | WorldEvent::Displaced { .. } => continue,
+                WorldEvent::Spread { .. }
+                | WorldEvent::Displaced { .. }
+                | WorldEvent::Learnt { .. }
+                | WorldEvent::Converted { .. }
+                | WorldEvent::Pejorated { .. }
+                | WorldEvent::Respelled { .. } => continue,
             };
             out.push(Marker {
                 generation: *generation,
@@ -1123,7 +1174,7 @@ fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
         };
         return OriginView {
             kind: "kept",
-            from: Some(world.language_title(from)),
+            from: Some(language_label(world, from)),
             generation: word.born,
         };
     }
@@ -1160,7 +1211,7 @@ fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
         }
         Origin::Borrowed { from, .. } => OriginView {
             kind: "borrowed",
-            from: Some(world.language_title(from)),
+            from: Some(language_label(world, from)),
             generation: word.born,
         },
     }
@@ -1408,6 +1459,10 @@ struct CatalogView {
     /// What a people can be named for, and the epithets it can take.
     name_places: Vec<&'static str>,
     name_epithets: Vec<&'static str>,
+    /// The crafts a people can be taught.
+    crafts: Vec<Choice>,
+    /// How many meanings the engine knows: the most any language has words for.
+    meanings: usize,
     /// The engine revision, for the colophon.
     revision: u32,
 }
@@ -1556,6 +1611,10 @@ struct Overview {
     contacts: Vec<ContactView>,
     /// Every state that has stood, in the order they arose.
     states: Vec<StateView>,
+    /// Every religion founded, in order.
+    religions: Vec<ReligionView>,
+    /// The crafts, where each began, and who holds it now.
+    crafts: Vec<CraftView>,
     /// What each land that has been held is called, through history.
     places: Vec<PlaceView>,
     /// Peoples going to new land: migrations, and split-offs settling
@@ -1652,6 +1711,10 @@ struct CommunityView {
     ended: Option<u32>,
     /// The people it merged into, if it ended so.
     ended_into: Option<usize>,
+    /// The founded religion it holds, if any; else its own folk religion.
+    faith: Option<usize>,
+    /// The crafts it holds.
+    crafts: Vec<Craft>,
 }
 
 #[derive(Serialize)]
@@ -1687,6 +1750,14 @@ struct VarietyView {
     standard_of: Option<usize>,
     /// How many of its meanings it says with words of its own.
     own_words: OwnWords,
+    /// The given names in fashion, as said now.
+    names: Vec<GivenView>,
+    /// "single" or "double": one word, or two joined (Wulf-stan).
+    name_style: NameStyle,
+    /// The generation it was first written, or last respelled.
+    written: Option<u32>,
+    /// The religion whose sacred language it is, if it is one.
+    sacred_of: Option<usize>,
 }
 
 #[derive(Serialize)]
@@ -1723,6 +1794,8 @@ struct StateView {
     ipa: String,
     /// How the name was spelled when coined, if sound change has altered it.
     once: Option<String>,
+    /// Its first ruler, as his name was said then.
+    founder: NameView,
     rulers: usize,
     /// Every people it has ruled, in the order they came under it.
     members: Vec<MemberView>,
@@ -1752,6 +1825,78 @@ struct MemberView {
     community: usize,
     joined: u32,
     left: Option<u32>,
+}
+
+/// A given name in fashion.
+#[derive(Serialize)]
+struct GivenView {
+    name: String,
+    ipa: String,
+    /// What its parts meant: "spear-friend".
+    meaning: String,
+    /// The sacred language it came from with a faith, if it did.
+    from: Option<usize>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReligionView {
+    id: usize,
+    /// Its name, spelled in its sacred language.
+    name: String,
+    meaning: String,
+    ipa: String,
+    founder: NameView,
+    /// The people its founder came from, and their heart land then.
+    people: usize,
+    land: usize,
+    founded: u32,
+    /// "troubles", "quiet", or "proclaimed".
+    how: &'static str,
+    /// The variety holding its founder's speech, frozen.
+    sacred: usize,
+    converts: bool,
+    translates: bool,
+    scripture: bool,
+    /// The living peoples that hold it.
+    followers: Vec<usize>,
+    /// Its meanings, and how the sacred language and each followers'
+    /// language says them.
+    words: Vec<RenderingRow>,
+}
+
+#[derive(Serialize)]
+struct CraftView {
+    id: Craft,
+    name: &'static str,
+    /// The generation some people first held it.
+    first: Option<u32>,
+    /// The peoples that came upon it themselves.
+    inventors: Vec<usize>,
+    /// The living peoples that hold it.
+    holders: Vec<usize>,
+    /// Its meanings, and how each holders' language says them.
+    words: Vec<RenderingRow>,
+}
+
+/// One meaning an idea brought, as several languages say it.
+#[derive(Serialize)]
+struct RenderingRow {
+    concept: &'static str,
+    gloss: &'static str,
+    renderings: Vec<Rendering>,
+}
+
+#[derive(Serialize)]
+struct Rendering {
+    variety: usize,
+    spelled: String,
+    ipa: String,
+    /// "borrowed", "kept", "stretched", "built", "coined", or "inherited".
+    how: &'static str,
+    /// The language it was borrowed from, the meaning it was stretched
+    /// from, or the word it was built on.
+    from: Option<String>,
 }
 
 /// How a language says its meanings: with words of its own, with loans,
@@ -1828,6 +1973,11 @@ fn state_views(world: &World) -> Vec<StateView> {
                     Fall::Conquered { .. } => "conquered",
                     Fall::Collapsed => "collapsed",
                 }),
+                founder: NameView {
+                    name: variety.title(&s.founder.form),
+                    ipa: s.founder.form.ipa(),
+                    meaning: s.founder.meaning.clone(),
+                },
                 fallen_to: match s.fell {
                     Some((_, Fall::Conquered { by })) => Some(by),
                     _ => None,
@@ -1836,6 +1986,176 @@ fn state_views(world: &World) -> Vec<StateView> {
                 purism: s.purism,
                 city: world.city(id),
                 lands,
+            }
+        })
+        .collect()
+}
+
+/// How a craft is called in the workbench.
+fn craft_name(craft: Craft) -> &'static str {
+    match craft {
+        Craft::Metalworking => "Metalworking",
+        Craft::Riding => "Riding",
+        Craft::Seafaring => "Seafaring",
+        Craft::Writing => "Writing",
+    }
+}
+
+fn craft_description(craft: Craft) -> &'static str {
+    match craft {
+        Craft::Metalworking => "Bronze and iron: stronger in war.",
+        Craft::Riding => "Horses: herders range far and conquer.",
+        Craft::Seafaring => "Ships: settle and trade across the sea.",
+        Craft::Writing => "Spellings fixed; standards change slower.",
+    }
+}
+
+/// A language's name for display: a faith's sacred language is the
+/// founder's speech as it stood, so it is marked as such.
+pub(crate) fn language_label(world: &World, variety: usize) -> String {
+    let title = world.language_title(variety);
+    if world.religions.iter().any(|r| r.sacred == variety) {
+        format!("Sacred {title}")
+    } else {
+        title
+    }
+}
+
+/// A word as written and, when writing has fallen behind speech, as said.
+fn written_and_said(variety: &Variety, word: &Lexeme) -> (String, Option<String>) {
+    let written = variety.written_word(word);
+    let said = variety.spell(&word.form);
+    let differs = said != written;
+    (written, differs.then_some(said))
+}
+
+/// How `variety` came by its word for `concept`: borrowed, stretched from
+/// another meaning, built from a word it had, coined, or inherited.
+fn rendering(world: &World, variety: usize, concept: &'static Concept) -> Option<Rendering> {
+    let v = &world.varieties[variety];
+    let word = v.lexicon.word_for(concept)?;
+    let (how, from) = if word.first_sense.id != concept.id {
+        ("stretched", Some(word.first_sense.gloss.to_string()))
+    } else {
+        let origin = origin_view(world, variety, word);
+        let how = match origin.kind {
+            "derived" => "built",
+            kind => kind,
+        };
+        (how, origin.from)
+    };
+    let (spelled, _) = written_and_said(v, word);
+    Some(Rendering {
+        variety,
+        spelled,
+        ipa: word.form.ipa(),
+        how,
+        from,
+    })
+}
+
+/// For each meaning that waits for `need`, how each of `varieties` says it.
+fn renderings(world: &World, need: Need, varieties: &[usize]) -> Vec<RenderingRow> {
+    NEEDS
+        .iter()
+        .filter(|(_, n)| *n == need)
+        .filter_map(|(id, _)| by_id(id))
+        .map(|concept| RenderingRow {
+            concept: concept.id,
+            gloss: concept.gloss,
+            renderings: varieties
+                .iter()
+                .filter_map(|&v| rendering(world, v, concept))
+                .collect(),
+        })
+        .collect()
+}
+
+fn religion_views(world: &World) -> Vec<ReligionView> {
+    let spoken = world.spoken();
+    world
+        .religions
+        .iter()
+        .enumerate()
+        .map(|(id, r)| {
+            let sacred = &world.varieties[r.sacred];
+            let followers: Vec<usize> = world
+                .living()
+                .filter(|&c| world.communities[c].faith == Some(id))
+                .collect();
+            // The sacred language first, then each followers' language once.
+            let mut varieties = vec![r.sacred];
+            for &c in &followers {
+                let v = world.communities[c].variety;
+                if spoken[v] && !varieties.contains(&v) {
+                    varieties.push(v);
+                }
+            }
+            ReligionView {
+                id,
+                name: sacred.title(&r.name.form),
+                meaning: r.name.meaning.clone(),
+                ipa: r.name.form.ipa(),
+                founder: NameView {
+                    name: sacred.title(&r.founder.form),
+                    ipa: r.founder.form.ipa(),
+                    meaning: r.founder.meaning.clone(),
+                },
+                people: r.people,
+                land: r.land,
+                founded: r.founded,
+                how: match r.how {
+                    Revelation::Troubles => "troubles",
+                    Revelation::Quiet => "quiet",
+                    Revelation::Proclaimed => "proclaimed",
+                },
+                sacred: r.sacred,
+                converts: r.converts,
+                translates: r.translates,
+                scripture: r.scripture,
+                followers,
+                words: renderings(world, Need::Faith, &varieties),
+            }
+        })
+        .collect()
+}
+
+fn craft_views(world: &World) -> Vec<CraftView> {
+    let spoken = world.spoken();
+    Craft::ALL
+        .iter()
+        .map(|&craft| {
+            let learnt = world.events.iter().filter_map(|(g, e)| match *e {
+                WorldEvent::Learnt {
+                    community,
+                    craft: c,
+                    from,
+                } if c == craft => Some((*g, community, from)),
+                _ => None,
+            });
+            let first = learnt.clone().map(|(g, _, _)| g).next();
+            let inventors = learnt
+                .filter(|(_, _, from)| from.is_none())
+                .map(|(_, c, _)| c)
+                .collect();
+            let holders: Vec<usize> = world
+                .living()
+                .filter(|&c| world.communities[c].crafts.contains(&craft))
+                .collect();
+            let mut varieties: Vec<usize> = Vec::new();
+            for &c in &holders {
+                let v = world.communities[c].variety;
+                if spoken[v] && !varieties.contains(&v) {
+                    varieties.push(v);
+                }
+            }
+            CraftView {
+                id: craft,
+                name: craft_name(craft),
+                first,
+                inventors,
+                holders,
+                words: renderings(world, Need::Craft(craft), &varieties),
             }
         })
         .collect()
@@ -1891,7 +2211,10 @@ struct LexiconRow {
     gloss: &'static str,
     field: &'static str,
     rank: Option<u8>,
+    /// As written: as it sounded when the language was first written.
     spelled: String,
+    /// As said now, spelled the same way, if writing has fallen behind.
+    said: Option<String>,
     ipa: String,
     origin: OriginView,
     changes: usize,
@@ -1907,6 +2230,7 @@ struct HistoryLine {
 #[derive(Serialize)]
 struct VariantView {
     spelled: String,
+    said: Option<String>,
     ipa: String,
     share: f32,
     origin: OriginView,
@@ -2215,7 +2539,14 @@ mod tests {
         let early: serde_json::Value = serde_json::from_str(&w.overview(5).unwrap()).unwrap();
         assert_eq!(early["communities"].as_array().unwrap().len(), 2);
         let rows: serde_json::Value = serde_json::from_str(&w.lexicon(22, 2).unwrap()).unwrap();
-        assert_eq!(rows.as_array().unwrap().len(), CONCEPTS.len());
+        let meanings = latest["varieties"][2]["ownWords"]["meanings"]
+            .as_u64()
+            .unwrap();
+        assert_eq!(rows.as_array().unwrap().len() as u64, meanings);
+        assert!(
+            meanings < CONCEPTS.len() as u64,
+            "meanings that wait for ideas have no word"
+        );
         let word: serde_json::Value =
             serde_json::from_str(&w.word(22, 2, "water").unwrap()).unwrap();
         assert!(!word["variants"].as_array().unwrap().is_empty());

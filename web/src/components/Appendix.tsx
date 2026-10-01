@@ -1,12 +1,14 @@
 import { useMemo, useState } from "react";
-import type { Engine, Overview } from "../model";
+import type { Catalog, Engine, Overview } from "../model";
 import { YEARS } from "../model";
-import { bookMarkdown, download, fileName, glossaryCsv, peopleLines, stateLines } from "../takeout";
+import { bookMarkdown, craftLines, download, fileName, givenNameLines, glossaryCsv, peopleLines, religionLines, renderingLines, stateLines } from "../takeout";
+import { Renderings } from "./Renderings";
 
 /// The export page, for taking things out of a world: who is called what,
 /// a glossary of any language, and the world in forms other tools read.
 export function Appendix({
   engine,
+  catalog,
   version,
   generation,
   overview,
@@ -15,6 +17,7 @@ export function Appendix({
   onBack,
 }: {
   engine: Engine;
+  catalog: Catalog;
   version: number;
   generation: number;
   overview: Overview;
@@ -28,6 +31,8 @@ export function Appendix({
   const [copied, setCopied] = useState<string | null>(null);
   const name = (id: number) => overview.communities[id]?.name ?? "?";
   const chosen = overview.varieties[tongue] ?? overview.varieties[variety];
+  const religions = religionLines(overview);
+  const crafts = craftLines(overview, catalog);
   const rows = useMemo(
     () => engine.lexicon(generation, chosen.id),
     // `version` changes whenever the history does.
@@ -52,9 +57,9 @@ export function Appendix({
 
   const whole = () => {
     const glossaries = overview.varieties
-      .filter((v) => v.spoken)
+      .filter((v) => v.spoken || v.sacredOf !== null)
       .map((v): [string, typeof rows] => [v.name, engine.lexicon(generation, v.id)]);
-    download(fileName(title, "md"), bookMarkdown(title, overview, glossaries), "text/markdown");
+    download(fileName(title, "md"), bookMarkdown(title, overview, glossaries, catalog), "text/markdown");
   };
 
   return (
@@ -75,6 +80,8 @@ export function Appendix({
           <button type="button" onClick={() => void copy("names", [
             ...peopleLines(overview),
             ...(overview.states.length > 0 ? ["", "States", ...stateLines(overview)] : []),
+            ...(overview.religions.length > 0 ? ["", "Religions", ...religionLines(overview)] : []),
+            ...overview.varieties.flatMap((v) => ["", `Given names in ${v.name}`, ...givenNameLines(v, overview)]),
           ].join("\n"))}>
             {copied === "names" ? "Copied" : "Copy names"}
           </button>
@@ -113,12 +120,13 @@ export function Appendix({
           <>
             <h4>States</h4>
             <table className="names-table">
-              <thead><tr><th>State</th><th>Meaning</th><th>Rulers</th><th>Once</th><th>Stands</th></tr></thead>
+              <thead><tr><th>State</th><th>Meaning</th><th>Founder</th><th>Rulers</th><th>Once</th><th>Stands</th></tr></thead>
               <tbody>
                 {overview.states.map((state) => (
                   <tr key={state.id}>
                     <td className={`word hand-${overview.varieties[overview.communities[state.rulers].variety].family % 5}`}>{state.name}</td>
                     <td>“{state.meaning}” <span className="ipa">/{state.ipa}/</span></td>
+                    <td><span className="word">{state.founder.name}</span>, “{state.founder.meaning}” <span className="ipa">/{state.founder.ipa}/</span></td>
                     <td className="word">{name(state.rulers)}</td>
                     <td>{state.once ?? ""}</td>
                     <td>{state.fell === null ? "now" : `fell in year ${state.fell * YEARS}`}</td>
@@ -132,13 +140,51 @@ export function Appendix({
 
       <section>
         <div className="row spread">
+          <h3>Religions</h3>
+          <button type="button" disabled={overview.religions.length === 0}
+            onClick={() => void copy("religions", overview.religions.flatMap((r) => [
+              religions[r.id], ...renderingLines(r.words, overview), "",
+            ]).join("\n"))}>
+            {copied === "religions" ? "Copied" : "Copy religions"}
+          </button>
+        </div>
+        {overview.religions.length === 0 ? <p className="muted">None founded yet.</p> :
+          overview.religions.map((r) => (
+            <details key={r.id} className="export-words">
+              <summary><span className="word">{r.name}</span> · “{r.meaning}”</summary>
+              <p>{religions[r.id]}</p>
+              <Renderings rows={r.words} overview={overview} sacred={r.sacred} />
+            </details>
+          ))}
+      </section>
+
+      <section>
+        <div className="row spread">
+          <h3>Crafts</h3>
+          <button type="button" onClick={() => void copy("crafts", overview.crafts.flatMap((c, i) => [
+            crafts[i], ...renderingLines(c.words, overview), "",
+          ]).join("\n"))}>
+            {copied === "crafts" ? "Copied" : "Copy crafts"}
+          </button>
+        </div>
+        {overview.crafts.map((craft, i) => (
+          <details key={craft.id} className="export-words">
+            <summary>{craft.name} · {craft.first === null ? "not yet held" : `first held in year ${craft.first * YEARS}`}</summary>
+            <p>{crafts[i]}</p>
+            <Renderings rows={craft.words} overview={overview} />
+          </details>
+        ))}
+      </section>
+
+      <section>
+        <div className="row spread">
           <h3>Glossary</h3>
           <div className="row">
             <select aria-label="Language" value={chosen.id} onChange={(e) => setTongue(Number(e.target.value))}>
               {overview.varieties.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.name}
-                  {v.spoken ? "" : " (no longer spoken)"}
+                  {v.sacredOf !== null ? " (sacred)" : v.spoken ? "" : " (no longer spoken)"}
                 </option>
               ))}
             </select>
@@ -149,7 +195,7 @@ export function Appendix({
             <button
               type="button"
               onClick={() =>
-                void copy("glossary", sorted.map((r) => `${r.spelled} /${r.ipa}/ ${r.gloss}`).join("\n"))
+                void copy("glossary", sorted.map((r) => `${r.spelled}${r.said === null ? "" : ` · said ${r.said}`} /${r.ipa}/ ${r.gloss}`).join("\n"))
               }
             >
               {copied === "glossary" ? "Copied" : "Copy"}
@@ -167,11 +213,36 @@ export function Appendix({
             <div key={r.concept}>
               <dt>
                 <span className="word">{r.spelled}</span> <span className="ipa">/{r.ipa}/</span>
+                {r.said !== null ? <> <span className="muted">· said</span> <span className="word">{r.said}</span></> : null}
               </dt>
               <dd>{r.gloss}</dd>
             </div>
           ))}
         </dl>
+        <div className="row spread">
+          <h4>Given names in {chosen.name}</h4>
+          <button type="button" onClick={() => void copy("given", givenNameLines(chosen, overview).join("\n"))}>
+            {copied === "given" ? "Copied" : "Copy given names"}
+          </button>
+        </div>
+        <p className="muted">
+          {chosen.nameStyle === "double" ? "Two-part names." : "One-word names."}{" "}
+          {chosen.written === null ? "Unwritten." : `Written or last respelled in year ${chosen.written * YEARS}.`}
+          {chosen.sacredOf === null ? "" : ` Sacred to ${overview.religions[chosen.sacredOf].name}.`}
+        </p>
+        <table className="names-table">
+          <thead><tr><th>Name</th><th>IPA</th><th>Meaning</th><th>From</th></tr></thead>
+          <tbody>
+            {chosen.names.map((name, i) => (
+              <tr key={i}>
+                <td className="word">{name.name}</td>
+                <td className="ipa">/{name.ipa}/</td>
+                <td>{name.meaning}</td>
+                <td>{name.from === null ? "" : `${overview.varieties[name.from].name} (sacred)`}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </section>
 
       <section>
@@ -182,7 +253,7 @@ export function Appendix({
               As text
             </button>{" "}
             <span className="muted">
-              Markdown: peoples and states, everything that happened, and a glossary for every living language.
+              Markdown: peoples, states, religions, crafts, given names, history, and glossaries for spoken and sacred languages.
             </span>
           </li>
           <li>

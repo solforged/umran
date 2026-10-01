@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { Maximize, Minus, Plus } from "lucide-react";
-import type { Community, Overview, WordMap, WorldMap } from "../model";
+import type { Community, Craft, Overview, WordMap, WorldMap } from "../model";
 import type { ShelfPeople } from "../shelf";
 import { YEARS } from "../model";
 import { hue, TERRAIN_NAME } from "../lore";
@@ -23,12 +23,14 @@ const GLIDE = 450;
 /// Pointer travel, in pixels, before a press becomes a drag.
 const DRAG_START = 4;
 
-/// What colours the land: peoples by language family, every people's word
-/// for one meaning by root, or who underwent one sound change.
+/// What colours the land: language families, word roots, a sound change,
+/// faiths, or the holders of one craft.
 export type Tint =
   | { kind: "peoples" }
   | { kind: "words"; words: WordMap }
-  | { kind: "change"; had: ReadonlySet<number> };
+  | { kind: "change"; had: ReadonlySet<number> }
+  | { kind: "faiths" }
+  | { kind: "crafts"; craft: Craft };
 
 /// The part of the map in view: left, top, width, height, in map units.
 type Box = [number, number, number, number];
@@ -277,6 +279,8 @@ export function MapView({
   onPeople,
   onLand,
   onState,
+  onReligion,
+  onCraft,
 }: {
   map: WorldMap;
   overview: Overview;
@@ -298,6 +302,8 @@ export function MapView({
   onPeople: (community: number) => void;
   onLand: (region: number) => void;
   onState?: (state: number) => void;
+  onReligion?: (religion: number) => void;
+  onCraft?: (craft: Craft) => void;
 }) {
   const full: Box = useMemo(() => [0, 0, map.width, map.height], [map]);
   const [box, setBox] = useState<Box>(full);
@@ -473,6 +479,10 @@ export function MapView({
         return hue(family(largest));
       case "change":
         return tint.had.has(largest.id) ? CHANGED : UNCHANGED;
+      case "faiths":
+        return largest.faith === null ? UNCHANGED : hue(largest.faith);
+      case "crafts":
+        return largest.crafts.includes(tint.craft) ? CHANGED : UNCHANGED;
       case "words": {
         const word = wordBy.get(largest.id);
         return word ? hue(word.group) : null;
@@ -686,6 +696,58 @@ export function MapView({
               </g>
             );
           })}
+        </g>
+        <g className="founding-markers">
+          {tint.kind === "faiths" ? overview.religions.map((religion, i, religions) => {
+            const [x, y] = map.regions[religion.land].site;
+            const offset = religions.slice(0, i).filter((r) => r.land === religion.land).length;
+            return (
+              <g
+                key={religion.id}
+                className="founding-marker"
+                transform={`translate(${x - (0.22 + offset * 0.24) * label} ${y - 0.22 * label}) scale(${label})`}
+                style={{ "--mark": hue(religion.id) } as CSSProperties}
+                role={onReligion ? "button" : undefined}
+                tabIndex={onReligion ? 0 : undefined}
+                aria-label={`${religion.name}, founded here`}
+                onClick={() => dragged() || onReligion?.(religion.id)}
+                onKeyDown={(e) => {
+                  if (onReligion && (e.key === "Enter" || e.key === " ")) {
+                    e.preventDefault();
+                    onReligion(religion.id);
+                  }
+                }}
+              >
+                <title>{`${religion.name}, founded here`}</title>
+                <path d="M0,-.12L.09,0L0,.12L-.09,0Z" />
+              </g>
+            );
+          }) : null}
+          {tint.kind === "crafts" ? overview.crafts.find((c) => c.id === tint.craft)?.inventors.map((id) => {
+            const people = overview.communities[id];
+            const [x, y] = map.regions[people.region].site;
+            return (
+              <g
+                key={id}
+                className="founding-marker"
+                transform={`translate(${x + 0.22 * label} ${y - 0.22 * label}) scale(${label})`}
+                style={{ "--mark": CHANGED } as CSSProperties}
+                role={onCraft ? "button" : undefined}
+                tabIndex={onCraft ? 0 : undefined}
+                aria-label={`${people.name}, inventor of ${tint.craft}`}
+                onClick={() => dragged() || onCraft?.(tint.craft)}
+                onKeyDown={(e) => {
+                  if (onCraft && (e.key === "Enter" || e.key === " ")) {
+                    e.preventDefault();
+                    onCraft(tint.craft);
+                  }
+                }}
+              >
+                <title>{`${people.name}, inventor of ${tint.craft}`}</title>
+                <path d="M-.1,-.1H.1V.1H-.1Z" />
+              </g>
+            );
+          }) : null}
         </g>
       </svg>
       {zoomable ? (

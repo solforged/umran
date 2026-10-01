@@ -4,15 +4,18 @@
 //! is drawn from the annals' own stream, so it never moves the world's
 //! draws, and the same history is always told the same way.
 
-use crate::{SpecimenWord, livelihood_noun, specimen, substrate_label};
+use crate::{SpecimenWord, language_label, livelihood_noun, specimen, substrate_label};
 use serde::Serialize;
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
+use umran_sim::concepts::Concept;
+use umran_sim::ideas::{NEEDS, Need};
 use umran_sim::names::PlaceOrigin;
 use umran_sim::rng::{index, key, stream};
 use umran_sim::world::{ContactKind, Hardship};
 use umran_sim::{
-    Challenge, Event, Fall, Form, Lexeme, Livelihood, Rise, Variety, World, WorldEvent, catalog,
+    Challenge, Craft, Event, Fall, Form, Lexeme, Livelihood, Origin, Revelation, Rise, Variety,
+    World, WorldEvent, catalog,
 };
 
 #[derive(Clone, PartialEq, Serialize)]
@@ -20,7 +23,8 @@ pub(crate) struct Annal {
     pub generation: u32,
     /// "found", "split", "migration", "shift", "contact", "parted",
     /// "neighbours", "conquest", "spread", "displaced", "hardship",
-    /// "livelihood", "ended", "rose", "fell", "standard", or "law".
+    /// "livelihood", "ended", "rose", "fell", "standard", "craft", "faith",
+    /// "conversion", "meaning", "respelling", or "law".
     pub kind: &'static str,
     /// The annalist's words. Words of the language are marked `*thus*`.
     pub text: String,
@@ -40,6 +44,10 @@ pub(crate) struct Annal {
     pub specimen: Vec<SpecimenWord>,
     /// The states it tells of.
     pub states: Vec<usize>,
+    /// The religions it tells of.
+    pub religions: Vec<usize>,
+    /// The crafts it tells of.
+    pub crafts: Vec<Craft>,
 }
 
 const FOUND: &[&str] = &[
@@ -176,8 +184,10 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
         laws: Vec::new(),
         specimen: Vec::new(),
         states: Vec::new(),
+        religions: Vec::new(),
+        crafts: Vec::new(),
     };
-    for &(generation, ref event) in &world.events {
+    for (position, &(generation, ref event)) in world.events.iter().enumerate() {
         let name = |c: usize| world.community_name_at(c, generation);
         let pair = |kind: &'static str, options: &[&str], a: usize, b: usize| {
             let mut all = vec![key(kind), u64::from(generation)];
@@ -405,6 +415,127 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
             WorldEvent::Rose { state } => state_annal(world, generation, state, "rose"),
             WorldEvent::Fell { state } => state_annal(world, generation, state, "fell"),
             WorldEvent::Standard { state } => state_annal(world, generation, state, "standard"),
+            WorldEvent::Learnt {
+                community,
+                craft,
+                from,
+            } => {
+                let teacher = from.map(name).unwrap_or_default();
+                let options = match from {
+                    Some(_) => learnt_from(craft),
+                    None => came_upon(craft),
+                };
+                let mut annal = entry(
+                    generation,
+                    "craft",
+                    tell(
+                        world,
+                        &[key("craft"), g, community as u64, craft as u64],
+                        options,
+                        &[("p", &name(community)), ("t", &teacher)],
+                    ),
+                    &[Some(community), from]
+                        .into_iter()
+                        .flatten()
+                        .collect::<Vec<_>>(),
+                    &[],
+                );
+                annal.notes = new_words(
+                    world,
+                    variety_at(world, community, position),
+                    Need::Craft(craft),
+                    generation,
+                );
+                annal.crafts = vec![craft];
+                annal
+            }
+            WorldEvent::Revealed { religion } => faith_annal(world, generation, religion),
+            WorldEvent::Converted {
+                community,
+                religion,
+                from,
+            } => {
+                let r = &world.religions[religion];
+                let faith = world.varieties[r.sacred].title(&r.name.form);
+                let teacher = from.map(name).unwrap_or_default();
+                let mut annal = entry(
+                    generation,
+                    "conversion",
+                    tell(
+                        world,
+                        &[key("conversion"), g, community as u64],
+                        if from.is_some() { CONVERTED_BY } else { CONVERTED },
+                        &[("p", &name(community)), ("t", &teacher), ("r", &faith)],
+                    ),
+                    &[Some(community), from]
+                        .into_iter()
+                        .flatten()
+                        .collect::<Vec<_>>(),
+                    &[],
+                );
+                annal.notes = new_words(
+                    world,
+                    variety_at(world, community, position),
+                    Need::Faith,
+                    generation,
+                );
+                annal.religions = vec![religion];
+                annal
+            }
+            WorldEvent::Pejorated {
+                community,
+                variety,
+                word,
+                from,
+                to,
+            } => {
+                let v = &world.varieties[variety];
+                let said = v.spell(v.lexicon.get(word).form_at(generation));
+                let mut annal = entry(
+                    generation,
+                    "meaning",
+                    tell(
+                        world,
+                        &[key("meaning"), g, community as u64, key(from.id)],
+                        PEJORATED,
+                        &[
+                            ("p", &name(community)),
+                            ("w", &said),
+                            ("from", from.gloss),
+                            ("to", to.gloss),
+                        ],
+                    ),
+                    &[community],
+                    &[],
+                );
+                annal.variety = Some(variety);
+                annal.notes = vec![match from.id {
+                    "god" => "With the new faith the old gods became demons, as Greek daimōn, a divine power, became the Christian demon, and Iranian daēva became a devil while Sanskrit deva still means a god.".into(),
+                    _ => "The old priests became sorcerers, as the Persian magi, priests of the old faith, gave the Greeks their word for magic.".into(),
+                }];
+                annal.religions = world.communities[community].faith.into_iter().collect();
+                annal
+            }
+            WorldEvent::Respelled { variety } => {
+                let tongue = world.language_title_at(variety, generation);
+                let mut annal = entry(
+                    generation,
+                    "respelling",
+                    tell(
+                        world,
+                        &[key("respelling"), g, variety as u64],
+                        RESPELLED,
+                        &[("l", &tongue)],
+                    ),
+                    &[],
+                    &[],
+                );
+                annal.variety = Some(variety);
+                annal.notes = vec![
+                    "Its spelling had fallen far behind its speech; now words are written as they are said, until speech moves on again.".into(),
+                ];
+                annal
+            }
         });
     }
     out.extend(
@@ -526,6 +657,193 @@ fn state_annal(world: &World, generation: u32, state: usize, kind: &'static str)
         laws: Vec::new(),
         specimen: Vec::new(),
         states: vec![state],
+        religions: Vec::new(),
+        crafts: Vec::new(),
+    }
+}
+
+fn learnt_from(craft: Craft) -> &'static [&'static str] {
+    match craft {
+        Craft::Metalworking => &[
+            "The {p} learnt from the {t} to work bronze and iron.",
+            "Smiths of the {t} taught the {p} their craft.",
+        ],
+        Craft::Riding => &[
+            "The {p} learnt from the {t} to ride.",
+            "The {p} took horses and riding from the {t}.",
+        ],
+        Craft::Seafaring => &[
+            "The {p} learnt from the {t} to build ships and sail.",
+            "Sailors of the {t} taught the {p} the ways of the sea.",
+        ],
+        Craft::Writing => &[
+            "The {p} learnt their letters from the {t}.",
+            "Scribes of the {t} taught the {p} to write.",
+        ],
+    }
+}
+
+fn came_upon(craft: Craft) -> &'static [&'static str] {
+    match craft {
+        Craft::Metalworking => &["The {p} found how to smelt bronze from the stones."],
+        Craft::Riding => &["The {p} broke horses and began to ride."],
+        Craft::Seafaring => &["The {p} built ships and put out to sea."],
+        Craft::Writing => &[
+            "At the court of the {p}, scribes first set words down in signs.",
+            "Among the {p} the first writing began, to count the tribute.",
+        ],
+    }
+}
+
+const FOUNDED_TROUBLES: &[&str] = &[
+    "In the hard years {f} of the {p} began to teach, and the teaching was called {r}, “{m}”.",
+    "Out of the troubles of those days came {f}, one of the {p}, whose followers named their faith {r}, “{m}”.",
+];
+const FOUNDED_QUIET: &[&str] =
+    &["Among the {p} there arose a teacher, {f}, whose teaching was called {r}, “{m}”."];
+const FOUNDED_PROCLAIMED: &[&str] = &["{f} of the {p} taught a new faith, {r}, “{m}”."];
+const CONVERTED_BY: &[&str] = &[
+    "The {p} took up {r} from the {t}.",
+    "Teachers from among the {t} brought {r} to the {p}.",
+];
+const CONVERTED: &[&str] = &["The {p} took up {r}."];
+const PEJORATED: &[&str] = &[
+    "Among the {p}, *{w}*, once “{from}”, came to mean “{to}”.",
+    "Among the {p}, *{w}* no longer meant “{from}” but “{to}”.",
+];
+const RESPELLED: &[&str] = &[
+    "{l} was written anew, as it was then spoken.",
+    "The scribes set aside the old spellings of {l} and wrote it as it was said.",
+];
+
+/// A religion's founding.
+fn faith_annal(world: &World, generation: u32, religion: usize) -> Annal {
+    let r = &world.religions[religion];
+    let sacred = &world.varieties[r.sacred];
+    let faith = sacred.title(&r.name.form);
+    let founder = sacred.title(&r.founder.form);
+    let people = world.community_name_at(r.people, generation);
+    let options = match r.how {
+        Revelation::Troubles => FOUNDED_TROUBLES,
+        Revelation::Quiet => FOUNDED_QUIET,
+        Revelation::Proclaimed => FOUNDED_PROCLAIMED,
+    };
+    let mut notes = vec![
+        format!("The name {founder} means “{}”.", r.founder.meaning),
+        if r.converts {
+            "It seeks converts.".into()
+        } else {
+            "It keeps to its own people.".into()
+        },
+        if r.translates {
+            "Converts say its words in their own speech, built from their own words.".into()
+        } else {
+            format!(
+                "Converts take its words from {}, which it keeps as its sacred language.",
+                language_label(world, r.sacred)
+            )
+        },
+    ];
+    if r.scripture {
+        notes.push("Its teaching is written down.".into());
+    }
+    notes.extend(new_words(world, r.sacred, Need::Faith, generation));
+    Annal {
+        generation,
+        kind: "faith",
+        text: tell(
+            world,
+            &[key("faith"), u64::from(generation), religion as u64],
+            options,
+            &[
+                ("f", &founder),
+                ("p", &people),
+                ("r", &faith),
+                ("m", &r.name.meaning),
+            ],
+        ),
+        notes,
+        variety: None,
+        peoples: vec![r.people],
+        lands: vec![r.land],
+        laws: Vec::new(),
+        specimen: Vec::new(),
+        states: Vec::new(),
+        religions: vec![religion],
+        crafts: Vec::new(),
+    }
+}
+
+/// The language `community` spoke when event `position` happened: the one
+/// its next shift left, or the one it speaks now.
+fn variety_at(world: &World, community: usize, position: usize) -> usize {
+    world.events[position..]
+        .iter()
+        .find_map(|(_, e)| match *e {
+            WorldEvent::Shift {
+                community: c, from, ..
+            } if c == community => Some(from),
+            _ => None,
+        })
+        .unwrap_or(world.communities[community].variety)
+}
+
+/// The first word `variety` had for `concept`, and when it took that
+/// meaning on.
+fn first_word<'a>(variety: &'a Variety, concept: &Concept) -> Option<(&'a Lexeme, u32)> {
+    variety
+        .lexicon
+        .lexemes
+        .iter()
+        .filter_map(|l| {
+            let since = if l.first_sense.id == concept.id {
+                Some(l.born)
+            } else {
+                l.log.iter().find_map(|e| match e.event {
+                    Event::Extended { to } if to.id == concept.id => Some(e.generation),
+                    _ => None,
+                })
+            };
+            since.map(|g| (l, g))
+        })
+        .min_by_key(|&(_, g)| g)
+}
+
+/// The words `variety` came by for `need`'s meanings when its speakers
+/// took the idea up at `generation`, and how each came: a note, or none if
+/// the language already had them.
+fn new_words(world: &World, variety: usize, need: Need, generation: u32) -> Vec<String> {
+    let v = &world.varieties[variety];
+    let words: Vec<String> = NEEDS
+        .iter()
+        .filter(|(_, n)| *n == need)
+        .filter_map(|(id, _)| umran_sim::concepts::by_id(id))
+        .filter_map(|concept| {
+            let (word, since) = first_word(v, concept)?;
+            if since < generation || since > generation + 1 {
+                return None;
+            }
+            let said = v.spell(word.form_at(since));
+            let how = if word.first_sense.id != concept.id {
+                format!("stretched from “{}”", word.first_sense.gloss)
+            } else {
+                match word.origin {
+                    Origin::Borrowed { from, .. } => {
+                        format!("from {}", language_label(world, from))
+                    }
+                    Origin::Derived { base, .. } => {
+                        format!("built on *{}*", v.spell(v.lexicon.get(base).form_at(since)))
+                    }
+                    _ => "a new word".into(),
+                }
+            };
+            Some(format!("“{}” *{said}*, {how}", concept.gloss))
+        })
+        .collect();
+    if words.is_empty() {
+        Vec::new()
+    } else {
+        vec![format!("New words: {}.", words.join("; "))]
     }
 }
 
@@ -640,6 +958,8 @@ fn spread_annal(world: &World, generation: u32, spreads: &[(usize, usize)]) -> A
         laws: Vec::new(),
         specimen: Vec::new(),
         states: Vec::new(),
+        religions: Vec::new(),
+        crafts: Vec::new(),
     }
 }
 
@@ -738,6 +1058,8 @@ fn neighbours_annal(world: &World, generation: u32, n: &Neighbours) -> Annal {
         laws: Vec::new(),
         specimen: Vec::new(),
         states: Vec::new(),
+        religions: Vec::new(),
+        crafts: Vec::new(),
     }
 }
 
@@ -847,6 +1169,8 @@ fn sound_changes(world: &World) -> Vec<Annal> {
                 laws: ids,
                 specimen: specimen(variety, generation),
                 states: Vec::new(),
+                religions: Vec::new(),
+                crafts: Vec::new(),
             });
         }
     }

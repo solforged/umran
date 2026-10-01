@@ -5,6 +5,8 @@ import {
   Globe,
   Languages,
   Landmark,
+  Hammer,
+  Sparkles,
   MapPin,
   Play,
   ScrollText,
@@ -12,9 +14,9 @@ import {
   WholeWord,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, Community, Engine, Overview, StateView, TellingView, Variety, WordMap, WorldMap } from "../model";
+import type { Annal, Catalog, Community, Craft, CraftView, Engine, Overview, ReligionView, StateView, TellingView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { CONTACT_NAME, EVENT_KIND, FALL_NAME, howCame, howNamed, hue, LIVELIHOOD_NAME, RISE_NAME, TERMS, TERRAIN_NAME, type Term } from "../lore";
+import { CONTACT_NAME, EVENT_KIND, FAITH_HOW, FALL_NAME, howCame, howNamed, hue, LIVELIHOOD_NAME, RISE_NAME, TERMS, TERRAIN_NAME, type Term } from "../lore";
 import { bond } from "../words";
 import type { DialogKind } from "./ActionDialog";
 import { Told } from "./Told";
@@ -23,12 +25,15 @@ import { peoplesByRegion } from "./MapView";
 import { Specimen } from "./Specimen";
 import { FamilyTree } from "./FamilyTree";
 import { WordGloss } from "./WordGloss";
+import { Renderings } from "./Renderings";
 
 /// What the encyclopedia is open at.
 export type Focus =
   | { kind: "world" }
   | { kind: "people"; id: number }
   | { kind: "state"; id: number }
+  | { kind: "religion"; id: number }
+  | { kind: "craft"; id: Craft }
   | { kind: "language"; variety: number }
   | { kind: "word"; variety: number; concept: string }
   | { kind: "law"; id: string }
@@ -48,6 +53,7 @@ const KIN_FLOOR = 0.05;
 
 interface Context {
   engine: Engine;
+  catalog: Catalog;
   version: number;
   generation: number;
   overview: Overview;
@@ -130,6 +136,10 @@ function focusLabel(focus: Focus, context: Context): string {
       return overview.communities[focus.id]?.name ?? "A people";
     case "state":
       return overview.states[focus.id]?.name ?? "A state";
+    case "religion":
+      return overview.religions[focus.id]?.name ?? "A religion";
+    case "craft":
+      return overview.crafts.find((c) => c.id === focus.id)?.name ?? "A craft";
     case "language":
       return overview.varieties[focus.variety]?.name ?? "A language";
     case "word":
@@ -162,6 +172,16 @@ function Card({ focus, context }: { focus: Focus; context: Context }) {
       ) : (
         <p className="muted">This state has not yet arisen in this year.</p>
       );
+    case "religion":
+      return overview.religions[focus.id] ? (
+        <ReligionCard religion={overview.religions[focus.id]} context={context} />
+      ) : (
+        <p className="muted">This religion has not yet been founded in this year.</p>
+      );
+    case "craft": {
+      const craft = overview.crafts.find((c) => c.id === focus.id);
+      return craft ? <CraftCard craft={craft} context={context} /> : null;
+    }
     case "language":
       return overview.varieties[focus.variety] ? (
         <LanguageCard variety={focus.variety} context={context} />
@@ -302,14 +322,32 @@ function StateLink({ state, context }: { state: StateView; context: Context }) {
   );
 }
 
-function AnnalStates({ annal, context }: { annal: Annal; context: Context }) {
-  const states = annal.states.filter((id) => context.overview.states[id]).map((id) => context.overview.states[id]);
-  if (states.length === 0) return null;
+function ReligionLink({ religion, context }: { religion: ReligionView; context: Context }) {
   return (
-    <span className="annal-states">
-      <Joined items={states} link={(state) => <StateLink state={state} context={context} />} />
-    </span>
+    <button type="button" className="link word" style={{ color: hue(religion.id) }}
+      onClick={() => context.go({ kind: "religion", id: religion.id })}>
+      {religion.name}
+    </button>
   );
+}
+
+function CraftLink({ craft, context }: { craft: Craft; context: Context }) {
+  return (
+    <button type="button" className="link" onClick={() => context.go({ kind: "craft", id: craft })}>
+      {context.overview.crafts.find((c) => c.id === craft)?.name}
+    </button>
+  );
+}
+
+function AnnalLinks({ annal, context }: { annal: Annal; context: Context }) {
+  const { overview } = context;
+  const links = [
+    ...annal.states.filter((id) => overview.states[id]).map((id) => <StateLink key={`state-${id}`} state={overview.states[id]} context={context} />),
+    ...annal.religions.filter((id) => overview.religions[id]).map((id) => <ReligionLink key={`religion-${id}`} religion={overview.religions[id]} context={context} />),
+    ...annal.crafts.map((id) => <CraftLink key={id} craft={id} context={context} />),
+  ];
+  if (links.length === 0) return null;
+  return <span className="annal-states"><Joined items={links} link={(link) => link} /></span>;
 }
 
 function LanguageLink({ variety, context }: { variety: number; context: Context }) {
@@ -372,7 +410,7 @@ function Story({ annals, context }: { annals: Annal[]; context: Context }) {
             <button type="button" className="moment" onClick={() => context.go({ kind: "event", annal: a })}>
               <Told text={a.text} />
             </button>
-            <AnnalStates annal={a} context={context} />
+            <AnnalLinks annal={a} context={context} />
           </span>
         </li>
       ))}
@@ -490,6 +528,9 @@ function WorldCard({ context }: { context: Context }) {
         rows={[
           ["Peoples", peoples.length],
           ["States", <Explained term="state">{states.length} standing</Explained>],
+          ["Religions", overview.religions.length],
+          ["Crafts", `${overview.crafts.filter((c) => c.first !== null).length} of ${overview.crafts.length} held`],
+          ["Meanings", `${context.catalog.meanings} available to a language`],
           ["Languages", silent.length > 0 ? `${spoken.length} spoken, ${silent.length} silent` : spoken.length],
           ["Families", <Explained term="family">{lost > 0 ? `${families} living, ${lost} lost` : families}</Explained>],
           ["Lands held", `${held} of ${land}`],
@@ -536,6 +577,36 @@ function WorldCard({ context }: { context: Context }) {
           </table>
         </>
       ) : null}
+      {overview.religions.length > 0 ? (
+        <>
+          <h3>Religions</h3>
+          <table className="peoples">
+            <thead><tr><th>Religion</th><th>Founded</th><th>Followers</th></tr></thead>
+            <tbody>
+              {overview.religions.map((religion) => (
+                <tr key={religion.id}>
+                  <th scope="row"><ReligionLink religion={religion} context={context} /></th>
+                  <td><Year generation={religion.founded} context={context} /></td>
+                  <td className="num">{religion.followers.length}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      ) : null}
+      <h3>Crafts</h3>
+      <table className="peoples">
+        <thead><tr><th>Craft</th><th>First held</th><th>Holders</th></tr></thead>
+        <tbody>
+          {overview.crafts.map((craft) => (
+            <tr key={craft.id}>
+              <th scope="row"><CraftLink craft={craft.id} context={context} /></th>
+              <td>{craft.first === null ? "not yet" : <Year generation={craft.first} context={context} />}</td>
+              <td className="num">{craft.holders.length}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
       {spoken.length > 1 ? (
         <>
           <h3>Words compared</h3>
@@ -662,7 +733,7 @@ function HistoryCard({ context }: { context: Context }) {
                   <button type="button" className="moment" onClick={() => context.go({ kind: "event", annal })}>
                     <Told text={annal.text} />
                   </button>
-                  <AnnalStates annal={annal} context={context} />
+                  <AnnalLinks annal={annal} context={context} />
                 </span>
               )}
             </li>
@@ -717,6 +788,8 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
           ],
           ["Speak", <LanguageLink variety={c.variety} context={context} />],
           [realm?.rulers === c.id ? "Rule" : "Subject of", realm ? <StateLink state={realm} context={context} /> : null],
+          ["Faith", c.faith === null ? "its own gods" : <ReligionLink religion={overview.religions[c.faith]} context={context} />],
+          ["Crafts", c.crafts.length === 0 ? "none yet" : <Joined items={c.crafts} link={(craft) => <CraftLink craft={craft} context={context} />} />],
           [
             "Family",
             v.family === c.variety ? null : (
@@ -802,6 +875,10 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
                 Found a state
               </button>
             ) : null}
+            <button type="button" onClick={() => context.onDialog("religion", c.id)}>Found a religion</button>
+            {c.crafts.length < context.catalog.crafts.length ? (
+              <button type="button" onClick={() => context.onDialog("craft", c.id)}>Teach a craft</button>
+            ) : null}
           </div>
         </>
       ) : null}
@@ -827,6 +904,7 @@ function StateCard({ state, context }: { state: StateView; context: Context }) {
       />
       <Facts rows={[
         ["Rulers", <PeopleLink c={rulers} context={context} />],
+        ["Founder", <><span className="word">{state.founder.name}</span>, “{state.founder.meaning}” <span className="ipa">/{state.founder.ipa}/</span></>],
         ["Capital", <LandLink region={state.capital} context={context} />],
         ["City", `${Math.round(state.city).toLocaleString()} souls`],
         ["Arose", <>year <Year generation={state.rose} context={context} />, {RISE_NAME[state.rise]}</>],
@@ -862,9 +940,75 @@ function StateCard({ state, context }: { state: StateView; context: Context }) {
   );
 }
 
+function ReligionCard({ religion, context }: { religion: ReligionView; context: Context }) {
+  const { overview } = context;
+  const told = overview.annals.filter((a) => a.religions.includes(religion.id) &&
+    (a.kind === "faith" || a.kind === "conversion" || a.kind === "meaning"));
+  return (
+    <>
+      <CardHead icon={Sparkles} kind="A religion" title={<i>{religion.name}</i>}
+        tone={hue(religion.id)}
+        sub={<>“{religion.meaning}” <span className="ipa">/{religion.ipa}/</span></>} />
+      <Facts rows={[
+        ["Founder", <><span className="word">{religion.founder.name}</span>, “{religion.founder.meaning}” <span className="ipa">/{religion.founder.ipa}/</span></>],
+        ["Founded", <>year <Year generation={religion.founded} context={context} />, {FAITH_HOW[religion.how]}</>],
+        ["Founder's people", <PeopleLink c={overview.communities[religion.people]} context={context} />],
+        ["Founding land", <LandLink region={religion.land} context={context} />],
+        ["Sacred language", <LanguageLink variety={religion.sacred} context={context} />],
+        ["Converts", religion.converts ? "seeks converts" : "keeps to its own"],
+        ["Words", religion.translates ? "followers translate its words" : "followers borrow its words"],
+        ["Scripture", religion.scripture ? "written teaching; brings writing" : "unwritten teaching"],
+      ]} />
+      <p className="muted small">Its <Explained term="sacred language">sacred language</Explained> keeps the founder’s words and sounds.</p>
+      <h3>Followers</h3>
+      {religion.followers.length === 0 ? <p className="muted">No living people holds this faith.</p> : (
+        <p><Joined items={religion.followers} link={(id) => <PeopleLink c={overview.communities[id]} context={context} />} /></p>
+      )}
+      <h3>Words of the faith</h3>
+      <Renderings rows={religion.words} overview={overview} sacred={religion.sacred}
+        onLanguage={(variety) => context.go({ kind: "language", variety })}
+        onWord={(variety, concept) => context.go({ kind: "word", variety, concept })} />
+      <p className="muted small">
+        A <Explained term="learned word">learned word</Explained> may return from the sacred language beside its older descendant,
+        making a <Explained term="doublet">doublet</Explained>. Older gods may become demons through <Explained term="pejoration">pejoration</Explained>.
+      </p>
+      <h3>Its story</h3>
+      <Story annals={told.slice(-STORY_LENGTH).reverse()} context={context} />
+    </>
+  );
+}
+
+function CraftCard({ craft, context }: { craft: CraftView; context: Context }) {
+  const { overview } = context;
+  const told = overview.annals.filter((a) => a.crafts.includes(craft.id));
+  return (
+    <>
+      <CardHead icon={Hammer} kind="A craft" title={craft.name} />
+      <p>{context.catalog.crafts.find((c) => c.id === craft.id)?.description}</p>
+      <Facts rows={[
+        ["First held", craft.first === null ? "not yet" : <>year <Year generation={craft.first} context={context} /></>],
+        ["Inventors", craft.inventors.length === 0 ? "none yet" :
+          <Joined items={craft.inventors} link={(id) => <PeopleLink c={overview.communities[id]} context={context} />} />],
+        ["Holders", craft.holders.length === 0 ? "no living people" :
+          <Joined items={craft.holders} link={(id) => <PeopleLink c={overview.communities[id]} context={context} />} />],
+      ]} />
+      <h3>Words of the craft</h3>
+      <Renderings rows={craft.words} overview={overview}
+        onLanguage={(variety) => context.go({ kind: "language", variety })}
+        onWord={(variety, concept) => context.go({ kind: "word", variety, concept })} />
+      <p className="muted small">
+        New meanings may use older words, much like <Explained term="meaning extension by livelihood">meanings shaped by a way of life</Explained>.
+      </p>
+      <h3>Its story</h3>
+      <Story annals={told.slice(-STORY_LENGTH).reverse()} context={context} />
+    </>
+  );
+}
+
 function LanguageCard({ variety, context }: { variety: number; context: Context }) {
   const { engine, version, generation, overview } = context;
   const v = overview.varieties[variety];
+  const respelled = overview.annals.some((a) => a.kind === "respelling" && a.variety === variety && a.generation === v.written);
   const [allLaws, setAllLaws] = useState(false);
   const speakers = overview.communities.filter((c) => c.ended === null && c.variety === variety);
   const daughters = overview.varieties.filter((d) => d.parent === variety);
@@ -891,6 +1035,11 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
             speakers.length > 0 ? <Joined items={speakers} link={(c) => <PeopleLink c={c} context={context} />} /> : "no one now",
           ],
           ["Standard of", v.standardOf === null ? null : <StateLink state={overview.states[v.standardOf]} context={context} />],
+          ["Sacred to", v.sacredOf === null ? null : <ReligionLink religion={overview.religions[v.sacredOf]} context={context} />],
+          ["Writing", v.written === null ? <Explained term="spelling vs pronunciation">unwritten</Explained> :
+            <><Explained term="spelling vs pronunciation">{respelled ? "last respelled" : "written"}</Explained>{" "}
+              {respelled ? "in" : "since"} year <Year generation={v.written} context={context} /></>],
+          ["Name style", v.nameStyle === "double" ? <Explained term="dithematic name">two-part names</Explained> : "one-word names"],
           [
             "Parent",
             v.parent === null ? null : (
@@ -916,6 +1065,18 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
         ]}
       />
       <LanguageSpecimen variety={variety} context={context} />
+      <h3><Explained term="given name">Given names in fashion</Explained></h3>
+      {v.names.length === 0 ? <p className="muted">None yet.</p> : (
+        <ul className="roster given-names">
+          {v.names.map((name, i) => (
+            <li key={i}>
+              <span className="word">{name.name}</span> <span className="ipa">/{name.ipa}/</span>{" "}
+              “{name.meaning}”
+              {name.from !== null ? <small className="muted"> from <LanguageLink variety={name.from} context={context} /> (sacred)</small> : null}
+            </li>
+          ))}
+        </ul>
+      )}
       {kin.length > 0 ? (
         <>
           <h3>Shares core words with</h3>
@@ -1263,6 +1424,19 @@ function EventCard({ annal, context }: { annal: Annal; context: Context }) {
           <h3>States</h3>
           <p><Joined items={annal.states.filter((id) => overview.states[id])}
             link={(id) => <StateLink state={overview.states[id]} context={context} />} /></p>
+        </>
+      ) : null}
+      {annal.religions.some((id) => overview.religions[id]) ? (
+        <>
+          <h3>Religions</h3>
+          <p><Joined items={annal.religions.filter((id) => overview.religions[id])}
+            link={(id) => <ReligionLink religion={overview.religions[id]} context={context} />} /></p>
+        </>
+      ) : null}
+      {annal.crafts.length > 0 ? (
+        <>
+          <h3>Crafts</h3>
+          <p><Joined items={annal.crafts} link={(id) => <CraftLink craft={id} context={context} />} /></p>
         </>
       ) : null}
       {annal.lands.length > 0 ? (
