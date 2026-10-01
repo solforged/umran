@@ -26,6 +26,23 @@ recipe that might produce different words after an engine update.
 - `web/src/components/Inspector.tsx`: senses, grammar, sound, and provenance.
 - `web/src/components/Modal.tsx`: controlled native dialogs.
 
+## Rebuild in progress
+
+`crates/langgen-sim` is replacing `langgen-core` milestone by milestone, per
+the design doc (https://claude.ai/code/artifact/965cab5c-8222-4277-8b9d-804394941e3c):
+a generation-stepped simulator where communities with dispositions and
+contact drive sound change, borrowing, and word competition. Old crates and
+the workbench stay until milestone 5 rebuilds the UI on the new engine; do
+not port new features into `langgen-core`.
+
+Milestone 1 (done): phoneme catalog, simultaneous feature-based sound
+changes on flat `Form`s (syllables derived, never stored), presets without
+name generation, ChaCha8 streams keyed per purpose, a 172-concept stock
+(Leipzig–Jakarta 100 in rank order plus cultural fields), and founding
+roots. In `langgen-sim`, roots are CV, CVC, or CVCV with a required onset,
+unique within a semantic field, with a weak sound-symbolic bias.
+`cargo run -p langgen-sim --example found -- <seed> <preset>` prints one.
+
 React, TypeScript, and Vite provide the interface; all linguistic generation
 and history mutation run in Rust/WASM. No backend, network language service,
 component suite, or second implementation of linguistic rules. Bun manages the

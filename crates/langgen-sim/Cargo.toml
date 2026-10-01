@@ -1,0 +1,10 @@
+[package]
+name = "langgen-sim"
+version.workspace = true
+edition.workspace = true
+description = "Contact-aware language change simulator"
+
+[dependencies]
+rand.workspace = true
+rand_chacha.workspace = true
+serde.workspace = true

@@ -78,6 +78,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "langgen-sim"
+version = "0.1.0"
+dependencies = [
+ "rand",
+ "rand_chacha",
+ "serde",
+]
+
+[[package]]
 name = "langgen-web"
 version = "0.1.0"
 dependencies = [
