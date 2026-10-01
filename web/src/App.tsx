@@ -57,7 +57,6 @@ export default function App() {
   const [community, setCommunity] = useState(0);
   const [concept, setConcept] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogKind | null>(null);
-  const [pending, setPending] = useState<Action | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -165,13 +164,23 @@ export default function App() {
     [generation, persist],
   );
 
-  // Acting while viewing the past starts a new branch from there.
-  const perform = useCallback(
-    (action: Action) => {
-      if (engine.current && generation < engine.current.latest()) setPending(action);
-      else run(action);
+  // Acting while viewing the past begins another telling from there; the
+  // later years are set aside, not lost.
+  const perform = run;
+
+  const restore = useCallback(
+    (telling: number) => {
+      try {
+        engine.current?.restore(telling);
+        setViewing(null);
+        setVersion((v) => v + 1);
+        setError(null);
+        persist();
+      } catch (e) {
+        setError(message(e));
+      }
     },
-    [generation, run],
+    [persist],
   );
 
   // One generation at the present, for play; saving waits until play stops.
@@ -314,6 +323,7 @@ export default function App() {
           />
           <button
             type="button"
+            title="Strike out the last thing written; it stays in the chronicle, struck through"
             disabled={overview.timeline.length <= 1}
             onClick={() => {
               engine.current?.undo();
@@ -360,6 +370,7 @@ export default function App() {
           atPresent={generation === latest}
           onSelect={(id) => setCommunity(id)}
           onScrub={scrub}
+          onRestore={restore}
           onDialog={setDialog}
           onStep={() => perform({ kind: "run", generations: 1 })}
           onNextEvent={() => nextEvent(EVENT_LIMIT)}
@@ -406,34 +417,6 @@ export default function App() {
         />
       ) : null}
 
-      <Modal
-        open={pending !== null}
-        title="Begin another telling?"
-        onClose={() => setPending(null)}
-        footer={
-          <>
-            <button type="button" onClick={() => setPending(null)}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="primary"
-              onClick={() => {
-                const action = pending;
-                setPending(null);
-                if (action) run(action);
-              }}
-            >
-              Discard later years
-            </button>
-          </>
-        }
-      >
-        <p>
-          You are reading year {generation * YEARS} of {latest * YEARS}. Writing here begins the history again from
-          this year, and the later years are discarded. Export first to keep them.
-        </p>
-      </Modal>
     </div>
   );
 }

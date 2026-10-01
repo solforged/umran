@@ -7,8 +7,8 @@ use langgen_sim::morphology::Slot;
 use langgen_sim::phoneme::{Backness, Manner, Secondary};
 use langgen_sim::world::ContactKind;
 use langgen_sim::{
-    Action, CATALOG, Chronicle, ENGINE_REVISION, Event, Flavor, Form, Lexeme, Origin, PhonemeId,
-    Recipe, World, WorldEvent, catalog,
+    Action, CATALOG, Chronicle, ENGINE_REVISION, Event, FORMAT, Flavor, Form, Lexeme, Origin,
+    PhonemeId, Recipe, SetAside, World, WorldEvent, catalog,
 };
 use langgen_sim::{LanguageDesign, MorphologyKind, Naming, Segment, Variety};
 use serde::Serialize;
@@ -77,6 +77,11 @@ impl Workbench {
         self.bench.branch(generation)
     }
 
+    /// Takes up a telling set aside, setting the present one aside.
+    pub fn restore(&mut self, index: usize) -> Result<(), JsValue> {
+        self.bench.restore(index).map_err(fail)
+    }
+
     pub fn latest(&self) -> u32 {
         self.bench.latest()
     }
@@ -106,6 +111,9 @@ pub struct Bench {
     cached: Option<World>,
     /// Engine revision a loaded recipe was saved with, if it differs.
     saved_revision: Option<u32>,
+    /// What each telling set aside told, kept since telling it again means
+    /// replaying it whole.
+    told: Vec<(Vec<Action>, Vec<Annal>)>,
 }
 
 impl Bench {
@@ -114,6 +122,7 @@ impl Bench {
             chronicle: Chronicle::new(u64::from(seed)),
             cached: None,
             saved_revision: None,
+            told: Vec::new(),
         }
     }
 
@@ -126,6 +135,7 @@ impl Bench {
             chronicle,
             cached: None,
             saved_revision: (recipe.revision != ENGINE_REVISION).then_some(recipe.revision),
+            told: Vec::new(),
         })
     }
 
@@ -293,10 +303,64 @@ impl Bench {
         self.chronicle.run_until_event(limit)
     }
 
-    /// Discards everything after `generation`.
+    /// Sets everything after `generation` aside as another telling.
     pub fn branch(&mut self, generation: u32) {
         self.cached = None;
         self.chronicle.branch_at(generation);
+    }
+
+    pub fn restore(&mut self, index: usize) -> Result<(), String> {
+        self.cached = None;
+        self.chronicle.restore(index)
+    }
+
+    /// Each telling set aside, with what it told that the present history
+    /// does not, up to `generation` when viewing the past.
+    fn tellings(&mut self, generation: u32) -> Vec<TellingView> {
+        let current = self.chronicle.actions().to_vec();
+        let present = annals(self.chronicle.latest(), &connections(&self.chronicle));
+        let until = if generation < self.latest() {
+            generation
+        } else {
+            u32::MAX
+        };
+        let tellings = self.chronicle.tellings().to_vec();
+        self.told
+            .retain(|(actions, _)| tellings.iter().any(|t| &t.actions == actions));
+        let mut out = Vec::new();
+        for (index, telling) in tellings.iter().enumerate() {
+            let told = match self.told.iter().find(|(a, _)| *a == telling.actions) {
+                Some((_, told)) => told.clone(),
+                None => {
+                    let told = tell(self.chronicle.seed, &telling.actions);
+                    self.told.push((telling.actions.clone(), told.clone()));
+                    told
+                }
+            };
+            let from = divergence(&current, &telling.actions);
+            let mut unmatched: Vec<&Annal> =
+                present.iter().filter(|a| a.generation >= from).collect();
+            let struck: Vec<Annal> = told
+                .into_iter()
+                .filter(|a| a.generation >= from && a.generation <= until)
+                .filter(|a| match unmatched.iter().position(|p| *p == a) {
+                    Some(i) => {
+                        unmatched.swap_remove(i);
+                        false
+                    }
+                    None => true,
+                })
+                .collect();
+            if !struck.is_empty() {
+                out.push(TellingView {
+                    index,
+                    why: telling.why,
+                    from,
+                    struck,
+                });
+            }
+        }
+        out
     }
 
     pub fn latest(&self) -> u32 {
@@ -309,15 +373,8 @@ impl Bench {
         let timeline = self.timeline();
         let seed = self.chronicle.seed;
         let saved_revision = self.saved_revision;
-        let connections: Vec<(u32, usize, usize, ContactKind)> = self
-            .chronicle
-            .timeline()
-            .into_iter()
-            .filter_map(|(g, action)| match action {
-                Action::Connect { a, b, contact, .. } => Some((g, *a, *b, *contact)),
-                _ => None,
-            })
-            .collect();
+        let connections = connections(&self.chronicle);
+        let tellings = self.tellings(generation);
         let world = self.world(generation);
         let annals = annals(world, &connections);
         let spoken = world.spoken();
@@ -411,6 +468,7 @@ impl Bench {
                 .collect(),
             intelligibility: spoken_pairs(world),
             annals,
+            tellings,
         };
         to_json(&view)
     }
@@ -594,6 +652,52 @@ impl Bench {
 
 /// The world's history up to now as annal entries: peoples appearing,
 /// parting, meeting, and changing tongues, plus each language's sound laws.
+/// Contacts made by hand, with when, from a history's actions.
+fn connections(chronicle: &Chronicle) -> Vec<(u32, usize, usize, ContactKind)> {
+    chronicle
+        .timeline()
+        .into_iter()
+        .filter_map(|(g, action)| match action {
+            Action::Connect { a, b, contact, .. } => Some((g, *a, *b, *contact)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The annals a telling set aside would have written, or none if it no
+/// longer replays on this engine.
+fn tell(seed: u64, actions: &[Action]) -> Vec<Annal> {
+    let recipe = Recipe {
+        format: FORMAT.into(),
+        revision: ENGINE_REVISION,
+        seed,
+        actions: actions.to_vec(),
+        tellings: Vec::new(),
+    };
+    match Chronicle::from_recipe(&recipe) {
+        Ok(chronicle) => annals(chronicle.latest(), &connections(&chronicle)),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// The generation from which two histories tell otherwise.
+fn divergence(a: &[Action], b: &[Action]) -> u32 {
+    let mut generation = 0;
+    for (x, y) in a.iter().zip(b) {
+        match (x, y) {
+            (Action::Run { generations: m }, Action::Run { generations: n }) => {
+                generation += m.min(n);
+                if m != n {
+                    break;
+                }
+            }
+            _ if x != y => break,
+            _ => {}
+        }
+    }
+    generation
+}
+
 fn annals(world: &World, connections: &[(u32, usize, usize, ContactKind)]) -> Vec<Annal> {
     // Names are written as they were said at the time of each entry.
     let meaning = |c: usize| &world.communities[c].name.meaning;
@@ -1136,9 +1240,20 @@ struct Overview {
     intelligibility: Vec<Pair>,
     /// What happened, in order, told as a chronicle.
     annals: Vec<Annal>,
+    /// Tellings set aside, with what they told that this one does not.
+    tellings: Vec<TellingView>,
 }
 
 #[derive(Serialize)]
+struct TellingView {
+    index: usize,
+    why: SetAside,
+    /// The generation from which it tells otherwise.
+    from: u32,
+    struck: Vec<Annal>,
+}
+
+#[derive(Clone, PartialEq, Serialize)]
 struct Annal {
     generation: u32,
     /// "found", "split", "shift", "contact", or "law".
@@ -1309,6 +1424,42 @@ mod tests {
             .unwrap();
         w.act(r#"{"kind":"run","generations":10}"#).unwrap();
         w
+    }
+
+    #[test]
+    fn set_aside_histories_stay_visible_struck_through() {
+        let tellings = |w: &mut Bench| -> serde_json::Value {
+            let overview: serde_json::Value =
+                serde_json::from_str(&w.overview(w.latest()).unwrap()).unwrap();
+            overview["tellings"].clone()
+        };
+        let mut w = bench();
+        assert_eq!(tellings(&mut w), serde_json::json!([]));
+        // Undo the last run and the split: both are struck, not lost.
+        w.undo();
+        w.undo();
+        let struck = tellings(&mut w);
+        assert_eq!(struck[0]["why"], "undone");
+        assert_eq!(struck[0]["from"], 12);
+        let texts: Vec<&str> = struck[0]["struck"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a["text"].as_str().unwrap())
+            .collect();
+        assert!(texts.iter().any(|t| t.contains("go out from among them")));
+        // The struck entries come from the same telling, so restoring it
+        // brings them back as the present.
+        w.restore(0).unwrap();
+        assert_eq!(w.latest(), 22);
+        assert_eq!(tellings(&mut w), serde_json::json!([]));
+        // Writing on from an earlier year is another telling.
+        w.branch(5);
+        w.act(r#"{"kind":"shift","community":0,"toward":1}"#).unwrap();
+        assert_eq!(tellings(&mut w)[0]["why"], "rewritten");
+        assert_eq!(tellings(&mut w)[0]["from"], 5);
+        let saved = Bench::load(&w.save().unwrap()).unwrap().save().unwrap();
+        assert_eq!(saved, w.save().unwrap(), "tellings survive saving");
     }
 
     #[test]

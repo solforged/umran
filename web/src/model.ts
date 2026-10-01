@@ -153,6 +153,17 @@ export interface Overview {
   contacts: Contact[];
   intelligibility: { a: number; b: number; score: number }[];
   annals: Annal[];
+  /// Histories set aside, with what they told that this one does not.
+  tellings: TellingView[];
+}
+
+/// A history set aside by undoing, or by writing on from an earlier year.
+export interface TellingView {
+  index: number;
+  why: "undone" | "rewritten";
+  /// The generation from which it tells otherwise.
+  from: number;
+  struck: Annal[];
 }
 
 /// One chronicle entry; `variety` is set for a sound law.
@@ -210,6 +221,8 @@ export interface Engine {
   undo(): boolean;
   runUntilEvent(limit: number): number;
   branch(generation: number): void;
+  /// Takes up a telling set aside, setting the present one aside.
+  restore(index: number): void;
   latest(): number;
   overview(generation: number): Overview;
   lexicon(generation: number, variety: number): LexiconRow[];

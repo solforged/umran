@@ -11,6 +11,7 @@ export function Verso({
   atPresent,
   onSelect,
   onScrub,
+  onRestore,
   onDialog,
   onStep,
   onNextEvent,
@@ -20,6 +21,7 @@ export function Verso({
   atPresent: boolean;
   onSelect: (community: number) => void;
   onScrub: (generation: number) => void;
+  onRestore: (telling: number) => void;
   onDialog: (kind: DialogKind) => void;
   onStep: () => void;
   onNextEvent: () => void;
@@ -55,11 +57,19 @@ export function Verso({
         .
       </p>
 
-      <Chronicle annals={overview.annals} variety={current.variety} onScrub={onScrub} />
+      <Chronicle
+        annals={overview.annals}
+        tellings={overview.tellings}
+        variety={current.variety}
+        onScrub={onScrub}
+        onRestore={onRestore}
+      />
 
       <div className="and-then">
         <p className="and-then-lead">And then…</p>
-        {atPresent ? null : <p className="muted small">Writing here begins another telling from this year.</p>}
+        {atPresent ? null : (
+          <p className="muted small">Writing here begins another telling from this year; the later years stay, struck through.</p>
+        )}
         <ul>
           <li>
             <button type="button" className="link" onClick={onStep}>

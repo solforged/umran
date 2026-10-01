@@ -1,6 +1,10 @@
 //! A history as a seed plus the ordered actions someone took. Any past
 //! generation is recovered by replaying those actions, which the engine's
 //! determinism makes exact; cached checkpoints keep scrubbing quick.
+//!
+//! Nothing written is thrown away. Undoing, or writing on from an earlier
+//! year, sets the abandoned actions aside as another telling, which the
+//! book shows struck through and can return to.
 
 use crate::design::LanguageDesign;
 use crate::names::Naming;
@@ -53,6 +57,24 @@ pub enum Action {
     },
 }
 
+/// Why a telling was set aside.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SetAside {
+    /// Taken back with undo.
+    Undone,
+    /// Left when the history was written on from an earlier year, or when
+    /// another telling was taken up.
+    Rewritten,
+}
+
+/// A history set aside: every action it had, from the founding on.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Telling {
+    pub why: SetAside,
+    pub actions: Vec<Action>,
+}
+
 /// A saved history: enough to replay it exactly on the same engine revision.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Recipe {
@@ -60,6 +82,9 @@ pub struct Recipe {
     pub revision: u32,
     pub seed: u64,
     pub actions: Vec<Action>,
+    /// Tellings set aside, oldest first. They never affect the replay.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tellings: Vec<Telling>,
 }
 
 /// Where a replay has got to: the next action, and how far into it if it
@@ -74,6 +99,7 @@ struct Cursor {
 pub struct Chronicle {
     pub seed: u64,
     actions: Vec<Action>,
+    tellings: Vec<Telling>,
     latest: World,
     checkpoints: BTreeMap<u32, (Cursor, World)>,
 }
@@ -83,6 +109,7 @@ impl Chronicle {
         Self {
             seed,
             actions: Vec::new(),
+            tellings: Vec::new(),
             latest: World::new(seed, Params::default()),
             checkpoints: BTreeMap::new(),
         }
@@ -90,6 +117,11 @@ impl Chronicle {
 
     pub fn actions(&self) -> &[Action] {
         &self.actions
+    }
+
+    /// Tellings set aside, oldest first.
+    pub fn tellings(&self) -> &[Telling] {
+        &self.tellings
     }
 
     /// The world after every action.
@@ -125,6 +157,9 @@ impl Chronicle {
             }
             _ => self.actions.push(action),
         }
+        // A telling the history has caught up with is no longer set aside.
+        let actions = &self.actions;
+        self.tellings.retain(|t| !holds(actions, &t.actions));
         Ok(())
     }
 
@@ -141,9 +176,12 @@ impl Chronicle {
         ran
     }
 
-    /// Removes the last action.
+    /// Takes back the last action, keeping it in a telling set aside.
+    /// Undoing again extends that same telling rather than starting another.
     pub fn undo(&mut self) -> Option<Action> {
+        let before = self.actions.clone();
         let action = self.actions.pop()?;
+        self.set_aside(before, SetAside::Undone);
         let len = self.actions.len();
         self.checkpoints
             .retain(|_, (cursor, _)| cursor.action < len);
@@ -151,8 +189,8 @@ impl Chronicle {
         Some(action)
     }
 
-    /// Discards everything after `generation`, so new actions continue from
-    /// there. A run that crosses it is shortened.
+    /// Sets everything after `generation` aside, so new actions continue
+    /// from there. A run that crosses it is shortened.
     pub fn branch_at(&mut self, generation: u32) {
         let mut kept = Vec::new();
         let mut at = 0;
@@ -179,10 +217,46 @@ impl Chronicle {
             .zip(&kept)
             .take_while(|(a, b)| a == b)
             .count();
-        self.actions = kept;
+        let before = std::mem::replace(&mut self.actions, kept);
+        self.set_aside(before, SetAside::Rewritten);
         self.checkpoints
             .retain(|_, (cursor, _)| cursor.action < unchanged);
         self.latest = self.replay_to(u32::MAX);
+    }
+
+    /// Takes up the telling at `index` again, setting the present one
+    /// aside in its place.
+    pub fn restore(&mut self, index: usize) -> Result<(), String> {
+        let telling = self
+            .tellings
+            .get(index)
+            .ok_or_else(|| format!("there is no telling {index}"))?;
+        let mut taken = Self::new(self.seed);
+        for (i, action) in telling.actions.iter().enumerate() {
+            taken
+                .act(action.clone())
+                .map_err(|e| format!("action {}: {e}", i + 1))?;
+        }
+        self.tellings.remove(index);
+        let before = std::mem::replace(&mut self.actions, taken.actions);
+        self.latest = taken.latest;
+        self.checkpoints = taken.checkpoints;
+        self.set_aside(before, SetAside::Rewritten);
+        Ok(())
+    }
+
+    /// Keeps `actions` as a telling, unless the present history or another
+    /// telling already holds all of them. Tellings they contain are merged
+    /// into them.
+    fn set_aside(&mut self, actions: Vec<Action>, why: SetAside) {
+        if actions.is_empty()
+            || holds(&self.actions, &actions)
+            || self.tellings.iter().any(|t| holds(&t.actions, &actions))
+        {
+            return;
+        }
+        self.tellings.retain(|t| !holds(&actions, &t.actions));
+        self.tellings.push(Telling { why, actions });
     }
 
     /// The world as it stood at `generation`, after any actions taken then.
@@ -235,6 +309,7 @@ impl Chronicle {
             revision: ENGINE_REVISION,
             seed: self.seed,
             actions: self.actions.clone(),
+            tellings: self.tellings.clone(),
         }
     }
 
@@ -251,8 +326,23 @@ impl Chronicle {
                 .act(action.clone())
                 .map_err(|e| format!("action {}: {e}", i + 1))?;
         }
+        chronicle.tellings = recipe.tellings.clone();
         Ok(chronicle)
     }
+}
+
+/// Whether the history `longer` already tells all of `shorter`: the same
+/// actions, with a final run at least as long.
+fn holds(longer: &[Action], shorter: &[Action]) -> bool {
+    let Some((last, rest)) = shorter.split_last() else {
+        return true;
+    };
+    longer.len() >= shorter.len()
+        && longer.starts_with(rest)
+        && match (&longer[rest.len()], last) {
+            (Action::Run { generations: a }, Action::Run { generations: b }) => a >= b,
+            (a, b) => a == b,
+        }
 }
 
 fn community(world: &World, index: usize) -> Result<(), String> {
@@ -408,6 +498,60 @@ mod tests {
                 .events
                 .iter()
                 .any(|(_, e)| matches!(e, crate::WorldEvent::Shift { .. }))
+        );
+    }
+
+    #[test]
+    fn undone_actions_are_set_aside_and_can_return() {
+        let mut c = sample();
+        let full = c.actions().to_vec();
+        let end = c.latest().clone();
+        c.undo();
+        c.undo();
+        assert_eq!(c.tellings().len(), 1, "consecutive undos make one telling");
+        assert_eq!(c.tellings()[0].why, SetAside::Undone);
+        assert_eq!(c.tellings()[0].actions, full);
+
+        c.restore(0).unwrap();
+        assert_eq!(c.actions(), &full[..]);
+        assert!(same(c.latest(), &end));
+        assert!(
+            c.tellings().is_empty(),
+            "the present held nothing the restored telling lacks"
+        );
+
+        c.branch_at(5);
+        c.act(Action::Split {
+            community: 0,
+            naming: None,
+            intensity: 0.2,
+        })
+        .unwrap();
+        assert_eq!(c.tellings().len(), 1);
+        assert_eq!(c.tellings()[0].why, SetAside::Rewritten);
+        let branched = c.actions().to_vec();
+        c.restore(0).unwrap();
+        assert_eq!(c.actions(), &full[..]);
+        assert_eq!(
+            c.tellings()[0].actions,
+            branched,
+            "the present is set aside"
+        );
+
+        let json = serde_json::to_string(&c.recipe()).unwrap();
+        let back = Chronicle::from_recipe(&serde_json::from_str(&json).unwrap()).unwrap();
+        assert_eq!(back.tellings(), c.tellings());
+    }
+
+    #[test]
+    fn running_on_past_a_telling_takes_it_up() {
+        let mut c = sample();
+        c.undo();
+        assert_eq!(c.tellings().len(), 1);
+        c.act(Action::Run { generations: 30 }).unwrap();
+        assert!(
+            c.tellings().is_empty(),
+            "running on tells everything the undone run told"
         );
     }
 

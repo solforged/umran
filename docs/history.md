@@ -10,7 +10,16 @@ the new people chooses. Consecutive runs merge, so playing stays one action and
 undo removes the whole stretch. Any past generation is recovered by
 replaying, with checkpoints every 10 generations; the timeline needs no
 separate data. Play and "next event" work only at the present.
-Acting while viewing the past discards the later history after confirmation.
+
+Nothing written is thrown away. Undo, and acting while viewing the past,
+set the abandoned actions aside as a `Telling` (every action from the
+founding on, marked undone or rewritten); consecutive undos extend one
+telling, and a telling the present history already holds is dropped. The
+facade replays each telling once (cached) and lists what it told that the
+present does not, from the generation where the two diverge; the chronicle
+shows those entries struck through, and `restore` takes a telling up again,
+setting the present aside in its place. Tellings travel in the recipe but
+never affect its replay.
 
 Saves are recipes (`Recipe`: format, `ENGINE_REVISION`, seed, actions), not
 resolved states. Bump `ENGINE_REVISION` whenever a change would make an

@@ -29,7 +29,7 @@ pub mod wold;
 pub mod world;
 
 pub use change::{Env, Matcher, Rewrite, SoundChange, apply_all};
-pub use chronicle::{Action, Chronicle, ENGINE_REVISION, Recipe};
+pub use chronicle::{Action, Chronicle, ENGINE_REVISION, FORMAT, Recipe, SetAside, Telling};
 pub use concepts::{CONCEPTS, Class, Concept, FAMILIES, Field, Iconic, Relation, Tier};
 pub use design::{LanguageDesign, Sound};
 pub use flavor::Flavor;

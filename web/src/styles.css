@@ -1187,3 +1187,22 @@ table.preview tr {
 .designer-preview .glottonym {
   font-weight: 600;
 }
+
+/* What was undone or told otherwise stays in the chronicle, struck out. */
+
+.annals .struck {
+  margin: 0.2rem 0;
+  color: var(--ink-soft);
+}
+
+.annals .struck del {
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--danger);
+}
+
+.struck-note {
+  margin: 0.3rem 0 0;
+  font-size: 0.8rem;
+  font-style: italic;
+  color: var(--danger);
+}

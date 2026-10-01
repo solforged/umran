@@ -479,3 +479,22 @@
   font-variant: small-caps;
   letter-spacing: 0.04em;
 }
+/* Struck lines: a scribe's single stroke of red through the ink. */
+[data-look="scriptorium"] .annals .struck del {
+  text-decoration-thickness: 1.5px;
+  text-decoration-color: var(--accent);
+}
+[data-look="scriptorium"] .struck-note {
+  font-family: var(--initial);
+  font-style: normal;
+  font-size: 0.85rem;
+  color: var(--accent);
+}
+[data-look="scriptorium"] .struck-note button.link {
+  font-family: var(--serif);
+  font-style: italic;
+  font-variant: normal;
+  letter-spacing: 0;
+  color: var(--ink-soft);
+  text-decoration: underline dotted;
+}

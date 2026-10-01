@@ -29,6 +29,7 @@ function wrap(bench: Workbench): Engine {
     undo: () => bench.undo(),
     runUntilEvent: (limit) => bench.runUntilEvent(limit),
     branch: (generation) => bench.branch(generation),
+    restore: (index) => bench.restore(index),
     latest: () => bench.latest(),
     overview: (generation) => JSON.parse(bench.overview(generation)) as Overview,
     lexicon: (generation, variety) => JSON.parse(bench.lexicon(generation, variety)) as LexiconRow[],
