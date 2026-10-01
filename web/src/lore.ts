@@ -1,9 +1,32 @@
 // Names and explanations the views share: terrain and contact names, the
-// colour of a family, how a people came by a sound change or a land by a
-// name, and plain explanations of the linguist's terms.
+// kinds of event with their icons, the colour of a family, how a people
+// came by a sound change or a land by a name, and plain explanations of
+// the linguist's terms.
 
-import type { Community, ContactKind, Law, Overview, PlaceName, Terrain } from "./model";
+import {
+  AudioLines,
+  Crown,
+  Flag,
+  Footprints,
+  GitFork,
+  Handshake,
+  Languages,
+  Unlink,
+  type LucideIcon,
+} from "lucide-react";
+import type { Annal, Community, ContactKind, Law, Overview, PlaceName, Terrain } from "./model";
 import { YEARS } from "./model";
+
+export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string }> = {
+  found: { icon: Flag, name: "A people appears" },
+  split: { icon: GitFork, name: "A people parts" },
+  migration: { icon: Footprints, name: "A people moves" },
+  shift: { icon: Languages, name: "A people changes tongue" },
+  contact: { icon: Handshake, name: "Peoples meet" },
+  parted: { icon: Unlink, name: "Peoples part" },
+  conquest: { icon: Crown, name: "A conquest" },
+  law: { icon: AudioLines, name: "A sound change" },
+};
 
 export const TERRAIN_NAME: Record<Terrain, string> = {
   plains: "Plains",

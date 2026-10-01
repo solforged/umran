@@ -24,9 +24,11 @@ Read further when the task touches it:
   JSON views; `engine.ts` adapts the WASM; `shelf.ts` stores the books;
   `takeout.ts` formats exports; `lore.ts` holds shared names and the
   glossary of linguistic terms; `App.tsx` holds view state and actions.
-  `components/` holds the shelf, title page, the stage (the default view:
-  `MapView`, the feed and time bar in `Stage`, and the encyclopedia cards
-  in `Pedia`), the older book pages and atlas, the appendix, and dialogs.
+  `components/` holds the shelf, the world setup (`WorldSetup`: map,
+  size, and founding peoples placed on their lands), the stage (the
+  default view: `MapView`, the feed and time bar in `Stage`, and the
+  encyclopedia cards in `Pedia`, each opening with a head and a box of
+  facts), the older book pages and atlas, the appendix, and dialogs.
   Annals carry the peoples, lands, and laws they tell of, so every entry
   can link to their cards. Every language view carries a specimen, a few
   basic words chosen by `SPECIMEN` in the facade (`Specimen.tsx` shows

@@ -405,41 +405,6 @@
   border-left-color: var(--gold);
 }
 
-/* The title page. */
-[data-look="scriptorium"] .preset {
-  border-radius: 0;
-  background: transparent;
-  font-variant: normal;
-  letter-spacing: 0;
-}
-[data-look="scriptorium"] .preset.chosen {
-  border-color: var(--accent);
-  background: var(--accent-mute);
-}
-[data-look="scriptorium"] .preset strong {
-  color: var(--accent);
-  font-variant: small-caps;
-  letter-spacing: 0.04em;
-}
-[data-look="scriptorium"] .frontispiece {
-  border: 3px double var(--ink-soft);
-  border-radius: 0;
-  background: var(--paper-raised);
-}
-[data-look="scriptorium"] .frontispiece .endonym {
-  font-family: var(--initial);
-  font-weight: 400;
-  color: var(--accent);
-  font-size: 2.6rem;
-}
-[data-look="scriptorium"] .frontispiece .glottonym {
-  font-style: italic;
-}
-[data-look="scriptorium"] .title-page legend {
-  color: var(--accent);
-  font-variant: small-caps;
-  letter-spacing: 0.04em;
-}
 /* Struck lines: a scribe's single stroke of red through the ink. */
 [data-look="scriptorium"] .annals .struck del {
   text-decoration-thickness: 1.5px;
@@ -560,8 +525,8 @@
 [data-look="scriptorium"] .stage .word:not(.big) {
   font-size: 1em;
 }
-[data-look="scriptorium"] .stage .gloss > h3 {
-  color: var(--ink);
+[data-look="scriptorium"] .stage .card-head h2 {
+  color: var(--tone, var(--accent));
 }
 
 /* On the stage the switcher sits quietly in the head's right-hand cell

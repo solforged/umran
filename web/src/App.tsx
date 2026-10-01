@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createEngine, loadCatalog, loadEngine, message, presetDesign } from "./engine";
+import { loadCatalog, loadEngine, message } from "./engine";
 import type { Action, Catalog, Engine, WorldMap } from "./model";
 import { YEARS } from "./model";
 import { ActionDialog, type DialogKind } from "./components/ActionDialog";
 import { Appendix } from "./components/Appendix";
 import { Atlas } from "./components/Atlas";
-import { Designer, randomSeed, type Founding } from "./components/Designer";
+import { Designer, type Founding } from "./components/Designer";
 import { Modal } from "./components/Modal";
 import { Recto } from "./components/Recto";
 import { Shelf } from "./components/Shelf";
 import { Timeline } from "./components/Timeline";
 import { Stage } from "./components/Stage";
-import { TitlePage } from "./components/TitlePage";
+import { WorldSetup } from "./components/WorldSetup";
 import { Verso } from "./components/Verso";
 import { sampleBook } from "./sample";
 import { download } from "./takeout";
@@ -34,7 +34,7 @@ const EVENT_LIMIT = 400;
 type View =
   | { kind: "loading" }
   | { kind: "shelf" }
-  | { kind: "title" }
+  | { kind: "setup" }
   | { kind: "book"; id: string }
   | { kind: "recovery"; what: string; raw: string; error: string };
 
@@ -128,7 +128,7 @@ export default function App() {
     }
     setShelf(loaded);
     if (loaded.last !== null && loaded.books.some((b) => b.id === loaded.last)) openBook(loaded.last);
-    else setView({ kind: loaded.books.length === 0 ? "title" : "shelf" });
+    else setView({ kind: loaded.books.length === 0 ? "setup" : "shelf" });
   }, [openBook]);
 
   const toShelf = useCallback(() => {
@@ -212,31 +212,7 @@ export default function App() {
     [persist],
   );
 
-  const begin = useCallback(
-    async (founding: Founding, others: number) => {
-      try {
-        const next = await createEngine(founding.worldSeed, founding.worldSize);
-        next.act(foundingAction(founding));
-        // The others are drawn by chance: any starting sounds, any words.
-        for (let i = 0; i < others && catalog; i++) {
-          const preset = catalog.presets[Math.floor(Math.random() * catalog.presets.length)].id;
-          const seed = randomSeed();
-          next.act({
-            kind: "found",
-            naming: { kind: "people" },
-            design: presetDesign(preset, seed),
-            seed,
-            power: 0.5,
-            openness: 0.5,
-          });
-        }
-        adopt(newBookId(), next, true);
-      } catch (e) {
-        setError(message(e));
-      }
-    },
-    [adopt, catalog],
-  );
+  const begin = useCallback((next: Engine) => adopt(newBookId(), next, true), [adopt]);
 
   const sample = async () => {
     try {
@@ -276,16 +252,15 @@ export default function App() {
     );
   }
 
-  if (view.kind === "title") {
+  if (view.kind === "setup") {
     return (
-      <main className="splash">
-        <TitlePage
+      <div className="app">
+        <WorldSetup
           catalog={catalog}
-          onBegin={(f, others) => void begin(f, others)}
-          onCancel={() => setView({ kind: "shelf" })}
+          onBegin={begin}
+          onShelf={shelf.books.length > 0 ? () => setView({ kind: "shelf" }) : undefined}
         />
-        {error ? <p className="error">{error}</p> : null}
-      </main>
+      </div>
     );
   }
 
@@ -296,7 +271,7 @@ export default function App() {
           revision={catalog.revision}
           books={shelf.books}
           onOpen={openBook}
-          onBegin={() => setView({ kind: "title" })}
+          onBegin={() => setView({ kind: "setup" })}
           onSample={() => void sample()}
           onImport={(f) => void importFile(f)}
           onRemove={(id) => {
@@ -312,7 +287,7 @@ export default function App() {
     );
   }
 
-  const title = shelf.books.find((b) => b.id === view.id)?.title ?? "A new book";
+  const title = shelf.books.find((b) => b.id === view.id)?.title ?? "A new world";
 
   const notices = (
     <>
@@ -348,7 +323,7 @@ export default function App() {
       <Modal open wide title="A new people arrives" onClose={() => setDialog(null)}>
         <Designer
           catalog={catalog}
-          newWorld={false}
+          submit="Found them"
           onCancel={() => setDialog(null)}
           onFound={(f) => {
             setDialog(null);

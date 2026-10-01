@@ -35,6 +35,9 @@ pub enum Action {
         seed: u64,
         power: f32,
         openness: f32,
+        /// The land they settle; `None` lets the world choose.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        region: Option<usize>,
     },
     Connect {
         a: usize,
@@ -372,10 +375,20 @@ fn apply(world: &mut World, action: &Action) -> Result<(), String> {
             seed,
             power,
             openness,
+            region,
         } => {
             design.validate()?;
             naming.validate()?;
-            world.found_seeded(naming, &design.profile(), *seed, *power, *openness);
+            if let Some(r) = *region
+                && !world
+                    .map
+                    .regions
+                    .get(r)
+                    .is_some_and(|r| r.terrain.is_land())
+            {
+                return Err(format!("region {r} is not land a people can settle"));
+            }
+            world.found_seeded(naming, &design.profile(), *seed, *power, *openness, *region);
         }
         Action::Connect {
             a,
@@ -434,6 +447,7 @@ mod tests {
             seed: name.len() as u64,
             power: 0.5,
             openness: 0.5,
+            region: None,
         }
     }
 
@@ -474,8 +488,8 @@ mod tests {
         let mut c = sample();
         let mut direct = World::new(7, Params::default());
         let design = |p: &str| LanguageDesign::preset(p, 0).unwrap().profile();
-        direct.found_seeded(&Naming::People, &design("familiar"), 4, 0.5, 0.5);
-        direct.found_seeded(&Naming::People, &design("polynesian"), 5, 0.5, 0.5);
+        direct.found_seeded(&Naming::People, &design("familiar"), 4, 0.5, 0.5, None);
+        direct.found_seeded(&Naming::People, &design("polynesian"), 5, 0.5, 0.5, None);
         direct.run(12);
         assert!(same(&c.world_at(12), &direct));
         // Actions taken at a generation are part of that generation's view.
@@ -591,7 +605,36 @@ mod tests {
             design.sounds.clear();
         }
         assert!(c.act(bad).is_err());
+        let sea = (0..c.latest().map.regions.len())
+            .find(|&r| !c.latest().map.regions[r].terrain.is_land())
+            .unwrap();
+        let mut drowned = found("X", "familiar");
+        if let Action::Found { region, .. } = &mut drowned {
+            *region = Some(sea);
+        }
+        assert!(c.act(drowned).is_err());
         assert_eq!(c.actions().len(), before, "rejected actions change nothing");
+    }
+
+    #[test]
+    fn a_people_settles_the_land_it_is_founded_on() {
+        let mut c = sample();
+        let world = c.latest();
+        let open = (0..world.map.regions.len())
+            .rev()
+            .find(|&r| {
+                world.map.regions[r].terrain.is_land()
+                    && world.communities.iter().all(|p| p.region != r)
+            })
+            .unwrap();
+        let mut chosen = found("X", "familiar");
+        if let Action::Found { region, .. } = &mut chosen {
+            *region = Some(open);
+        }
+        c.act(chosen.clone()).unwrap();
+        assert_eq!(c.latest().communities.last().unwrap().region, open);
+        // The choice is part of the recipe, so it replays.
+        assert_eq!(c.actions().last(), Some(&chosen));
     }
 
     #[test]

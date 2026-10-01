@@ -1,37 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import {
-  AudioLines,
-  Crown,
-  Flag,
-  Footprints,
-  GitFork,
-  Handshake,
-  Languages,
-  Pause,
-  Play,
-  SkipForward,
-  Unlink,
-  type LucideIcon,
-} from "lucide-react";
+import { Pause, Play, SkipForward } from "lucide-react";
 import type { Annal, Engine, Overview, WorldMap } from "../model";
 import { YEARS } from "../model";
+import { EVENT_KIND } from "../lore";
 import { PACES, year } from "../words";
 import type { DialogKind } from "./ActionDialog";
 import { Told } from "./Chronicle";
 import { MapView, type Tint } from "./MapView";
 import { Pedia, type Focus } from "./Pedia";
 import { SpecimenChanges } from "./Specimen";
-
-const KIND_ICON: Record<Annal["kind"], LucideIcon> = {
-  found: Flag,
-  split: GitFork,
-  migration: Footprints,
-  shift: Languages,
-  contact: Handshake,
-  parted: Unlink,
-  conquest: Crown,
-  law: AudioLines,
-};
 
 /// What stops the years passing on their own.
 type PauseOn = "nothing" | "peoples" | "sounds" | "anything";
@@ -257,6 +234,7 @@ export function Stage({
         words={words}
         go={go}
         onScrub={onScrub}
+        onPlay={() => setPlaying(true)}
         onDialog={(kind, community) => {
           onSelect(community);
           onDialog(kind);
@@ -267,12 +245,13 @@ export function Stage({
         <div className="transport">
           <button
             type="button"
-            className="icon play"
+            className="play primary"
             disabled={!atPresent}
             title={atPresent ? (playing ? "Stop the years" : "Let the years pass") : "Turn to the present to go on"}
             onClick={() => setPlaying(!playing)}
           >
-            {playing ? <Pause size={18} /> : <Play size={18} />}
+            {playing ? <Pause size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}
+            {playing ? "Pause" : "Play"}
           </button>
           <select value={pace} aria-label="How quickly" onChange={(e) => setPace(Number(e.target.value))}>
             {PACES.map(([value, name]) => (
@@ -385,7 +364,7 @@ function Feed({
   return (
     <ol className="feed" aria-label="What happened">
       {recent.map((a) => {
-        const Icon = KIND_ICON[a.kind];
+        const Icon = EVENT_KIND[a.kind].icon;
         const same = open !== null && open.generation === a.generation && open.text === a.text;
         return (
           <li key={`${a.generation}-${a.kind}-${a.text}`} className={a.generation === generation ? "fresh" : undefined}>

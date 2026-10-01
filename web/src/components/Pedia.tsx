@@ -1,8 +1,8 @@
 import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import { ArrowLeft, Globe } from "lucide-react";
+import { ArrowLeft, AudioLines, Globe, Languages, MapPin, Play, Users, WholeWord, type LucideIcon } from "lucide-react";
 import type { Annal, Community, Engine, Overview, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { CONTACT_NAME, howCame, howNamed, hue, TERMS, TERRAIN_NAME, type Term } from "../lore";
+import { CONTACT_NAME, EVENT_KIND, howCame, howNamed, hue, TERMS, TERRAIN_NAME, type Term } from "../lore";
 import { bond } from "../words";
 import type { DialogKind } from "./ActionDialog";
 import { Told } from "./Chronicle";
@@ -21,20 +21,12 @@ export type Focus =
   | { kind: "land"; region: number }
   | { kind: "event"; annal: Annal };
 
-const KIND_NAME: Record<Focus["kind"], string> = {
-  world: "The world",
-  people: "A people",
-  language: "A language",
-  word: "A word",
-  law: "A sound change",
-  land: "A land",
-  event: "What happened",
-};
-
 /// Most of a people's story the card lists, newest first.
 const STORY_LENGTH = 12;
 /// Most examples of a sound change the card lists.
 const EXAMPLES = 6;
+/// Sound laws a language card lists before "all of them".
+const RECENT_LAWS = 8;
 
 /// Share of core words below which two languages count as unrelated.
 const KIN_FLOOR = 0.05;
@@ -49,11 +41,14 @@ interface Context {
   words: WordMap | null;
   go: (focus: Focus) => void;
   onScrub: (generation: number) => void;
+  onPlay: () => void;
   onDialog: (kind: DialogKind, community: number) => void;
 }
 
 /// The encyclopedia: one card at a time about whatever is in focus, with
-/// every name in it leading to that thing's own card.
+/// every name in it leading to that thing's own card. Each card opens the
+/// same way: what kind of thing it is, its name, a box of facts, and its
+/// specimen words where it has a language, then sections to read on.
 export function Pedia({
   focus,
   canBack,
@@ -69,7 +64,6 @@ export function Pedia({
         <button type="button" className="icon" onClick={() => context.go({ kind: "world" })} title="The world">
           <Globe size={16} />
         </button>
-        <span className="eyebrow">{KIND_NAME[focus.kind]}</span>
       </nav>
       <article className="card">
         <Card focus={focus} context={context} />
@@ -106,6 +100,51 @@ function Card({ focus, context }: { focus: Focus; context: Context }) {
   }
 }
 
+/// How every card opens: what kind of thing this is, its name in a colour
+/// of its own, and a line saying what the name means or how it sounds.
+function CardHead({
+  icon: Icon,
+  kind,
+  title,
+  sub,
+  tone,
+  hand,
+}: {
+  icon: LucideIcon;
+  kind: string;
+  title: ReactNode;
+  sub?: ReactNode;
+  tone?: string;
+  hand?: number;
+}) {
+  return (
+    <header className="card-head" style={tone ? ({ "--tone": tone } as CSSProperties) : undefined}>
+      <p className="card-kind">
+        <Icon size={14} aria-hidden="true" /> {kind}
+      </p>
+      <h2 className={hand === undefined ? undefined : `hand-${hand % 5}`}>{title}</h2>
+      {sub ? <p className="card-sub">{sub}</p> : null}
+    </header>
+  );
+}
+
+/// The facts to take in at a glance, as an encyclopedia's infobox. Rows
+/// with nothing to say are left out.
+function Facts({ rows }: { rows: [string, ReactNode][] }) {
+  const shown = rows.filter(([, value]) => value !== null && value !== undefined && value !== false);
+  if (shown.length === 0) return null;
+  return (
+    <dl className="infobox">
+      {shown.map(([label, value]) => (
+        <div key={label}>
+          <dt>{label}</dt>
+          <dd>{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 /// A linguist's term, explained in place when clicked.
 function Explained({ term, children }: { term: Term; children: ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -124,7 +163,7 @@ function PeopleLink({ c, context }: { c: Community; context: Context }) {
   return (
     <button
       type="button"
-      className={`link word hand-${family % 5}`}
+      className="link word people-link"
       style={{ color: hue(family) }}
       onClick={() => context.go({ kind: "people", id: c.id })}
     >
@@ -141,12 +180,36 @@ function LanguageLink({ variety, context }: { variety: number; context: Context 
   );
 }
 
-function LandLink({ region, context }: { region: number; context: Context }) {
+function landName(region: number, context: Context): string {
   const name = context.overview.places.find((p) => p.region === region)?.names.at(-1)?.spelled;
+  return name ?? `a nameless ${TERRAIN_NAME[context.map.regions[region].terrain].toLowerCase()}`;
+}
+
+function LandLink({ region, context }: { region: number; context: Context }) {
   return (
     <button type="button" className="link word" onClick={() => context.go({ kind: "land", region })}>
-      {name ?? `a nameless ${TERRAIN_NAME[context.map.regions[region].terrain].toLowerCase()}`}
+      {landName(region, context)}
     </button>
+  );
+}
+
+/// What a land is like, in a few words: "coastal forest, an island".
+function terrain(region: number, context: Context): string {
+  const r = context.map.regions[region];
+  return `${r.coastal ? "coastal " : ""}${TERRAIN_NAME[r.terrain].toLowerCase()}${r.island ? ", an island" : ""}`;
+}
+
+/// Several names, each a link, joined as a sentence would join them.
+function Joined<T>({ items, link }: { items: T[]; link: (item: T) => ReactNode }) {
+  return (
+    <>
+      {items.map((item, i) => (
+        <span key={i}>
+          {i === 0 ? "" : i === items.length - 1 ? " and " : ", "}
+          {link(item)}
+        </span>
+      ))}
+    </>
   );
 }
 
@@ -246,6 +309,26 @@ function WordsCompared({ spoken, context }: { spoken: Variety[]; context: Contex
   );
 }
 
+/// Before anything has happened: how to watch, in three steps.
+function Welcome({ context }: { context: Context }) {
+  return (
+    <section className="welcome">
+      <h3>Your world is ready</h3>
+      <ol>
+        <li>
+          <button type="button" className="primary play" onClick={context.onPlay}>
+            <Play size={16} aria-hidden="true" /> Play
+          </button>{" "}
+          Time passes 25 years a step and stops by itself when something happens to a people. “Stop for”, below,
+          chooses what.
+        </li>
+        <li>Click a people or a land on the map, or an entry as it appears, to read about it here.</li>
+        <li>A people’s card lets you shape their history: part them, bring them to meet others, or have them take up another tongue.</li>
+      </ol>
+    </section>
+  );
+}
+
 function WorldCard({ context }: { context: Context }) {
   const { overview, map } = context;
   const peoples = [...overview.communities].sort((a, b) => b.size - a.size);
@@ -256,45 +339,47 @@ function WorldCard({ context }: { context: Context }) {
   const silent = overview.varieties.filter((v) => !v.spoken);
   return (
     <>
-      <h2>The world in year {overview.generation * YEARS}</h2>
-      <p>
-        {peoples.length} {peoples.length === 1 ? "people speaks" : "peoples speak"} {spoken.length}{" "}
-        {spoken.length === 1 ? "language" : "languages"} of {families}{" "}
-        <Explained term="family">{families === 1 ? "family" : "families"}</Explained>, on {held} of {land} lands.
-      </p>
+      <CardHead icon={Globe} kind="The world" title={`Year ${overview.generation * YEARS}`} />
+      {overview.latest === 0 ? <Welcome context={context} /> : null}
+      <Facts
+        rows={[
+          ["Peoples", peoples.length],
+          ["Languages", silent.length > 0 ? `${spoken.length} spoken, ${silent.length} silent` : spoken.length],
+          ["Families", <Explained term="family">{families}</Explained>],
+          ["Lands held", `${held} of ${land}`],
+        ]}
+      />
       <h3>Peoples</h3>
-      <ul className="roster">
-        {peoples.map((c) => (
-          <li key={c.id}>
-            <PeopleLink c={c} context={context} />
-            <span className="muted">
-              {" "}
-              {Math.round(c.size).toLocaleString()} souls, speaking{" "}
-            </span>
-            <LanguageLink variety={c.variety} context={context} />
-          </li>
-        ))}
-      </ul>
+      <table className="peoples">
+        <tbody>
+          {peoples.map((c) => (
+            <tr key={c.id}>
+              <th scope="row">
+                <PeopleLink c={c} context={context} />
+              </th>
+              <td className="num">{Math.round(c.size).toLocaleString()}</td>
+              <td>
+                <LanguageLink variety={c.variety} context={context} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
       {spoken.length > 1 ? (
         <>
           <h3>Words compared</h3>
           <p className="muted small">
-            Words shaded alike come from one root: they are{" "}
-            <Explained term="cognate">cognates</Explained>.
+            Words shaded alike come from one root: they are <Explained term="cognate">cognates</Explained>.
           </p>
           <WordsCompared spoken={spoken} context={context} />
         </>
       ) : null}
       {silent.length > 0 ? (
         <>
-          <h3>Languages no longer spoken</h3>
-          <ul className="roster">
-            {silent.map((v) => (
-              <li key={v.id}>
-                <LanguageLink variety={v.id} context={context} />
-              </li>
-            ))}
-          </ul>
+          <h3>No longer spoken</h3>
+          <p>
+            <Joined items={silent} link={(v) => <LanguageLink variety={v.id} context={context} />} />
+          </p>
         </>
       ) : null}
     </>
@@ -302,46 +387,69 @@ function WorldCard({ context }: { context: Context }) {
 }
 
 function PeopleCard({ c, context }: { c: Community; context: Context }) {
-  const { overview, map } = context;
-  const region = map.regions[c.region];
+  const { overview } = context;
   const name = (id: number) => overview.communities[id];
+  const v = overview.varieties[c.variety];
   const contacts = overview.contacts.filter((k) => k.a === c.id || k.b === c.id);
   const moves = overview.moves.filter((m) => m.community === c.id);
-  const story = overview.annals
-    .filter((a) => a.peoples.includes(c.id))
-    .slice(-STORY_LENGTH)
-    .reverse();
-  const family = overview.varieties[c.variety].family;
+  const told = overview.annals.filter((a) => a.peoples.includes(c.id));
+  const story = told.slice(-STORY_LENGTH).reverse();
   return (
     <>
-      <h2 className={`hand-${family % 5}`} style={{ color: hue(family) }}>
-        {c.name} <span className="ipa">/{c.ipa}/</span>
-      </h2>
-      <p>
-        “{c.meaning}”{c.once ? `, once ${c.once}` : ""}. {Math.round(c.size).toLocaleString()} souls on{" "}
-        {region.coastal ? "coastal " : ""}
-        {TERRAIN_NAME[region.terrain].toLowerCase()} in <LandLink region={c.region} context={context} />, speaking{" "}
-        <LanguageLink variety={c.variety} context={context} />.
-      </p>
+      <CardHead
+        icon={Users}
+        kind="A people"
+        title={c.name}
+        tone={hue(v.family)}
+        hand={v.family}
+        sub={
+          <>
+            “{c.meaning}” <span className="ipa">/{c.ipa}/</span>
+            {c.once ? `, once ${c.once}` : ""}
+          </>
+        }
+      />
+      <Facts
+        rows={[
+          ["Souls", Math.round(c.size).toLocaleString()],
+          [
+            "Land",
+            <>
+              <LandLink region={c.region} context={context} />, {terrain(c.region, context)}
+            </>,
+          ],
+          ["Speak", <LanguageLink variety={c.variety} context={context} />],
+          [
+            "Family",
+            v.family === c.variety ? null : (
+              <>
+                of <LanguageLink variety={v.family} context={context} />
+              </>
+            ),
+          ],
+          ["Since", told.length > 0 ? `year ${told[0].generation * YEARS}` : null],
+          [
+            "Called",
+            c.exonyms.length === 0 ? null : (
+              <Joined
+                items={c.exonyms}
+                link={(e) => (
+                  <>
+                    <span className="word">{e.name}</span> by the <PeopleLink c={name(e.by)} context={context} />
+                  </>
+                )}
+              />
+            ),
+          ],
+        ]}
+      />
       <LanguageSpecimen variety={c.variety} context={context} />
-      {c.exonyms.length > 0 ? (
-        <p className="muted">
-          <Explained term="exonym">Called by others</Explained>:{" "}
-          {c.exonyms.map((e, i) => (
-            <span key={e.by}>
-              {i > 0 ? ", " : ""}
-              <span className="word">{e.name}</span> by the <PeopleLink c={name(e.by)} context={context} />
-            </span>
-          ))}
-        </p>
-      ) : null}
       <h3>Dealings</h3>
       {contacts.length > 0 ? (
         <ul className="roster">
           {contacts.map((k, i) => (
             <li key={i}>
-              They {bond(k.kind, k.intensity)} the{" "}
-              <PeopleLink c={name(k.a === c.id ? k.b : k.a)} context={context} />{" "}
+              They {bond(k.kind, k.intensity)} the <PeopleLink c={name(k.a === c.id ? k.b : k.a)} context={context} />{" "}
               <span className="muted">({CONTACT_NAME[k.kind].toLowerCase()})</span>
             </li>
           ))}
@@ -352,15 +460,17 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
       {moves.length > 0 ? (
         <>
           <h3>Wanderings</h3>
-          <ul className="roster">
+          <ol className="history">
             {moves.map((m, i) => (
               <li key={i}>
-                <Year generation={m.generation} context={context} />{" "}
-                {m.kind === "split" ? "went out to" : "moved to"} <LandLink region={m.to} context={context} />
-                {m.overseas ? " over the sea" : ""}
+                <Year generation={m.generation} context={context} />
+                <span>
+                  {m.kind === "split" ? "Went out to" : "Moved to"} <LandLink region={m.to} context={context} />
+                  {m.overseas ? " over the sea" : ""}
+                </span>
               </li>
             ))}
-          </ul>
+          </ol>
         </>
       ) : null}
       <h3>Their story</h3>
@@ -384,59 +494,59 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
 function LanguageCard({ variety, context }: { variety: number; context: Context }) {
   const { engine, version, generation, overview } = context;
   const v = overview.varieties[variety];
+  const [allLaws, setAllLaws] = useState(false);
   const speakers = overview.communities.filter((c) => c.variety === variety);
   const daughters = overview.varieties.filter((d) => d.parent === variety);
   const kin = overview.intelligibility
     .filter((p) => (p.a === variety || p.b === variety) && p.score >= KIN_FLOOR)
     .map((p) => ({ other: p.a === variety ? p.b : p.a, score: p.score }))
     .sort((a, b) => b.score - a.score);
+  const laws = [...v.laws].reverse();
   return (
     <>
-      <h2 className={`hand-${v.family % 5}`}>{v.name}</h2>
-      <p>
-        {v.meaning ? `“${v.meaning}”. ` : ""}
-        {speakers.length > 0 ? (
-          <>
-            Spoken by{" "}
-            {speakers.map((c, i) => (
-              <span key={c.id}>
-                {i > 0 ? ", " : ""}
-                <PeopleLink c={c} context={context} />
-              </span>
-            ))}
-            .
-          </>
-        ) : (
-          "No longer spoken."
-        )}
-      </p>
+      <CardHead
+        icon={Languages}
+        kind="A language"
+        title={v.name}
+        tone={hue(v.family)}
+        hand={v.family}
+        sub={v.meaning ? `“${v.meaning}”` : null}
+      />
+      <Facts
+        rows={[
+          [
+            "Spoken by",
+            speakers.length > 0 ? <Joined items={speakers} link={(c) => <PeopleLink c={c} context={context} />} /> : "no one now",
+          ],
+          [
+            "Parent",
+            v.parent === null ? null : (
+              <>
+                <LanguageLink variety={v.parent} context={context} />, parted in year {(v.forkedAt ?? 0) * YEARS}
+              </>
+            ),
+          ],
+          [
+            "Daughters",
+            daughters.length === 0 ? null : (
+              <Joined items={daughters} link={(d) => <LanguageLink variety={d.id} context={context} />} />
+            ),
+          ],
+          ["Sounds", `${v.consonants.length} consonants, ${v.vowels.length} vowels`],
+          ["Words", `${v.words.toLocaleString()}, built with ${v.wordBuilding}`],
+          ["Shortest", v.minimalWord],
+        ]}
+      />
       <LanguageSpecimen variety={variety} context={context} />
-      {v.parent !== null ? (
-        <p className="muted">
-          A daughter of <LanguageLink variety={v.parent} context={context} />, parted in year{" "}
-          {(v.forkedAt ?? 0) * YEARS}.
-        </p>
-      ) : null}
-      {daughters.length > 0 ? (
-        <p className="muted">
-          Mother of{" "}
-          {daughters.map((d, i) => (
-            <span key={d.id}>
-              {i > 0 ? ", " : ""}
-              <LanguageLink variety={d.id} context={context} />
-            </span>
-          ))}
-          .
-        </p>
-      ) : null}
       {kin.length > 0 ? (
         <>
           <h3>Shares core words with</h3>
           <ul className="roster">
             {kin.map((k) => (
-              <li key={k.other}>
-                <LanguageLink variety={k.other} context={context} />{" "}
-                <span className="muted">{Math.round(k.score * 100)}% of core words shared</span>
+              <li key={k.other} className="meter-row">
+                <LanguageLink variety={k.other} context={context} />
+                <meter min={0} max={1} value={k.score} />
+                <span className="muted">{Math.round(k.score * 100)}%</span>
               </li>
             ))}
           </ul>
@@ -448,44 +558,49 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
         <br />
         {v.vowels.join(" ")}
       </p>
-      <p className="muted">
-        {v.profile}. Builds words with {v.wordBuilding}; never wears a word shorter than {v.minimalWord}.
-      </p>
       <h3>
         <Explained term="sound law">Sound laws</Explained>
       </h3>
-      {v.laws.length === 0 ? (
+      {laws.length === 0 ? (
         <p className="muted">None yet.</p>
       ) : (
-        <ol className="history">
-          {[...v.laws].reverse().map((law, i) => (
-            <li key={i}>
-              <Year generation={law.generation} context={context} />
-              <span>
-                <button type="button" className="link" onClick={() => context.go({ kind: "law", id: law.id })}>
-                  {law.label}
-                </button>
-                {law.from !== null ? (
-                  <span className="muted">
-                    {" "}
-                    (a <Explained term="wave">wave</Explained> from{" "}
-                    <LanguageLink variety={law.from} context={context} />)
-                  </span>
-                ) : null}
-              </span>
-            </li>
-          ))}
-        </ol>
+        <>
+          <ol className="history">
+            {(allLaws ? laws : laws.slice(0, RECENT_LAWS)).map((law, i) => (
+              <li key={i}>
+                <Year generation={law.generation} context={context} />
+                <span>
+                  <button type="button" className="link" onClick={() => context.go({ kind: "law", id: law.id })}>
+                    {law.label}
+                  </button>
+                  {law.from !== null ? (
+                    <span className="muted">
+                      {" "}
+                      (a <Explained term="wave">wave</Explained> from <LanguageLink variety={law.from} context={context} />)
+                    </span>
+                  ) : null}
+                </span>
+              </li>
+            ))}
+          </ol>
+          {laws.length > RECENT_LAWS ? (
+            <button type="button" className="link more" onClick={() => setAllLaws(!allLaws)}>
+              {allLaws ? "Only the latest" : `All ${laws.length}`}
+            </button>
+          ) : null}
+        </>
       )}
-      <h3>Words</h3>
-      <Dictionary
-        engine={engine}
-        version={version}
-        generation={generation}
-        variety={variety}
-        concept={null}
-        onConcept={(concept) => context.go({ kind: "word", variety, concept })}
-      />
+      <details className="every-word">
+        <summary>Every word ({v.words.toLocaleString()})</summary>
+        <Dictionary
+          engine={engine}
+          version={version}
+          generation={generation}
+          variety={variety}
+          concept={null}
+          onConcept={(concept) => context.go({ kind: "word", variety, concept })}
+        />
+      </details>
     </>
   );
 }
@@ -498,12 +613,21 @@ function WordCard({ variety, concept, context }: { variety: number; concept: str
     for (const w of words.words) seen.set(w.group, [...(seen.get(w.group) ?? []), w.spelled]);
     return [...seen.entries()].map(([group, forms]) => ({ group, forms: [...new Set(forms)] }));
   }, [words]);
-  if (!overview.varieties[variety]) return <p className="muted">This language has not yet arisen in this year.</p>;
+  const v = overview.varieties[variety];
+  if (!v) return <p className="muted">This language has not yet arisen in this year.</p>;
   return (
     <>
-      <p className="muted">
-        In <LanguageLink variety={variety} context={context} />
-      </p>
+      <CardHead
+        icon={WholeWord}
+        kind="A word"
+        title={`“${words?.gloss ?? concept}”`}
+        tone={hue(v.family)}
+        sub={
+          <>
+            in <LanguageLink variety={variety} context={context} />
+          </>
+        }
+      />
       <WordGloss
         engine={engine}
         version={version}
@@ -511,12 +635,12 @@ function WordCard({ variety, concept, context }: { variety: number; concept: str
         variety={variety}
         concept={concept}
         onScrub={context.onScrub}
-        onOpenVariety={(v) => context.go({ kind: "word", variety: v, concept })}
+        onOpenVariety={(other) => context.go({ kind: "word", variety: other, concept })}
       />
       {groups.length > 1 ? (
         <>
           <h3>Across the map</h3>
-          <p className="muted">
+          <p className="muted small">
             Lands are coloured by the root their word comes from; words of one colour are{" "}
             <Explained term="cognate">cognates</Explained>.
           </p>
@@ -543,16 +667,21 @@ function LawCard({ id, context }: { id: string; context: Context }) {
   const label =
     had[0]?.law.label ?? overview.varieties.flatMap((v) => v.laws).find((l) => l.id === id)?.label ?? id;
   const without = overview.communities.filter((c) => !had.some((h) => h.c.id === c.id));
-  const examples = overview.annals
-    .filter((a) => a.laws.includes(id))
-    .slice(-EXAMPLES)
-    .reverse();
+  const told = overview.annals.filter((a) => a.laws.includes(id));
+  const waves = had.filter(({ law }) => law.from !== null).length;
   return (
     <>
-      <h2>{label}</h2>
-      <p className="muted">
-        A <Explained term="sound law">sound law</Explained>. On the map, orange land underwent it and grey land did
-        not; red lines are <Explained term="isogloss">isoglosses</Explained>, where it stopped.
+      <CardHead icon={AudioLines} kind="A sound change" title={label} />
+      <Facts
+        rows={[
+          ["Undergone by", `${had.length} of ${overview.communities.length} peoples`],
+          ["First heard", told.length > 0 ? `year ${told[0].generation * YEARS}` : null],
+          ["Spread", waves > 0 ? `to ${waves} by neighbours’ speech` : null],
+        ]}
+      />
+      <p className="muted small">
+        A <Explained term="sound law">sound law</Explained>. On the map, orange land underwent it and grey land did not;
+        red lines are <Explained term="isogloss">isoglosses</Explained>, where it stopped.
       </p>
       <h3>Who has it</h3>
       {had.length > 0 ? (
@@ -567,21 +696,17 @@ function LawCard({ id, context }: { id: string; context: Context }) {
         <p className="muted">No living people has it.</p>
       )}
       {without.length > 0 && had.length > 0 ? (
-        <p className="muted">
-          Not undergone by{" "}
-          {without.map((c, i) => (
-            <span key={c.id}>
-              {i > 0 ? ", " : ""}
-              <PeopleLink c={c} context={context} />
-            </span>
-          ))}
-          .
-        </p>
+        <>
+          <h3>Not undergone by</h3>
+          <p>
+            <Joined items={without} link={(c) => <PeopleLink c={c} context={context} />} />
+          </p>
+        </>
       ) : null}
-      {examples.length > 0 ? (
+      {told.length > 0 ? (
         <>
           <h3>As it happened</h3>
-          <Story annals={examples} context={context} />
+          <Story annals={told.slice(-EXAMPLES).reverse()} context={context} />
         </>
       ) : null}
     </>
@@ -589,38 +714,35 @@ function LawCard({ id, context }: { id: string; context: Context }) {
 }
 
 function LandCard({ region, context }: { region: number; context: Context }) {
-  const { overview, map } = context;
-  const r = map.regions[region];
+  const { overview } = context;
   const names = overview.places.find((p) => p.region === region)?.names ?? [];
   const dwellers = peoplesByRegion(overview).get(region) ?? [];
   const arrivals = overview.moves.filter((m) => m.to === region || m.from === region);
   const now = names.at(-1);
   return (
     <>
-      <h2 className="word">
-        {now?.spelled ?? "A land without a name"} {now ? <span className="ipa">/{now.ipa}/</span> : null}
-      </h2>
-      <p>
-        {r.coastal ? "Coastal " : ""}
-        {r.coastal ? TERRAIN_NAME[r.terrain].toLowerCase() : TERRAIN_NAME[r.terrain]}
-        {r.island ? ", an island" : ""}.{" "}
-        {dwellers.length > 0 ? (
-          <>
-            Home of{" "}
-            {dwellers.map((c, i) => (
-              <span key={c.id}>
-                {i > 0 ? ", " : ""}
-                <PeopleLink c={c} context={context} />
-              </span>
-            ))}
-            .
-          </>
-        ) : names.length > 0 ? (
-          "No one lives here now."
-        ) : (
-          "No one has lived here."
-        )}
-      </p>
+      <CardHead
+        icon={MapPin}
+        kind="A land"
+        title={now?.spelled ?? "A land without a name"}
+        sub={now ? <span className="ipa">/{now.ipa}/</span> : null}
+      />
+      <Facts
+        rows={[
+          ["Land", terrain(region, context)],
+          [
+            "Home of",
+            dwellers.length > 0 ? (
+              <Joined items={dwellers} link={(c) => <PeopleLink c={c} context={context} />} />
+            ) : names.length > 0 ? (
+              "no one now"
+            ) : (
+              "no one yet"
+            ),
+          ],
+          ["Names", names.length > 1 ? `${names.length} so far` : null],
+        ]}
+      />
       {names.length > 0 ? (
         <>
           <h3>Its names</h3>
@@ -643,17 +765,19 @@ function LandCard({ region, context }: { region: number; context: Context }) {
       {arrivals.length > 0 ? (
         <>
           <h3>Comings and goings</h3>
-          <ul className="roster">
+          <ol className="history">
             {arrivals.map((m, i) => (
               <li key={i}>
-                <Year generation={m.generation} context={context} />{" "}
-                <PeopleLink c={overview.communities[m.community]} context={context} />{" "}
-                {m.to === region ? "came from " : "left for "}
-                <LandLink region={m.to === region ? m.from : m.to} context={context} />
-                {m.overseas ? " over the sea" : ""}
+                <Year generation={m.generation} context={context} />
+                <span>
+                  <PeopleLink c={overview.communities[m.community]} context={context} />{" "}
+                  {m.to === region ? "came from " : "left for "}
+                  <LandLink region={m.to === region ? m.from : m.to} context={context} />
+                  {m.overseas ? " over the sea" : ""}
+                </span>
               </li>
             ))}
-          </ul>
+          </ol>
         </>
       ) : null}
     </>
@@ -663,9 +787,11 @@ function LandCard({ region, context }: { region: number; context: Context }) {
 function EventCard({ annal, context }: { annal: Annal; context: Context }) {
   const { overview } = context;
   const peoples = annal.peoples.filter((id) => overview.communities[id]);
+  const kind = EVENT_KIND[annal.kind];
+  const lawLabel = (id: string) => overview.varieties.flatMap((v) => v.laws).find((l) => l.id === id)?.label ?? id;
   return (
     <>
-      <p className="eyebrow">Year {annal.generation * YEARS}</p>
+      <CardHead icon={kind.icon} kind={kind.name} title={`Year ${annal.generation * YEARS}`} />
       <p className="event-text">
         <Told text={annal.text} />
       </p>
@@ -676,7 +802,30 @@ function EventCard({ annal, context }: { annal: Annal; context: Context }) {
           onWord={(concept) => context.go({ kind: "word", variety: annal.variety as number, concept })}
         />
       ) : null}
-      {annal.notes.length > 0 ? (
+      {annal.laws.length > 0 ? (
+        <>
+          <h3>
+            <Explained term="sound law">The change</Explained>
+          </h3>
+          <ul className="roster">
+            {annal.laws.map((id, i) => {
+              // A note says where a change came from, after its label.
+              const note = annal.notes[i] ?? "";
+              const label = lawLabel(id);
+              return (
+                <li key={id}>
+                  <button type="button" className="link" onClick={() => context.go({ kind: "law", id })}>
+                    {label}
+                  </button>
+                  {note.startsWith(label) && note.length > label.length ? (
+                    <span className="muted">{note.slice(label.length)}</span>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      ) : annal.notes.length > 0 ? (
         <ul className="apparatus">
           {annal.notes.map((note) => (
             <li key={note}>
@@ -684,22 +833,6 @@ function EventCard({ annal, context }: { annal: Annal; context: Context }) {
             </li>
           ))}
         </ul>
-      ) : null}
-      {annal.laws.length > 0 ? (
-        <>
-          <h3>
-            <Explained term="sound law">The change</Explained>
-          </h3>
-          <ul className="roster">
-            {annal.laws.map((id) => (
-              <li key={id}>
-                <button type="button" className="link" onClick={() => context.go({ kind: "law", id })}>
-                  {overview.varieties.flatMap((v) => v.laws).find((l) => l.id === id)?.label ?? id}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </>
       ) : null}
       {peoples.length > 0 ? (
         <>
@@ -719,13 +852,9 @@ function EventCard({ annal, context }: { annal: Annal; context: Context }) {
       {annal.lands.length > 0 ? (
         <>
           <h3>Where</h3>
-          <ul className="roster">
-            {[...new Set(annal.lands)].map((region) => (
-              <li key={region}>
-                <LandLink region={region} context={context} />
-              </li>
-            ))}
-          </ul>
+          <p>
+            <Joined items={[...new Set(annal.lands)]} link={(region) => <LandLink region={region} context={context} />} />
+          </p>
         </>
       ) : null}
       {annal.generation !== context.generation ? (

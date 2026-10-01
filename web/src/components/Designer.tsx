@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { frequencyDesign, presetDesign, preview } from "../engine";
-import type { Catalog, LanguageDesign, LongVowelStyle, MapSize, Naming, SoundInfo } from "../model";
+import type { Catalog, LanguageDesign, LongVowelStyle, Naming, SoundInfo } from "../model";
 import { NamingSelect } from "./NamingSelect";
 
 export interface Founding {
@@ -10,9 +10,6 @@ export interface Founding {
   seed: number;
   power: number;
   openness: number;
-  /// Only when starting a new world.
-  worldSeed: number;
-  worldSize: MapSize;
 }
 
 export function randomSeed(): number {
@@ -25,19 +22,19 @@ const SECONDARY_ORDER = ["plain", "aspirated", "breathy", "labialized", "rounded
 /// few knobs, and watch the words it would have.
 export function Designer({
   catalog,
-  newWorld,
+  submit,
   initial,
   onFound,
   onCancel,
 }: {
   catalog: Catalog;
-  newWorld: boolean;
-  /// Choices carried over from the title page.
+  /// What the button that accepts the design says.
+  submit: string;
+  /// The design to start from, if any.
   initial?: Founding;
   onFound: (founding: Founding) => void;
   onCancel?: () => void;
 }) {
-  const [worldSeed, setWorldSeed] = useState(() => initial?.worldSeed ?? randomSeed());
   const [seed, setSeed] = useState(() => initial?.seed ?? randomSeed());
   const [consonants, setConsonants] = useState(18);
   const [vowels, setVowels] = useState(5);
@@ -111,7 +108,7 @@ export function Designer({
       onSubmit={(e) => {
         e.preventDefault();
         if (typeof result === "string") return;
-        onFound({ naming, design, seed, power, openness, worldSeed, worldSize: initial?.worldSize ?? "medium" });
+        onFound({ naming, design, seed, power, openness });
       }}
     >
       <div className="designer-controls">
@@ -273,18 +270,6 @@ export function Designer({
           </label>
           {knob("Power", power, setPower, "weak", "strong")}
           {knob("Openness to foreign words", openness, setOpenness, "closed", "open")}
-          {newWorld ? (
-            <label>
-              World seed
-              <span className="row">
-                <input type="number" min={0} max={4294967295} value={worldSeed} onChange={(e) => setWorldSeed(Number(e.target.value))} />
-                <button type="button" onClick={() => setWorldSeed(randomSeed())}>
-                  Random
-                </button>
-              </span>
-              <small>Draws the map and decides how history unfolds once time runs.</small>
-            </label>
-          ) : null}
         </Section>
       </div>
 
@@ -348,7 +333,7 @@ export function Designer({
             </button>
           ) : null}
           <button type="submit" className="primary" disabled={typeof result === "string"}>
-            {newWorld ? "Begin the book" : "Found community"}
+            {submit}
           </button>
         </div>
       </aside>

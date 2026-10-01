@@ -68,7 +68,16 @@ export interface Preview {
 }
 
 export type Action =
-  | { kind: "found"; naming: Naming; design: LanguageDesign; seed: number; power: number; openness: number }
+  /// Without `region`, the world chooses where the people settles.
+  | {
+      kind: "found";
+      naming: Naming;
+      design: LanguageDesign;
+      seed: number;
+      power: number;
+      openness: number;
+      region?: number;
+    }
   | { kind: "connect"; a: number; b: number; intensity: number; contact: ContactKind }
   /// Without `naming`, the new community chooses its own name.
   | { kind: "split"; community: number; naming?: Naming; intensity: number }

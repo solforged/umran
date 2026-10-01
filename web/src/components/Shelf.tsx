@@ -34,8 +34,8 @@ export function Shelf({
       <ul className="books">
         <li>
           <button type="button" className="book-card begin" onClick={onBegin}>
-            <strong>Begin a new book</strong>
-            <span>Choose a people and how they sound.</span>
+            <strong>A new world</strong>
+            <span>Draw a map and choose who lives in it.</span>
           </button>
         </li>
         <li>

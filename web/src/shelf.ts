@@ -106,7 +106,7 @@ export function describe(id: string, overview: Overview): BookEntry {
   const spoken = overview.varieties.filter((v) => v.spoken).map((v) => v.name);
   return {
     id,
-    title: first ? `The Book of the ${first.name}` : "An empty book",
+    title: first ? `The world of the ${first.name}` : "An empty world",
     subtitle: `${spoken.join(", ")} · year ${overview.latest * YEARS}`,
     generation: overview.latest,
     updated: Date.now(),

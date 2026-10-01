@@ -457,13 +457,21 @@ impl World {
     pub fn found(&mut self, profile: &SoundProfile, power: f32, openness: f32) -> usize {
         let index = self.communities.len();
         let variety_seed = stream(self.seed, &[key("found"), index as u64]).next_u64();
-        self.found_seeded(&Naming::People, profile, variety_seed, power, openness)
+        self.found_seeded(
+            &Naming::People,
+            profile,
+            variety_seed,
+            power,
+            openness,
+            None,
+        )
     }
 
     /// Founds a community whose language comes from `variety_seed`, so a
     /// design previewed with that seed founds exactly the words shown.
     /// The people names itself as `naming` says, in its new language's
-    /// words, and names the language after itself.
+    /// words, and names the language after itself. It settles `region`
+    /// if given, which must be land, or else land of the world's choosing.
     pub fn found_seeded(
         &mut self,
         naming: &Naming,
@@ -471,13 +479,14 @@ impl World {
         variety_seed: u64,
         power: f32,
         openness: f32,
+        region: Option<usize>,
     ) -> usize {
         let index = self.communities.len();
         let mut variety = Variety::found(variety_seed, profile);
         let name = self.coin(&variety, naming, None);
         variety.name = self.language_name(&variety, &name);
         self.varieties.push(variety);
-        let region = self.homeland(index);
+        let region = region.unwrap_or_else(|| self.homeland(index));
         self.communities.push(Community {
             name,
             variety: self.varieties.len() - 1,
