@@ -498,11 +498,14 @@ export function MapView({
           return pa && pb && tint.had.has(pa.id) !== tint.had.has(pb.id);
         })
       : [];
-  // Peoples on the same land need no line between them.
+  // Rule is always drawn; other dealings only for the chosen peoples, since
+  // every dealing at once tangles the chart. Peoples on the same land need
+  // no line between them.
   const dealings = contacts
     ? overview.contacts.filter((k) => {
         const [a, b] = [overview.communities[k.a], overview.communities[k.b]];
-        return a.ended === null && b.ended === null && a.region !== b.region;
+        if (a.ended !== null || b.ended !== null || a.region === b.region) return false;
+        return k.kind === "rule" || chosen.has(k.a) || chosen.has(k.b);
       })
     : [];
 

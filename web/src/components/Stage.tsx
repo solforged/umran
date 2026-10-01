@@ -296,7 +296,7 @@ export function Stage({
             [
               ["names", "Names of lands"],
               ["routes", "Roads peoples took"],
-              ["contacts", "Dealings between peoples"],
+              ["contacts", "Rule, and the chosen peoples' dealings"],
               ["states", "States"],
             ] as const
           ).map(([key, label]) => (
