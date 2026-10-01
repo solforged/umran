@@ -1131,6 +1131,11 @@ function StateCard({ state, context }: { state: StateView; context: Context }) {
         ["Purism", state.standard === null ? null : (
           <Explained term="purism">{state.purism >= 0.5 ? "guarded against foreign words" : "open to foreign words"}</Explained>
         )],
+        ["Classical form", state.classical === null ? null : (
+          <><LanguageLink variety={state.classical.variety} context={context} />, fixed in year{" "}
+            <Year generation={state.classical.fixed} context={context} />{" "}
+            {state.classical.how === "age" ? "by grammarians" : "when the state fell"}</>
+        )],
         ["Current subjects", current.length > 0 ? (
           <Joined items={current} link={(m) => <PeopleLink c={overview.communities[m.community]} context={context} />} />
         ) : "none"],
@@ -1248,6 +1253,8 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
   const respelled = overview.annals.some((a) => a.kind === "respelling" && a.variety === variety && a.generation === v.written);
   const speakers = overview.communities.filter((c) => c.ended === null && c.variety === variety);
   const daughters = overview.varieties.filter((d) => d.parent === variety);
+  // Spoken languages whose people still write this one as their classical form.
+  const writers = overview.varieties.filter((w) => w.spoken && w.high === variety && w.vernacular === null);
   const kin = useMemo(
     () => engine.kin(generation, variety).filter((k) => k.score >= KIN_FLOOR),
     // `version` changes whenever the history does.
@@ -1272,7 +1279,17 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
           ],
           ["Standard of", v.standardOf === null ? null : <StateLink state={overview.states[v.standardOf]} context={context} />],
           ["Sacred to", v.sacredOf === null ? null : <ReligionLink religion={overview.religions[v.sacredOf]} context={context} />],
-          ["Writing", v.written === null ? <Explained term="spelling vs pronunciation">unwritten</Explained> :
+          ["Classical of", v.classicalOf === null ? null : <StateLink state={overview.states[v.classicalOf]} context={context} />],
+          ["Written by", v.classicalOf === null ? null : writers.length > 0 ? (
+            <Joined items={writers} link={(w) => <LanguageLink variety={w.id} context={context} />} />
+          ) : "no one now"],
+          ["Written in", v.high === null ? null : v.vernacular === null ? (
+            <><LanguageLink variety={v.high} context={context} />, a <Explained term="classical language">classical language</Explained>, beside its <Explained term="diglossia">speech</Explained></>
+          ) : (
+            <>its own <Explained term="vernacular">speech</Explained> since year <Year generation={v.vernacular} context={context} />, after <LanguageLink variety={v.high} context={context} /></>
+          )],
+          ["Kept from it", v.keptFromHigh === null || v.high === null ? null : `${Math.round(v.keptFromHigh * 100)}% of core words`],
+          ["Writing", v.high !== null ? null : v.written === null ? <Explained term="spelling vs pronunciation">unwritten</Explained> :
             <><Explained term="spelling vs pronunciation">{respelled ? "last respelled" : "written"}</Explained>{" "}
               {respelled ? "in" : "since"} year <Year generation={v.written} context={context} /></>],
           ["Name style", v.nameStyle === "double" ? <Explained term="dithematic name">two-part names</Explained> : "one-word names"],
