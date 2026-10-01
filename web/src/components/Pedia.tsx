@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   ArrowLeft,
   AudioLines,
@@ -377,15 +377,20 @@ function terrain(region: number, context: Context): string {
   return `${r.coastal ? "coastal " : ""}${TERRAIN_NAME[r.terrain].toLowerCase()}${r.island ? ", an island" : ""}`;
 }
 
-/// Several names, each a link, joined as a sentence would join them.
+/// Several names, each a link, joined as a sentence would join them. A
+/// comma stays on the line of the name before it: the links are buttons,
+/// and a line may otherwise break between one and its comma.
 function Joined<T>({ items, link }: { items: T[]; link: (item: T) => ReactNode }) {
   return (
     <>
       {items.map((item, i) => (
-        <span key={i}>
-          {i === 0 ? "" : i === items.length - 1 ? " and " : ", "}
-          {link(item)}
-        </span>
+        <Fragment key={i}>
+          <span className="joined">
+            {link(item)}
+            {i < items.length - 2 ? "," : ""}
+          </span>
+          {i === items.length - 1 ? "" : i === items.length - 2 ? " and " : " "}
+        </Fragment>
       ))}
     </>
   );

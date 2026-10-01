@@ -115,12 +115,19 @@
   background: var(--event);
 }
 
+/* A link shows by its colour, the rubric or its people's hue, and is
+   underlined only under the hand, so a card full of names reads as text.
+   Dotted underlines stay for glossary terms. */
 :root button.link {
   border: none;
   background: none;
   box-shadow: none;
   padding: 0;
   border-radius: 0;
+  text-decoration: none;
+}
+:root button.link:is(:hover, :focus-visible) {
+  text-decoration: underline;
 }
 
 /* The light switch, kept quiet. */
@@ -282,7 +289,6 @@
 }
 :root .stage-head nav button.link:not(.brand) {
   color: var(--ink-soft);
-  text-decoration: none;
 }
 :root .stage-head nav button.link:hover {
   color: var(--accent);
