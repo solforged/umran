@@ -117,7 +117,12 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   people that shifts language keeps it, and newcomers otherwise borrow it,
   fitted to their sounds (85% when they dealt with the namers, 40% when
   the namers were gone and unknown), or coin their own. Each land keeps
-  every name it has had, with where each came from.
+  every name it has had, with where each came from. Peoples living on or
+  beside a land that speakers of another language hold hear its name
+  once, fitted to their sounds (or as it is, if their language descends
+  from the namers'), and keep it as a word of their own
+  (`Variety::exonyms`): their sound laws change it and their daughter
+  languages inherit it, as German *Mailand* came from *Mediolanum*.
 - Varieties fork on splits and shifts and keep their lineage (`Fork`);
   `World::cognate` and `root_of` give true descent. The comparative method
   (`compare.rs`) must never read lineage; it is only graded against it.
@@ -231,15 +236,18 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   "scratch", "book" from "tree", as English and Latin did), builds one
   from its own parts, or coins one. Open peoples borrow; purist
   standards build.
-- Crafts pass along contacts (`craft_rate`), most readily with traders
+- Crafts pass along contacts (`idea_rate`), most readily with traders
   and rulers, and writing with priests. A people may also come upon one
-  itself (`idea_rate`), but only where it could begin: metalworking
-  among farmers or herders with hills or mountains, riding among herders
-  of the steppe, seafaring on the coast, and writing at the court of a
-  state whose city holds 10,000. Metalworking, and riding for herders,
-  add prestige in war; riding carries a people further and holds it
-  together over more land; only seafarers migrate or send colonies over
-  the sea.
+  itself (`craft_rate`, scaled per craft), but only where it could begin:
+  metalworking among farmers or herders with hills or mountains on or
+  beside their lands, riding among herders on or beside the steppe,
+  seafaring on the coast, and writing at the court of a state whose city
+  holds 10,000. Over many seeds, seafaring begins near year 1,400,
+  metalworking near 2,900, and writing a few centuries after the first
+  great city; riding begins only in worlds with steppe herders.
+  Metalworking, and riding for herders, add prestige in war; riding
+  carries a people further and holds it together over more land; only
+  seafarers migrate or send colonies over the sea.
 - Writing fixes spelling. From the generation a language is first
   written its words keep the spelling they had, while sound laws go on
   changing speech, so spelling falls behind (as English *knight*). A
@@ -291,8 +299,7 @@ its court's), diglossia (a standard frozen beside everyday speech),
 compounding and derivation after founding beyond renewal and new
 meanings, inflection, stress, tone, vowel harmony, consonant length,
 prenasalized stops, syntax and alignment, rival doctrines within a
-faith, different names for one land in each neighbouring language (only
-the holders' name is kept). Each catalog law happens at most once in a
-lineage, so over long spans languages run short of changes they have not
-had, and waves grow rarer with them; real sound change goes on recycling
-the same kinds of change.
+faith. Each catalog law happens at most once in a lineage, so over long
+spans languages run short of changes they have not had, and waves grow
+rarer with them; real sound change goes on recycling the same kinds of
+change.

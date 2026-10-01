@@ -14,7 +14,7 @@ import {
   WholeWord,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, Catalog, Community, Craft, CraftView, Engine, Overview, ReligionView, StateView, TellingView, Variety, WordMap, WorldMap } from "../model";
+import type { Annal, Catalog, Community, Craft, CraftView, Engine, Overview, PlaceExonym, ReligionView, StateView, TellingView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { CONTACT_NAME, EVENT_KIND, FAITH_HOW, FALL_NAME, howCame, howNamed, hue, LIVELIHOOD_NAME, RISE_NAME, TERMS, TERRAIN_NAME, type Term } from "../lore";
 import { bond } from "../words";
@@ -1290,7 +1290,9 @@ function LawCard({ id, context }: { id: string; context: Context }) {
 
 function LandCard({ region, context }: { region: number; context: Context }) {
   const { overview } = context;
-  const names = overview.places.find((p) => p.region === region)?.names ?? [];
+  const place = overview.places.find((p) => p.region === region);
+  const names = place?.names ?? [];
+  const exonyms = place?.exonyms ?? [];
   const dwellers = peoplesByRegion(overview).get(region) ?? [];
   const arrivals = overview.moves.filter((m) => m.to === region || m.from === region);
   const now = names.at(-1);
@@ -1337,6 +1339,33 @@ function LandCard({ region, context }: { region: number; context: Context }) {
           </ol>
         </>
       ) : null}
+      {exonyms.length > 0 ? (
+        <>
+          <h3>
+            <Explained term="exonym">What others call it</Explained>
+          </h3>
+          <ul className="roster">
+            {otherNames(exonyms, now?.spelled).map((group) => (
+              <li key={group.spelled}>
+                {group.same ? (
+                  <span className="muted">As its holders say it, in </span>
+                ) : (
+                  <>
+                    <span className="word">{group.spelled}</span> <span className="ipa">/{group.ipa}/</span> in{" "}
+                  </>
+                )}
+                <Joined items={group.varieties} link={(v) => <LanguageLink variety={v} context={context} />} />
+                {group.same ? null : (
+                  <span className="muted">
+                    , heard in year {group.heard * YEARS}
+                    {group.once ? ` as ${group.once}` : ""}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
       {arrivals.length > 0 ? (
         <>
           <h3>Comings and goings</h3>
@@ -1357,6 +1386,22 @@ function LandCard({ region, context }: { region: number; context: Context }) {
       ) : null}
     </>
   );
+}
+
+/// Languages' names for a land, grouped by how they spell it, those that
+/// say it as its holders do last; within a group, the earliest hearing.
+function otherNames(exonyms: PlaceExonym[], own: string | undefined) {
+  const groups = new Map<string, { spelled: string; ipa: string; heard: number; once: string | null; same: boolean; varieties: number[] }>();
+  for (const x of exonyms) {
+    const group = groups.get(x.spelled);
+    if (!group) {
+      groups.set(x.spelled, { spelled: x.spelled, ipa: x.ipa, heard: x.heard, once: x.once, same: x.spelled === own, varieties: [x.variety] });
+    } else {
+      group.varieties.push(x.variety);
+      if (x.heard < group.heard) Object.assign(group, { heard: x.heard, once: x.once });
+    }
+  }
+  return [...groups.values()].sort((a, b) => Number(a.same) - Number(b.same) || a.heard - b.heard);
 }
 
 function EventCard({ annal, context }: { annal: Annal; context: Context }) {

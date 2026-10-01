@@ -43,6 +43,11 @@ pub struct Variety {
     /// The generation it was first written, or last respelled: words are
     /// spelled as they sounded then, however they have changed since.
     pub written: Option<u32>,
+    /// What its speakers call lands others hold, by region: each heard
+    /// once, when they first lived on or beside it, and changed since by
+    /// this language's own sound laws, as German Mailand came from
+    /// Mediolanum.
+    pub exonyms: Vec<(usize, Name)>,
 }
 
 /// A variety's descent from another.
@@ -104,6 +109,7 @@ impl Variety {
             style,
             given: Vec::new(),
             written: None,
+            exonyms: Vec::new(),
         };
         variety.given = given_stock(&variety, livelihood, &mut stream(seed, &[key("given")]));
         variety

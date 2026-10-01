@@ -1087,6 +1087,7 @@ fn builders(v: &Variety) -> Vec<Builder> {
 
 /// Every land that has been held, with all its names.
 fn place_views(world: &World) -> Vec<PlaceView> {
+    let spoken = world.spoken();
     world
         .places
         .iter()
@@ -1094,6 +1095,23 @@ fn place_views(world: &World) -> Vec<PlaceView> {
         .filter(|(_, names)| !names.is_empty())
         .map(|(region, names)| PlaceView {
             region,
+            exonyms: (0..world.varieties.len())
+                .filter(|&v| spoken[v] && names.last().is_some_and(|p| p.variety != v))
+                .filter_map(|v| {
+                    let speech = &world.varieties[v];
+                    let (_, name) = speech.exonyms.iter().find(|(r, _)| *r == region)?;
+                    let spelled = speech.title(&name.form);
+                    Some(PlaceExonymView {
+                        variety: v,
+                        language: language_label(world, v),
+                        ipa: name.form.ipa(),
+                        heard: name.coined,
+                        once: Some(speech.title(name.form_at(name.coined)))
+                            .filter(|once| *once != spelled),
+                        spelled,
+                    })
+                })
+                .collect(),
             names: names
                 .iter()
                 .map(|p| {
@@ -1640,6 +1658,21 @@ struct PlaceView {
     region: usize,
     /// Its names, oldest first; the last is its name now.
     names: Vec<PlaceNameView>,
+    /// What speakers of other living languages call it now, each heard
+    /// from its holders once and changed since by its own sound laws.
+    exonyms: Vec<PlaceExonymView>,
+}
+
+#[derive(Serialize)]
+struct PlaceExonymView {
+    variety: usize,
+    language: String,
+    spelled: String,
+    ipa: String,
+    /// The generation its speakers first heard of the land.
+    heard: u32,
+    /// How it was spelled when they heard it, if it has changed.
+    once: Option<String>,
 }
 
 #[derive(Serialize)]

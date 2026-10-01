@@ -324,6 +324,20 @@ export interface Overview {
 export interface Place {
   region: number;
   names: PlaceName[];
+  /// What speakers of other living languages call it now, each heard once
+  /// from its holders and changed since by their own sound laws.
+  exonyms: PlaceExonym[];
+}
+
+export interface PlaceExonym {
+  variety: number;
+  language: string;
+  spelled: string;
+  ipa: string;
+  /// The generation its speakers first heard of the land.
+  heard: number;
+  /// How it was spelled when they heard it, if it has changed.
+  once: string | null;
 }
 
 export interface PlaceName {

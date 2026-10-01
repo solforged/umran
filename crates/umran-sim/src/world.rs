@@ -294,7 +294,7 @@ impl Default for Params {
             wave_rate: 1.0,
             craft_rate: 0.001,
             idea_rate: 0.02,
-            religion_rate: 0.008,
+            religion_rate: 0.02,
             conversion_rate: 0.05,
             name_turnover: 0.1,
         }
@@ -1089,6 +1089,7 @@ impl World {
         self.learn_words();
         self.reform_spelling();
         self.hold_places();
+        self.hear_places();
     }
 
     /// Which varieties some community still speaks. Unspoken varieties are
@@ -1693,6 +1694,58 @@ impl World {
             at = fork.variety;
         }
         false
+    }
+
+    /// Peoples name the lands they live on or beside that speakers of
+    /// another language hold, as they hear the holders say them: the
+    /// holders' own name if their language descends from the namers',
+    /// otherwise fitted to their sounds. Each language hears a land once;
+    /// the name is then its own word and changes with it.
+    fn hear_places(&mut self) {
+        let generation = self.generation;
+        let mut heard: Vec<(usize, usize, Name)> = Vec::new();
+        let mut ears: HashMap<usize, Adapter> = HashMap::new();
+        for c in self.living().collect::<Vec<_>>() {
+            let v = self.communities[c].variety;
+            let mut near: Vec<usize> = self.communities[c]
+                .lands
+                .iter()
+                .flat_map(|&r| {
+                    std::iter::once(r).chain(self.map.regions[r].neighbours.iter().copied())
+                })
+                .collect();
+            near.sort_unstable();
+            near.dedup();
+            for r in near {
+                let Some(place) = self.places[r].last() else {
+                    continue;
+                };
+                let known = |(x, _): &(usize, Name)| *x == r;
+                if place.variety == v
+                    || self.varieties[v].exonyms.iter().any(known)
+                    || heard.iter().any(|&(hv, hr, _)| (hv, hr) == (v, r))
+                {
+                    continue;
+                }
+                let form = if self.descends(v, place.variety) {
+                    place.name.form.clone()
+                } else {
+                    let mut rng = stream(self.seed, &[key("place exonym"), r as u64, v as u64]);
+                    let ear = ears.entry(v).or_insert_with(|| self.ear(v));
+                    ear.adapt(&place.name.form, 0.0, &mut rng)
+                };
+                let name = Name {
+                    form,
+                    meaning: place.name.meaning.clone(),
+                    coined: generation,
+                    log: Vec::new(),
+                };
+                heard.push((v, r, name));
+            }
+        }
+        for (v, r, name) in heard {
+            self.varieties[v].exonyms.push((r, name));
+        }
     }
 
     /// What region `region` was called at `generation`, spelled in the
@@ -2396,6 +2449,11 @@ impl World {
                 let after = law.apply(&p.name.form, minimal);
                 p.name.change(after, law.id, generation);
             }
+        }
+        // And its names for lands others hold.
+        for (_, name) in &mut self.varieties[v].exonyms {
+            let after = law.apply(&name.form, minimal);
+            name.change(after, law.id, generation);
         }
     }
 
@@ -3869,6 +3927,50 @@ mod tests {
         world.run(80);
         assert_eq!(world.places[home][0].name.form, left);
         assert_eq!(world.places[elsewhere].len(), 1, "they name their new land");
+    }
+
+    #[test]
+    fn neighbours_name_a_land_once_and_change_it_their_own_way() {
+        let mut diverged = 0;
+        for seed in 0..8 {
+            let mut world = World::new(seed, Params::static_society());
+            let holders = world.found(&SoundProfile::base(), 0.5, 0.5);
+            let neighbours = world.found(&SoundProfile::by_id("iranian").unwrap(), 0.5, 0.5);
+            let home = world.communities[holders].home();
+            let beside = world.map.regions[home]
+                .neighbours
+                .iter()
+                .copied()
+                .find(|&r| world.map.regions[r].terrain.is_land())
+                .unwrap();
+            world.communities[neighbours].lands = vec![beside];
+            world.step();
+            let v = world.communities[neighbours].variety;
+            let heard = |w: &World| {
+                let names: Vec<_> = w.varieties[v]
+                    .exonyms
+                    .iter()
+                    .filter(|(r, _)| *r == home)
+                    .collect();
+                assert_eq!(names.len(), 1, "seed {seed}: heard once");
+                names[0].1.clone()
+            };
+            assert_eq!(heard(&world).meaning, world.places[home][0].name.meaning);
+            world.run(160);
+            let name = heard(&world);
+            let theirs = &world.varieties[v].laws;
+            for entry in &name.log {
+                let Event::SoundLaw { law, .. } = entry.event else {
+                    panic!("seed {seed}: only sound laws change it");
+                };
+                assert!(
+                    theirs.iter().any(|&(_, l)| l == law),
+                    "seed {seed}: {law} is not the neighbours' law"
+                );
+            }
+            diverged += usize::from(!name.log.is_empty());
+        }
+        assert!(diverged >= 4, "only {diverged} of 8 changed it at all");
     }
 
     #[test]

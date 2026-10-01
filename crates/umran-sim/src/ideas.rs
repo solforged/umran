@@ -79,12 +79,16 @@ impl Craft {
         }
     }
 
-    /// How much likelier a people that may invent it is to: writing is
-    /// rare but begins in few places.
+    /// How much likelier than `craft_rate` a people that may invent it
+    /// is to. Coasts invite boats early; ores and horses take longer
+    /// to master; writing follows the first great cities within a few
+    /// centuries, as in Sumer.
     fn invention(self) -> f32 {
         match self {
-            Craft::Writing => 10.0,
-            _ => 1.0,
+            Craft::Seafaring => 6.0,
+            Craft::Metalworking => 4.0,
+            Craft::Riding => 8.0,
+            Craft::Writing => 30.0,
         }
     }
 }
@@ -358,10 +362,21 @@ impl World {
     }
 
     /// 1 when `community`'s land and life invite it to come upon `craft`
-    /// itself, else 0.
+    /// itself, else 0. Ore and wild horses count within reach: on a land
+    /// it holds or one bordering it, as the first smiths were farmers
+    /// below the ore-bearing hills.
     fn invites(&self, community: usize, craft: Craft) -> f32 {
         let k = &self.communities[community];
-        let has = |t: Terrain| k.lands.iter().any(|&r| self.map.regions[r].terrain == t);
+        let has = |t: Terrain| {
+            k.lands.iter().any(|&r| {
+                let region = &self.map.regions[r];
+                region.terrain == t
+                    || region
+                        .neighbours
+                        .iter()
+                        .any(|&n| self.map.regions[n].terrain == t)
+            })
+        };
         let yes = match craft {
             Craft::Metalworking => {
                 k.livelihood != Livelihood::Foraging
