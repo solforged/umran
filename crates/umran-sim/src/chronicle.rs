@@ -8,6 +8,7 @@
 
 use crate::design::LanguageDesign;
 use crate::geography::MapSize;
+use crate::livelihood::Livelihood;
 use crate::names::Naming;
 use crate::world::{ContactKind, Params, World};
 use serde::{Deserialize, Serialize};
@@ -15,7 +16,7 @@ use std::collections::BTreeMap;
 
 /// Bumped whenever an engine change would make an existing recipe replay
 /// differently. Saves record it so a mismatch can be reported.
-pub const ENGINE_REVISION: u32 = 14;
+pub const ENGINE_REVISION: u32 = 15;
 /// Identifies saved recipes. Kept from the project's first name, langgen,
 /// so files saved before the rename still load.
 pub const FORMAT: &str = "langgen-sim-recipe";
@@ -39,6 +40,9 @@ pub enum Action {
         /// The land they settle; `None` lets the world choose.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         region: Option<usize>,
+        /// How they live; `None` lets their land decide.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        livelihood: Option<Livelihood>,
     },
     Connect {
         a: usize,
@@ -359,10 +363,10 @@ fn holds(longer: &[Action], shorter: &[Action]) -> bool {
 }
 
 fn community(world: &World, index: usize) -> Result<(), String> {
-    if index < world.communities.len() {
-        Ok(())
-    } else {
-        Err(format!("there is no community {index}"))
+    match world.communities.get(index) {
+        None => Err(format!("there is no community {index}")),
+        Some(c) if !c.living() => Err(format!("the {} are no more", world.community_name(index))),
+        Some(_) => Ok(()),
     }
 }
 
@@ -377,6 +381,7 @@ fn apply(world: &mut World, action: &Action) -> Result<(), String> {
             power,
             openness,
             region,
+            livelihood,
         } => {
             design.validate()?;
             naming.validate()?;
@@ -392,7 +397,15 @@ fn apply(world: &mut World, action: &Action) -> Result<(), String> {
             {
                 return Err(format!("region {r} is not land a people can settle"));
             }
-            world.found_seeded(naming, &design.profile(), *seed, *power, *openness, *region);
+            world.found_seeded(
+                naming,
+                &design.profile(),
+                *seed,
+                *power,
+                *openness,
+                *region,
+                *livelihood,
+            );
         }
         Action::Connect {
             a,
@@ -452,6 +465,7 @@ mod tests {
             power: 0.5,
             openness: 0.5,
             region: None,
+            livelihood: None,
         }
     }
 
@@ -492,8 +506,24 @@ mod tests {
         let mut c = sample();
         let mut direct = World::new(7, Params::default());
         let design = |p: &str| LanguageDesign::preset(p, 0).unwrap().profile();
-        direct.found_seeded(&Naming::People, &design("familiar"), 4, 0.5, 0.5, None);
-        direct.found_seeded(&Naming::People, &design("polynesian"), 5, 0.5, 0.5, None);
+        direct.found_seeded(
+            &Naming::People,
+            &design("familiar"),
+            4,
+            0.5,
+            0.5,
+            None,
+            None,
+        );
+        direct.found_seeded(
+            &Naming::People,
+            &design("polynesian"),
+            5,
+            0.5,
+            0.5,
+            None,
+            None,
+        );
         direct.run(12);
         assert!(same(&c.world_at(12), &direct));
         // Actions taken at a generation are part of that generation's view.
@@ -628,7 +658,7 @@ mod tests {
             .rev()
             .find(|&r| {
                 world.map.regions[r].terrain.is_land()
-                    && world.communities.iter().all(|p| p.region != r)
+                    && world.communities.iter().all(|p| !p.lands.contains(&r))
             })
             .unwrap();
         let mut chosen = found("X", "familiar");
@@ -636,7 +666,7 @@ mod tests {
             *region = Some(open);
         }
         c.act(chosen.clone()).unwrap();
-        assert_eq!(c.latest().communities.last().unwrap().region, open);
+        assert_eq!(c.latest().communities.last().unwrap().home(), open);
         // The choice is part of the recipe, so it replays.
         assert_eq!(c.actions().last(), Some(&chosen));
     }

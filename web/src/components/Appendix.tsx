@@ -87,7 +87,7 @@ export function Appendix({
             </tr>
           </thead>
           <tbody>
-            {overview.communities.map((c) => {
+            {overview.communities.filter((c) => c.ended === null).map((c) => {
               const v = overview.varieties[c.variety];
               return (
                 <tr key={c.id}>

@@ -29,11 +29,12 @@ export function ActionDialog({
   onClose: () => void;
   onAction: (action: Action) => void;
 }) {
-  const communities = overview.communities;
-  const others = communities.filter((c) => c.id !== selected);
+  const communities = overview.communities.filter((c) => c.ended === null);
+  const first = communities.find((c) => c.id === selected)?.id ?? communities[0]?.id ?? -1;
+  const others = communities.filter((c) => c.id !== first);
   const [naming, setNaming] = useState<Naming | null>(null);
-  const [community, setCommunity] = useState(selected);
-  const [other, setOther] = useState(others[0]?.id ?? 0);
+  const [community, setCommunity] = useState(first);
+  const [other, setOther] = useState(others[0]?.id ?? -1);
   const [contact, setContact] = useState<ContactKind>("neighbours");
   const [intensity, setIntensity] = useState(kind === "split" ? 0.4 : 0.6);
 
@@ -142,7 +143,12 @@ export function ActionDialog({
           <button type="button" onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" form={`form-${kind}`} className="primary">
+          <button
+            type="submit"
+            form={`form-${kind}`}
+            className="primary"
+            disabled={!communities.some((c) => c.id === community) || (kind !== "split" && !communities.some((c) => c.id === other && c.id !== community))}
+          >
             Write it down
           </button>
         </>

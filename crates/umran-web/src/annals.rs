@@ -4,20 +4,21 @@
 //! is drawn from the annals' own stream, so it never moves the world's
 //! draws, and the same history is always told the same way.
 
-use crate::{SpecimenWord, specimen, substrate_label};
+use crate::{SpecimenWord, livelihood_noun, specimen, substrate_label};
 use serde::Serialize;
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
 use umran_sim::names::PlaceOrigin;
 use umran_sim::rng::{index, key, stream};
-use umran_sim::world::ContactKind;
-use umran_sim::{Event, Form, Lexeme, Variety, World, WorldEvent, catalog};
+use umran_sim::world::{ContactKind, Hardship};
+use umran_sim::{Event, Form, Lexeme, Livelihood, Variety, World, WorldEvent, catalog};
 
 #[derive(Clone, PartialEq, Serialize)]
 pub(crate) struct Annal {
     pub generation: u32,
     /// "found", "split", "migration", "shift", "contact", "parted",
-    /// "neighbours", "conquest", or "law".
+    /// "neighbours", "conquest", "spread", "displaced", "hardship",
+    /// "livelihood", "ended", or "law".
     pub kind: &'static str,
     /// The annalist's words. Words of the language are marked `*thus*`.
     pub text: String,
@@ -158,6 +159,8 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
     // Peoples coming to live beside one another and drifting apart, by
     // generation, told together so they do not crowd out the rest.
     let mut neighbours: BTreeMap<u32, Neighbours> = BTreeMap::new();
+    // Peoples spreading into new land, by generation, told together too.
+    let mut spreads: BTreeMap<u32, Vec<(usize, usize)>> = BTreeMap::new();
     let entry = |generation, kind, text, peoples: &[usize], lands: &[usize]| Annal {
         generation,
         kind,
@@ -303,6 +306,97 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
             WorldEvent::Met { a, b, kind } => pair("contact", contact_wording(kind), a, b),
             WorldEvent::Parted { a, b, kind } => pair("parted", parting_wording(kind), a, b),
             WorldEvent::Conquered { ruler, ruled } => pair("conquest", CONQUEST, ruler, ruled),
+            WorldEvent::Spread { community, to } => {
+                spreads.entry(generation).or_default().push((community, to));
+                continue;
+            }
+            WorldEvent::Displaced {
+                community,
+                region,
+                by,
+            } => entry(
+                generation,
+                "displaced",
+                tell(
+                    world,
+                    &[key("displaced"), g, community as u64],
+                    DISPLACED,
+                    &[
+                        ("p", &name(community)),
+                        ("b", &name(by)),
+                        ("land", &place(world, region, generation)),
+                    ],
+                ),
+                &[community, by],
+                &[region],
+            ),
+            WorldEvent::HardTimes {
+                region,
+                kind,
+                share,
+            } => entry(
+                generation,
+                "hardship",
+                tell(
+                    world,
+                    &[key("hardship"), g, region as u64],
+                    match kind {
+                        Hardship::Famine => FAMINE,
+                        Hardship::Plague => PLAGUE,
+                        Hardship::Drought => DROUGHT,
+                    },
+                    &[
+                        ("land", &place(world, region, generation)),
+                        ("share", share_in_words(share)),
+                    ],
+                ),
+                &[],
+                &[region],
+            ),
+            WorldEvent::Adopted {
+                community,
+                livelihood,
+                from,
+            } => {
+                let noun = livelihood_noun(livelihood);
+                let (options, peoples): (&[&str], Vec<usize>) = match (from, livelihood) {
+                    (Some(t), _) => (LEARNED, vec![community, t]),
+                    (None, Livelihood::Farming) => (BEGAN_FARMING, vec![community]),
+                    (None, Livelihood::Herding) => (BEGAN_HERDING, vec![community]),
+                    (None, Livelihood::Foraging) => (BEGAN_FORAGING, vec![community]),
+                };
+                let teacher = from.map(name).unwrap_or_default();
+                entry(
+                    generation,
+                    "livelihood",
+                    tell(
+                        world,
+                        &[key("livelihood"), g, community as u64],
+                        options,
+                        &[("p", &name(community)), ("t", &teacher), ("way", noun)],
+                    ),
+                    &peoples,
+                    &[],
+                )
+            }
+            WorldEvent::Ended { community, into } => {
+                let host = into.map(name).unwrap_or_default();
+                entry(
+                    generation,
+                    "ended",
+                    tell(
+                        world,
+                        &[key("ended"), g, community as u64],
+                        if into.is_some() { MERGED } else { DIED_OUT },
+                        &[("p", &name(community)), ("i", &host)],
+                    ),
+                    &[Some(community), into]
+                        .into_iter()
+                        .flatten()
+                        .collect::<Vec<_>>(),
+                    &[],
+                )
+            }
         });
     }
     out.extend(
@@ -310,9 +404,127 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
             .into_iter()
             .map(|(generation, n)| neighbours_annal(world, generation, &n)),
     );
+    out.extend(
+        spreads
+            .into_iter()
+            .map(|(generation, s)| spread_annal(world, generation, &s)),
+    );
     out.extend(sound_changes(world));
     out.sort_by_key(|a| (a.generation, a.kind == "law"));
     out
+}
+
+const DISPLACED: &[&str] = &[
+    "The {p} were driven from {land} by the {b}.",
+    "The {b} crowded the {p} out of {land}.",
+];
+
+const FAMINE: &[&str] = &[
+    "Famine came upon {land}, and {share} of those who lived there perished.",
+    "The harvests failed in {land}; {share} of its people starved.",
+];
+
+const PLAGUE: &[&str] = &[
+    "A plague swept through {land}, and {share} of its people died.",
+    "Sickness came to {land} and carried off {share} of those who lived there.",
+];
+
+const DROUGHT: &[&str] = &[
+    "The rains failed in {land}, and {share} of its people died of thirst and hunger.",
+    "Drought lay on {land}; {share} of those who lived there perished.",
+];
+
+const LEARNED: &[&str] = &[
+    "The {p} learned {way} from the {t}.",
+    "The {p} took up {way}, as the {t} did.",
+];
+
+const BEGAN_FARMING: &[&str] = &[
+    "The {p} began to till the soil and sow.",
+    "Among the {p}, some first planted seed and waited for the harvest.",
+];
+
+const BEGAN_HERDING: &[&str] = &[
+    "The {p} left their fields to follow their herds.",
+    "The {p} turned to their flocks and took up herding.",
+];
+
+const BEGAN_FORAGING: &[&str] =
+    &["The {p} gave up their old ways and lived by hunting and gathering."];
+
+const DIED_OUT: &[&str] = &[
+    "The last of the {p} died out, and their name was heard no more.",
+    "The {p} dwindled away and were no more.",
+];
+
+const MERGED: &[&str] = &[
+    "The {p} were absorbed among the {i}.",
+    "The {p} merged into the {i} and were no longer counted apart.",
+];
+
+/// A share of a people, as the annalist would say it.
+fn share_in_words(share: f32) -> &'static str {
+    match share {
+        s if s < 0.23 => "a fifth",
+        s if s < 0.29 => "a quarter",
+        s if s < 0.38 => "a third",
+        s if s < 0.46 => "nearly half",
+        _ => "half",
+    }
+}
+
+/// Most lands an entry on spreading names before only counting them.
+const SPREADS_NAMED: usize = 3;
+
+/// One entry for every people spreading into new land in `generation`,
+/// told together, and when there are many only counted, with each in the
+/// apparatus.
+fn spread_annal(world: &World, generation: u32, spreads: &[(usize, usize)]) -> Annal {
+    let name = |c: usize| world.community_name_at(c, generation);
+    let land = |r: usize| place(world, r, generation);
+    let mut notes = Vec::new();
+    let text = if spreads.len() > SPREADS_NAMED {
+        notes.extend(
+            spreads
+                .iter()
+                .map(|&(c, r)| format!("The {} into {}.", name(c), land(r))),
+        );
+        format!(
+            "That year peoples spread into {} new lands.",
+            number(spreads.len())
+        )
+    } else {
+        let told: Vec<String> = spreads
+            .iter()
+            .enumerate()
+            .map(|(i, &(c, r))| {
+                let verb = if i == 0 { "spread into" } else { "into" };
+                format!("the {} {verb} {}", name(c), land(r))
+            })
+            .collect();
+        let joined = match told.split_last() {
+            Some((last, init)) if !init.is_empty() => format!("{}, and {last}", init.join(", ")),
+            _ => told.concat(),
+        };
+        format!("That year {joined}.")
+    };
+    let mut peoples: Vec<usize> = Vec::new();
+    for &(c, _) in spreads {
+        if !peoples.contains(&c) {
+            peoples.push(c);
+        }
+    }
+    Annal {
+        generation,
+        kind: "spread",
+        text,
+        notes,
+        variety: None,
+        peoples,
+        lands: spreads.iter().map(|&(_, r)| r).collect(),
+        laws: Vec::new(),
+        specimen: Vec::new(),
+    }
 }
 
 /// Pairs of peoples that came to live beside one another, and that

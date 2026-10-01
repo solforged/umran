@@ -25,8 +25,8 @@ function stops(on: PauseOn, annal: Annal): boolean {
     case "nothing":
       return false;
     case "peoples":
-      // Neighbours come and go too often to stop the years for.
-      return annal.kind !== "law" && annal.kind !== "neighbours";
+      // Neighbours and gradual spread happen too often to stop the years for.
+      return annal.kind !== "law" && annal.kind !== "neighbours" && annal.kind !== "spread";
     case "sounds":
       return annal.kind === "law";
     case "anything":
@@ -152,7 +152,7 @@ export function Stage({
   const tint: Tint = useMemo(() => {
     if (words) return { kind: "words", words };
     if (law) {
-      const had = overview.communities.filter((c) => overview.varieties[c.variety].laws.some((l) => l.id === law));
+      const had = overview.communities.filter((c) => c.ended === null && overview.varieties[c.variety].laws.some((l) => l.id === law));
       return { kind: "change", had: new Set(had.map((c) => c.id)) };
     }
     return { kind: "peoples" };
@@ -160,19 +160,18 @@ export function Stage({
 
   const highlight = useMemo(() => {
     const site = (region: number | undefined) => (region === undefined ? null : map.regions[region].site);
-    const speakers = (variety: number) => overview.communities.filter((c) => c.variety === variety);
     switch (focus.kind) {
       case "people": {
         const c = overview.communities[focus.id];
-        return { chosen: [focus.id], lands: c ? [c.region] : [], point: site(c?.region) };
+        return { chosen: c?.ended === null ? [focus.id] : [], lands: c ? c.lands : [], point: site(c?.region) };
       }
       case "land": {
-        const here = overview.communities.filter((c) => c.region === focus.region).map((c) => c.id);
+        const here = overview.communities.filter((c) => c.ended === null && c.lands.includes(focus.region)).map((c) => c.id);
         return { chosen: here, lands: [focus.region], point: site(focus.region) };
       }
       case "language":
       case "word": {
-        const here = speakers(focus.variety);
+        const here = overview.communities.filter((c) => c.ended === null && c.variety === focus.variety);
         return { chosen: here.map((c) => c.id), lands: [], point: site(here[0]?.region) };
       }
       case "event": {
@@ -352,7 +351,7 @@ export function Stage({
         <details className="act">
           <summary>Shape history</summary>
           <div className="act-menu" onClick={(e) => (e.currentTarget.parentElement as HTMLDetailsElement).removeAttribute("open")}>
-            {people ? (
+            {people?.ended === null ? (
               <>
                 <button type="button" onClick={() => onDialog("split")}>
                   Some of the {people.name} go their own way

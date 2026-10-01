@@ -12,8 +12,8 @@ use umran_sim::morphology::Slot;
 use umran_sim::names::PlaceOrigin;
 use umran_sim::phoneme::{Backness, Manner, Secondary};
 use umran_sim::{
-    Action, CATALOG, Chronicle, ENGINE_REVISION, Event, FORMAT, Flavor, Form, Lexeme, MapSize,
-    Origin, PhonemeId, Recipe, SetAside, Terrain, World, WorldEvent, catalog,
+    Action, CATALOG, Chronicle, ENGINE_REVISION, Event, FORMAT, Flavor, Form, Lexeme, Livelihood,
+    MapSize, Origin, PhonemeId, Recipe, SetAside, Terrain, World, WorldEvent, catalog,
 };
 use umran_sim::{LanguageDesign, MorphologyKind, Naming, Segment, Variety};
 use wasm_bindgen::prelude::*;
@@ -493,7 +493,14 @@ impl Bench {
                     prestige: c.prestige,
                     power: c.power,
                     openness: c.openness,
-                    region: c.region,
+                    region: c.home(),
+                    lands: c.lands.clone(),
+                    livelihood: c.livelihood,
+                    ended: c.ended,
+                    ended_into: world.events.iter().find_map(|(_, e)| match *e {
+                        WorldEvent::Ended { community, into } if community == id => into,
+                        _ => None,
+                    }),
                 })
                 .collect(),
             varieties: world
@@ -511,10 +518,17 @@ impl Bench {
                         family: world.family(id),
                         spoken: spoken[id],
                         born: born[id],
+                        // When its last speakers took up another language
+                        // or came to an end.
                         silent_since: (!spoken[id])
                             .then(|| {
                                 world.events.iter().rev().find_map(|(g, e)| match e {
                                     WorldEvent::Shift { from, .. } if *from == id => Some(*g),
+                                    WorldEvent::Ended { community, .. }
+                                        if world.communities[*community].variety == id =>
+                                    {
+                                        Some(*g)
+                                    }
                                     _ => None,
                                 })
                             })
@@ -823,6 +837,29 @@ impl Bench {
                 WorldEvent::Conquered { ruler, ruled } => {
                     format!("{} conquered {}", name(*ruler), name(*ruled))
                 }
+                WorldEvent::HardTimes { region, kind, .. } => {
+                    let place = latest.place_at(*region, *generation);
+                    format!(
+                        "{} in {}",
+                        kebab(&format!("{kind:?}")),
+                        place.as_deref().unwrap_or("a land without a name")
+                    )
+                }
+                WorldEvent::Adopted {
+                    community,
+                    livelihood,
+                    ..
+                } => format!(
+                    "{} took to {}",
+                    name(*community),
+                    livelihood_noun(*livelihood)
+                ),
+                WorldEvent::Ended { community, into } => match into {
+                    Some(into) => format!("{} merged into {}", name(*community), name(*into)),
+                    None => format!("{} died out", name(*community)),
+                },
+                // Too frequent to mark: told in the annals instead.
+                WorldEvent::Spread { .. } | WorldEvent::Displaced { .. } => continue,
             };
             out.push(Marker {
                 generation: *generation,
@@ -1279,6 +1316,16 @@ fn passing_senses(word: &Lexeme) -> (BTreeMap<usize, (&'static Concept, usize)>,
     (passing, folded)
 }
 
+/// A way of life as the annalist names it: "farming", "herding", or
+/// "foraging".
+pub(crate) fn livelihood_noun(livelihood: Livelihood) -> &'static str {
+    match livelihood {
+        Livelihood::Farming => "farming",
+        Livelihood::Herding => "herding",
+        Livelihood::Foraging => "foraging",
+    }
+}
+
 pub(crate) fn substrate_label(id: &str) -> String {
     if id == "substrate" {
         "Speakers' old accent merged a sound".into()
@@ -1576,8 +1623,17 @@ struct CommunityView {
     prestige: f32,
     power: f32,
     openness: f32,
-    /// The map region it lives on.
+    /// Its heart land, where its name is written on the map.
     region: usize,
+    /// Every land it holds, its heart first; for a people that has ended,
+    /// the lands it last held.
+    lands: Vec<usize>,
+    /// How it gets its food: "foraging", "herding", or "farming".
+    livelihood: Livelihood,
+    /// The generation it ended, if it has.
+    ended: Option<u32>,
+    /// The people it merged into, if it ended so.
+    ended_into: Option<usize>,
 }
 
 #[derive(Serialize)]

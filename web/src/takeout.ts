@@ -48,11 +48,11 @@ export function glossaryCsv(rows: LexiconRow[]): string {
   return lines.map((l) => l.map(cell).join(",")).join("\n") + "\n";
 }
 
-/// Who is who: each people's name, what it means, how it was once said,
-/// and what others call them.
+/// Who is who now: each living people's name, what it means, how it was
+/// once said, and what others call them.
 export function peopleLines(overview: Overview): string[] {
   const name = (id: number) => overview.communities[id]?.name ?? "?";
-  return overview.communities.map((c) => {
+  return overview.communities.filter((c) => c.ended === null).map((c) => {
     const tongue = overview.varieties[c.variety];
     const parts = [`${c.name}, “${c.meaning}”, speaking ${tongue.name}${tongue.meaning ? ` (“${tongue.meaning}”)` : ""}`];
     if (c.once) parts.push(`once ${c.once}`);

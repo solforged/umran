@@ -34,9 +34,13 @@ writes its own history.
 - **Borrowing.** Peoples in contact trade words, mostly from the more
   prestigious side. How readily a meaning is borrowed comes from that
   meaning alone, so patterns by field have to emerge on their own.
-- **Peoples on a map.** Communities grow toward what their land can feed,
-  split when large, settle new land or cross the sea, migrate, meet as
-  neighbours, trade, and conquer one another. Contacts begin and end.
+- **Peoples on a map.** Peoples forage, herd, or farm, and grow toward
+  what their lands feed them. Farmers fill the plains and spread into
+  land beside them; a people grown too large or too far-flung splits
+  along its lands. Peoples migrate, cross the sea, meet as neighbours,
+  trade, conquer one another, and learn new ways of life from each other.
+  Famine, plague, and drought strike; small peoples die out or are
+  absorbed by larger kin.
 - **Language shift.** A people can give up its language for a more
   prestigious one, keeping its own accent and some old words.
 - **Names are words.** Peoples, languages, and lands are named from the

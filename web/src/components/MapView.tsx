@@ -32,10 +32,17 @@ export type Tint =
 /// The part of the map in view: left, top, width, height, in map units.
 type Box = [number, number, number, number];
 
-/// Peoples by the region they live on.
+/// Living peoples by every region they hold, not just their heart land.
 export function peoplesByRegion(overview: Overview): Map<number, Community[]> {
   const out = new Map<number, Community[]>();
-  for (const c of overview.communities) out.set(c.region, [...(out.get(c.region) ?? []), c]);
+  for (const c of overview.communities) {
+    if (c.ended !== null) continue;
+    for (const region of c.lands) {
+      const here = out.get(region);
+      if (here) here.push(c);
+      else out.set(region, [c]);
+    }
+  }
   return out;
 }
 
@@ -180,15 +187,19 @@ export function MapView({
   const dragged = () => drag.current?.moved === true;
 
   const byRegion = useMemo(() => peoplesByRegion(overview), [overview]);
+  const hearts = useMemo(
+    () => new Map([...byRegion].map(([region, here]) => [region, here.filter((c) => c.region === region)])),
+    [byRegion],
+  );
   // Peoples sharing a region stack their labels around its centre.
   const at = useMemo(() => {
     const out = new Map<number, [number, number]>();
-    for (const [region, here] of byRegion) {
+    for (const [region, here] of hearts) {
       const [x, y] = map.regions[region].site;
       here.forEach((c, i) => out.set(c.id, [x, y + (i - (here.length - 1) / 2) * LINE]));
     }
     return out;
-  }, [byRegion, map]);
+  }, [hearts, map]);
   const placeOf = useMemo(() => new Map(overview.places.map((p) => [p.region, p.names])), [overview.places]);
   const nameOf = (region: number): string | null => placeOf.get(region)?.at(-1)?.spelled ?? null;
   const family = (c: Community) => overview.varieties[c.variety].family;
@@ -245,7 +256,10 @@ export function MapView({
       : [];
   // Peoples on the same land need no line between them.
   const dealings = contacts
-    ? overview.contacts.filter((k) => overview.communities[k.a].region !== overview.communities[k.b].region)
+    ? overview.contacts.filter((k) => {
+        const [a, b] = [overview.communities[k.a], overview.communities[k.b]];
+        return a.ended === null && b.ended === null && a.region !== b.region;
+      })
     : [];
 
   // Labels grow more slowly than the land as the view closes in.
@@ -303,7 +317,7 @@ export function MapView({
           <g className="place-names" aria-hidden="true">
             {overview.places.map((p) => {
               const [x, y] = map.regions[p.region].site;
-              const here = byRegion.get(p.region)?.length ?? 0;
+              const here = hearts.get(p.region)?.length ?? 0;
               const top = here > 0 ? y - (here / 2) * LINE * label - 0.06 * label : y;
               return (
                 <text key={p.region} x={x} y={top} className={here > 0 ? "place-name" : "place-name left"}>
@@ -317,6 +331,7 @@ export function MapView({
           <g className="routes">
             {overview.moves.map((m, i) => {
               const mover = overview.communities[m.community];
+              if (mover.ended !== null) return null;
               const age = generation - m.generation;
               const mine = chosen.has(m.community);
               return (
@@ -364,6 +379,7 @@ export function MapView({
         </g>
         <g className="peoples">
           {overview.communities.map((c) => {
+            if (c.ended !== null) return null;
             const [x, y] = at.get(c.id)!;
             const word = wordBy.get(c.id);
             const text = tint.kind === "words" ? (word?.spelled ?? "—") : c.name;

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Dices, Play, Plus, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import { createEngine, message, presetDesign } from "../engine";
-import type { Catalog, Engine, MapSize, Naming, Overview, WorldMap } from "../model";
-import { hue, TERRAIN_NAME } from "../lore";
+import type { Catalog, Engine, Livelihood, MapSize, Naming, Overview, WorldMap } from "../model";
+import { hue, LIVELIHOOD_NAME, TERRAIN_NAME } from "../lore";
 import { Designer, randomSeed, type Founding } from "./Designer";
 import { MapView } from "./MapView";
 import { Modal } from "./Modal";
@@ -22,11 +22,13 @@ const MOST_PEOPLES = 8;
 /// A people to found: its language's design and seed, what it calls
 /// itself, and where it lives. `preset` is the starting sound it was drawn
 /// from, or `null` once its sounds were adjusted by hand; `region` is
-/// `null` until the world has chosen a land for it.
+/// `null` until the world has chosen a land for it. A null `livelihood`
+/// lets that land choose how the people feeds itself.
 interface Founder extends Founding {
   key: number;
   preset: string | null;
   region: number | null;
+  livelihood: Livelihood | null;
 }
 
 /// The world as the founders would leave it in year 0.
@@ -61,6 +63,7 @@ function drawFounder(catalog: Catalog, key: number): Founder {
     power: 0.5,
     openness: 0.5,
     region: null,
+    livelihood: null,
   };
 }
 
@@ -111,6 +114,7 @@ export function WorldSetup({
               power: f.power,
               openness: f.openness,
               ...(f.region === null ? {} : { region: f.region }),
+              ...(f.livelihood === null ? {} : { livelihood: f.livelihood }),
             });
           }
         } catch (e) {
@@ -279,8 +283,9 @@ export function WorldSetup({
                 {c && v && map ? (
                   <>
                     <p className="muted small">
-                      Speaking <i>{v.name}</i>, on {map.regions[c.region].coastal ? "coastal " : ""}
-                      {TERRAIN_NAME[map.regions[c.region].terrain].toLowerCase()} in <i>{landName(c.region)}</i>
+                      Speaking <i>{v.name}</i>, living as {LIVELIHOOD_NAME[c.livelihood].toLowerCase()}, on{" "}
+                      {map.regions[c.region].coastal ? "coastal " : ""}
+                      {TERRAIN_NAME[map.regions[c.region].terrain].toLowerCase()} in <i>{landName(c.region)}</i>.
                     </p>
                     <Specimen words={v.specimen} />
                   </>
@@ -304,6 +309,20 @@ export function WorldSetup({
                     <label>
                       They call themselves
                       <NamingSelect catalog={catalog} value={f.naming} onChange={(n) => n && update(i, { naming: n })} />
+                    </label>
+                    <label>
+                      Way of life
+                      <select
+                        value={f.livelihood ?? ""}
+                        onChange={(e) => update(i, { livelihood: e.target.value === "" ? null : e.target.value as Livelihood })}
+                      >
+                        <option value="">As the land suits</option>
+                        {(Object.keys(LIVELIHOOD_NAME) as Livelihood[]).map((livelihood) => (
+                          <option key={livelihood} value={livelihood}>
+                            {LIVELIHOOD_NAME[livelihood]}
+                          </option>
+                        ))}
+                      </select>
                     </label>
                     <div className="row">
                       <button

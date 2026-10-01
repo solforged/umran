@@ -11,9 +11,11 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   (`MapSize`): regions are Voronoi cells around jittered hex-grid points,
   so each borders about six others. Terrain (sea, plains, forest, steppe,
   hills, mountains, desert) comes from smooth noise ranked into fixed
-  shares, half of it sea, and sets how many a region feeds (`fertility`),
-  how hard it is to cross (`travel`), and how readily its people move
-  (`mobility`: steppe and desert herders most, mountain folk least). Land
+  shares, half of it sea, and sets how many a region feeds (`fertility`,
+  where peoples are founded; how many it feeds each way of life is
+  `Livelihood::feeds`), how hard it is to cross (`travel`), and how
+  readily its people move (`mobility`: steppe and desert most, mountain
+  folk least). Land
   falls toward the map's edges but is rough enough that larger maps
   usually have islands; each land region knows its `landmass`, so
   crossing between landmasses means crossing the sea. Travel distances
@@ -119,23 +121,47 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
 - Varieties fork on splits and shifts and keep their lineage (`Fork`);
   `World::cognate` and `root_of` give true descent. The comparative method
   (`compare.rs`) must never read lineage; it is only graded against it.
-- Each community lives on one region. A founded people settles unpeopled
-  land, likelier the more it feeds and the further it lies from other
-  peoples. Communities grow toward their region's capacity (`capacity`
-  times its terrain's fertility, shared by everyone on it), split when
-  large, and the leavers take the roomiest bordering land when it has
-  more room than home. When the land beside is full, a coastal people
-  sends them along or over the sea instead, to the coast with the most
-  room for the voyage, as Greek cities sent out colonies. Whole peoples
-  also migrate (`migration_rate`): likelier the more crowded home is, the
-  more mobile its terrain makes them, and when a stronger people shares
-  it. They go to better land within reach (about five plains, or across
-  the sea), counting half of a weaker people's land as free, so strong
-  peoples push into good land others hold, and they meet those already
-  there as neighbours. Prestige comes from authored `power` plus relative
-  size. A community shifts language only to another family's, keeping its
-  own sound preferences and some old words as a substrate. Unspoken
-  varieties are extinct and frozen.
+- A people holds many lands (`Community::lands`, its heart first) and
+  lives by a way of life (`livelihood.rs`): foraging, herding, or
+  farming. Each sets how many a land feeds them (farmers on open plain
+  most, about thirty times what foragers get there), how fast they grow,
+  how readily they move, and how large they hold together. A founded
+  people settles unpeopled land, likelier the more it feeds and the
+  further it lies from other peoples, and lives as that land suits unless
+  told otherwise: plains farm, steppe and desert herd, the rest forage.
+  Its number is spread over its lands by how much each feeds it, and it
+  grows logistically toward what they feed it (`capacity` times
+  `Livelihood::feeds`), counting everyone living there; when its lands
+  hold more than they feed it, it declines, so foragers dwindle among
+  farmers. A people using most of its lands' food spreads into bordering
+  land with real room left (`spread_rate`). One too large for its way of
+  life (`cohesion_size`) or spread too far from its heart
+  (`cohesion_reach`) splits along its lands: the leavers take the
+  furthest land and every land nearer it than the heart. A people on one
+  land sends half its number to the roomiest bordering land, or, when
+  that is full and it lives by the sea, along or over the sea, as Greek
+  cities sent out colonies. A people on one land may also migrate whole
+  (`migration_rate`): likelier the more crowded home is, the more mobile
+  its land and way of life make it, and when a stronger people shares
+  it. Migrants go to better land within reach, counting half of a weaker
+  people's land as free, so strong peoples push into good land others
+  hold. A stronger people that outnumbers another on one of its several
+  lands crowds it off. Peoples learn a way of life that feeds them half
+  again as well from those they deal with (`adoption_rate`); farmers on
+  steppe turn to herding, and foragers on plain rarely begin to farm of
+  their own accord.
+- Peoples suffer and end. Famine, plague, or drought (on dry land) strikes
+  a peopled land now and then (`hardship_rate`), killing a share of
+  everyone there, so a people on one land suffers worst. A people below
+  a hundred dies out; one far smaller than a kindred people on its heart
+  land may merge into it (`merge_rate`), and one swamped by a people of
+  another family shifts to its language first. An ended people keeps its
+  record and last lands but does nothing more, and its dealings end with
+  it; when no people speaks a family's languages, the family is lost.
+  Prestige comes from authored `power` plus relative size. A community
+  shifts language only to another family's, keeping its own sound
+  preferences and some old words as a substrate. Unspoken varieties are
+  extinct and frozen.
 - Contacts come and go (`end_contacts`, `make_contacts`). Each kind has a
   typical lifespan (trade 12 generations, rule 16, intermarriage 20,
   religion 30, distant neighbours 40) and cannot end in its first third.
@@ -171,10 +197,11 @@ cargo run --release -p umran-sim --example audit -- [seeds] [generations]
 
 ## Not yet modelled
 
-Rivers, seafaring as a skill of particular peoples, extinction of whole
-peoples, compounding and derivation after founding beyond renewal,
-inflection, stress, tone, vowel harmony, consonant length, prenasalized
-stops, syntax and alignment, dialect levelling, personal names, different
+Rivers, seafaring as a skill of particular peoples, climates, cities,
+writing, states and standard languages, compounding and derivation after
+founding beyond renewal, inflection, stress, tone, vowel harmony,
+consonant length, prenasalized stops, syntax and alignment, dialect
+levelling, personal names, different
 names for one land in each neighbouring language (only the holders' name
 is kept). Each catalog law happens at most once in a lineage, so over
 long spans languages run short of changes they have not had, and waves

@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import type { Annal, Community, Engine, Overview, TellingView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { CONTACT_NAME, EVENT_KIND, howCame, howNamed, hue, TERMS, TERRAIN_NAME, type Term } from "../lore";
+import { CONTACT_NAME, EVENT_KIND, howCame, howNamed, hue, LIVELIHOOD_NAME, TERMS, TERRAIN_NAME, type Term } from "../lore";
 import { bond } from "../words";
 import type { DialogKind } from "./ActionDialog";
 import { Told } from "./Told";
@@ -438,11 +438,12 @@ function Welcome({ context }: { context: Context }) {
 
 function WorldCard({ context }: { context: Context }) {
   const { overview, map } = context;
-  const peoples = [...overview.communities].sort((a, b) => b.size - a.size);
+  const peoples = overview.communities.filter((c) => c.ended === null).sort((a, b) => b.size - a.size);
   const spoken = overview.varieties.filter((v) => v.spoken);
   const families = new Set(spoken.map((v) => v.family)).size;
+  const lost = new Set(overview.varieties.map((v) => v.family)).size - families;
   const land = map.regions.filter((r) => r.terrain !== "sea").length;
-  const held = new Set(overview.communities.map((c) => c.region)).size;
+  const held = new Set(peoples.flatMap((c) => c.lands)).size;
   const silent = overview.varieties.filter((v) => !v.spoken);
   return (
     <>
@@ -452,7 +453,7 @@ function WorldCard({ context }: { context: Context }) {
         rows={[
           ["Peoples", peoples.length],
           ["Languages", silent.length > 0 ? `${spoken.length} spoken, ${silent.length} silent` : spoken.length],
-          ["Families", <Explained term="family">{families}</Explained>],
+          ["Families", <Explained term="family">{lost > 0 ? `${families} living, ${lost} lost` : families}</Explained>],
           ["Lands held", `${held} of ${land}`],
         ]}
       />
@@ -640,10 +641,18 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
         rows={[
           ["Souls", Math.round(c.size).toLocaleString()],
           [
-            "Land",
+            "Heart land",
             <>
               <LandLink region={c.region} context={context} />, {terrain(c.region, context)}
             </>,
+          ],
+          [
+            "Lands",
+            <Joined items={c.lands} link={(region) => <LandLink region={region} context={context} />} />,
+          ],
+          [
+            "Way of life",
+            <Explained term="way of life">{LIVELIHOOD_NAME[c.livelihood]}</Explained>,
           ],
           ["Speak", <LanguageLink variety={c.variety} context={context} />],
           [
@@ -655,6 +664,17 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
             ),
           ],
           ["Since", told.length > 0 ? `year ${told[0].generation * YEARS}` : null],
+          [
+            "Ended",
+            c.ended === null ? null : (
+              <>
+                year <Year generation={c.ended} context={context} />,{" "}
+                {c.endedInto === null ? "died out" : (
+                  <>merged into the <PeopleLink c={name(c.endedInto)} context={context} /></>
+                )}
+              </>
+            ),
+          ],
           [
             "Called",
             c.exonyms.length === 0 ? null : (
@@ -702,18 +722,22 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
       ) : null}
       <h3>Their story</h3>
       <Story annals={story} context={context} />
-      <h3>Shape their history</h3>
-      <div className="card-actions">
-        <button type="button" onClick={() => context.onDialog("split", c.id)}>
-          Some go their own way
-        </button>
-        <button type="button" onClick={() => context.onDialog("connect", c.id)}>
-          They meet another people
-        </button>
-        <button type="button" onClick={() => context.onDialog("shift", c.id)}>
-          They take up another language
-        </button>
-      </div>
+      {c.ended === null ? (
+        <>
+          <h3>Shape their history</h3>
+          <div className="card-actions">
+            <button type="button" onClick={() => context.onDialog("split", c.id)}>
+              Some go their own way
+            </button>
+            <button type="button" onClick={() => context.onDialog("connect", c.id)}>
+              They meet another people
+            </button>
+            <button type="button" onClick={() => context.onDialog("shift", c.id)}>
+              They take up another language
+            </button>
+          </div>
+        </>
+      ) : null}
     </>
   );
 }
@@ -722,7 +746,7 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
   const { engine, version, generation, overview } = context;
   const v = overview.varieties[variety];
   const [allLaws, setAllLaws] = useState(false);
-  const speakers = overview.communities.filter((c) => c.variety === variety);
+  const speakers = overview.communities.filter((c) => c.ended === null && c.variety === variety);
   const daughters = overview.varieties.filter((d) => d.parent === variety);
   const kin = useMemo(
     () => engine.kin(generation, variety).filter((k) => k.score >= KIN_FLOOR),
@@ -918,13 +942,14 @@ function WordCard({ variety, concept, context }: { variety: number; concept: str
 
 function LawCard({ id, context }: { id: string; context: Context }) {
   const { overview } = context;
-  const had = overview.communities.flatMap((c) => {
+  const peoples = overview.communities.filter((c) => c.ended === null);
+  const had = peoples.flatMap((c) => {
     const law = overview.varieties[c.variety].laws.find((l) => l.id === id);
     return law ? [{ c, law }] : [];
   });
   const label =
     had[0]?.law.label ?? overview.varieties.flatMap((v) => v.laws).find((l) => l.id === id)?.label ?? id;
-  const without = overview.communities.filter((c) => !had.some((h) => h.c.id === c.id));
+  const without = peoples.filter((c) => !had.some((h) => h.c.id === c.id));
   const told = overview.annals.filter((a) => a.laws.includes(id));
   const waves = had.filter(({ law }) => law.from !== null).length;
   return (
@@ -932,7 +957,7 @@ function LawCard({ id, context }: { id: string; context: Context }) {
       <CardHead icon={AudioLines} kind="A sound change" title={label} />
       <Facts
         rows={[
-          ["Undergone by", `${had.length} of ${overview.communities.length} peoples`],
+          ["Undergone by", `${had.length} of ${peoples.length} peoples`],
           ["First heard", told.length > 0 ? `year ${told[0].generation * YEARS}` : null],
           ["Spread", waves > 0 ? `to ${waves} by neighbours’ speech` : null],
         ]}

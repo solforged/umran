@@ -93,6 +93,45 @@ fn main() {
                     name(*ruled)
                 )
             }
+            WorldEvent::Spread { community, to } => println!(
+                "  gen {generation:>3}  {} spread into {}",
+                name(*community),
+                place(*to, *generation)
+            ),
+            WorldEvent::Displaced {
+                community,
+                region,
+                by,
+            } => println!(
+                "  gen {generation:>3}  {} crowded off {} by {}",
+                name(*community),
+                place(*region, *generation),
+                name(*by)
+            ),
+            WorldEvent::HardTimes {
+                region,
+                kind,
+                share,
+            } => println!(
+                "  gen {generation:>3}  {kind:?} in {} kills {:.0}%",
+                place(*region, *generation),
+                share * 100.0
+            ),
+            WorldEvent::Adopted {
+                community,
+                livelihood,
+                from,
+            } => println!(
+                "  gen {generation:>3}  {} become {}{}",
+                name(*community),
+                livelihood.label(),
+                from.map_or(String::new(), |f| format!(", taught by {}", name(f)))
+            ),
+            WorldEvent::Ended { community, into } => println!(
+                "  gen {generation:>3}  {} {}",
+                name(*community),
+                into.map_or("die out".to_string(), |i| format!("merge into {}", name(i)))
+            ),
         }
     }
 

@@ -3,6 +3,9 @@
 
 export type ContactKind = "neighbours" | "trade" | "rule" | "religion" | "intermarriage";
 
+/// How a people feeds itself, which shapes how many its lands support.
+export type Livelihood = "foraging" | "herding" | "farming";
+
 export type LongVowelStyle = "Acute" | "Double" | "Macron" | "Unmarked";
 
 export interface Spelling {
@@ -77,6 +80,8 @@ export type Action =
       power: number;
       openness: number;
       region?: number;
+      /// Without a way of life, the land chooses how the people feeds itself.
+      livelihood?: Livelihood;
     }
   | { kind: "connect"; a: number; b: number; intensity: number; contact: ContactKind }
   /// Without `naming`, the new community chooses its own name.
@@ -125,8 +130,16 @@ export interface Community {
   prestige: number;
   power: number;
   openness: number;
-  /// The map region it lives on.
+  /// Its heart land, where its name appears on the map.
   region: number;
+  /// Every land it holds, heart first; its last lands if it has ended.
+  lands: number[];
+  /// How it feeds itself, which shapes how many its lands support.
+  livelihood: Livelihood;
+  /// The generation it ended, or null while it lives.
+  ended: number | null;
+  /// The people it merged into, or null if it died out.
+  endedInto: number | null;
 }
 
 /// A sound law a variety underwent; `from` is the variety it spread from,
@@ -150,7 +163,7 @@ export interface Variety {
   /// The generation it arose: founded, parted from its parent, or taken up
   /// in a shift.
   born: number;
-  /// When its last speakers took up another language, if they have.
+  /// When its last speakers took up another language or ended, if they have.
   silentSince: number | null;
   consonants: string[];
   vowels: string[];
@@ -249,7 +262,7 @@ export interface TellingView {
 /// One chronicle entry; `variety` is set for a sound law.
 export interface Annal {
   generation: number;
-  kind: "found" | "split" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law";
+  kind: "found" | "split" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "livelihood" | "ended";
   /// The annalist's words; words of the language are marked *thus*.
   text: string;
   /// The apparatus: what a linguist would note, such as sound laws.

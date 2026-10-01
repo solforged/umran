@@ -5,17 +5,22 @@
 
 import {
   AudioLines,
+  CloudRain,
   Crown,
+  Expand,
   Flag,
   Footprints,
   GitFork,
   Handshake,
   Languages,
+  Sprout,
+  UserRoundMinus,
   Unlink,
   Users,
+  Wind,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, Community, ContactKind, Law, Overview, PlaceName, Terrain } from "./model";
+import type { Annal, Community, ContactKind, Law, Livelihood, Overview, PlaceName, Terrain } from "./model";
 import { YEARS } from "./model";
 
 export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string }> = {
@@ -28,6 +33,11 @@ export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string 
   neighbours: { icon: Users, name: "Neighbours come and go" },
   conquest: { icon: Crown, name: "A conquest" },
   law: { icon: AudioLines, name: "A sound change" },
+  spread: { icon: Expand, name: "A people spreads" },
+  displaced: { icon: Wind, name: "A people is driven out" },
+  hardship: { icon: CloudRain, name: "Hard times" },
+  livelihood: { icon: Sprout, name: "A new way of life" },
+  ended: { icon: UserRoundMinus, name: "A people ends" },
 };
 
 export const TERRAIN_NAME: Record<Terrain, string> = {
@@ -38,6 +48,13 @@ export const TERRAIN_NAME: Record<Terrain, string> = {
   mountains: "Mountains",
   desert: "Desert",
   sea: "Sea",
+};
+
+/// Shared names for how peoples feed themselves, in cards and choices.
+export const LIVELIHOOD_NAME: Record<Livelihood, string> = {
+  foraging: "Foragers",
+  herding: "Herders",
+  farming: "Farmers",
 };
 
 export const CONTACT_NAME: Record<ContactKind, string> = {
@@ -99,6 +116,8 @@ export const TERMS = {
     "Traces left in a language by the one its speakers spoke before a shift: an accent, a few words, sound habits.",
   exonym: "What outsiders call a people or place, as opposed to what they call themselves.",
   family: "Languages that descend from one ancestor language.",
+  "way of life":
+    "How a people gets its food: gathering and hunting, keeping herds, or farming. Farming feeds many more people on each land, helping farmers’ languages spread over those of foragers.",
 } as const;
 
 export type Term = keyof typeof TERMS;
