@@ -50,6 +50,8 @@ export interface Variety {
   vowels: string[];
   laws: { generation: number; label: string }[];
   words: number;
+  wordBuilding: string;
+  builders: { relation: string; shape: string }[];
 }
 
 export interface Contact {
@@ -73,7 +75,7 @@ export interface Overview {
 }
 
 export interface Origin {
-  kind: "inherited" | "coined" | "borrowed" | "kept";
+  kind: "inherited" | "coined" | "borrowed" | "kept" | "derived";
   from: string | null;
   generation: number;
 }

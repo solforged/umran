@@ -2,6 +2,7 @@ use crate::adapt::ESTABLISHED_SHARE;
 use crate::form::Form;
 use crate::inventory::Inventory;
 use crate::lexicon::Lexicon;
+use crate::morphology::Morphology;
 use crate::phoneme::PhonemeId;
 use crate::phonotactics::Phonotactics;
 use crate::profile::SoundProfile;
@@ -20,6 +21,8 @@ pub struct Variety {
     /// living words use; see `inventory`.
     pub founding_inventory: Inventory,
     pub lexicon: Lexicon,
+    /// How this language builds words from words.
+    pub morphology: Morphology,
     /// Sound laws in the order applied, with their generation.
     pub laws: Vec<(u32, &'static str)>,
     /// Where this variety split from, if it did.
@@ -44,10 +47,22 @@ impl Variety {
         let inventory =
             Inventory::sample(&profile.inventory, &mut stream(seed, &[key("inventory")]));
         let phonotactics = Phonotactics::compile(&profile.phonotactics, &inventory);
+        let morphology = Morphology::found(
+            &profile.morphology,
+            &phonotactics,
+            &mut stream(seed, &[key("morphology")]),
+        );
         Self {
             name: String::new(),
             profile: profile.clone(),
-            lexicon: Lexicon::found(mint_roots(seed, &phonotactics, &profile.spelling)),
+            lexicon: Lexicon::found(mint_roots(
+                seed,
+                &phonotactics,
+                &profile.spelling,
+                &morphology,
+                profile.morphology.derivation,
+            )),
+            morphology,
             founding_inventory: inventory,
             laws: Vec::new(),
             parent: None,

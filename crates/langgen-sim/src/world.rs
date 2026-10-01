@@ -860,6 +860,7 @@ impl World {
         let hazards: Vec<f32> = CONCEPTS.iter().map(|c| self.innovation_hazard(c)).collect();
         let params = &self.params;
         let spelling = self.varieties[v].profile.spelling.clone();
+        let morphology = self.varieties[v].morphology.clone();
         let lexicon = &mut self.varieties[v].lexicon;
         let observed = Phonotactics::observe(lexicon.living().map(|l| &l.form));
         for (i, concept) in CONCEPTS.iter().enumerate() {
@@ -901,7 +902,15 @@ impl World {
                     .flat_map(|s| s.variants.iter())
                     .map(|v| lexicon.get(v.lexeme).form.clone())
                     .collect();
-                let form = mint_one(&mut rng, &observed, &spelling, concept, &used, &field);
+                let form = mint_one(
+                    &mut rng,
+                    &observed,
+                    &spelling,
+                    Some(&morphology),
+                    concept,
+                    &used,
+                    &field,
+                );
                 lexicon.coin(form, Origin::Expressive, concept, generation)
             };
             lexicon.slots[i].introduce(newcomer, params.newcomer_share);

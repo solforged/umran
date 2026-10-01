@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Community, Engine, LexiconRow, Variety } from "../model";
 
-type OriginFilter = "all" | "inherited" | "coined" | "borrowed" | "kept";
+type OriginFilter = "all" | "inherited" | "derived" | "coined" | "borrowed" | "kept";
 
 /// Every concept's current word in the selected community's language.
 export function Lexicon({
@@ -92,6 +92,7 @@ export function Lexicon({
         <select aria-label="Origin" value={origin} onChange={(e) => setOrigin(e.target.value as OriginFilter)}>
           <option value="all">Any origin</option>
           <option value="inherited">Inherited</option>
+          <option value="derived">Built from another word</option>
           <option value="coined">Coined</option>
           <option value="borrowed">Borrowed</option>
           <option value="kept">Kept through a shift</option>
@@ -148,7 +149,9 @@ function Row({ row, selected, onSelect }: { row: LexiconRow; selected: boolean; 
             ? `from ${row.origin.from}`
             : row.origin.kind === "kept"
               ? `kept from ${row.origin.from}`
-              : row.origin.kind}
+              : row.origin.kind === "derived"
+                ? `from ${row.origin.from}`
+                : row.origin.kind}
         </span>
       </td>
       <td className="num">{row.changes || ""}</td>

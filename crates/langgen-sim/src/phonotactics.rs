@@ -1,4 +1,4 @@
-use crate::concepts::Iconic;
+use crate::concepts::{Concept, Iconic};
 use crate::form::Form;
 use crate::inventory::Inventory;
 use crate::phoneme::{Backness, CATALOG, Height, Manner, PhonemeId, Place, Segment};
@@ -8,6 +8,16 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// Chance a parent word follows the nursery pattern.
+const NURSERY: f32 = 0.8;
+/// Chance a nursery word is doubled (mama rather than ma).
+const NURSERY_DOUBLED: f32 = 0.7;
+/// Chance an expressive meaning gets a fully reduplicated root (kuku).
+const REDUPLICATION: f32 = 0.3;
+/// Repeat tolerance for expressive meanings, at least.
+const EXPRESSIVE_REPEATS: f32 = 0.6;
+/// Share of a language's repeat tolerance that plain meanings get.
+const PLAIN_REPEATS: f32 = 0.25;
 /// Draws a root gets to avoid repeating a consonant.
 const REPEAT_TRIES: usize = 8;
 /// Repeat tolerance for roots coined from a language's current sounds.
@@ -67,16 +77,48 @@ impl Phonotactics {
         }
     }
 
-    /// A founding root: CV or CVC, or CVCV or CVCVC when `disyllabic`.
-    /// Roots have onsets (while the language has any), use single
-    /// consonants, and usually avoid repeating one.
-    pub fn root(&self, rng: &mut impl Rng, iconic: Option<Iconic>, disyllabic: bool) -> Form {
+    /// How many syllables a new root for `concept` gets: the language's
+    /// typical length, stretched for rarer meanings and shrunk for basic
+    /// ones (Zipf's law of abbreviation). At most three.
+    pub fn syllables_for(&self, rng: &mut impl Rng, concept: &Concept) -> usize {
+        let bias = concept.length_bias();
+        let two = (self.disyllabic_roots * bias).min(0.9);
+        let three = (self.disyllabic_roots * bias - 0.6).clamp(0.0, 0.5);
+        if rng.r#gen::<f32>() >= two {
+            1
+        } else if rng.r#gen::<f32>() >= three {
+            2
+        } else {
+            3
+        }
+    }
+
+    /// A root for `concept` with `syllables` syllables: open syllables, then
+    /// an optional final consonant, onsets throughout while the language
+    /// has any. Parent words usually follow the nursery pattern; expressive
+    /// meanings may reduplicate or repeat consonants, which other meanings
+    /// avoid.
+    pub fn root(&self, rng: &mut impl Rng, concept: &Concept, syllables: usize) -> Form {
+        if let Some(form) = self.nursery(rng, concept) {
+            return form;
+        }
         let onsets = singles(&self.onsets);
         let codas = singles(&self.codas);
-        let mut phones = Vec::with_capacity(5);
+        let iconic = concept.iconic;
+        if concept.expressive && !onsets.is_empty() && rng.r#gen::<f32>() < REDUPLICATION {
+            let c = pick(rng, &onsets, iconic);
+            let v = pick(rng, &self.nuclei, iconic);
+            return Form::from_phones([c, v, c, v]);
+        }
+        let tolerance = if concept.expressive {
+            self.identical_consonants.max(EXPRESSIVE_REPEATS)
+        } else {
+            self.identical_consonants * PLAIN_REPEATS
+        };
+        let mut phones = Vec::with_capacity(2 * syllables + 1);
         for _ in 0..REPEAT_TRIES {
             phones.clear();
-            for _ in 0..if disyllabic { 2 } else { 1 } {
+            for _ in 0..syllables.max(1) {
                 // A language that has lost every initial consonant coins
                 // vowel-initial words.
                 if !onsets.is_empty() {
@@ -87,14 +129,60 @@ impl Phonotactics {
             if !codas.is_empty() && rng.r#gen::<f32>() < self.final_coda {
                 phones.push(pick(rng, &codas, iconic));
             }
-            // Most languages avoid repeating a consonant within a root.
-            if !repeats_consonant(&phones) || rng.r#gen::<f32>() < self.identical_consonants {
+            // Most meanings avoid repeating a consonant within a root.
+            if !repeats_consonant(&phones) || rng.r#gen::<f32>() < tolerance {
                 break;
             }
         }
         Form::from_phones(phones)
     }
 
+    /// Jakobson's "mama" and "papa": the earliest babbled syllables, a
+    /// nasal or a lip or tongue-tip stop with an open vowel, become parent
+    /// words in language after language. Usually, not always.
+    fn nursery(&self, rng: &mut impl Rng, concept: &Concept) -> Option<Form> {
+        let fits = |id: PhonemeId, mother: bool| match CATALOG.get(id) {
+            Segment::Consonant(c) if mother => match (c.manner, c.place) {
+                (Manner::Nasal, Place::Bilabial) => 3.0,
+                (Manner::Nasal, Place::Alveolar | Place::Dental) => 1.0,
+                _ => 0.0,
+            },
+            Segment::Consonant(c) => match (c.manner, c.place) {
+                (Manner::Stop, Place::Bilabial) => 2.0,
+                (Manner::Stop, Place::Alveolar | Place::Dental) => 1.0,
+                _ => 0.0,
+            },
+            Segment::Vowel(_) => 0.0,
+        };
+        let mother = match concept.iconic {
+            Some(Iconic::NurseryMother) => true,
+            Some(Iconic::NurseryFather) => false,
+            _ => return None,
+        };
+        if rng.r#gen::<f32>() >= NURSERY {
+            return None;
+        }
+        let candidates: Vec<(PhonemeId, f32)> = singles(&self.onsets)
+            .into_iter()
+            .map(|(id, _)| (id, fits(id, mother)))
+            .filter(|&(_, w)| w > 0.0)
+            .collect();
+        if candidates.is_empty() {
+            return None;
+        }
+        let c = candidates[weighted_index(rng, candidates.iter().map(|(_, w)| *w))].0;
+        let open = self
+            .nuclei
+            .iter()
+            .filter_map(|(id, _)| CATALOG.get(*id).vowel().map(|v| (*id, v.height)))
+            .max_by_key(|(id, height)| (*height as u8, std::cmp::Reverse(id.0)))?
+            .0;
+        Some(if rng.r#gen::<f32>() < NURSERY_DOUBLED {
+            Form::from_phones([c, open, c, open])
+        } else {
+            Form::from_phones([c, open])
+        })
+    }
     /// Syllable statistics of the words a language has now, for coining
     /// roots that sound like its present rather than its founding.
     pub fn observe<'a>(forms: impl Iterator<Item = &'a Form>) -> Self {
@@ -132,17 +220,16 @@ impl Phonotactics {
         }
     }
 
-    /// Whether `form` is a shape `root` can produce.
+    /// Whether `form` is a shape `root` can produce: one to three open
+    /// syllables with at most one final consonant, from this inventory.
     pub fn fits_root(&self, form: &Form) -> bool {
         let syllables = form.syllables();
         let single = |list: &[(Vec<PhonemeId>, f32)], id: PhonemeId| {
             list.iter().any(|(ids, _)| ids.as_slice() == [id])
         };
-        let shape_ok = match syllables.len() {
-            1 => syllables[0].coda.len() <= 1,
-            2 => syllables[0].coda.is_empty() && syllables[1].coda.len() <= 1,
-            _ => false,
-        };
+        let shape_ok = (1..=3).contains(&syllables.len())
+            && syllables.iter().rev().skip(1).all(|s| s.coda.is_empty())
+            && syllables.last().is_some_and(|s| s.coda.len() <= 1);
         shape_ok
             && form.boundaries.is_empty()
             && form.segs.iter().all(|s| !s.long)

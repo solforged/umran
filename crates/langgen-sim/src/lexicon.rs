@@ -1,5 +1,6 @@
-use crate::concepts::{CONCEPTS, Concept};
+use crate::concepts::{CONCEPTS, Concept, Relation};
 use crate::form::Form;
+use crate::root::Minted;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -14,6 +15,8 @@ pub enum Origin {
     Expressive,
     /// Taken from another variety's word, adapted to this one's sounds.
     Borrowed { from: usize, source: LexemeId },
+    /// Built from another word of the same language: fish > fishing.
+    Derived { base: LexemeId, relation: Relation },
 }
 
 /// One word: a form plus its history. Meanings live in `Slot`s, so a
@@ -104,7 +107,7 @@ pub struct Lexicon {
 
 impl Lexicon {
     /// One founding word per concept, in `CONCEPTS` order.
-    pub fn found(roots: impl IntoIterator<Item = (&'static Concept, Form)>) -> Self {
+    pub fn found(roots: impl IntoIterator<Item = Minted>) -> Self {
         let mut lexicon = Self {
             lexemes: Vec::new(),
             slots: CONCEPTS
@@ -115,9 +118,25 @@ impl Lexicon {
                 })
                 .collect(),
         };
-        for (concept, form) in roots {
-            let id = lexicon.coin(form, Origin::Founding, concept, 0);
-            lexicon.slot_mut(concept).introduce(id, 1.0);
+        let roots: Vec<Minted> = roots.into_iter().collect();
+        for minted in &roots {
+            let origin = match minted.derived {
+                // Founding words are coined in concept order, so a base's
+                // id is its position in the list.
+                Some((base, relation)) => {
+                    let base = roots
+                        .iter()
+                        .position(|m| m.concept.id == base.id)
+                        .expect("bases are minted");
+                    Origin::Derived {
+                        base: LexemeId(base as u32),
+                        relation,
+                    }
+                }
+                None => Origin::Founding,
+            };
+            let id = lexicon.coin(minted.form.clone(), origin, minted.concept, 0);
+            lexicon.slot_mut(minted.concept).introduce(id, 1.0);
         }
         lexicon
     }
@@ -217,9 +236,13 @@ impl Lexicon {
         kept as f32 / core.len() as f32
     }
 
-    /// Whether `concept` is still dominated by the root it was founded with.
+    /// Whether `concept` is still dominated by the word it was founded with,
+    /// a root or a word derived at founding.
     pub fn keeps_founding_word(&self, concept: &Concept) -> bool {
-        self.word_for(concept)
-            .is_some_and(|l| l.origin == Origin::Founding && l.first_sense.id == concept.id)
+        self.word_for(concept).is_some_and(|l| {
+            l.born == 0
+                && matches!(l.origin, Origin::Founding | Origin::Derived { .. })
+                && l.first_sense.id == concept.id
+        })
     }
 }

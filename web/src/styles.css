@@ -486,6 +486,20 @@ tbody tr.selected {
   color: var(--event);
 }
 
+.origin-derived {
+  color: var(--accent);
+}
+
+.builders {
+  grid-template-columns: 1fr;
+}
+
+.builder {
+  display: grid;
+  grid-template-columns: 6rem 1fr;
+  gap: 0.5rem;
+}
+
 /* Inspector */
 
 .tabs {

@@ -3,10 +3,12 @@
 
 use langgen_sim::compare::intelligibility;
 use langgen_sim::concepts::related;
+use langgen_sim::morphology::Slot;
 use langgen_sim::{
     Action, CATALOG, Chronicle, ENGINE_REVISION, Event, Flavor, Form, Lexeme, Origin, PhonemeId,
     Recipe, SoundProfile, World, WorldEvent, catalog,
 };
+use langgen_sim::{MorphologyKind, Variety};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
@@ -255,6 +257,8 @@ impl Bench {
                             })
                             .collect(),
                         words: v.lexicon.living().count(),
+                        word_building: word_building(v),
+                        builders: builders(v),
                     }
                 })
                 .collect(),
@@ -454,6 +458,65 @@ impl Bench {
     }
 }
 
+fn word_building(v: &Variety) -> String {
+    match v.morphology.kind {
+        MorphologyKind::RootPattern => "vowel patterns over consonant roots".into(),
+        MorphologyKind::Concatenative => {
+            let suffixes = v
+                .morphology
+                .affixes
+                .iter()
+                .filter(|(_, a)| a.suffix)
+                .count();
+            match (suffixes, v.morphology.affixes.len() - suffixes) {
+                (_, 0) => "suffixes".into(),
+                (0, _) => "prefixes".into(),
+                (s, p) if s >= p => "suffixes and some prefixes".into(),
+                _ => "prefixes and some suffixes".into(),
+            }
+        }
+    }
+}
+
+/// Affixes as "-ka" or "ma-"; patterns with C1 C2 C3 for root consonants.
+fn builders(v: &Variety) -> Vec<Builder> {
+    match v.morphology.kind {
+        MorphologyKind::Concatenative => v
+            .morphology
+            .affixes
+            .iter()
+            .map(|(r, a)| {
+                let written = v.spell(&a.form);
+                Builder {
+                    relation: r.label(),
+                    shape: if a.suffix {
+                        format!("-{written}")
+                    } else {
+                        format!("{written}-")
+                    },
+                }
+            })
+            .collect(),
+        MorphologyKind::RootPattern => v
+            .morphology
+            .patterns
+            .iter()
+            .map(|(r, p)| Builder {
+                relation: r.label(),
+                shape: p
+                    .0
+                    .iter()
+                    .map(|slot| match slot {
+                        Slot::Root(i) => format!("C{}", i + 1),
+                        Slot::Fixed(id) => CATALOG.get(*id).ipa().to_string(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(""),
+            })
+            .collect(),
+    }
+}
+
 fn spoken_pairs(world: &World) -> Vec<Pair> {
     let spoken: Vec<usize> = (0..world.varieties.len())
         .filter(|&v| world.spoken()[v])
@@ -506,6 +569,15 @@ fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
             from: None,
             generation: word.born,
         },
+        Origin::Derived { base, relation } => OriginView {
+            kind: "derived",
+            from: Some(format!(
+                "{} ({})",
+                world.varieties[variety].lexicon.get(base).first_sense.gloss,
+                relation.label()
+            )),
+            generation: word.born,
+        },
         Origin::Borrowed { from, .. } => OriginView {
             kind: "borrowed",
             from: Some(world.varieties[from].name.clone()),
@@ -535,6 +607,33 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
                 word.first_sense.gloss
             ),
             Origin::Expressive => format!("Coined for '{}'", word.first_sense.gloss),
+            Origin::Derived { base, relation } => {
+                let v = &world.varieties[variety];
+                let base = v.lexicon.get(base);
+                let how = match v.morphology.kind {
+                    MorphologyKind::RootPattern => format!("its {} pattern", relation.label()),
+                    MorphologyKind::Concatenative => v
+                        .morphology
+                        .affixes
+                        .iter()
+                        .find(|(r, _)| *r == relation)
+                        .map_or_else(
+                            || format!("its {} ending", relation.label()),
+                            |(_, a)| {
+                                let written = v.spell(&a.form);
+                                if a.suffix {
+                                    format!("the {} suffix -{written}", relation.label())
+                                } else {
+                                    format!("the {} prefix {written}-", relation.label())
+                                }
+                            },
+                        ),
+                };
+                format!(
+                    "Built from '{}' with {how}, for '{}'",
+                    base.first_sense.gloss, word.first_sense.gloss
+                )
+            }
             Origin::Borrowed { from, .. } if kept_through_shift(world, variety, word) => format!(
                 "Kept from {} when its speakers changed language, for '{}'",
                 world.varieties[from].name, word.first_sense.gloss
@@ -670,6 +769,17 @@ struct VarietyView {
     vowels: Vec<&'static str>,
     laws: Vec<LawView>,
     words: usize,
+    /// How it builds words: "suffixes", "prefixes", mixes, or "vowel
+    /// patterns over consonant roots".
+    word_building: String,
+    /// Each relation's affix or pattern, as written.
+    builders: Vec<Builder>,
+}
+
+#[derive(Serialize)]
+struct Builder {
+    relation: &'static str,
+    shape: String,
 }
 
 #[derive(Serialize)]

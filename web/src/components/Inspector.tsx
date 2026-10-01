@@ -45,6 +45,16 @@ export function Inspector({
           <p className="segments">{variety.consonants.join(" ")}</p>
           <h3>Vowels</h3>
           <p className="segments">{variety.vowels.join(" ")}</p>
+          <h3>Word building</h3>
+          <p className="muted">Builds words with {variety.wordBuilding}.</p>
+          <dl className="facts builders">
+            {variety.builders.map((b) => (
+              <div key={b.relation} className="builder">
+                <dt>{b.relation}</dt>
+                <dd className="ipa">{b.shape}</dd>
+              </div>
+            ))}
+          </dl>
           <h3>Sound laws</h3>
           {variety.laws.length === 0 ? (
             <p className="muted">None yet. Run some generations.</p>

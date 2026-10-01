@@ -43,12 +43,21 @@ before development or production builds.
   PHOIBLE (`typology.rs`), drives inventories, how often sounds are used,
   sound-law odds, and acceptance of foreign sounds.
 - Concepts (`concepts.rs`): the Leipzig–Jakarta 100 in rank order plus
-  cultural concepts with a `Tier`. Founding roots are CV, CVC, CVCV, or
-  CVCVC with an onset, unique within a semantic field, usually without a
-  repeated consonant, with a weak sound-symbolic bias. Minting skips
-  spellings that read as English vulgarities, a courtesy rather than a
-  linguistic claim. New words come from curated semantic shifts (`RELATED`)
-  or fresh roots.
+  cultural concepts with a `Tier`. Word length follows `length_bias`
+  (Zipf's law of abbreviation: basic meanings short, specialist long, one
+  to three syllables). Parent words usually follow the nursery pattern
+  (mama, papa). Only `expressive` meanings (small things, insects and
+  birds, cries and sounds, baby talk) reduplicate or repeat consonants;
+  others avoid it. Roots are unique within a semantic field, with a weak
+  sound-symbolic bias. Minting skips spellings that read as English
+  vulgarities, a courtesy rather than a linguistic claim.
+- Word families (`FAMILIES`, `morphology.rs`): each language mints its own
+  affixes, or vowel patterns over consonant roots for root-and-pattern
+  (`MorphologyKind::RootPattern`), and builds some family members from
+  their bases (`Origin::Derived`). Junctions get a link vowel or a glide as
+  the language needs. Root-and-pattern derivations use each word's true
+  root skeleton, never a surface reading that includes a pattern's prefix.
+  New words come from curated semantic shifts (`RELATED`) or fresh roots.
 - Sound laws (`laws.rs`) apply simultaneously and regularly to every living
   word, never to obsolete ones, and never delete a word's last vowel.
   "No change" competes with them, so a culture is never forced into a law.
@@ -118,9 +127,9 @@ development dependency. Deployment needs only `dist/`, not a server.
 
 ## Not yet modelled
 
-Places and migration (territories stand in for a map), morphology and
-compounding (homophony stays somewhat high without them), stress, syntax,
-dialect levelling, and names.
+Places and migration (territories stand in for a map), compounding and
+inflection, derivation as a source of new words after founding, stress,
+syntax and alignment, dialect levelling, and names.
 
 ## Working with Sol
 

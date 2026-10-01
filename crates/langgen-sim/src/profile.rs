@@ -11,7 +11,30 @@ pub struct SoundProfile {
     pub description: String,
     pub inventory: InventoryPrior,
     pub phonotactics: PhonotacticPrior,
+    pub morphology: MorphologyPrior,
     pub spelling: Spelling,
+}
+
+/// How words are built from other words.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MorphologyKind {
+    /// Affixes attach before or after a base: fish > fish-er.
+    Concatenative,
+    /// Roots are consonant skeletons and words are vowel patterns over them,
+    /// as in Arabic k-t-b: kataba "he wrote", kitāb "book", maktab "office".
+    RootPattern,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MorphologyPrior {
+    pub kind: MorphologyKind,
+    /// Chance an affix is a suffix rather than a prefix. Suffixing is the
+    /// more common choice worldwide.
+    pub suffixing: f32,
+    /// Chance each word-family link is realized by derivation rather than
+    /// by an unrelated root.
+    pub derivation: f32,
 }
 
 /// Log-weight adjustments by feature; a listed feature adds its weight, an
@@ -175,6 +198,11 @@ fn elvish() -> SoundProfile {
             disyllabic_roots: 0.3,
             identical_consonants: 0.1,
         },
+        morphology: MorphologyPrior {
+            kind: MorphologyKind::Concatenative,
+            suffixing: 0.8,
+            derivation: 0.6,
+        },
         spelling: Spelling {
             overrides: pairs(&[("k", "c"), ("x", "ch")]),
             kw_as_qu: true,
@@ -250,6 +278,11 @@ fn kuo_toa() -> SoundProfile {
             preferred_codas: ipas(&["p", "b", "l", "m", "ŋ", "lp"]),
             disyllabic_roots: 0.25,
             identical_consonants: 0.5,
+        },
+        morphology: MorphologyPrior {
+            kind: MorphologyKind::Concatenative,
+            suffixing: 0.5,
+            derivation: 0.5,
         },
         spelling: Spelling {
             overrides: vec![],
@@ -330,6 +363,11 @@ fn illithid() -> SoundProfile {
             disyllabic_roots: 0.1,
             identical_consonants: 0.1,
         },
+        morphology: MorphologyPrior {
+            kind: MorphologyKind::Concatenative,
+            suffixing: 0.3,
+            derivation: 0.5,
+        },
         spelling: Spelling {
             overrides: vec![],
             kw_as_qu: false,
@@ -405,6 +443,11 @@ fn neutral() -> SoundProfile {
             preferred_codas: ipas(&["n", "m", "ŋ", "l", "r", "s", "k", "t"]),
             disyllabic_roots: 0.25,
             identical_consonants: 0.1,
+        },
+        morphology: MorphologyPrior {
+            kind: MorphologyKind::Concatenative,
+            suffixing: 0.7,
+            derivation: 0.5,
         },
         spelling: Spelling {
             overrides: vec![],

@@ -86,6 +86,12 @@ pub enum Iconic {
     Sibilant,
     /// "breast": /m/.
     LabialNasal,
+    /// "mother": the nursery pattern of nasal plus open vowel, often
+    /// doubled (mama, nana), as Jakobson described for babbling.
+    NurseryMother,
+    /// "father": the nursery pattern of lip or tongue-tip stop plus open
+    /// vowel, often doubled (papa, baba, tata, dada).
+    NurseryFather,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -100,6 +106,10 @@ pub struct Concept {
     /// How culture-bound a non-core concept is; `None` for the core list.
     pub tier: Option<Tier>,
     pub iconic: Option<Iconic>,
+    /// Meanings that languages often express with reduplicated or
+    /// repeated-consonant words: small things, insects and birds, sounds
+    /// and cries, baby talk. Other meanings avoid those shapes.
+    pub expressive: bool,
 }
 
 /// How culture-bound a concept outside the core list is. Judged per
@@ -117,6 +127,19 @@ pub enum Tier {
 }
 
 impl Concept {
+    /// How much longer than a language's typical root this concept's word
+    /// tends to be: frequent, basic meanings get short words and specialist
+    /// ones long (Zipf's law of abbreviation). Core rank stands in for
+    /// frequency.
+    pub fn length_bias(&self) -> f32 {
+        match (self.stability, self.tier) {
+            (Some(rank), _) => 0.6 + 0.6 * f32::from(rank - 1) / 99.0,
+            (None, Some(Tier::Basic)) => 1.2,
+            (None, Some(Tier::Everyday)) => 1.6,
+            (None, Some(Tier::Specialized)) | (None, None) => 2.0,
+        }
+    }
+
     /// Relative ease of borrowing, from 0.02 for the most stable core
     /// meaning to 1.0 for specialized culture. Core meanings rise
     /// geometrically with Leipzig–Jakarta rank to 0.15 at rank 100; those
@@ -146,6 +169,7 @@ const fn core(
         stability: Some(rank),
         tier: None,
         iconic: None,
+        expressive: false,
     }
 }
 
@@ -164,12 +188,20 @@ const fn culture(
         stability: None,
         tier: Some(tier),
         iconic: None,
+        expressive: false,
     }
 }
 
 const fn iconic(concept: Concept, iconic: Iconic) -> Concept {
     Concept {
         iconic: Some(iconic),
+        ..concept
+    }
+}
+
+const fn expressive(concept: Concept) -> Concept {
+    Concept {
+        expressive: true,
         ..concept
     }
 }
@@ -195,11 +227,11 @@ pub static CONCEPTS: &[Concept] = &[
     core(13, "rain", "rain", PhysicalWorld, E),
     core(14, "1sg", "I, me", Function, F),
     core(15, "name", "name", Speech, E),
-    core(16, "louse", "louse", Animals, E),
+    expressive(core(16, "louse", "louse", Animals, E)),
     core(17, "wing", "wing", Animals, E),
     core(18, "flesh", "flesh, meat", Body, E),
     core(19, "hand", "arm, hand", Body, E),
-    core(20, "fly", "fly (insect)", Animals, E),
+    expressive(core(20, "fly", "fly (insect)", Animals, E)),
     core(21, "night", "night", Time, E),
     core(22, "ear", "ear", Body, E),
     core(23, "neck", "neck", Body, E),
@@ -240,7 +272,7 @@ pub static CONCEPTS: &[Concept] = &[
     core(58, "know", "to know", Cognition, V),
     core(59, "knee", "knee", Body, E),
     iconic(core(60, "sand", "sand", PhysicalWorld, E), Iconic::Sibilant),
-    core(61, "laugh", "to laugh", Emotions, V),
+    expressive(core(61, "laugh", "to laugh", Emotions, V)),
     core(62, "hear", "to hear", SensePerception, V),
     core(63, "soil", "soil", PhysicalWorld, E),
     core(64, "leaf", "leaf", Agriculture, E),
@@ -258,7 +290,7 @@ pub static CONCEPTS: &[Concept] = &[
     core(76, "thigh", "thigh", Body, E),
     core(77, "thick", "thick", Spatial, P),
     core(78, "long", "long", Spatial, P),
-    core(79, "blow", "to blow", PhysicalWorld, V),
+    expressive(core(79, "blow", "to blow", PhysicalWorld, V)),
     core(80, "wood", "wood", Agriculture, E),
     core(81, "run", "to run", Motion, V),
     core(82, "fall", "to fall", Motion, V),
@@ -266,15 +298,18 @@ pub static CONCEPTS: &[Concept] = &[
     core(84, "ash", "ash", PhysicalWorld, E),
     core(85, "tail", "tail", Animals, E),
     core(86, "dog", "dog", Animals, E),
-    core(87, "cry", "to cry, weep", Emotions, V),
+    expressive(core(87, "cry", "to cry, weep", Emotions, V)),
     core(88, "tie", "to tie", BasicActions, V),
     core(89, "see", "to see", SensePerception, V),
     core(90, "sweet", "sweet", SensePerception, P),
     core(91, "rope", "rope", BasicActions, E),
     core(92, "shadow", "shade, shadow", PhysicalWorld, E),
-    core(93, "bird", "bird", Animals, E),
+    expressive(core(93, "bird", "bird", Animals, E)),
     core(94, "salt", "salt", FoodDrink, E),
-    iconic(core(95, "small", "small", Spatial, P), Iconic::CloseFront),
+    expressive(iconic(
+        core(95, "small", "small", Spatial, P),
+        Iconic::CloseFront,
+    )),
     core(96, "wide", "wide", Spatial, P),
     core(97, "star", "star", PhysicalWorld, E),
     core(98, "in", "in", Function, F),
@@ -296,8 +331,14 @@ pub static CONCEPTS: &[Concept] = &[
     culture(Specialized, "iron", "iron", PhysicalWorld, E),
     culture(Basic, "day", "day", Time, E),
     culture(Basic, "year", "year", Time, E),
-    culture(Basic, "mother", "mother", Kinship, E),
-    culture(Basic, "father", "father", Kinship, E),
+    expressive(iconic(
+        culture(Basic, "mother", "mother", Kinship, E),
+        Iconic::NurseryMother,
+    )),
+    expressive(iconic(
+        culture(Basic, "father", "father", Kinship, E),
+        Iconic::NurseryFather,
+    )),
     culture(Basic, "person", "person", Social, E),
     culture(Basic, "people", "people, folk", Social, E),
     culture(Specialized, "chief", "chief, king", Social, E),
@@ -443,6 +484,71 @@ pub static RELATED: &[(&str, &str)] = &[
     ("law", "word"),
 ];
 
+/// How a derived word's meaning relates to its base's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+pub enum Relation {
+    /// A group of the base: person > people.
+    Collective,
+    /// One who does the base: pray > priest.
+    Agent,
+    /// Where the base happens: buy > market.
+    Place,
+    /// What the base is done with: hunt > spear.
+    Instrument,
+    /// What the base produces: weave > cloth.
+    Result,
+    /// To act with or on the base: fish > to fish.
+    Action,
+    /// The base as a state or affair: fight > war.
+    Abstract,
+}
+
+impl Relation {
+    pub const ALL: [Relation; 7] = [
+        Relation::Collective,
+        Relation::Agent,
+        Relation::Place,
+        Relation::Instrument,
+        Relation::Result,
+        Relation::Action,
+        Relation::Abstract,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Relation::Collective => "collective",
+            Relation::Agent => "agent",
+            Relation::Place => "place",
+            Relation::Instrument => "instrument",
+            Relation::Result => "result",
+            Relation::Action => "action",
+            Relation::Abstract => "abstract",
+        }
+    }
+}
+
+/// Word families: where a language may build the second concept's word from
+/// the first's. Listed so that every base comes before what derives from
+/// it. Hand-picked from common derivational patterns; each language uses
+/// each link only some of the time.
+pub static FAMILIES: &[(&str, &str, Relation)] = &[
+    ("person", "people", Relation::Collective),
+    ("fish", "fishing", Relation::Action),
+    ("fishing", "net", Relation::Instrument),
+    ("fire", "cook", Relation::Action),
+    ("eat", "food", Relation::Result),
+    ("grain", "bread", Relation::Result),
+    ("say", "word", Relation::Result),
+    ("fight", "war", Relation::Abstract),
+    ("fight", "shield", Relation::Instrument),
+    ("hunt", "spear", Relation::Instrument),
+    ("weave", "cloth", Relation::Result),
+    ("buy", "market", Relation::Place),
+    ("judge", "law", Relation::Result),
+    ("pray", "priest", Relation::Agent),
+    ("seed", "field", Relation::Place),
+];
+
 /// Concepts a word for `concept` could plausibly extend to, or come from.
 pub fn related(concept: &Concept) -> impl Iterator<Item = &'static Concept> + '_ {
     RELATED.iter().filter_map(move |&(a, b)| {
@@ -476,6 +582,25 @@ mod tests {
         }
         let sun: Vec<_> = related(by_id("sun").unwrap()).map(|c| c.id).collect();
         assert_eq!(sun, ["day"]);
+    }
+
+    #[test]
+    fn families_name_known_concepts_with_bases_first() {
+        let mut derived: Vec<&str> = Vec::new();
+        for (base, word, _) in FAMILIES {
+            assert!(
+                by_id(base).is_some() && by_id(word).is_some(),
+                "{base}/{word}"
+            );
+            assert!(!derived.contains(word), "{word} is derived twice");
+            derived.push(word);
+        }
+        for (i, (base, _, _)) in FAMILIES.iter().enumerate() {
+            assert!(
+                !FAMILIES[i..].iter().any(|(_, w, _)| w == base),
+                "{base} must be derived before it is used as a base"
+            );
+        }
     }
 
     #[test]

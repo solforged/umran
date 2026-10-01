@@ -1,6 +1,6 @@
 use crate::inventory::{UNLISTED_PRIMARY, UNLISTED_SECONDARY};
 use crate::phoneme::{Backness, Height, Manner, Place};
-use crate::profile::SoundProfile;
+use crate::profile::{MorphologyKind, SoundProfile};
 use serde::{Deserialize, Serialize};
 
 /// A phonetic vibe layered onto a profile, such as "slightly more plausible
@@ -32,6 +32,10 @@ pub struct Flavor {
     pub disyllabic_roots: Option<f32>,
     pub preferred_onsets: Vec<String>,
     pub preferred_codas: Vec<String>,
+    pub identical_consonants: Option<f32>,
+    pub morphology: Option<MorphologyKind>,
+    pub suffixing: Option<f32>,
+    pub derivation: Option<f32>,
 }
 
 impl SoundProfile {
@@ -58,6 +62,14 @@ impl SoundProfile {
         tac.disyllabic_roots = flavor.disyllabic_roots.unwrap_or(tac.disyllabic_roots);
         union(&mut tac.preferred_onsets, &flavor.preferred_onsets);
         union(&mut tac.preferred_codas, &flavor.preferred_codas);
+        tac.identical_consonants = flavor
+            .identical_consonants
+            .unwrap_or(tac.identical_consonants);
+
+        let morph = &mut out.morphology;
+        morph.kind = flavor.morphology.unwrap_or(morph.kind);
+        morph.suffixing = flavor.suffixing.unwrap_or(morph.suffixing);
+        morph.derivation = flavor.derivation.unwrap_or(morph.derivation);
 
         out.id = format!("{}+{}", out.id, flavor.id);
         out.name = format!("{}, {}", out.name, flavor.name);
@@ -87,7 +99,7 @@ fn union(dest: &mut Vec<String>, add: &[String]) {
 impl Flavor {
     /// Example flavors written by Claude from Sol's briefs. Adjust freely.
     pub fn examples() -> Vec<Flavor> {
-        vec![fish_mouthed(), pie_like(), familiar()]
+        vec![fish_mouthed(), pie_like(), familiar(), triconsonantal()]
     }
 
     pub fn by_id(id: &str) -> Option<Flavor> {
@@ -152,6 +164,34 @@ fn pie_like() -> Flavor {
         disyllabic_roots: Some(0.0),
         preferred_onsets: strings(&["kw", "gw", "st", "sk", "tr", "pr"]),
         preferred_codas: strings(&["r", "n", "m", "s", "t", "k"]),
+        ..Flavor::default()
+    }
+}
+
+/// Consonant-skeleton roots with vowel patterns, a rich set of consonants
+/// at the back of the mouth, and few vowels.
+fn triconsonantal() -> Flavor {
+    use Manner::*;
+    use Place::*;
+    Flavor {
+        id: "triconsonantal".into(),
+        name: "Triconsonantal".into(),
+        brief: "Give it a triconsonantal root family bias, like the Semitic languages.".into(),
+        manner: vec![(Fricative, 0.8)],
+        place: vec![(Uvular, 2.0), (Pharyngeal, 2.0), (Glottal, 1.5)],
+        segments: weighted(&[
+            ("q", 1.5),
+            ("ʔ", 1.5),
+            ("h", 1.0),
+            ("x", 0.8),
+            ("a", 1.0),
+            ("i", 1.0),
+            ("u", 1.0),
+        ]),
+        vowel_count: Some((3, 3)),
+        disyllabic_roots: Some(0.7),
+        morphology: Some(MorphologyKind::RootPattern),
+        derivation: Some(0.8),
         ..Flavor::default()
     }
 }

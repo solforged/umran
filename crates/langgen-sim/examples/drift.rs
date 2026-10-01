@@ -110,6 +110,9 @@ fn main() {
         let how = match now.origin {
             Origin::Founding => format!("extended from '{}'", now.first_sense.gloss),
             Origin::Expressive => format!("new root, gen {}", now.born),
+            Origin::Derived { relation, .. } => {
+                format!("derived ({}), gen {}", relation.label(), now.born)
+            }
             Origin::Borrowed { from, .. } => {
                 format!("borrowed from variety {from}, gen {}", now.born)
             }
