@@ -65,7 +65,38 @@ pub struct Concept {
     /// Rank on the Leipzig–Jakarta list (Tadmor 2009): 1 is the meaning
     /// least often borrowed. `None` for cultural vocabulary.
     pub stability: Option<u8>,
+    /// How culture-bound a non-core concept is; `None` for the core list.
+    pub tier: Option<Tier>,
     pub iconic: Option<Iconic>,
+}
+
+/// How culture-bound a concept outside the core list is. Judged per
+/// concept by what kind of thing it names, never per semantic field, so
+/// field-level borrowing patterns have to emerge rather than be assumed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub enum Tier {
+    /// Universal experience: sun, mother, heart, to sing.
+    Basic,
+    /// Ordinary material and social life: bread, boat, to buy, village.
+    Everyday,
+    /// Institutions, trade goods, and specialist technology: market,
+    /// priest, iron, law.
+    Specialized,
+}
+
+impl Concept {
+    /// Relative ease of borrowing, from 0.02 for the most stable core
+    /// meaning to 1.0 for specialized culture. Core meanings rise
+    /// geometrically with Leipzig–Jakarta rank to 0.15 at rank 100; those
+    /// ranks were derived from WOLD borrowing data at the meaning level.
+    pub fn borrowability(&self) -> f32 {
+        match (self.stability, self.tier) {
+            (Some(rank), _) => 0.02 * 7.5_f32.powf(f32::from(rank - 1) / 99.0),
+            (None, Some(Tier::Basic)) => 0.25,
+            (None, Some(Tier::Everyday)) => 0.6,
+            (None, Some(Tier::Specialized)) | (None, None) => 1.0,
+        }
+    }
 }
 
 const fn core(
@@ -81,17 +112,25 @@ const fn core(
         field,
         class,
         stability: Some(rank),
+        tier: None,
         iconic: None,
     }
 }
 
-const fn culture(id: &'static str, gloss: &'static str, field: Field, class: Class) -> Concept {
+const fn culture(
+    tier: Tier,
+    id: &'static str,
+    gloss: &'static str,
+    field: Field,
+    class: Class,
+) -> Concept {
     Concept {
         id,
         gloss,
         field,
         class,
         stability: None,
+        tier: Some(tier),
         iconic: None,
     }
 }
@@ -105,6 +144,7 @@ const fn iconic(concept: Concept, iconic: Iconic) -> Concept {
 
 use Class::{Entity as E, Event as V, Function as F, Property as P};
 use Field::*;
+use Tier::*;
 
 pub static CONCEPTS: &[Concept] = &[
     // Leipzig–Jakarta list, rank order.
@@ -209,78 +249,78 @@ pub static CONCEPTS: &[Concept] = &[
     core(99, "hard", "hard", SensePerception, P),
     core(100, "grind", "to crush, grind", BasicActions, V),
     // Cultural vocabulary: more exposed to contact and to challenges.
-    culture("sun", "sun", PhysicalWorld, E),
-    culture("moon", "moon", PhysicalWorld, E),
-    culture("sky", "sky", PhysicalWorld, E),
-    culture("sea", "sea", PhysicalWorld, E),
-    culture("river", "river", PhysicalWorld, E),
-    culture("mountain", "mountain", PhysicalWorld, E),
-    culture("hill", "hill", PhysicalWorld, E),
-    culture("island", "island", PhysicalWorld, E),
-    culture("cloud", "cloud", PhysicalWorld, E),
-    culture("light", "light", PhysicalWorld, E),
-    culture("dark", "dark", PhysicalWorld, P),
-    culture("gold", "gold", PhysicalWorld, E),
-    culture("iron", "iron", PhysicalWorld, E),
-    culture("day", "day", Time, E),
-    culture("year", "year", Time, E),
-    culture("mother", "mother", Kinship, E),
-    culture("father", "father", Kinship, E),
-    culture("person", "person", Social, E),
-    culture("people", "people, folk", Social, E),
-    culture("chief", "chief, king", Social, E),
-    culture("friend", "friend", Social, E),
-    culture("stranger", "stranger, guest", Social, E),
-    culture("village", "village", Social, E),
-    culture("heart", "heart", Body, E),
-    culture("life", "life", Body, E),
-    culture("die", "to die", Body, V),
-    culture("tree", "tree", Agriculture, E),
-    culture("seed", "seed", Agriculture, E),
-    culture("field", "field", Agriculture, E),
-    culture("grain", "grain", Agriculture, E),
-    culture("cattle", "cattle", Animals, E),
-    culture("horse", "horse", Animals, E),
-    culture("food", "food", FoodDrink, E),
-    culture("bread", "bread", FoodDrink, E),
-    culture("beer", "beer", FoodDrink, E),
-    culture("cook", "to cook", FoodDrink, V),
-    culture("cloth", "cloth", ClothingGrooming, E),
-    culture("weave", "to weave", ClothingGrooming, V),
-    culture("needle", "needle", ClothingGrooming, E),
-    culture("wall", "wall", House, E),
-    culture("door", "door", House, E),
-    culture("knife", "knife", BasicActions, E),
-    culture("pot", "pot", BasicActions, E),
-    culture("path", "path, road", Motion, E),
-    culture("boat", "boat", Motion, E),
-    culture("sail", "sail", Motion, E),
-    culture("swim", "to swim", Motion, V),
-    culture("war", "war", Warfare, E),
-    culture("spear", "spear", Warfare, E),
-    culture("bow", "bow", Warfare, E),
-    culture("shield", "shield", Warfare, E),
-    culture("fight", "to fight", Warfare, V),
-    culture("hunt", "to hunt", Warfare, V),
-    culture("fishing", "to fish", Warfare, V),
-    culture("net", "net", Warfare, E),
-    culture("buy", "to buy", Possession, V),
-    culture("sell", "to sell", Possession, V),
-    culture("market", "market", Possession, E),
-    culture("law", "law, custom", Law, E),
-    culture("oath", "oath", Law, E),
-    culture("judge", "to judge", Law, V),
-    culture("god", "god", Religion, E),
-    culture("spirit", "spirit", Religion, E),
-    culture("priest", "priest", Religion, E),
-    culture("sacrifice", "to sacrifice", Religion, V),
-    culture("pray", "to pray", Religion, V),
-    culture("voice", "voice", Speech, E),
-    culture("word", "word", Speech, E),
-    culture("sing", "to sing", Speech, V),
-    culture("love", "to love", Emotions, V),
-    culture("fear", "to fear", Emotions, V),
-    culture("think", "to think", Cognition, V),
+    culture(Basic, "sun", "sun", PhysicalWorld, E),
+    culture(Basic, "moon", "moon", PhysicalWorld, E),
+    culture(Basic, "sky", "sky", PhysicalWorld, E),
+    culture(Basic, "sea", "sea", PhysicalWorld, E),
+    culture(Basic, "river", "river", PhysicalWorld, E),
+    culture(Basic, "mountain", "mountain", PhysicalWorld, E),
+    culture(Basic, "hill", "hill", PhysicalWorld, E),
+    culture(Basic, "island", "island", PhysicalWorld, E),
+    culture(Basic, "cloud", "cloud", PhysicalWorld, E),
+    culture(Basic, "light", "light", PhysicalWorld, E),
+    culture(Basic, "dark", "dark", PhysicalWorld, P),
+    culture(Specialized, "gold", "gold", PhysicalWorld, E),
+    culture(Specialized, "iron", "iron", PhysicalWorld, E),
+    culture(Basic, "day", "day", Time, E),
+    culture(Basic, "year", "year", Time, E),
+    culture(Basic, "mother", "mother", Kinship, E),
+    culture(Basic, "father", "father", Kinship, E),
+    culture(Basic, "person", "person", Social, E),
+    culture(Basic, "people", "people, folk", Social, E),
+    culture(Specialized, "chief", "chief, king", Social, E),
+    culture(Everyday, "friend", "friend", Social, E),
+    culture(Everyday, "stranger", "stranger, guest", Social, E),
+    culture(Everyday, "village", "village", Social, E),
+    culture(Basic, "heart", "heart", Body, E),
+    culture(Basic, "life", "life", Body, E),
+    culture(Basic, "die", "to die", Body, V),
+    culture(Basic, "tree", "tree", Agriculture, E),
+    culture(Basic, "seed", "seed", Agriculture, E),
+    culture(Everyday, "field", "field", Agriculture, E),
+    culture(Everyday, "grain", "grain", Agriculture, E),
+    culture(Everyday, "cattle", "cattle", Animals, E),
+    culture(Everyday, "horse", "horse", Animals, E),
+    culture(Basic, "food", "food", FoodDrink, E),
+    culture(Everyday, "bread", "bread", FoodDrink, E),
+    culture(Specialized, "beer", "beer", FoodDrink, E),
+    culture(Everyday, "cook", "to cook", FoodDrink, V),
+    culture(Everyday, "cloth", "cloth", ClothingGrooming, E),
+    culture(Everyday, "weave", "to weave", ClothingGrooming, V),
+    culture(Everyday, "needle", "needle", ClothingGrooming, E),
+    culture(Everyday, "wall", "wall", House, E),
+    culture(Everyday, "door", "door", House, E),
+    culture(Everyday, "knife", "knife", BasicActions, E),
+    culture(Everyday, "pot", "pot", BasicActions, E),
+    culture(Basic, "path", "path, road", Motion, E),
+    culture(Everyday, "boat", "boat", Motion, E),
+    culture(Everyday, "sail", "sail", Motion, E),
+    culture(Basic, "swim", "to swim", Motion, V),
+    culture(Everyday, "war", "war", Warfare, E),
+    culture(Everyday, "spear", "spear", Warfare, E),
+    culture(Everyday, "bow", "bow", Warfare, E),
+    culture(Everyday, "shield", "shield", Warfare, E),
+    culture(Everyday, "fight", "to fight", Warfare, V),
+    culture(Everyday, "hunt", "to hunt", Warfare, V),
+    culture(Everyday, "fishing", "to fish", Warfare, V),
+    culture(Everyday, "net", "net", Warfare, E),
+    culture(Everyday, "buy", "to buy", Possession, V),
+    culture(Everyday, "sell", "to sell", Possession, V),
+    culture(Specialized, "market", "market", Possession, E),
+    culture(Specialized, "law", "law, custom", Law, E),
+    culture(Everyday, "oath", "oath", Law, E),
+    culture(Everyday, "judge", "to judge", Law, V),
+    culture(Specialized, "god", "god", Religion, E),
+    culture(Everyday, "spirit", "spirit", Religion, E),
+    culture(Specialized, "priest", "priest", Religion, E),
+    culture(Specialized, "sacrifice", "to sacrifice", Religion, V),
+    culture(Everyday, "pray", "to pray", Religion, V),
+    culture(Basic, "voice", "voice", Speech, E),
+    culture(Basic, "word", "word", Speech, E),
+    culture(Basic, "sing", "to sing", Speech, V),
+    culture(Basic, "love", "to love", Emotions, V),
+    culture(Basic, "fear", "to fear", Emotions, V),
+    culture(Basic, "think", "to think", Cognition, V),
 ];
 
 pub fn by_id(id: &str) -> Option<&'static Concept> {

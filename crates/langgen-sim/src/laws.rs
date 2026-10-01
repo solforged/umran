@@ -1,7 +1,7 @@
 use crate::change::{Env, Matcher, Rewrite, SoundChange, apply_all};
 use crate::form::Form;
-use crate::inventory::score;
-use crate::phoneme::{Backness, CATALOG, Height, Manner, PhonemeId, Place};
+use crate::inventory::preference;
+use crate::phoneme::{Backness, Height, Manner, Place};
 use crate::profile::InventoryPrior;
 
 /// A named sound law: one or more rules applied in order, each regularly
@@ -64,19 +64,6 @@ impl Law {
         })
     }
 }
-
-/// Preference score for a segment, treating anything the culture forbids
-/// as strongly dispreferred: a sound change can still create it, but rarely.
-fn preference(prior: &InventoryPrior, id: PhonemeId) -> f32 {
-    let seg = CATALOG.get(id);
-    if prior.forbidden.iter().any(|f| f == seg.ipa()) {
-        FORBIDDEN_SCORE
-    } else {
-        score(prior, seg)
-    }
-}
-
-const FORBIDDEN_SCORE: f32 = -4.0;
 
 fn cons(place: Option<Place>, manner: Option<Manner>, voiced: Option<bool>) -> Matcher {
     Matcher::Consonant {

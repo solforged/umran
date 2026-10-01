@@ -2,7 +2,7 @@
 //!
 //! cargo run --release -p langgen-sim --example calibrate -- [seeds] [generations]
 
-use langgen_sim::{Lexicon, Params, Sim, SoundProfile};
+use langgen_sim::{Lexicon, Params, SoundProfile, World};
 use std::collections::HashMap;
 
 fn kept(lexicon: &Lexicon, ranks: std::ops::RangeInclusive<u8>) -> f32 {
@@ -27,9 +27,9 @@ fn main() {
     let profiles = SoundProfile::examples();
     for n in 0..seeds {
         let profile = &profiles[n % profiles.len()];
-        let mut sim = Sim::new(n as u64, profile, Params::default());
+        let mut sim = World::solo(n as u64, profile, Params::default());
         sim.run(generations);
-        let lexicon = &sim.variety.lexicon;
+        let lexicon = &sim.varieties[0].lexicon;
         let culture: Vec<_> = lexicon
             .slots
             .iter()
@@ -53,7 +53,7 @@ fn main() {
         add("ranks 1-20 kept", kept(lexicon, 1..=20));
         add("ranks 81-100 kept", kept(lexicon, 81..=100));
         add("culture kept", culture_kept);
-        add("sound laws", sim.variety.laws.len() as f32);
+        add("sound laws", sim.varieties[0].laws.len() as f32);
         add(
             "contested concepts",
             lexicon

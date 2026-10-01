@@ -12,6 +12,8 @@ pub enum Origin {
     Founding,
     /// A new, expressive root coined from the language's current sounds.
     Expressive,
+    /// Taken from another variety's word, adapted to this one's sounds.
+    Borrowed { from: usize, source: LexemeId },
 }
 
 /// One word: a form plus its history. Meanings live in `Slot`s, so a
@@ -37,6 +39,11 @@ pub struct Entry {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
+    /// Entered from variety `from`, where it sounded like `source`.
+    Borrowed {
+        from: usize,
+        source: Form,
+    },
     SoundLaw {
         law: &'static str,
         before: Form,

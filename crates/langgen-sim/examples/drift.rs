@@ -4,7 +4,7 @@
 //! e.g. cargo run -p langgen-sim --example drift -- 42 neutral 40 pie-like
 
 use langgen_sim::{
-    CATALOG, Event, Flavor, Form, Lexeme, Origin, Params, Sim, SoundProfile, catalog,
+    CATALOG, Event, Flavor, Form, Lexeme, Origin, Params, SoundProfile, World, catalog,
 };
 
 fn main() {
@@ -31,10 +31,10 @@ fn main() {
         profile = profile.flavored(&flavor);
     }
 
-    let mut sim = Sim::new(seed, &profile, Params::default());
-    let founding = sim.variety.clone();
+    let mut sim = World::solo(seed, &profile, Params::default());
+    let founding = sim.varieties[0].clone();
     sim.run(generations);
-    let variety = &sim.variety;
+    let variety = &sim.varieties[0];
     let lexicon = &variety.lexicon;
 
     println!(
@@ -110,6 +110,9 @@ fn main() {
         let how = match now.origin {
             Origin::Founding => format!("extended from '{}'", now.first_sense.gloss),
             Origin::Expressive => format!("new root, gen {}", now.born),
+            Origin::Borrowed { from, .. } => {
+                format!("borrowed from variety {from}, gen {}", now.born)
+            }
         };
         let rank = slot
             .concept

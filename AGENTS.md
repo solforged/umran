@@ -26,40 +26,40 @@ recipe that might produce different words after an engine update.
 - `web/src/components/Inspector.tsx`: senses, grammar, sound, and provenance.
 - `web/src/components/Modal.tsx`: controlled native dialogs.
 
-## Rebuild in progress
+## Simulator rebuild
 
-`crates/langgen-sim` is replacing `langgen-core` milestone by milestone, per
-the design doc (https://claude.ai/code/artifact/965cab5c-8222-4277-8b9d-804394941e3c):
-a generation-stepped simulator where communities with dispositions and
-contact drive sound change, borrowing, and word competition. Old crates and
-the workbench stay until milestone 5 rebuilds the UI on the new engine; do
-not port new features into `langgen-core`.
+`crates/langgen-sim` is replacing `langgen-core`: a generation-stepped
+simulator where communities, their sound preferences, and their contacts
+drive sound change, borrowing, and word competition. The design doc holds
+the plan, milestone status, and calibration results:
+https://claude.ai/code/artifact/965cab5c-8222-4277-8b9d-804394941e3c
+Old crates and the workbench stay until the UI moves to the new engine; do
+not add features to `langgen-core`.
 
-Milestone 1 (done): phoneme catalog, simultaneous feature-based sound
-changes on flat `Form`s (syllables derived, never stored), ChaCha8 streams
-keyed per purpose, a 172-concept stock (Leipzig–Jakarta 100 in rank order
-plus cultural fields), and founding roots: CV, CVC, or CVCV with a required
-onset, unique within a semantic field, with a weak sound-symbolic bias.
+- `World` (`world.rs`) steps communities, varieties, and contacts through
+  25-year generations. `Variety` holds a `SoundProfile` and a `Lexicon` of
+  `Slot`s, where words compete for each concept with usage weights.
+- `SoundProfile`s are numbers; the four packs are only examples. A `Flavor`
+  is stored adjustments written from a plain brief, which the engine never
+  reads. One preference score drives inventories, sound-law odds, and
+  acceptance of foreign sounds.
+- Sound laws (`laws.rs`) apply simultaneously and regularly to every living
+  word, never to obsolete ones, and never delete a word's last vowel.
+- Borrowability is set per concept (Leipzig–Jakarta rank or cultural
+  `Tier`), never per semantic field, so field patterns must emerge.
+  `wold.rs` holds WOLD figures for validation only; the model never reads
+  them.
+- Every random draw comes from a ChaCha8 stream keyed by purpose
+  (`rng.rs`), so adding a process never shifts existing draws.
+- Tune `Params` against the calibration tools rather than the tests; the
+  statistical tests check bands, not exact values.
 
-Milestone 2 (done): one variety steps through 25-year generations (`Sim`).
-`SoundProfile` holds the numbers (the four packs are examples); a `Flavor`
-is stored adjustments written from a plain brief ("fish mouths", "PIE
-vibe"), and the engine never reads the brief. Each concept is a `Slot` of
-competing words with usage weights; words gain senses by extension along
-the hand-curated `RELATED` shifts (sun/day, see/know) or are coined from
-the language's current phonotactics. Usage drifts by resampling, and
-homonymic clash both raises replacement odds and costs usage. A catalog of
-27 sound laws applies regularly; the culture's preference score (with
-forbidden segments strongly negative) weights each law, and "no change"
-competes with them. Defaults are calibrated to about 84% core retention
-per 40 generations, ranks 1–20 near 93% and 81–100 near 72%. Compounding,
-borrowing, and multiple varieties come later; homophony stays somewhat high
-until compounding exists.
-
-`cargo run --release -p langgen-sim --example drift -- <seed> <profile>
-<generations> [flavor...]` prints one history; `--example calibrate`
-averages statistics over many seeds for tuning `Params`; `--example found`
-prints a founding lexicon.
+```sh
+cargo run --release -p langgen-sim --example found -- <seed> <profile>
+cargo run --release -p langgen-sim --example drift -- <seed> <profile> <generations> [flavor...]
+cargo run --release -p langgen-sim --example contact -- <seed> <donor> <recipient> <kind> <generations> <seeds>
+cargo run --release -p langgen-sim --example calibrate -- <seeds> <generations>
+```
 
 React, TypeScript, and Vite provide the interface; all linguistic generation
 and history mutation run in Rust/WASM. No backend, network language service,

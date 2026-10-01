@@ -85,6 +85,20 @@ fn pick_class(
     chosen
 }
 
+/// Preference score for a segment that may already be in use, treating
+/// anything the culture forbids as strongly dispreferred: a sound change or
+/// a loan can still bring it in, but rarely.
+pub fn preference(prior: &InventoryPrior, id: PhonemeId) -> f32 {
+    let seg = CATALOG.get(id);
+    if prior.forbidden.iter().any(|f| f == seg.ipa()) {
+        FORBIDDEN_SCORE
+    } else {
+        score(prior, seg)
+    }
+}
+
+const FORBIDDEN_SCORE: f32 = -4.0;
+
 /// Preference score: base plus feature weights, minus penalties for
 /// features the prior does not mention.
 pub fn score(prior: &InventoryPrior, seg: Segment) -> f32 {
