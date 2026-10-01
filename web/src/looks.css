@@ -527,3 +527,51 @@
   color: var(--accent);
   text-decoration-color: var(--accent);
 }
+
+/* The stage is a working surface rather than a page: one face throughout,
+   no boxed initials, words at the size of the text around them, and the
+   family hands kept for card titles, where a name is read slowly, not
+   for map labels and lists, where it is scanned. */
+[data-look="scriptorium"] .stage button,
+[data-look="scriptorium"] .stage select {
+  font-variant: normal;
+  letter-spacing: normal;
+}
+[data-look="scriptorium"] .stage h2 {
+  font-variant: normal;
+  letter-spacing: 0;
+}
+[data-look="scriptorium"] .stage h2::first-letter {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+[data-look="scriptorium"] .stage h3 {
+  font-variant: normal;
+  color: var(--ink-soft);
+}
+[data-look="scriptorium"] .stage :not(h2)[class*="hand-"] {
+  font-family: var(--serif);
+}
+[data-look="scriptorium"] .stage .word:not(.big) {
+  font-size: 1em;
+}
+[data-look="scriptorium"] .stage .gloss > h3 {
+  color: var(--ink);
+}
+
+/* On the stage the switcher sits quietly in the head's right-hand cell
+   instead of floating over the time bar. */
+.app:has(> .stage) ~ .look-switch {
+  top: 0.4rem;
+  bottom: auto;
+  right: 0.8rem;
+  padding: 0.1rem 0.3rem;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}

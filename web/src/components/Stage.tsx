@@ -207,13 +207,15 @@ export function Stage({
   return (
     <div className="stage">
       <header className="stage-head">
-        <button type="button" className="link brand" onClick={onShelf} title="Back to the shelf">
-          Langgen
-        </button>
+        <nav>
+          <button type="button" className="link brand" onClick={onShelf} title="Back to the shelf">
+            Langgen
+          </button>
+          <button type="button" className="link" onClick={onBook}>
+            Book view
+          </button>
+        </nav>
         <span className="stage-title">{title}</span>
-        <button type="button" className="link" onClick={onBook}>
-          Book view
-        </button>
       </header>
       <div className="stage-notices">{notices}</div>
 
