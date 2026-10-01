@@ -175,6 +175,36 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   it. Each beginning, ending, and conquest is a `WorldEvent`, so it is told
   in the history and stops "until something happens".
   `Params::static_society()` turns all of this off.
+- States (`polity.rs`) sit above peoples: a ruling people, the peoples it
+  rules, a capital land, and a name coined from the rulers' name with
+  their belonging affix ("the realm of the Ivo"), which changes with
+  their speech while the state stands. Every subject has a rule contact
+  with its rulers, so borrowing, waves, and shift work through rule as
+  before; when that contact ends, the subject has thrown off the rule. A
+  conquest, by the world or an author's rule contact, brings the ruled
+  into the rulers' state, raising one if they have none, and conquered
+  rulers bring their whole state, which falls. Subjects make no
+  conquests, and a people split off within a state stays in it. A large
+  farming people under no state may organize itself into one
+  (`state_rate`): readily in answer to a challenge (bad times on its
+  lands, being crowded off land, a stronger state beside it), a tenth as
+  readily in comfort. This is Toynbee's challenge and response. Ruling
+  feeds the rulers more: a tenth of their own lands' yield and a tenth of
+  their subjects' number in tribute. Those the tribute feeds live in the
+  capital's city. A state falls when its rulers end or lose the capital,
+  or collapses (`collapse_rate`), three times as readily after bad times
+  on its rulers' lands; states last about 750 years. Rule holds half as
+  long after such bad times. A state with a city of 10,000 that has stood
+  200 years may take its court speech as its standard. A standard takes
+  up sound laws, waves, and new words at half the pace; its words carry
+  extra prestige; its sound changes and words reach the kindred speech of
+  its subjects three times as readily, even basic words (dialect
+  levelling); its subjects of other families shift to it twice as
+  readily; and rule under it holds half again as long. Each state draws
+  a purism at its rising, most near none: a purist standard borrows
+  less, its loans lose ground in use, and concepts held by loans gain
+  native words. When a state falls the pull stops, and its dialects
+  drift apart again.
 - Social identity, territory, ancestry, and language are independent.
 - Every random draw comes from a ChaCha8 stream keyed by purpose
   (`rng.rs`), so adding a process never shifts existing draws.
@@ -197,11 +227,12 @@ cargo run --release -p umran-sim --example audit -- [seeds] [generations]
 
 ## Not yet modelled
 
-Rivers, seafaring as a skill of particular peoples, climates, cities,
-writing, states and standard languages, compounding and derivation after
-founding beyond renewal, inflection, stress, tone, vowel harmony,
-consonant length, prenasalized stops, syntax and alignment, dialect
-levelling, personal names, different
+Rivers, seafaring as a skill of particular peoples, climates, writing,
+cities with speech of their own (a city's speech is its court's),
+diglossia (a standard frozen beside everyday speech), compounding and
+derivation after founding beyond renewal, inflection, stress, tone,
+vowel harmony, consonant length, prenasalized stops, syntax and
+alignment, personal names, different
 names for one land in each neighbouring language (only the holders' name
 is kept). Each catalog law happens at most once in a lineage, so over
 long spans languages run short of changes they have not had, and waves

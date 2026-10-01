@@ -993,6 +993,47 @@ table.preview tr {
   pointer-events: none;
 }
 
+.state-borders path {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.state-capital {
+  cursor: pointer;
+}
+
+.state-capital .city-marker {
+  fill: var(--realm);
+  stroke: var(--paper);
+  stroke-width: 0.025px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+
+.state-capital text {
+  fill: var(--realm);
+  font-size: 0.21px;
+  font-weight: 600;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: var(--paper);
+  stroke-width: 0.05px;
+  stroke-linejoin: round;
+}
+
+.state-capital:focus {
+  outline: none;
+}
+
+.state-capital:focus-visible text {
+  text-decoration: underline;
+  stroke: var(--accent-mute);
+}
+
 .dealing {
   fill: none;
   stroke: var(--ink);
@@ -1231,7 +1272,7 @@ button.icon,
   backdrop-filter: blur(3px);
 }
 
-.feed button {
+.feed .feed-entry {
   display: grid;
   grid-template-columns: auto 2.6rem 1fr;
   gap: 0.4rem;
@@ -1247,8 +1288,8 @@ button.icon,
   text-align: left;
 }
 
-.feed button:hover,
-.feed button[aria-current="true"] {
+.feed .feed-entry:hover,
+.feed .feed-entry[aria-current="true"] {
   background: var(--accent-mute);
 }
 
@@ -1280,6 +1321,22 @@ button.icon,
   grid-column: 3;
   font-size: 0.88em;
   color: var(--ink-soft);
+}
+
+.feed-states {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.6rem;
+  padding: 0 0.3rem 0.2rem 4.2rem;
+}
+
+.feed-states .word {
+  font-size: 0.9rem;
+}
+
+.annal-states {
+  display: block;
+  margin-top: 0.15rem;
 }
 
 /* The encyclopedia: one card at a time, every name a way onward. */

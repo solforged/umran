@@ -61,11 +61,25 @@ export function peopleLines(overview: Overview): string[] {
   });
 }
 
-/// The whole world as Markdown: the peoples, everything that happened, and
-/// a glossary for every language still spoken.
+/// Every realm's name, including those that have fallen, with its rulers.
+export function stateLines(overview: Overview): string[] {
+  return overview.states.map((s) => {
+    const parts = [`${s.name}, “${s.meaning}”, ruled by the ${overview.communities[s.rulers].name}`];
+    if (s.once) parts.push(`once ${s.once}`);
+    if (s.fell !== null) parts.push(`fell in year ${s.fell * YEARS}`);
+    return parts.join("; ");
+  });
+}
+
+/// The whole world as Markdown: peoples and states, everything that happened,
+/// and a glossary for every language still spoken.
 export function bookMarkdown(title: string, overview: Overview, glossaries: [string, LexiconRow[]][]): string {
   const out = [`# ${title}`, "", `As it stands in year ${overview.generation * YEARS}.`, "", "## The peoples", ""];
   for (const line of peopleLines(overview)) out.push(`- ${line}`);
+  if (overview.states.length > 0) {
+    out.push("", "## The states", "");
+    for (const line of stateLines(overview)) out.push(`- ${line}`);
+  }
   out.push("", "## History");
   let year = -1;
   for (const a of overview.annals) {

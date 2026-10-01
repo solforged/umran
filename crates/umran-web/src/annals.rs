@@ -11,14 +11,16 @@ use std::collections::BTreeMap;
 use umran_sim::names::PlaceOrigin;
 use umran_sim::rng::{index, key, stream};
 use umran_sim::world::{ContactKind, Hardship};
-use umran_sim::{Event, Form, Lexeme, Livelihood, Variety, World, WorldEvent, catalog};
+use umran_sim::{
+    Challenge, Event, Fall, Form, Lexeme, Livelihood, Rise, Variety, World, WorldEvent, catalog,
+};
 
 #[derive(Clone, PartialEq, Serialize)]
 pub(crate) struct Annal {
     pub generation: u32,
     /// "found", "split", "migration", "shift", "contact", "parted",
     /// "neighbours", "conquest", "spread", "displaced", "hardship",
-    /// "livelihood", "ended", or "law".
+    /// "livelihood", "ended", "rose", "fell", "standard", or "law".
     pub kind: &'static str,
     /// The annalist's words. Words of the language are marked `*thus*`.
     pub text: String,
@@ -36,6 +38,8 @@ pub(crate) struct Annal {
     /// For a sound change, the language's specimen words after it, with
     /// how those it reached sounded before.
     pub specimen: Vec<SpecimenWord>,
+    /// The states it tells of.
+    pub states: Vec<usize>,
 }
 
 const FOUND: &[&str] = &[
@@ -171,6 +175,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
         lands: lands.to_vec(),
         laws: Vec::new(),
         specimen: Vec::new(),
+        states: Vec::new(),
     };
     for &(generation, ref event) in &world.events {
         let name = |c: usize| world.community_name_at(c, generation);
@@ -397,6 +402,9 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     &[],
                 )
             }
+            WorldEvent::Rose { state } => state_annal(world, generation, state, "rose"),
+            WorldEvent::Fell { state } => state_annal(world, generation, state, "fell"),
+            WorldEvent::Standard { state } => state_annal(world, generation, state, "standard"),
         });
     }
     out.extend(
@@ -412,6 +420,113 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
     out.extend(sound_changes(world));
     out.sort_by_key(|a| (a.generation, a.kind == "law"));
     out
+}
+
+const RISE_CONQUEST: &[&str] = &[
+    "With that conquest began {n}, “{m}”, with its court at {c}.",
+    "So the {r} came to rule a realm, which they called {n}, “{m}”.",
+];
+const RISE_HARD_TIMES: &[&str] = &[
+    "After the bad years the {r} set a ruler over themselves, and called their realm {n}, “{m}”.",
+    "Hunger taught the {r} to store grain and to obey; they made themselves a realm, {n}, “{m}”, with its court at {c}.",
+];
+const RISE_CROWDED: &[&str] = &[
+    "Pressed off their lands, the {r} gathered under one rule and called their realm {n}, “{m}”.",
+];
+const RISE_NEIGHBOUR: &[&str] = &[
+    "Seeing the strength of the realms beside them, the {r} too took a ruler, and called their realm {n}, “{m}”.",
+    "The {r} answered their mighty neighbours by becoming a realm themselves: {n}, “{m}”, with its court at {c}.",
+];
+const RISE_COMFORT: &[&str] =
+    &["In years of plenty the {r} raised a court at {c} and called their realm {n}, “{m}”."];
+const RISE_PROCLAIMED: &[&str] =
+    &["The {r} were made one realm, {n}, “{m}”, with its court at {c}."];
+const FELL_RULERS_ENDED: &[&str] = &["{n} ended with the {r} who had ruled it."];
+const FELL_CAPITAL_LOST: &[&str] = &[
+    "The {r} lost {c}, and {n} fell with it.",
+    "When {c} was lost to the {r}, {n} was no more.",
+];
+const FELL_CONQUERED: &[&str] =
+    &["The {b} conquered the {r}, and {n} was no more; its peoples passed under the {b}."];
+const FELL_COLLAPSED: &[&str] = &[
+    "{n} came apart, and its peoples went their own ways.",
+    "The court at {c} lost its hold, and {n} broke apart.",
+];
+const STANDARD: &[&str] = &[
+    "Throughout {n}, the speech of the court at {c} became the measure of good speech.",
+    "In {n}, people learnt to speak as the court at {c} did; {l} became its standard.",
+];
+
+/// A state rising, falling, or taking a standard, as `kind` says.
+fn state_annal(world: &World, generation: u32, state: usize, kind: &'static str) -> Annal {
+    let s = &world.states[state];
+    let rulers = world.community_name_at(s.rulers, generation);
+    let variety = world.communities[s.rulers].variety;
+    let realm = world.varieties[variety].title(s.name.form_at(generation));
+    let court = world
+        .place_at(s.capital, generation)
+        .unwrap_or_else(|| "their heart land".into());
+    let tongue = world.language_title_at(variety, generation);
+    let mut notes = Vec::new();
+    let mut peoples = vec![s.rulers];
+    let options = match kind {
+        "rose" => match s.how {
+            Rise::Conquest => RISE_CONQUEST,
+            Rise::Challenge(Challenge::HardTimes) => RISE_HARD_TIMES,
+            Rise::Challenge(Challenge::Crowded) => RISE_CROWDED,
+            Rise::Challenge(Challenge::Neighbour) => RISE_NEIGHBOUR,
+            Rise::Challenge(Challenge::Comfort) => RISE_COMFORT,
+            Rise::Proclaimed => RISE_PROCLAIMED,
+        },
+        "fell" => match s.fell.map(|(_, how)| how) {
+            Some(Fall::RulersEnded) => FELL_RULERS_ENDED,
+            Some(Fall::CapitalLost) => FELL_CAPITAL_LOST,
+            Some(Fall::Conquered { by }) => {
+                peoples.push(by);
+                FELL_CONQUERED
+            }
+            _ => FELL_COLLAPSED,
+        },
+        _ => {
+            notes.push(format!(
+                "{tongue} now changes slowly, and the kindred speech of the realm levels toward it."
+            ));
+            if s.purism >= 0.5 {
+                notes.push(
+                    "A purist standard: it keeps foreign words out and makes its own.".into(),
+                );
+            }
+            STANDARD
+        }
+    };
+    let conqueror = peoples
+        .get(1)
+        .map(|&b| world.community_name_at(b, generation))
+        .unwrap_or_default();
+    Annal {
+        generation,
+        kind,
+        text: tell(
+            world,
+            &[key(kind), u64::from(generation), state as u64],
+            options,
+            &[
+                ("r", &rulers),
+                ("n", &realm),
+                ("m", &s.name.meaning),
+                ("c", &court),
+                ("l", &tongue),
+                ("b", &conqueror),
+            ],
+        ),
+        notes,
+        variety: None,
+        peoples,
+        lands: vec![s.capital],
+        laws: Vec::new(),
+        specimen: Vec::new(),
+        states: vec![state],
+    }
 }
 
 const DISPLACED: &[&str] = &[
@@ -524,6 +639,7 @@ fn spread_annal(world: &World, generation: u32, spreads: &[(usize, usize)]) -> A
         lands: spreads.iter().map(|&(_, r)| r).collect(),
         laws: Vec::new(),
         specimen: Vec::new(),
+        states: Vec::new(),
     }
 }
 
@@ -621,6 +737,7 @@ fn neighbours_annal(world: &World, generation: u32, n: &Neighbours) -> Annal {
         lands: Vec::new(),
         laws: Vec::new(),
         specimen: Vec::new(),
+        states: Vec::new(),
     }
 }
 
@@ -729,6 +846,7 @@ fn sound_changes(world: &World) -> Vec<Annal> {
                 lands: Vec::new(),
                 laws: ids,
                 specimen: specimen(variety, generation),
+                states: Vec::new(),
             });
         }
     }

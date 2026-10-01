@@ -12,8 +12,9 @@ use umran_sim::morphology::Slot;
 use umran_sim::names::PlaceOrigin;
 use umran_sim::phoneme::{Backness, Manner, Secondary};
 use umran_sim::{
-    Action, CATALOG, Chronicle, ENGINE_REVISION, Event, FORMAT, Flavor, Form, Lexeme, Livelihood,
-    MapSize, Origin, PhonemeId, Recipe, SetAside, Terrain, World, WorldEvent, catalog,
+    Action, CATALOG, Challenge, Chronicle, ENGINE_REVISION, Event, FORMAT, Fall, Flavor, Form,
+    Lexeme, LexemeId, Livelihood, MapSize, Origin, PhonemeId, Recipe, Rise, SetAside, Terrain,
+    World, WorldEvent, catalog,
 };
 use umran_sim::{LanguageDesign, MorphologyKind, Naming, Segment, Variety};
 use wasm_bindgen::prelude::*;
@@ -438,6 +439,8 @@ impl Bench {
                 }
             }
         }
+        // Which state, if any, each language is the standard of.
+        let standards = world.standards();
         let view = Overview {
             seed,
             generation: world.generation,
@@ -550,9 +553,12 @@ impl Bench {
                         builders: builders(v),
                         minimal_word: v.minimal.label(),
                         specimen: specimen(v, world.generation),
+                        standard_of: standards[id],
+                        own_words: own_words(world, id),
                     }
                 })
                 .collect(),
+            states: state_views(world),
             contacts: world
                 .contacts
                 .iter()
@@ -776,7 +782,8 @@ impl Bench {
                 Action::Found { .. }
                 | Action::Connect { .. }
                 | Action::Split { .. }
-                | Action::Shift { .. } => continue,
+                | Action::Shift { .. }
+                | Action::State { .. } => continue,
             };
             let kind = match action {
                 Action::Run { .. } => "run",
@@ -858,6 +865,15 @@ impl Bench {
                     Some(into) => format!("{} merged into {}", name(*community), name(*into)),
                     None => format!("{} died out", name(*community)),
                 },
+                WorldEvent::Rose { state } => {
+                    format!("{} arose", latest.states[*state].name.meaning)
+                }
+                WorldEvent::Fell { state } => {
+                    format!("{} fell", latest.states[*state].name.meaning)
+                }
+                WorldEvent::Standard { state } => {
+                    format!("{} took a standard", latest.states[*state].name.meaning)
+                }
                 // Too frequent to mark: told in the annals instead.
                 WorldEvent::Spread { .. } | WorldEvent::Displaced { .. } => continue,
             };
@@ -1538,6 +1554,8 @@ struct Overview {
     communities: Vec<CommunityView>,
     varieties: Vec<VarietyView>,
     contacts: Vec<ContactView>,
+    /// Every state that has stood, in the order they arose.
+    states: Vec<StateView>,
     /// What each land that has been held is called, through history.
     places: Vec<PlaceView>,
     /// Peoples going to new land: migrations, and split-offs settling
@@ -1665,6 +1683,10 @@ struct VarietyView {
     minimal_word: &'static str,
     /// A few basic words, to know the language by.
     specimen: Vec<SpecimenWord>,
+    /// The standing state whose standard it is, if any.
+    standard_of: Option<usize>,
+    /// How many of its meanings it says with words of its own.
+    own_words: OwnWords,
 }
 
 #[derive(Serialize)]
@@ -1689,6 +1711,164 @@ struct ContactView {
     b: usize,
     intensity: f32,
     kind: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StateView {
+    id: usize,
+    /// Its name, spelled in its rulers' language.
+    name: String,
+    meaning: String,
+    ipa: String,
+    /// How the name was spelled when coined, if sound change has altered it.
+    once: Option<String>,
+    rulers: usize,
+    /// Every people it has ruled, in the order they came under it.
+    members: Vec<MemberView>,
+    capital: usize,
+    rose: u32,
+    /// "conquest", "proclaimed", or the challenge it answered:
+    /// "hard-times", "crowded", "neighbour", or "comfort".
+    rise: &'static str,
+    fell: Option<u32>,
+    /// "rulers-ended", "capital-lost", "conquered", or "collapsed".
+    fall: Option<&'static str>,
+    /// Who conquered it, if it fell so.
+    fallen_to: Option<usize>,
+    /// When its court speech became its standard.
+    standard: Option<u32>,
+    /// 0–1: how closely its standard is guarded against foreign words.
+    purism: f32,
+    /// How many live in its city, the rulers its tribute feeds.
+    city: f32,
+    /// Every land it holds: its rulers' and its subjects'. Empty once it
+    /// has fallen.
+    lands: Vec<usize>,
+}
+
+#[derive(Serialize)]
+struct MemberView {
+    community: usize,
+    joined: u32,
+    left: Option<u32>,
+}
+
+/// How a language says its meanings: with words of its own, with loans,
+/// or with one word stretched over several meanings.
+#[derive(Serialize)]
+struct OwnWords {
+    /// Meanings it has a word for.
+    meanings: usize,
+    /// Said with a native word used for that meaning alone.
+    own: usize,
+    /// Said with a word borrowed from another people's language.
+    loans: usize,
+    /// Said with a word that is also the main word for another meaning.
+    shared: usize,
+}
+
+fn state_views(world: &World) -> Vec<StateView> {
+    world
+        .states
+        .iter()
+        .enumerate()
+        .map(|(id, s)| {
+            let variety = &world.varieties[world.communities[s.rulers].variety];
+            let name = variety.title(&s.name.form);
+            let lands: Vec<usize> = if s.standing() {
+                let mut lands: Vec<usize> = std::iter::once(s.rulers)
+                    .chain(s.subjects())
+                    .flat_map(|c| world.communities[c].lands.iter().copied())
+                    .collect();
+                lands.sort_unstable();
+                lands.dedup();
+                lands
+            } else {
+                Vec::new()
+            };
+            StateView {
+                id,
+                once: s
+                    .name
+                    .log
+                    .first()
+                    .and_then(|e| match &e.event {
+                        Event::SoundLaw { before, .. } => Some(variety.title(before)),
+                        _ => None,
+                    })
+                    .filter(|once| *once != name),
+                name,
+                meaning: s.name.meaning.clone(),
+                ipa: s.name.form.ipa(),
+                rulers: s.rulers,
+                members: s
+                    .members
+                    .iter()
+                    .map(|m| MemberView {
+                        community: m.community,
+                        joined: m.joined,
+                        left: m.left,
+                    })
+                    .collect(),
+                capital: s.capital,
+                rose: s.rose,
+                rise: match s.how {
+                    Rise::Conquest => "conquest",
+                    Rise::Proclaimed => "proclaimed",
+                    Rise::Challenge(Challenge::HardTimes) => "hard-times",
+                    Rise::Challenge(Challenge::Crowded) => "crowded",
+                    Rise::Challenge(Challenge::Neighbour) => "neighbour",
+                    Rise::Challenge(Challenge::Comfort) => "comfort",
+                },
+                fell: s.fell.map(|(g, _)| g),
+                fall: s.fell.map(|(_, how)| match how {
+                    Fall::RulersEnded => "rulers-ended",
+                    Fall::CapitalLost => "capital-lost",
+                    Fall::Conquered { .. } => "conquered",
+                    Fall::Collapsed => "collapsed",
+                }),
+                fallen_to: match s.fell {
+                    Some((_, Fall::Conquered { by })) => Some(by),
+                    _ => None,
+                },
+                standard: s.standard,
+                purism: s.purism,
+                city: world.city(id),
+                lands,
+            }
+        })
+        .collect()
+}
+
+/// How `variety` says each meaning it has a word for. Words its speakers
+/// kept from an older language when they shifted are their own.
+fn own_words(world: &World, variety: usize) -> OwnWords {
+    let lexicon = &world.varieties[variety].lexicon;
+    let dominant: Vec<LexemeId> = lexicon.slots.iter().filter_map(|s| s.dominant()).collect();
+    let mut uses: HashMap<LexemeId, usize> = HashMap::new();
+    for &id in &dominant {
+        *uses.entry(id).or_default() += 1;
+    }
+    let mut out = OwnWords {
+        meanings: dominant.len(),
+        own: 0,
+        loans: 0,
+        shared: 0,
+    };
+    for &id in &dominant {
+        let word = lexicon.get(id);
+        if matches!(word.origin, Origin::Borrowed { .. })
+            && !kept_through_shift(world, variety, word)
+        {
+            out.loans += 1;
+        } else if uses[&id] > 1 {
+            out.shared += 1;
+        } else {
+            out.own += 1;
+        }
+    }
+    out
 }
 
 /// Another language and the share of core words it shares with one.

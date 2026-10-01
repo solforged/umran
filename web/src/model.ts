@@ -87,6 +87,7 @@ export type Action =
   /// Without `naming`, the new community chooses its own name.
   | { kind: "split"; community: number; naming?: Naming; intensity: number }
   | { kind: "shift"; community: number; toward: number }
+  | { kind: "state"; community: number; capital?: number }
   | { kind: "run"; generations: number };
 
 export interface Choice {
@@ -142,6 +143,39 @@ export interface Community {
   endedInto: number | null;
 }
 
+export interface MemberView {
+  community: number;
+  joined: number;
+  left: number | null;
+}
+
+export interface StateView {
+  id: number;
+  name: string;
+  meaning: string;
+  ipa: string;
+  once: string | null;
+  rulers: number;
+  members: MemberView[];
+  capital: number;
+  rose: number;
+  rise: "conquest" | "proclaimed" | "hard-times" | "crowded" | "neighbour" | "comfort";
+  fell: number | null;
+  fall: "rulers-ended" | "capital-lost" | "conquered" | "collapsed" | null;
+  fallenTo: number | null;
+  standard: number | null;
+  purism: number;
+  city: number;
+  lands: number[];
+}
+
+export interface OwnWords {
+  meanings: number;
+  own: number;
+  loans: number;
+  shared: number;
+}
+
 /// A sound law a variety underwent; `from` is the variety it spread from,
 /// if it came as a wave from a neighbour rather than arising there.
 export interface Law {
@@ -175,6 +209,8 @@ export interface Variety {
   minimalWord: string;
   /// A few basic words, to know the language by.
   specimen: SpecimenWord[];
+  standardOf: number | null;
+  ownWords: OwnWords;
 }
 
 /// One of the few basic words shown wherever a language appears.
@@ -209,6 +245,7 @@ export interface Overview {
   timeline: Marker[];
   communities: Community[];
   varieties: Variety[];
+  states: StateView[];
   contacts: Contact[];
   /// What each land that has been held is called, through history.
   places: Place[];
@@ -262,7 +299,7 @@ export interface TellingView {
 /// One chronicle entry; `variety` is set for a sound law.
 export interface Annal {
   generation: number;
-  kind: "found" | "split" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "livelihood" | "ended";
+  kind: "found" | "split" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "livelihood" | "ended" | "rose" | "fell" | "standard";
   /// The annalist's words; words of the language are marked *thus*.
   text: string;
   /// The apparatus: what a linguist would note, such as sound laws.
@@ -272,6 +309,8 @@ export interface Annal {
   peoples: number[];
   /// The lands it tells of: where peoples went, and where from.
   lands: number[];
+  /// The states it tells of.
+  states: number[];
   /// The sound laws it tells of, by id.
   laws: string[];
   /// For a sound change, the language's specimen words after it.

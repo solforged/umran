@@ -3,12 +3,15 @@
 How the workbench records, replays, and stores a world.
 
 A history is a seed, a map size, and ordered `Action`s (`chronicle.rs`):
-found, connect, split, shift, run. The seed draws the map as well as the
-history. Found records the naming, the full design, the language's own
-seed, the one its preview used, so founding gives exactly the previewed
-words and names, and optionally the land the people settles; without one
-the world chooses. A split's naming is optional; without one the new
-people chooses. Consecutive runs merge, so playing stays one action and
+found, connect, split, shift, state, run. The seed draws the map as well
+as the history. Found records the naming, the full design, the
+language's own seed, the one its preview used, so founding gives exactly
+the previewed words and names, and optionally the land the people
+settles; without one the world chooses. A split's naming is optional;
+without one the new people chooses. State makes a people a state, with
+its court at one of its lands (its heart if none is given); a rule
+contact makes the more prestigious side rule the other's state.
+Consecutive runs merge, so playing stays one action and
 undo removes the whole stretch. Any past generation is recovered by
 replaying, with checkpoints every 10 generations; the timeline needs no
 separate data. Play and "next event" work only at the present.

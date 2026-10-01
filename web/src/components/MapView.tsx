@@ -68,6 +68,7 @@ export function MapView({
   names = true,
   routes = true,
   contacts = true,
+  states = false,
   chosen,
   lands,
   beacons = [],
@@ -75,6 +76,7 @@ export function MapView({
   zoomable = false,
   onPeople,
   onLand,
+  onState,
 }: {
   map: WorldMap;
   overview: Overview;
@@ -83,6 +85,7 @@ export function MapView({
   names?: boolean;
   routes?: boolean;
   contacts?: boolean;
+  states?: boolean;
   /// Peoples drawn as chosen.
   chosen: ReadonlySet<number>;
   /// Lands drawn outlined.
@@ -94,6 +97,7 @@ export function MapView({
   zoomable?: boolean;
   onPeople: (community: number) => void;
   onLand: (region: number) => void;
+  onState?: (state: number) => void;
 }) {
   const full: Box = useMemo(() => [0, 0, map.width, map.height], [map]);
   const [box, setBox] = useState<Box>(full);
@@ -225,6 +229,30 @@ export function MapView({
     return out;
   }, [map]);
 
+  // Leave out shared edges within each realm, retaining coasts and map edges.
+  const realms = useMemo(() => {
+    if (!states) return [];
+    const same = ([x, y]: [number, number], [u, v]: [number, number]) =>
+      Math.abs(x - u) < SAME_POINT && Math.abs(y - v) < SAME_POINT;
+    return overview.states.filter((s) => s.fell === null).map((state) => {
+      const held = new Set(state.lands);
+      const edges: string[] = [];
+      for (const id of state.lands) {
+        const r = map.regions[id];
+        for (let i = 0; i < r.outline.length; i++) {
+          const a = r.outline[i];
+          const b = r.outline[(i + 1) % r.outline.length];
+          if (same(a, b)) continue;
+          const inside = r.neighbours.some((n) => held.has(n) &&
+            map.regions[n].outline.some((p) => same(a, p)) &&
+            map.regions[n].outline.some((p) => same(b, p)));
+          if (!inside) edges.push(`M${a.join(",")}L${b.join(",")}`);
+        }
+      }
+      return { state, border: edges.join(" ") };
+    });
+  }, [states, overview.states, map]);
+
   // A region takes the colour of its largest people: its family, the root
   // of that people's word, or whether that people underwent the change.
   const largestOn = (region: number): Community | null => {
@@ -311,6 +339,11 @@ export function MapView({
         <g className="isoglosses">
           {isoglosses.map(({ a, b, ends: [[x1, y1], [x2, y2]] }) => (
             <line key={`${a}-${b}`} className="isogloss" x1={x1} y1={y1} x2={x2} y2={y2} />
+          ))}
+        </g>
+        <g className="state-borders" aria-hidden="true">
+          {realms.map(({ state, border }) => (
+            <path key={state.id} d={border} style={{ stroke: hue(state.id) }} />
           ))}
         </g>
         {names ? (
@@ -411,6 +444,34 @@ export function MapView({
                 >
                   {text}
                 </text>
+              </g>
+            );
+          })}
+        </g>
+        <g className="state-capitals">
+          {realms.map(({ state }) => {
+            const [x, y] = map.regions[state.capital].site;
+            const below = y + ((hearts.get(state.capital)?.length ?? 0) / 2 * LINE + 0.2) * label;
+            return (
+              <g
+                key={state.id}
+                className="state-capital"
+                transform={`translate(${x} ${below}) scale(${label})`}
+                style={{ "--realm": hue(state.id) } as CSSProperties}
+                role={onState ? "button" : undefined}
+                tabIndex={onState ? 0 : undefined}
+                aria-label={`${state.name}, capital city, ${Math.round(state.city).toLocaleString()} souls`}
+                onClick={() => dragged() || onState?.(state.id)}
+                onKeyDown={(e) => {
+                  if (onState && (e.key === "Enter" || e.key === " ")) {
+                    e.preventDefault();
+                    onState(state.id);
+                  }
+                }}
+              >
+                <title>{`${state.name}: ${Math.round(state.city).toLocaleString()} in its capital city`}</title>
+                <path className="city-marker" d="M-.14,.04V-.08H-.08V-.16H.02V-.04H.08V-.11H.14V.04Z" />
+                <text y={0.27} className={`hand-${family(overview.communities[state.rulers]) % 5}`}>{state.name}</text>
               </g>
             );
           })}

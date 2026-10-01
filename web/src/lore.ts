@@ -5,6 +5,7 @@
 
 import {
   AudioLines,
+  CircleX,
   CloudRain,
   Crown,
   Expand,
@@ -13,6 +14,7 @@ import {
   GitFork,
   Handshake,
   Languages,
+  Landmark,
   Sprout,
   UserRoundMinus,
   Unlink,
@@ -20,7 +22,7 @@ import {
   Wind,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, Community, ContactKind, Law, Livelihood, Overview, PlaceName, Terrain } from "./model";
+import type { Annal, Community, ContactKind, Law, Livelihood, Overview, PlaceName, StateView, Terrain } from "./model";
 import { YEARS } from "./model";
 
 export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string }> = {
@@ -38,6 +40,9 @@ export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string 
   hardship: { icon: CloudRain, name: "Hard times" },
   livelihood: { icon: Sprout, name: "A new way of life" },
   ended: { icon: UserRoundMinus, name: "A people ends" },
+  rose: { icon: Landmark, name: "A state rises" },
+  fell: { icon: CircleX, name: "A state falls" },
+  standard: { icon: Languages, name: "A standard language" },
 };
 
 export const TERRAIN_NAME: Record<Terrain, string> = {
@@ -63,6 +68,22 @@ export const CONTACT_NAME: Record<ContactKind, string> = {
   rule: "Rule",
   religion: "Religion",
   intermarriage: "Intermarriage",
+};
+
+export const RISE_NAME: Record<StateView["rise"], string> = {
+  conquest: "through conquest",
+  proclaimed: "by proclamation",
+  "hard-times": "in answer to hard times",
+  crowded: "after being crowded off their land",
+  neighbour: "in answer to a stronger neighbouring state",
+  comfort: "in a time of comfort",
+};
+
+export const FALL_NAME: Record<NonNullable<StateView["fall"]>, string> = {
+  "rulers-ended": "its ruling people ended",
+  "capital-lost": "it lost its capital",
+  conquered: "it was conquered",
+  collapsed: "it collapsed",
 };
 
 /// A colour for the `n`th family or root, far from its neighbours in hue.
@@ -104,6 +125,16 @@ export function howNamed(name: PlaceName, before: PlaceName | undefined, overvie
 
 /// The linguist's terms the encyclopedia uses, each in a sentence or two.
 export const TERMS = {
+  state:
+    "A realm organized around a ruling people and a capital city, fed by tribute from the peoples it rules. Over time, its court’s speech can become a standard language.",
+  "standard language":
+    "A form of speech treated as a shared model, here the language of a state’s court. Kindred dialects tend to take up its sounds and words, while the standard itself changes more slowly.",
+  "dialect levelling":
+    "Kindred dialects under one standard lose their differences as speakers take up the standard’s sounds and words, as English and French dialects did.",
+  purism:
+    "Guarding a language against foreign words, favouring words made from its own resources instead. Here a purist court makes its standard less open to borrowing.",
+  "own words":
+    "Meanings expressed with a native word used for that meaning alone. Loans come from other languages; shared words are also the main word for another meaning.",
   "sound law":
     "A change in how a language is pronounced that applies to every word with the right sounds, not word by word. That regularity is what lets linguists reconstruct older forms.",
   isogloss:

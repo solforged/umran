@@ -41,6 +41,13 @@ writes its own history.
   trade, conquer one another, and learn new ways of life from each other.
   Famine, plague, and drought strike; small peoples die out or are
   absorbed by larger kin.
+- **States and standard languages.** Peoples conquer one another, or a
+  large farming people under pressure organizes itself, and a state
+  arises with a capital city its tribute feeds. In time its court's
+  speech becomes a standard: it changes slowly, pulls its kindred
+  dialects toward it, and draws subjects of other families to shift to
+  it. Some standards keep foreign words out. When the state falls, its
+  dialects drift apart again, as Latin did into the Romance languages.
 - **Language shift.** A people can give up its language for a more
   prestigious one, keeping its own accent and some old words.
 - **Names are words.** Peoples, languages, and lands are named from the
@@ -119,8 +126,8 @@ AGENTS.md          architecture notes and the rules every change keeps
 ## Status
 
 Umran is a work in progress. Not yet modelled: stress, tone, vowel harmony,
-inflection, syntax, rivers, dialect levelling, and the extinction of whole
-peoples, among others. The full list is at the end of
+inflection, syntax, rivers, writing, and diglossia, among others. The full
+list is at the end of
 [`docs/engine.md`](docs/engine.md#not-yet-modelled).
 
 ## The name

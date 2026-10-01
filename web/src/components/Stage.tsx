@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Layers, Pause, Play, SkipForward } from "lucide-react";
 import type { Annal, Engine, Overview, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { EVENT_KIND } from "../lore";
+import { EVENT_KIND, hue } from "../lore";
 import { PACES, year } from "../words";
 import type { DialogKind } from "./ActionDialog";
 import { Told } from "./Told";
@@ -100,7 +100,7 @@ export function Stage({
   };
 
   // What the map draws beside the lands and peoples.
-  const [layers, setLayers] = useState({ names: true, routes: true, contacts: true });
+  const [layers, setLayers] = useState({ names: true, routes: true, contacts: true, states: true });
 
   // Time passing on its own.
   const [playing, setPlaying] = useState(false);
@@ -165,6 +165,11 @@ export function Stage({
         const c = overview.communities[focus.id];
         return { chosen: c?.ended === null ? [focus.id] : [], lands: c ? c.lands : [], point: site(c?.region) };
       }
+      case "state": {
+        const state = overview.states[focus.id];
+        const chosen = state?.fell === null ? [state.rulers, ...state.members.filter((m) => m.left === null).map((m) => m.community)] : [];
+        return { chosen, lands: state?.lands ?? [], point: site(state?.capital) };
+      }
       case "land": {
         const here = overview.communities.filter((c) => c.ended === null && c.lands.includes(focus.region)).map((c) => c.id);
         return { chosen: here, lands: [focus.region], point: site(focus.region) };
@@ -212,6 +217,7 @@ export function Stage({
           names={layers.names}
           routes={layers.routes}
           contacts={layers.contacts}
+          states={layers.states}
           chosen={new Set(highlight.chosen)}
           lands={new Set(highlight.lands)}
           beacons={beacons}
@@ -219,6 +225,7 @@ export function Stage({
           zoomable
           onPeople={(id) => go({ kind: "people", id })}
           onLand={(region) => go({ kind: "land", region })}
+          onState={(id) => go({ kind: "state", id })}
         />
         <details className="map-layers">
           <summary title="What the map shows">
@@ -229,6 +236,7 @@ export function Stage({
               ["names", "Names of lands"],
               ["routes", "Roads peoples took"],
               ["contacts", "Dealings between peoples"],
+              ["states", "States"],
             ] as const
           ).map(([key, label]) => (
             <label key={key}>
@@ -243,6 +251,8 @@ export function Stage({
         </details>
         <Feed
           annals={overview.annals}
+          overview={overview}
+          onState={(id) => go({ kind: "state", id })}
           generation={overview.generation}
           open={focus.kind === "event" ? focus.annal : null}
           onPick={(annal) => {
@@ -367,6 +377,9 @@ export function Stage({
             <button type="button" onClick={() => onDialog("found")}>
               A new people arrives
             </button>
+            <button type="button" onClick={() => onDialog("state")}>
+              Found a state
+            </button>
             <button type="button" disabled={!canUndo} onClick={onUndo}>
               Strike out what was last written
             </button>
@@ -380,11 +393,15 @@ export function Stage({
 /// What happened most recently, newest first, over the map.
 function Feed({
   annals,
+  overview,
+  onState,
   generation,
   open,
   onPick,
 }: {
   annals: Annal[];
+  overview: Overview;
+  onState: (id: number) => void;
   generation: number;
   open: Annal | null;
   onPick: (annal: Annal) => void;
@@ -398,7 +415,7 @@ function Feed({
         const same = open !== null && open.generation === a.generation && open.text === a.text;
         return (
           <li key={`${a.generation}-${a.kind}-${a.text}`} className={a.generation === generation ? "fresh" : undefined}>
-            <button type="button" aria-current={same} onClick={() => onPick(a)}>
+            <button type="button" className="feed-entry" aria-current={same} onClick={() => onPick(a)}>
               <Icon size={14} aria-hidden="true" />
               <span className="feed-year">{a.generation * YEARS}</span>
               <span className="feed-text">
@@ -406,6 +423,15 @@ function Feed({
               </span>
               {a.kind === "law" ? <SpecimenChanges words={a.specimen} /> : null}
             </button>
+            {a.states.some((id) => overview.states[id]) ? (
+              <div className="feed-states">
+                {a.states.filter((id) => overview.states[id]).map((id) => (
+                  <button key={id} type="button" className="link word" style={{ color: hue(id) }} onClick={() => onState(id)}>
+                    {overview.states[id].name}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </li>
         );
       })}

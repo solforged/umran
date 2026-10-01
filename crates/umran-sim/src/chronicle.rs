@@ -10,13 +10,14 @@ use crate::design::LanguageDesign;
 use crate::geography::MapSize;
 use crate::livelihood::Livelihood;
 use crate::names::Naming;
+use crate::polity::Rise;
 use crate::world::{ContactKind, Params, World};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Bumped whenever an engine change would make an existing recipe replay
 /// differently. Saves record it so a mismatch can be reported.
-pub const ENGINE_REVISION: u32 = 15;
+pub const ENGINE_REVISION: u32 = 16;
 /// Identifies saved recipes. Kept from the project's first name, langgen,
 /// so files saved before the rename still load.
 pub const FORMAT: &str = "langgen-sim-recipe";
@@ -60,6 +61,13 @@ pub enum Action {
     Shift {
         community: usize,
         toward: usize,
+    },
+    /// A people organizes itself into a state, with its court at
+    /// `capital`, one of its lands, or its heart land if `None`.
+    State {
+        community: usize,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        capital: Option<usize>,
     },
     Run {
         generations: u32,
@@ -442,6 +450,28 @@ fn apply(world: &mut World, action: &Action) -> Result<(), String> {
             }
             world.shift(*c, *toward);
         }
+        Action::State {
+            community: c,
+            capital,
+        } => {
+            community(world, *c)?;
+            if let Some(s) = world.state_of(*c) {
+                return Err(format!(
+                    "the {} already belong to {}",
+                    world.community_name(*c),
+                    world.states[s].name.meaning
+                ));
+            }
+            if let Some(r) = *capital
+                && !world.communities[*c].lands.contains(&r)
+            {
+                return Err(format!(
+                    "the {} do not hold region {r}",
+                    world.community_name(*c)
+                ));
+            }
+            world.raise_state(*c, *capital, Rise::Proclaimed);
+        }
         Action::Run { generations } => {
             if *generations == 0 || *generations > MAX_RUN {
                 return Err(format!("run between 1 and {MAX_RUN} generations"));
@@ -472,6 +502,7 @@ mod tests {
     fn same(a: &World, b: &World) -> bool {
         a.generation == b.generation
             && a.communities == b.communities
+            && a.states == b.states
             && a.varieties.len() == b.varieties.len()
             && a.varieties
                 .iter()
@@ -495,6 +526,11 @@ mod tests {
             community: 0,
             naming: None,
             intensity: 0.3,
+        })
+        .unwrap();
+        c.act(Action::State {
+            community: 0,
+            capital: None,
         })
         .unwrap();
         c.act(Action::Run { generations: 22 }).unwrap();

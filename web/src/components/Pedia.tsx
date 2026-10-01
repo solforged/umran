@@ -4,6 +4,7 @@ import {
   AudioLines,
   Globe,
   Languages,
+  Landmark,
   MapPin,
   Play,
   ScrollText,
@@ -11,9 +12,9 @@ import {
   WholeWord,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, Community, Engine, Overview, TellingView, Variety, WordMap, WorldMap } from "../model";
+import type { Annal, Community, Engine, Overview, StateView, TellingView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { CONTACT_NAME, EVENT_KIND, howCame, howNamed, hue, LIVELIHOOD_NAME, TERMS, TERRAIN_NAME, type Term } from "../lore";
+import { CONTACT_NAME, EVENT_KIND, FALL_NAME, howCame, howNamed, hue, LIVELIHOOD_NAME, RISE_NAME, TERMS, TERRAIN_NAME, type Term } from "../lore";
 import { bond } from "../words";
 import type { DialogKind } from "./ActionDialog";
 import { Told } from "./Told";
@@ -27,6 +28,7 @@ import { WordGloss } from "./WordGloss";
 export type Focus =
   | { kind: "world" }
   | { kind: "people"; id: number }
+  | { kind: "state"; id: number }
   | { kind: "language"; variety: number }
   | { kind: "word"; variety: number; concept: string }
   | { kind: "law"; id: string }
@@ -126,6 +128,8 @@ function focusLabel(focus: Focus, context: Context): string {
       return "The world";
     case "people":
       return overview.communities[focus.id]?.name ?? "A people";
+    case "state":
+      return overview.states[focus.id]?.name ?? "A state";
     case "language":
       return overview.varieties[focus.variety]?.name ?? "A language";
     case "word":
@@ -151,6 +155,12 @@ function Card({ focus, context }: { focus: Focus; context: Context }) {
         <PeopleCard c={overview.communities[focus.id]} context={context} />
       ) : (
         <p className="muted">This people has not yet appeared in this year.</p>
+      );
+    case "state":
+      return overview.states[focus.id] ? (
+        <StateCard state={overview.states[focus.id]} context={context} />
+      ) : (
+        <p className="muted">This state has not yet arisen in this year.</p>
       );
     case "language":
       return overview.varieties[focus.variety] ? (
@@ -279,6 +289,29 @@ function PeopleLink({ c, context }: { c: Community; context: Context }) {
   );
 }
 
+function StateLink({ state, context }: { state: StateView; context: Context }) {
+  return (
+    <button
+      type="button"
+      className="link word"
+      style={{ color: hue(state.id) }}
+      onClick={() => context.go({ kind: "state", id: state.id })}
+    >
+      {state.name}
+    </button>
+  );
+}
+
+function AnnalStates({ annal, context }: { annal: Annal; context: Context }) {
+  const states = annal.states.filter((id) => context.overview.states[id]).map((id) => context.overview.states[id]);
+  if (states.length === 0) return null;
+  return (
+    <span className="annal-states">
+      <Joined items={states} link={(state) => <StateLink state={state} context={context} />} />
+    </span>
+  );
+}
+
 function LanguageLink({ variety, context }: { variety: number; context: Context }) {
   return (
     <button type="button" className="link word" onClick={() => context.go({ kind: "language", variety })}>
@@ -335,9 +368,12 @@ function Story({ annals, context }: { annals: Annal[]; context: Context }) {
       {annals.map((a, i) => (
         <li key={i}>
           <Year generation={a.generation} context={context} />
-          <button type="button" className="moment" onClick={() => context.go({ kind: "event", annal: a })}>
-            <Told text={a.text} />
-          </button>
+          <span>
+            <button type="button" className="moment" onClick={() => context.go({ kind: "event", annal: a })}>
+              <Told text={a.text} />
+            </button>
+            <AnnalStates annal={a} context={context} />
+          </span>
         </li>
       ))}
     </ol>
@@ -445,6 +481,7 @@ function WorldCard({ context }: { context: Context }) {
   const land = map.regions.filter((r) => r.terrain !== "sea").length;
   const held = new Set(peoples.flatMap((c) => c.lands)).size;
   const silent = overview.varieties.filter((v) => !v.spoken);
+  const states = overview.states.filter((s) => s.fell === null);
   return (
     <>
       <CardHead icon={Globe} kind="The world" title={`Year ${overview.generation * YEARS}`} />
@@ -452,6 +489,7 @@ function WorldCard({ context }: { context: Context }) {
       <Facts
         rows={[
           ["Peoples", peoples.length],
+          ["States", <Explained term="state">{states.length} standing</Explained>],
           ["Languages", silent.length > 0 ? `${spoken.length} spoken, ${silent.length} silent` : spoken.length],
           ["Families", <Explained term="family">{lost > 0 ? `${families} living, ${lost} lost` : families}</Explained>],
           ["Lands held", `${held} of ${land}`],
@@ -480,6 +518,24 @@ function WorldCard({ context }: { context: Context }) {
           ))}
         </tbody>
       </table>
+      {states.length > 0 ? (
+        <>
+          <h3>States that stand</h3>
+          <table className="peoples">
+            <thead><tr><th>State</th><th>Rulers</th><th>Subjects</th><th>City</th></tr></thead>
+            <tbody>
+              {states.map((state) => (
+                <tr key={state.id}>
+                  <th scope="row"><StateLink state={state} context={context} /></th>
+                  <td><PeopleLink c={overview.communities[state.rulers]} context={context} /></td>
+                  <td className="num">{state.members.filter((m) => m.left === null).length}</td>
+                  <td className="num">{Math.round(state.city).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      ) : null}
       {spoken.length > 1 ? (
         <>
           <h3>Words compared</h3>
@@ -602,9 +658,12 @@ function HistoryCard({ context }: { context: Context }) {
                   </del>
                 </span>
               ) : (
-                <button type="button" className="moment" onClick={() => context.go({ kind: "event", annal })}>
-                  <Told text={annal.text} />
-                </button>
+                <span>
+                  <button type="button" className="moment" onClick={() => context.go({ kind: "event", annal })}>
+                    <Told text={annal.text} />
+                  </button>
+                  <AnnalStates annal={annal} context={context} />
+                </span>
               )}
             </li>
           ))}
@@ -622,6 +681,8 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
   const moves = overview.moves.filter((m) => m.community === c.id);
   const told = overview.annals.filter((a) => a.peoples.includes(c.id));
   const story = told.slice(-STORY_LENGTH).reverse();
+  const realm = overview.states.find((s) => s.fell === null &&
+    (s.rulers === c.id || s.members.some((m) => m.community === c.id && m.left === null)));
   return (
     <>
       <CardHead
@@ -655,6 +716,7 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
             <Explained term="way of life">{LIVELIHOOD_NAME[c.livelihood]}</Explained>,
           ],
           ["Speak", <LanguageLink variety={c.variety} context={context} />],
+          [realm?.rulers === c.id ? "Rule" : "Subject of", realm ? <StateLink state={realm} context={context} /> : null],
           [
             "Family",
             v.family === c.variety ? null : (
@@ -735,9 +797,67 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
             <button type="button" onClick={() => context.onDialog("shift", c.id)}>
               They take up another language
             </button>
+            {!realm ? (
+              <button type="button" onClick={() => context.onDialog("state", c.id)}>
+                Found a state
+              </button>
+            ) : null}
           </div>
         </>
       ) : null}
+    </>
+  );
+}
+
+function StateCard({ state, context }: { state: StateView; context: Context }) {
+  const { overview } = context;
+  const rulers = overview.communities[state.rulers];
+  const current = state.fell === null ? state.members.filter((m) => m.left === null) : [];
+  const former = state.members.filter((m) => m.left !== null);
+  const told = overview.annals.filter((a) => a.states.includes(state.id));
+  return (
+    <>
+      <CardHead
+        icon={Landmark}
+        kind={state.fell === null ? "A standing state" : "A fallen state"}
+        title={state.name}
+        tone={hue(state.id)}
+        hand={overview.varieties[rulers.variety].family}
+        sub={<>“{state.meaning}” <span className="ipa">/{state.ipa}/</span>{state.once ? `, once ${state.once}` : ""}</>}
+      />
+      <Facts rows={[
+        ["Rulers", <PeopleLink c={rulers} context={context} />],
+        ["Capital", <LandLink region={state.capital} context={context} />],
+        ["City", `${Math.round(state.city).toLocaleString()} souls`],
+        ["Arose", <>year <Year generation={state.rose} context={context} />, {RISE_NAME[state.rise]}</>],
+        ["Fell", state.fell === null ? null : (
+          <>year <Year generation={state.fell} context={context} />{state.fall ? `, ${FALL_NAME[state.fall]}` : ""}
+            {state.fallenTo !== null ? <> by the <PeopleLink c={overview.communities[state.fallenTo]} context={context} /></> : null}
+          </>
+        )],
+        ["Standard", state.standard === null ? (state.fell === null ? "no court standard yet" : "no court standard arose") : (
+          <><LanguageLink variety={rulers.variety} context={context} />, since year <Year generation={state.standard} context={context} /></>
+        )],
+        ["Purism", state.standard === null ? null : (
+          <Explained term="purism">{state.purism >= 0.5 ? "guarded against foreign words" : "open to foreign words"}</Explained>
+        )],
+        ["Current subjects", current.length > 0 ? (
+          <Joined items={current} link={(m) => <PeopleLink c={overview.communities[m.community]} context={context} />} />
+        ) : "none"],
+        ["Former subjects", former.length === 0 ? null : (
+          <Joined items={former} link={(m) => <>
+            <PeopleLink c={overview.communities[m.community]} context={context} />{" "}
+            (years <Year generation={m.joined} context={context} />–<Year generation={m.left!} context={context} />)
+          </>} />
+        )],
+      ]} />
+      <p className="muted small">
+        A <Explained term="state">state</Explained> gathers tribute into its capital city.
+        {state.standard === null ? null : <> Its court’s <Explained term="standard language">standard language</Explained>{" "}
+          {state.fell === null ? "draws" : "drew"} kindred dialects towards it through <Explained term="dialect levelling">dialect levelling</Explained>.</>}
+      </p>
+      <h3>Its story</h3>
+      <Story annals={told.slice(-STORY_LENGTH).reverse()} context={context} />
     </>
   );
 }
@@ -770,6 +890,7 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
             "Spoken by",
             speakers.length > 0 ? <Joined items={speakers} link={(c) => <PeopleLink c={c} context={context} />} /> : "no one now",
           ],
+          ["Standard of", v.standardOf === null ? null : <StateLink state={overview.states[v.standardOf]} context={context} />],
           [
             "Parent",
             v.parent === null ? null : (
@@ -786,6 +907,11 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
           ],
           ["Sounds", `${v.consonants.length} consonants, ${v.vowels.length} vowels`],
           ["Words", `${v.words.toLocaleString()}, built with ${v.wordBuilding}`],
+          ["Own words", <Explained term="own words">
+            {v.ownWords.own} of {v.ownWords.meanings} meanings
+            {v.ownWords.meanings > 0 ? ` (${Math.round(v.ownWords.own / v.ownWords.meanings * 100)}%)` : ""}
+            {` · ${v.ownWords.loans} loans · ${v.ownWords.shared} shared`}
+          </Explained>],
           ["Shortest", v.minimalWord],
         ]}
       />
@@ -1130,6 +1256,13 @@ function EventCard({ annal, context }: { annal: Annal; context: Context }) {
               </li>
             ))}
           </ul>
+        </>
+      ) : null}
+      {annal.states.some((id) => overview.states[id]) ? (
+        <>
+          <h3>States</h3>
+          <p><Joined items={annal.states.filter((id) => overview.states[id])}
+            link={(id) => <StateLink state={overview.states[id]} context={context} />} /></p>
         </>
       ) : null}
       {annal.lands.length > 0 ? (

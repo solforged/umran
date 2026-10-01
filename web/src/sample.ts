@@ -1,8 +1,9 @@
 // The sample world: a fixed recipe, so every visitor starts from the same
 // four thousand years. Three peoples of three families settle the map and
-// spread; after 2,500 years the river people come to rule the sea people,
-// who later give up their tongue for their rulers'. Opening it puts a copy
-// on the shelf to continue.
+// spread; the sea people make themselves a realm after bad years, and
+// after 2,500 years the river people conquer it, and the sea people later
+// give up their tongue for their rulers'. Opening it puts a copy on the
+// shelf to continue.
 
 import { createEngine, presetDesign } from "./engine";
 import type { Action, Engine, Naming } from "./model";

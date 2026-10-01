@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { Engine, Overview } from "../model";
 import { YEARS } from "../model";
-import { bookMarkdown, download, fileName, glossaryCsv, peopleLines } from "../takeout";
+import { bookMarkdown, download, fileName, glossaryCsv, peopleLines, stateLines } from "../takeout";
 
 /// The export page, for taking things out of a world: who is called what,
 /// a glossary of any language, and the world in forms other tools read.
@@ -72,7 +72,10 @@ export function Appendix({
       <section>
         <div className="row spread">
           <h3>Names</h3>
-          <button type="button" onClick={() => void copy("names", peopleLines(overview).join("\n"))}>
+          <button type="button" onClick={() => void copy("names", [
+            ...peopleLines(overview),
+            ...(overview.states.length > 0 ? ["", "States", ...stateLines(overview)] : []),
+          ].join("\n"))}>
             {copied === "names" ? "Copied" : "Copy names"}
           </button>
         </div>
@@ -106,6 +109,25 @@ export function Appendix({
             })}
           </tbody>
         </table>
+        {overview.states.length > 0 ? (
+          <>
+            <h4>States</h4>
+            <table className="names-table">
+              <thead><tr><th>State</th><th>Meaning</th><th>Rulers</th><th>Once</th><th>Stands</th></tr></thead>
+              <tbody>
+                {overview.states.map((state) => (
+                  <tr key={state.id}>
+                    <td className={`word hand-${overview.varieties[overview.communities[state.rulers].variety].family % 5}`}>{state.name}</td>
+                    <td>“{state.meaning}” <span className="ipa">/{state.ipa}/</span></td>
+                    <td className="word">{name(state.rulers)}</td>
+                    <td>{state.once ?? ""}</td>
+                    <td>{state.fell === null ? "now" : `fell in year ${state.fell * YEARS}`}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        ) : null}
       </section>
 
       <section>
@@ -160,7 +182,7 @@ export function Appendix({
               As text
             </button>{" "}
             <span className="muted">
-              Markdown: the peoples, everything that happened, and a glossary for every living language.
+              Markdown: peoples and states, everything that happened, and a glossary for every living language.
             </span>
           </li>
           <li>

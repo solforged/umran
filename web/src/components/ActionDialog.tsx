@@ -4,15 +4,16 @@ import { NamingSelect } from "./NamingSelect";
 import { Modal } from "./Modal";
 
 /// "found" opens the language designer; the rest are here.
-export type DialogKind = "found" | "split" | "connect" | "shift";
+export type DialogKind = "found" | "split" | "connect" | "shift" | "state";
 
-const TITLES: Record<"split" | "connect" | "shift", string> = {
+const TITLES: Record<Exclude<DialogKind, "found">, string> = {
   split: "A people parts ways",
   connect: "Two peoples meet",
   shift: "A people takes up another language",
+  state: "Found a state",
 };
 
-/// Forms for splitting, connecting, and shifting. Each validates the
+/// Forms for splitting, connecting, shifting, and founding a state. Each validates the
 /// basics; the engine has the last word and reports anything it rejects.
 export function ActionDialog({
   kind,
@@ -22,14 +23,16 @@ export function ActionDialog({
   onClose,
   onAction,
 }: {
-  kind: "split" | "connect" | "shift";
+  kind: Exclude<DialogKind, "found">;
   catalog: Catalog;
   overview: Overview;
   selected: number;
   onClose: () => void;
   onAction: (action: Action) => void;
 }) {
-  const communities = overview.communities.filter((c) => c.ended === null);
+  const communities = overview.communities.filter((c) => c.ended === null &&
+    (kind !== "state" || !overview.states.some((s) => s.fell === null &&
+      (s.rulers === c.id || s.members.some((m) => m.community === c.id && m.left === null)))));
   const first = communities.find((c) => c.id === selected)?.id ?? communities[0]?.id ?? -1;
   const others = communities.filter((c) => c.id !== first);
   const [naming, setNaming] = useState<Naming | null>(null);
@@ -37,9 +40,14 @@ export function ActionDialog({
   const [other, setOther] = useState(others[0]?.id ?? -1);
   const [contact, setContact] = useState<ContactKind>("neighbours");
   const [intensity, setIntensity] = useState(kind === "split" ? 0.4 : 0.6);
+  const [capital, setCapital] = useState(overview.communities[first]?.region ?? -1);
+  const people = communities.find((c) => c.id === community);
+  const canSubmit = !!people && (kind === "state" ? people.lands.includes(capital) :
+    kind === "split" || communities.some((c) => c.id === other && c.id !== community));
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    if (!canSubmit) return;
     switch (kind) {
       case "split":
         onAction({ kind: "split", community, intensity, ...(naming ? { naming } : {}) });
@@ -49,6 +57,9 @@ export function ActionDialog({
         return;
       case "shift":
         onAction({ kind: "shift", community, toward: other });
+        return;
+      case "state":
+        onAction({ kind: "state", community, capital });
     }
   };
 
@@ -77,6 +88,33 @@ export function ActionDialog({
 
   const body: ReactNode = (() => {
     switch (kind) {
+      case "state":
+        return (
+          <>
+            {communities.length === 0 ? (
+              <p className="muted">No living people is outside a standing state. A ruler or subject cannot found another state.</p>
+            ) : (
+              <>
+                {pick("Ruling people", community, (id) => {
+                  setCommunity(id);
+                  setCapital(overview.communities[id].region);
+                })}
+                <label>
+                  Capital
+                  <select value={capital} onChange={(e) => setCapital(Number(e.target.value))}>
+                    {people?.lands.map((region) => (
+                      <option key={region} value={region}>
+                        {overview.places.find((p) => p.region === region)?.names.at(-1)?.spelled ?? `Land ${region + 1}`}
+                        {region === people.region ? " (heart land)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="muted">They organize a realm around this capital. Tribute will feed its city, and in time its court’s speech may become a standard language.</p>
+              </>
+            )}
+          </>
+        );
       case "split":
         return (
           <>
@@ -147,7 +185,7 @@ export function ActionDialog({
             type="submit"
             form={`form-${kind}`}
             className="primary"
-            disabled={!communities.some((c) => c.id === community) || (kind !== "split" && !communities.some((c) => c.id === other && c.id !== community))}
+            disabled={!canSubmit}
           >
             Write it down
           </button>

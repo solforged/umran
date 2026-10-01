@@ -9,6 +9,9 @@ use crate::morphology::Morphology;
 use crate::names::{Landscape, Name, Naming, PlaceName, PlaceOrigin, place_name};
 use crate::phoneme::PhonemeId;
 use crate::phonotactics::Phonotactics;
+use crate::polity::{
+    LEVEL_FLOOR, LEVELLING, PURIST_COST, PURIST_PRESSURE, STANDARD_PRESTIGE, STANDARD_SHIFT, State,
+};
 use crate::profile::SoundProfile;
 use crate::rng::{key, stream, weighted_index};
 use crate::root::mint_one;
@@ -211,6 +214,13 @@ pub struct Params {
     /// Chance per generation, per unit of prestige gap beyond
     /// `CONQUEST_MIN_GAP`, that a people comes to rule one it deals with.
     pub conquest_rate: f32,
+    /// Chance per generation that a large farming people under no state,
+    /// facing a challenge, organizes itself into one; a tenth of this in
+    /// comfort.
+    pub state_rate: f32,
+    /// Chance per generation that a state collapses of itself; bad times
+    /// on its rulers' lands make it likelier.
+    pub collapse_rate: f32,
     /// Chance per generation that a people leaves its land for better land
     /// within reach, scaled by how crowded home is, how mobile its terrain
     /// makes it, and whether a stronger people shares it.
@@ -260,6 +270,8 @@ impl Default for Params {
             neighbour_rate: 0.1,
             trade_rate: 0.01,
             conquest_rate: 0.05,
+            state_rate: 0.02,
+            collapse_rate: 0.02,
             migration_rate: 0.02,
             wave_rate: 1.0,
         }
@@ -282,6 +294,8 @@ impl Params {
             neighbour_rate: 0.0,
             trade_rate: 0.0,
             conquest_rate: 0.0,
+            state_rate: 0.0,
+            collapse_rate: 0.0,
             migration_rate: 0.0,
             wave_rate: 0.0,
             ..Self::default()
@@ -465,6 +479,13 @@ pub enum WorldEvent {
         community: usize,
         into: Option<usize>,
     },
+    /// State `state` arose, by conquest, in answer to a challenge, or by
+    /// an author's hand (`State::how`).
+    Rose { state: usize },
+    /// State `state` fell (`State::fell` says how).
+    Fell { state: usize },
+    /// State `state` took its court speech as its standard.
+    Standard { state: usize },
 }
 
 /// What kind of bad times strike a land.
@@ -508,6 +529,8 @@ pub struct World {
     /// oldest first; the last is its name now. Empty for land no one has
     /// held, and for the sea.
     pub places: Vec<Vec<PlaceName>>,
+    /// Every state that has stood, in the order they arose.
+    pub states: Vec<State>,
     laws: Vec<Law>,
 }
 
@@ -550,6 +573,7 @@ impl World {
             contacts: Vec::new(),
             params,
             events: Vec::new(),
+            states: Vec::new(),
             laws: catalog(),
         }
     }
@@ -881,6 +905,7 @@ impl World {
         if intensity > 0.0 {
             self.link(community, index, intensity, ContactKind::Neighbours);
         }
+        self.inherit_state(community, index);
         self.events.push((
             self.generation,
             WorldEvent::Split {
@@ -919,16 +944,27 @@ impl World {
     }
 
     /// Brings `a` and `b` into contact, as an event of the world's history.
+    /// Rule goes to the more prestigious side (`a` on a tie), whose state
+    /// the other joins.
     pub fn connect(&mut self, a: usize, b: usize, intensity: f32, kind: ContactKind) {
-        self.link(a, b, intensity, kind);
         self.events
             .push((self.generation, WorldEvent::Met { a, b, kind }));
+        if kind == ContactKind::Rule {
+            let (rulers, ruled) = if self.communities[a].prestige >= self.communities[b].prestige {
+                (a, b)
+            } else {
+                (b, a)
+            };
+            self.subject(rulers, ruled, intensity);
+        } else {
+            self.link(a, b, intensity, kind);
+        }
     }
 
     /// A contact with no event of its own, as between the halves of a
     /// split, which the split's event already tells. Two peoples have at
     /// most one contact: a new one between them replaces the old.
-    fn link(&mut self, a: usize, b: usize, intensity: f32, kind: ContactKind) {
+    pub(crate) fn link(&mut self, a: usize, b: usize, intensity: f32, kind: ContactKind) {
         self.contacts
             .retain(|k| (k.a, k.b) != (a, b) && (k.a, k.b) != (b, a));
         self.contacts.push(Contact {
@@ -979,6 +1015,9 @@ impl World {
         self.shift_languages();
         self.end_contacts();
         self.make_contacts();
+        self.hold_states();
+        self.rise_states();
+        self.standardize();
         self.hold_places();
     }
 
@@ -992,7 +1031,7 @@ impl World {
         out
     }
 
-    fn community_rng(&self, community: usize, label: &str) -> ChaCha8Rng {
+    pub(crate) fn community_rng(&self, community: usize, label: &str) -> ChaCha8Rng {
         stream(
             self.seed,
             &[
@@ -1005,11 +1044,16 @@ impl World {
         )
     }
 
-    /// Each people's lands: how many they feed it, and how many live on
-    /// them, of every people.
+    /// Each people's lands: how many they feed it, with what ruling a
+    /// state adds, and how many live on them, of every people.
     fn fed_and_crowd(&self, community: usize, occupied: &HashMap<usize, f32>) -> (f32, f32) {
         let k = &self.communities[community];
-        let fed = k.lands.iter().map(|&r| self.feeds(r, k.livelihood)).sum();
+        let fed = k
+            .lands
+            .iter()
+            .map(|&r| self.feeds(r, k.livelihood))
+            .sum::<f32>()
+            + self.tribute(community);
         let crowd = k
             .lands
             .iter()
@@ -1844,6 +1888,7 @@ impl World {
                 let swamped = self.communities[c].size < MERGE_SHARE * self.communities[other].size
                     && self.share_land(c, other);
                 let factor = match contact.kind {
+                    ContactKind::Rule if self.under_standard(c, other) => 2.0 * STANDARD_SHIFT,
                     ContactKind::Rule => 2.0,
                     ContactKind::Intermarriage => 1.5,
                     ContactKind::Neighbours if swamped => 1.0,
@@ -1875,6 +1920,7 @@ impl World {
     fn end_contacts(&mut self) {
         let generation = self.generation;
         let mut ended = Vec::new();
+        let (struck, _) = self.recent_challenges();
         for (i, contact) in self.contacts.iter().enumerate() {
             let mut rng = stream(
                 self.seed,
@@ -1892,7 +1938,9 @@ impl World {
             let hold = match contact.kind {
                 // Peoples on the same land stay neighbours.
                 ContactKind::Neighbours if self.share_land(contact.a, contact.b) => continue,
-                ContactKind::Rule => 1.0 + RULE_HOLD * gap,
+                ContactKind::Rule => {
+                    (1.0 + RULE_HOLD * gap) * self.rule_hold(contact.a, contact.b, &struck)
+                }
                 _ => 1.0,
             };
             // A contact lasts a third of its lifespan before it can end, so
@@ -1917,7 +1965,9 @@ impl World {
             if matches!(kind, ContactKind::Rule | ContactKind::Intermarriage) {
                 self.link(a, b, intensity / 2.0, ContactKind::Neighbours);
             }
-            let ruler_first = self.communities[a].prestige >= self.communities[b].prestige;
+            let ruler_first = self.rules_over(a, b)
+                || (!self.rules_over(b, a)
+                    && self.communities[a].prestige >= self.communities[b].prestige);
             let (a, b) = if kind == ContactKind::Rule && !ruler_first {
                 (b, a)
             } else {
@@ -1964,6 +2014,10 @@ impl World {
                 let intensity = rng.gen_range(0.2..0.6);
                 self.connect(c, o, intensity, ContactKind::Trade);
             }
+            // A people under another's rule makes no conquests of its own.
+            if self.ruled_by(c).is_some() {
+                continue;
+            }
             let me = self.communities[c].prestige;
             let ruled: Vec<usize> = self
                 .contacts
@@ -1973,22 +2027,17 @@ impl World {
                 .filter_map(|(i, k)| {
                     let other = if k.a == c { k.b } else { k.a };
                     let gap = me - self.communities[other].prestige - CONQUEST_MIN_GAP;
-                    let rules_already = self
-                        .contacts
-                        .iter()
-                        .any(|r| r.kind == ContactKind::Rule && (r.a == other || r.b == other));
                     let hazard = self.params.conquest_rate * gap;
-                    (gap > 0.0 && !rules_already && rng.r#gen::<f32>() < hazard).then_some(i)
+                    (gap > 0.0 && self.ruled_by(other).is_none() && rng.r#gen::<f32>() < hazard)
+                        .then_some(i)
                 })
                 .collect();
             if let Some(&i) = ruled.first() {
-                let contact = &mut self.contacts[i];
+                let contact = self.contacts[i];
                 let ruled = if contact.a == c { contact.b } else { contact.a };
-                contact.kind = ContactKind::Rule;
-                contact.intensity = contact.intensity.max(CONQUEST_INTENSITY);
-                contact.since = self.generation;
                 self.events
                     .push((self.generation, WorldEvent::Conquered { ruler: c, ruled }));
+                self.subject(c, ruled, contact.intensity.max(CONQUEST_INTENSITY));
             }
         }
     }
@@ -2145,11 +2194,18 @@ impl World {
         out
     }
 
-    /// Prestige of each variety: the highest among communities at home in it.
+    /// Prestige of each variety: the highest among communities at home in
+    /// it, and more for a standing state's standard, whose words carry
+    /// the court's standing wherever they go.
     fn variety_prestige(&self) -> Vec<f32> {
         let mut out = vec![0.0_f32; self.varieties.len()];
         for c in &self.communities {
             out[c.variety] = out[c.variety].max(c.prestige);
+        }
+        for (v, s) in self.standards().into_iter().enumerate() {
+            if s.is_some() {
+                out[v] += STANDARD_PRESTIGE;
+            }
         }
         out
     }
@@ -2166,7 +2222,7 @@ impl World {
     /// likelier.
     fn sound_change(&mut self, v: usize, areal: &[(HashSet<PhonemeId>, f32)]) {
         let mut rng = self.at(v).rng(&[key("sound")]);
-        if rng.r#gen::<f32>() >= self.params.sound_change_rate {
+        if rng.r#gen::<f32>() >= self.params.sound_change_rate * self.pace(v) {
             return;
         }
         let variety = &self.varieties[v];
@@ -2233,6 +2289,14 @@ impl World {
             let after = law.apply(&community.name.form, minimal);
             community.name.change(after, law.id, generation);
         }
+        // The name of a state its speakers rule changes with their speech.
+        for s in 0..self.states.len() {
+            let state = &self.states[s];
+            if state.standing() && self.communities[state.rulers].variety == v {
+                let after = law.apply(&state.name.form, minimal);
+                self.states[s].name.change(after, law.id, generation);
+            }
+        }
         // And so are the names of the lands its speakers hold, each once.
         let mut held: Vec<usize> = self
             .communities
@@ -2266,6 +2330,9 @@ impl World {
         let mut arrivals: Vec<(usize, Law, usize)> = Vec::new();
         for v in (0..self.varieties.len()).filter(|&v| spoken[v]) {
             let applied: HashSet<&str> = self.varieties[v].laws.iter().map(|(_, id)| *id).collect();
+            // A standard is held in place against its neighbours' changes
+            // as against its own.
+            let pace = self.pace(v);
             // For each law on offer: its total pull, and the variety
             // pulling hardest, which is where it is said to come from.
             let mut offers: BTreeMap<&'static str, (f32, usize, f32)> = BTreeMap::new();
@@ -2278,11 +2345,17 @@ impl World {
                     let near = 0.2 + 0.8 * self.nearness(me, other);
                     let prestige = (1.0 + 2.0 * (o.prestige - m.prestige)).clamp(0.25, 3.0);
                     let pull = self.params.wave_rate
+                        * pace
                         * contact.kind.carries_sounds()
                         * contact.intensity
                         * near
                         * prestige
-                        * self.kinship(v, o.variety);
+                        * self.kinship(v, o.variety)
+                        * if self.under_standard(me, other) {
+                            LEVELLING
+                        } else {
+                            1.0
+                        };
                     for &(g, id) in &self.varieties[o.variety].laws {
                         let age = generation.saturating_sub(g);
                         if age >= WAVE_SPAN || applied.contains(id) {
@@ -2393,16 +2466,27 @@ impl World {
                 if d.variety == r.variety {
                     continue;
                 }
+                // A standard's words reach its subjects' kindred speech far
+                // more readily, even basic words (dialect levelling); a
+                // purist standard keeps foreign words out.
+                let levelled = self.under_standard(recipient, donor)
+                    && self.family(d.variety) == self.family(r.variety);
                 let base = self.params.loan_rate
                     * contact.intensity
                     * r.openness
-                    * (self.params.prestige_pull * (d.prestige - r.prestige)).exp();
+                    * (self.params.prestige_pull * (d.prestige - r.prestige)).exp()
+                    * if levelled { LEVELLING } else { 1.0 }
+                    * (1.0 - self.purism(r.variety));
                 let keep_foreign = self.params.bilingual_keep * contact.intensity * r.openness;
                 let donor_lexicon = &self.varieties[d.variety].lexicon;
                 let recipient_lexicon = &self.varieties[r.variety].lexicon;
                 for (i, concept) in CONCEPTS.iter().enumerate() {
-                    let hazard =
-                        base * contact.kind.affinity(concept.field) * concept.borrowability();
+                    let borrowability = if levelled {
+                        concept.borrowability().max(LEVEL_FLOOR)
+                    } else {
+                        concept.borrowability()
+                    };
+                    let hazard = base * contact.kind.affinity(concept.field) * borrowability;
                     let mut rng =
                         self.at(r.variety)
                             .rng(&[key("borrow"), d.variety as u64, key(concept.id)]);
@@ -2412,6 +2496,14 @@ impl World {
                     let Some(source) = donor_lexicon.slots[i].dominant() else {
                         continue;
                     };
+                    // A word the recipient already says alike needs no levelling.
+                    if levelled
+                        && recipient_lexicon.slots[i].dominant().is_some_and(|own| {
+                            recipient_lexicon.get(own).form == donor_lexicon.get(source).form
+                        })
+                    {
+                        continue;
+                    }
                     let already = recipient_lexicon.slots[i].variants.iter().any(|v| {
                         recipient_lexicon.get(v.lexeme).origin
                             == Origin::Borrowed {
@@ -2489,6 +2581,10 @@ impl World {
         let generation = self.generation;
         let step = self.at(v);
         let hazards: Vec<f32> = CONCEPTS.iter().map(|c| self.innovation_hazard(c)).collect();
+        // A standard takes up new words slowly, and a purist one replaces
+        // its loans with words of its own.
+        let pace = self.pace(v);
+        let purism = self.purism(v);
         let params = &self.params;
         let spelling = self.varieties[v].profile.spelling.clone();
         let morphology = self.varieties[v].morphology.clone();
@@ -2500,10 +2596,13 @@ impl World {
             let dominant = lexicon.slots[i].dominant();
             let clash = dominant.is_some_and(|id| clashes.contains(&id));
             let worn = dominant.is_some_and(|id| minimal.worn(&lexicon.get(id).form));
+            let loan = dominant
+                .is_some_and(|id| matches!(lexicon.get(id).origin, Origin::Borrowed { .. }));
             let pressure = 1.0
                 + f32::from(u8::from(clash)) * params.clash_pressure
-                + f32::from(u8::from(worn)) * params.worn_pressure;
-            if rng.r#gen::<f32>() >= hazards[i] * pressure {
+                + f32::from(u8::from(worn)) * params.worn_pressure
+                + f32::from(u8::from(loan)) * PURIST_PRESSURE * purism;
+            if rng.r#gen::<f32>() >= hazards[i] * pressure * pace {
                 continue;
             }
             if lexicon.slots[i].variants.len() >= MAX_VARIANTS {
@@ -2565,6 +2664,7 @@ impl World {
         let params = &self.params;
         let n = params.speakers.max(1);
         let own = prestige[v];
+        let purism = self.purism(v);
         let minimal = self.varieties[v].minimal;
         let lexicon = &mut self.varieties[v].lexicon;
         let fitness: Vec<f32> = lexicon
@@ -2582,9 +2682,11 @@ impl World {
                     1.0
                 };
                 let loan = match l.origin {
-                    Origin::Borrowed { from, .. } => (1.0
-                        + params.prestige_selection * (prestige[from] - own))
-                        .max(MIN_LOAN_FITNESS),
+                    Origin::Borrowed { from, .. } => {
+                        (1.0 + params.prestige_selection * (prestige[from] - own))
+                            .max(MIN_LOAN_FITNESS)
+                            * (1.0 - PURIST_COST * purism)
+                    }
                     _ => 1.0,
                 };
                 clash * worn * loan

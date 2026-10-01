@@ -132,6 +132,28 @@ fn main() {
                 name(*community),
                 into.map_or("die out".to_string(), |i| format!("merge into {}", name(i)))
             ),
+            WorldEvent::Rose { state } => {
+                let s = &world.states[*state];
+                println!(
+                    "  gen {generation:>3}  {} raise {} ({:?}, purism {:.2})",
+                    name(s.rulers),
+                    s.name.meaning,
+                    s.how,
+                    s.purism
+                )
+            }
+            WorldEvent::Fell { state } => {
+                let s = &world.states[*state];
+                println!(
+                    "  gen {generation:>3}  {} falls: {:?}",
+                    s.name.meaning,
+                    s.fell.map(|(_, how)| how)
+                )
+            }
+            WorldEvent::Standard { state } => println!(
+                "  gen {generation:>3}  {} takes its court speech as its standard",
+                world.states[*state].name.meaning
+            ),
         }
     }
 
