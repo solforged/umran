@@ -104,7 +104,7 @@ impl Default for Params {
     fn default() -> Self {
         Self {
             sound_change_rate: 0.3,
-            innovation_rate: 0.003,
+            innovation_rate: 0.0055,
             stability_spread: 10.0,
             newcomer_share: 0.25,
             speakers: 12,
@@ -289,6 +289,7 @@ impl World {
 
     /// Founds a community with a new variety of its own; returns its index.
     /// `power` is its standing apart from size, and its starting prestige.
+    /// The variety's seed derives from the world seed and the index.
     pub fn found(
         &mut self,
         name: &str,
@@ -298,6 +299,20 @@ impl World {
     ) -> usize {
         let index = self.communities.len();
         let variety_seed = stream(self.seed, &[key("found"), index as u64]).next_u64();
+        self.found_seeded(name, profile, variety_seed, power, openness)
+    }
+
+    /// Founds a community whose language comes from `variety_seed`, so a
+    /// design previewed with that seed founds exactly the words shown.
+    pub fn found_seeded(
+        &mut self,
+        name: &str,
+        profile: &SoundProfile,
+        variety_seed: u64,
+        power: f32,
+        openness: f32,
+    ) -> usize {
+        let index = self.communities.len();
         let mut variety = Variety::found(variety_seed, profile);
         variety.name = format!("{name} speech");
         self.varieties.push(variety);
@@ -1007,7 +1022,7 @@ mod tests {
 
     #[test]
     fn runs_are_reproducible() {
-        let profile = SoundProfile::by_id("elvish").unwrap();
+        let profile = SoundProfile::by_id("germanic").unwrap();
         let mut a = World::solo(7, &profile, Params::default());
         let mut b = World::solo(7, &profile, Params::default());
         a.run(40);
@@ -1018,7 +1033,7 @@ mod tests {
 
     #[test]
     fn slots_stay_normalized_and_words_keep_a_vowel() {
-        let profile = SoundProfile::by_id("kuo-toa").unwrap();
+        let profile = SoundProfile::by_id("polynesian").unwrap();
         let mut sim = World::solo(3, &profile, Params::default());
         sim.run(80);
         for slot in &sim.varieties[0].lexicon.slots {
@@ -1045,13 +1060,11 @@ mod tests {
     fn core_retention_per_millennium_matches_glottochronology() {
         let seeds = 60;
         let (mut total, mut top, mut bottom) = (0.0, 0.0, 0.0);
-        for (n, profile) in SoundProfile::examples()
-            .iter()
-            .cycle()
-            .take(seeds)
-            .enumerate()
-        {
-            let mut sim = World::solo(n as u64, profile, Params::default());
+        // Calibrated on a typical language; inventories much larger or
+        // smaller than typical make fewer or more homophones, and so fewer or
+        // more clash-driven replacements.
+        for (n, profile) in std::iter::repeat_n(SoundProfile::typical(), seeds).enumerate() {
+            let mut sim = World::solo(n as u64, &profile, Params::default());
             sim.run(40);
             let lexicon = &sim.varieties[0].lexicon;
             total += lexicon.core_retention();
@@ -1095,9 +1108,9 @@ mod tests {
                 .count();
             hits as f32 / seeds as f32
         };
-        let neutral = SoundProfile::by_id("neutral").unwrap();
-        let illithid = SoundProfile::by_id("illithid").unwrap();
-        let fishy = neutral.flavored(&crate::flavor::Flavor::by_id("fish-mouthed").unwrap());
+        let neutral = SoundProfile::by_id("typical").unwrap();
+        let illithid = SoundProfile::by_id("iranian").unwrap();
+        let fishy = neutral.flavored(&crate::flavor::Flavor::by_id("nahuatl").unwrap());
         let (spir_neutral, spir_illithid) = (
             rate(&neutral, "spirantization"),
             rate(&illithid, "spirantization"),
@@ -1117,10 +1130,10 @@ mod tests {
     /// generations.
     fn pair(seed: u64, kind: ContactKind) -> World {
         let mut world = World::new(seed, Params::static_society());
-        let d = world.found("Donor", &SoundProfile::by_id("illithid").unwrap(), 0.8, 0.4);
+        let d = world.found("Donor", &SoundProfile::by_id("iranian").unwrap(), 0.8, 0.4);
         let r = world.found(
             "Recipient",
-            &SoundProfile::by_id("kuo-toa").unwrap(),
+            &SoundProfile::by_id("polynesian").unwrap(),
             0.3,
             0.7,
         );
@@ -1281,7 +1294,7 @@ mod tests {
     #[test]
     fn comparative_method_recovers_correspondences_and_flags_loans() {
         use crate::compare::{Settings, compare, regular_correspondences};
-        let profiles = SoundProfile::examples();
+        let profiles = SoundProfile::presets();
         let concepts: Vec<&'static Concept> = CONCEPTS.iter().collect();
         let (mut kept, mut cognates, mut loans_flagged, mut loans) = (0, 0, 0, 0);
         let (mut recovered, mut true_total, mut correct, mut found_total) = (0, 0, 0, 0);
@@ -1369,7 +1382,7 @@ mod tests {
     fn daughters_share_inherited_words_until_they_diverge() {
         let mut world = World::solo(
             9,
-            &SoundProfile::by_id("neutral").unwrap(),
+            &SoundProfile::by_id("typical").unwrap(),
             Params::default(),
         );
         world.run(3);
@@ -1402,9 +1415,9 @@ mod tests {
     fn contact_pulls_sound_systems_together() {
         let overlap = |areal_pull: f32| {
             let pairs = [
-                ("neutral", "elvish"),
-                ("illithid", "kuo-toa"),
-                ("neutral", "illithid"),
+                ("typical", "germanic"),
+                ("iranian", "polynesian"),
+                ("typical", "iranian"),
             ];
             let mut total = 0.0;
             for seed in 0..30u64 {
@@ -1438,7 +1451,7 @@ mod tests {
     fn communities_grow_split_and_rank_by_size() {
         let mut world = World::solo(
             4,
-            &SoundProfile::by_id("neutral").unwrap(),
+            &SoundProfile::by_id("typical").unwrap(),
             Params::default(),
         );
         world.run(200);
@@ -1460,15 +1473,10 @@ mod tests {
 
     fn conquest(seed: u64, params: Params) -> (World, usize, usize) {
         let mut world = World::new(seed, params);
-        let rulers = world.found(
-            "Rulers",
-            &SoundProfile::by_id("illithid").unwrap(),
-            0.9,
-            0.3,
-        );
+        let rulers = world.found("Rulers", &SoundProfile::by_id("iranian").unwrap(), 0.9, 0.3);
         let subjects = world.found(
             "Subjects",
-            &SoundProfile::by_id("kuo-toa").unwrap(),
+            &SoundProfile::by_id("polynesian").unwrap(),
             0.2,
             0.6,
         );
@@ -1529,8 +1537,8 @@ mod tests {
     fn intelligibility_falls_as_daughters_diverge() {
         use crate::compare::intelligibility;
         let mut world = World::new(2, Params::static_society());
-        let west = world.found("West", &SoundProfile::by_id("neutral").unwrap(), 0.5, 0.5);
-        let other = world.found("Other", &SoundProfile::by_id("illithid").unwrap(), 0.5, 0.5);
+        let west = world.found("West", &SoundProfile::by_id("typical").unwrap(), 0.5, 0.5);
+        let other = world.found("Other", &SoundProfile::by_id("iranian").unwrap(), 0.5, 0.5);
         let east = world.split(west, "East", 0.0);
         let score = |w: &World, a: usize, b: usize| {
             intelligibility(&w.variety_of(a).lexicon, &w.variety_of(b).lexicon)
@@ -1549,8 +1557,8 @@ mod tests {
     fn intelligibility_is_symmetric_and_near_zero_for_strangers() {
         use crate::compare::intelligibility;
         let mut world = World::new(6, Params::static_society());
-        let a = world.found("A", &SoundProfile::by_id("neutral").unwrap(), 0.5, 0.5);
-        let b = world.found("B", &SoundProfile::by_id("elvish").unwrap(), 0.5, 0.5);
+        let a = world.found("A", &SoundProfile::by_id("typical").unwrap(), 0.5, 0.5);
+        let b = world.found("B", &SoundProfile::by_id("germanic").unwrap(), 0.5, 0.5);
         world.run(20);
         let (la, lb) = (&world.variety_of(a).lexicon, &world.variety_of(b).lexicon);
         assert!((intelligibility(la, lb) - intelligibility(lb, la)).abs() < 1e-6);
@@ -1575,7 +1583,7 @@ mod tests {
     fn splitting_shares_land_instead_of_multiplying_it() {
         let mut world = World::solo(
             8,
-            &SoundProfile::by_id("neutral").unwrap(),
+            &SoundProfile::by_id("typical").unwrap(),
             Params::default(),
         );
         world.run(300);

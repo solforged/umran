@@ -3,8 +3,57 @@
 
 export type ContactKind = "neighbours" | "trade" | "rule" | "religion" | "intermarriage";
 
+export type LongVowelStyle = "Acute" | "Double" | "Macron" | "Unmarked";
+
+export interface Spelling {
+  overrides: [string, string][];
+  kw_as_qu: boolean;
+  long_vowels: LongVowelStyle;
+  mark_hiatus: boolean;
+  boundary_mark: string | null;
+}
+
+/// A language as designed before founding; mirrors `LanguageDesign`.
+export interface LanguageDesign {
+  sounds: { ipa: string; favoured: boolean }[];
+  wordLength: number;
+  finalConsonants: number;
+  innerClusters: boolean;
+  repetition: number;
+  longVowels: number;
+  building: "concatenative" | "root-pattern";
+  suffixing: number;
+  derivation: number;
+  spelling: Spelling;
+}
+
+export interface SoundInfo {
+  ipa: string;
+  roman: string;
+  vowel: boolean;
+  column: string;
+  row: string;
+  voiced: boolean;
+  secondary: "plain" | "aspirated" | "breathy" | "labialized" | "rounded";
+  share: number;
+}
+
+export interface PreviewWord {
+  gloss: string;
+  spelled: string;
+  ipa: string;
+  from: string | null;
+}
+
+export interface Preview {
+  words: PreviewWord[];
+  families: PreviewWord[];
+  homophones: number;
+  syllables: number;
+}
+
 export type Action =
-  | { kind: "found"; name: string; profile: string; flavors: string[]; power: number; openness: number }
+  | { kind: "found"; name: string; design: LanguageDesign; seed: number; power: number; openness: number }
   | { kind: "connect"; a: number; b: number; intensity: number; contact: ContactKind }
   | { kind: "split"; community: number; name: string; intensity: number }
   | { kind: "shift"; community: number; toward: number }
@@ -17,8 +66,11 @@ export interface Choice {
 }
 
 export interface Catalog {
-  profiles: Choice[];
-  flavors: Choice[];
+  sounds: SoundInfo[];
+  places: string[];
+  manners: string[];
+  heights: string[];
+  presets: Choice[];
   contacts: Choice[];
 }
 

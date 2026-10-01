@@ -118,7 +118,7 @@ impl Flavor {
     /// Example flavors written by Claude from Sol's briefs, then the family
     /// palettes (`palettes`). Adjust freely.
     pub fn examples() -> Vec<Flavor> {
-        let mut all = vec![fish_mouthed(), pie_like(), familiar(), triconsonantal()];
+        let mut all = vec![familiar(), pie_like()];
         all.extend(crate::palettes::all());
         all
     }
@@ -134,30 +134,6 @@ fn strings(list: &[&str]) -> Vec<String> {
 
 fn weighted(list: &[(&str, f32)]) -> Vec<(String, f32)> {
     list.iter().map(|(s, w)| (s.to_string(), *w)).collect()
-}
-
-/// Lips do the work; no tongue-tip hissing, rounded back vowels.
-fn fish_mouthed() -> Flavor {
-    use Backness::*;
-    use Manner::*;
-    use Place::*;
-    Flavor {
-        id: "fish-mouthed".into(),
-        name: "Fish-mouthed".into(),
-        brief: "Make it sound slightly more plausible for fish mouths.".into(),
-        manner: vec![(Fricative, -1.5), (Affricate, -2.0), (Nasal, 0.4)],
-        place: vec![
-            (Bilabial, 1.5),
-            (Dental, -2.0),
-            (Labiodental, -1.5),
-            (Postalveolar, -1.5),
-            (Palatal, -1.0),
-        ],
-        backness: vec![(Back, 1.0), (Front, -0.5)],
-        rounded: 1.0,
-        segments: weighted(&[("b", 1.0), ("p", 1.0), ("m", 0.5), ("o", 0.8), ("u", 0.8)]),
-        ..Flavor::default()
-    }
 }
 
 /// Stops in voiceless and voiced series, a lone sibilant /s/, laryngeal-like
@@ -185,34 +161,6 @@ fn pie_like() -> Flavor {
         disyllabic_roots: Some(0.0),
         preferred_onsets: strings(&["kw", "gw", "st", "sk", "tr", "pr"]),
         preferred_codas: strings(&["r", "n", "m", "s", "t", "k"]),
-        ..Flavor::default()
-    }
-}
-
-/// Consonant-skeleton roots with vowel patterns, a rich set of consonants
-/// at the back of the mouth, and few vowels.
-fn triconsonantal() -> Flavor {
-    use Manner::*;
-    use Place::*;
-    Flavor {
-        id: "triconsonantal".into(),
-        name: "Triconsonantal".into(),
-        brief: "Give it a triconsonantal root family bias, like the Semitic languages.".into(),
-        manner: vec![(Fricative, 0.8)],
-        place: vec![(Uvular, 2.0), (Pharyngeal, 2.0), (Glottal, 1.5)],
-        segments: weighted(&[
-            ("q", 1.5),
-            ("ʔ", 1.5),
-            ("h", 1.0),
-            ("x", 0.8),
-            ("a", 1.0),
-            ("i", 1.0),
-            ("u", 1.0),
-        ]),
-        vowel_count: Some((3, 3)),
-        disyllabic_roots: Some(0.7),
-        morphology: Some(MorphologyKind::RootPattern),
-        derivation: Some(0.8),
         ..Flavor::default()
     }
 }
@@ -278,11 +226,11 @@ mod tests {
 
     #[test]
     fn flavors_shift_inventories_without_replacing_them() {
-        let neutral = SoundProfile::by_id("neutral").unwrap();
-        let fishy = neutral.flavored(&Flavor::by_id("fish-mouthed").unwrap());
-        assert!(rate(&fishy, "b") > rate(&neutral, "b"));
-        assert!(rate(&fishy, "f") < rate(&neutral, "f"));
-        assert_eq!(fishy.id, "neutral+fish-mouthed");
+        let neutral = SoundProfile::typical();
+        let familiar = neutral.flavored(&Flavor::by_id("familiar").unwrap());
+        assert!(rate(&familiar, "b") > rate(&neutral, "b"));
+        assert!(rate(&familiar, "ʔ") < rate(&neutral, "ʔ"));
+        assert_eq!(familiar.id, "typical+familiar");
 
         let pie = neutral.flavored(&Flavor::by_id("pie-like").unwrap());
         assert_eq!(rate(&pie, "s"), 1.0);

@@ -92,24 +92,40 @@ impl Spelling {
 #[cfg(test)]
 mod tests {
     use crate::form::Form;
-    use crate::profile::SoundProfile;
+    use crate::profile::{LongVowel, Spelling};
 
-    fn write(profile: &str, ipa: &str, boundaries: &[usize]) -> String {
+    fn write(spelling: &Spelling, ipa: &str, boundaries: &[usize]) -> String {
         let mut form = Form::from_ipa(ipa).unwrap();
         form.boundaries = boundaries.to_vec();
-        SoundProfile::by_id(profile).unwrap().spelling.write(&form)
+        spelling.write(&form)
     }
 
     #[test]
-    fn elvish_spells_c_qu_and_acute_length() {
-        assert_eq!(write("elvish", "kweːndi", &[]), "quéndi");
-        assert_eq!(write("elvish", "kaxa", &[]), "cacha");
+    fn overrides_qu_and_acute_length() {
+        let spelling = Spelling {
+            overrides: vec![("k".into(), "c".into()), ("x".into(), "ch".into())],
+            kw_as_qu: true,
+            long_vowels: LongVowel::Acute,
+            mark_hiatus: false,
+            boundary_mark: None,
+        };
+        assert_eq!(write(&spelling, "kweːndi", &[]), "quéndi");
+        assert_eq!(write(&spelling, "kaxa", &[]), "cacha");
     }
 
     #[test]
-    fn illithid_marks_hiatus_and_boundaries() {
-        assert_eq!(write("illithid", "θia", &[]), "thi'a");
-        assert_eq!(write("illithid", "kasθin", &[3]), "kas'thin");
-        assert_eq!(write("illithid", "kaːs", &[]), "kaas");
+    fn hiatus_boundaries_and_long_vowel_styles() {
+        let mut spelling = Spelling {
+            overrides: vec![],
+            kw_as_qu: false,
+            long_vowels: LongVowel::Double,
+            mark_hiatus: true,
+            boundary_mark: Some("'".into()),
+        };
+        assert_eq!(write(&spelling, "θia", &[]), "thi'a");
+        assert_eq!(write(&spelling, "kasθin", &[3]), "kas'thin");
+        assert_eq!(write(&spelling, "kaːs", &[]), "kaas");
+        spelling.long_vowels = LongVowel::Macron;
+        assert_eq!(write(&spelling, "kaːs", &[]), "kās");
     }
 }

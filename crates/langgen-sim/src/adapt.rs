@@ -230,7 +230,7 @@ mod tests {
             .chain(words)
             .map(|w| Form::from_ipa(w).unwrap())
             .collect();
-        let mut prior = SoundProfile::by_id("neutral").unwrap().inventory;
+        let mut prior = SoundProfile::by_id("typical").unwrap().inventory;
         prior.extra.push(("b".into(), 5.0));
         prior.forbidden.push("θ".into());
         Adapter::new(forms.iter(), &prior)
@@ -261,7 +261,7 @@ mod tests {
         let mut words = vec!["pata"; 49];
         words.push("ba");
         let forms: Vec<Form> = words.iter().map(|w| Form::from_ipa(w).unwrap()).collect();
-        let prior = SoundProfile::by_id("neutral").unwrap().inventory;
+        let prior = SoundProfile::by_id("typical").unwrap().inventory;
         let a = Adapter::new(forms.iter(), &prior);
         assert!(!a.is_native(CATALOG.id_by_ipa("b").unwrap()));
         assert_eq!(adapt(&a, "bata", 0.0), "pata");

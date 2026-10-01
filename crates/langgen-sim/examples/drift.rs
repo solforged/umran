@@ -12,12 +12,12 @@ fn main() {
     let seed: u64 = args
         .first()
         .map_or(42, |s| s.parse().expect("seed must be a number"));
-    let profile_id = args.get(1).map_or("elvish", String::as_str);
+    let profile_id = args.get(1).map_or("germanic", String::as_str);
     let generations: u32 = args
         .get(2)
         .map_or(40, |s| s.parse().expect("generations must be a number"));
     let mut profile = SoundProfile::by_id(profile_id).unwrap_or_else(|| {
-        let ids: Vec<_> = SoundProfile::examples().into_iter().map(|p| p.id).collect();
+        let ids: Vec<_> = SoundProfile::presets().into_iter().map(|p| p.id).collect();
         panic!(
             "unknown profile {profile_id}; try one of {}",
             ids.join(", ")

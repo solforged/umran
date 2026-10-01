@@ -767,7 +767,7 @@ mod tests {
     #[test]
     fn preferences_pull_toward_preferred_sounds() {
         // Kuo-toa dislikes fricatives, so spirantization pulls against it.
-        let prior = SoundProfile::by_id("kuo-toa").unwrap().inventory;
+        let prior = SoundProfile::by_id("polynesian").unwrap().inventory;
         let law = catalog()
             .into_iter()
             .find(|l| l.id == "spirantization")

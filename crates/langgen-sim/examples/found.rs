@@ -10,10 +10,10 @@ fn main() {
     let seed: u64 = args
         .next()
         .map_or(42, |s| s.parse().expect("seed must be a number"));
-    let profile_id = args.next().unwrap_or_else(|| "elvish".into());
+    let profile_id = args.next().unwrap_or_else(|| "germanic".into());
     let flavors: Vec<String> = args.collect();
     let profile = SoundProfile::by_id(&profile_id).unwrap_or_else(|| {
-        let ids: Vec<_> = SoundProfile::examples().into_iter().map(|p| p.id).collect();
+        let ids: Vec<_> = SoundProfile::presets().into_iter().map(|p| p.id).collect();
         panic!(
             "unknown profile {profile_id}; try one of {}",
             ids.join(", ")

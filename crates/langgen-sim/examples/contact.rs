@@ -44,8 +44,8 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let arg = |i: usize, default: &str| args.get(i).cloned().unwrap_or_else(|| default.into());
     let seed: u64 = arg(0, "42").parse().expect("seed");
-    let donor = SoundProfile::by_id(&arg(1, "illithid")).expect("donor profile");
-    let recipient = SoundProfile::by_id(&arg(2, "kuo-toa")).expect("recipient profile");
+    let donor = SoundProfile::by_id(&arg(1, "iranian")).expect("donor profile");
+    let recipient = SoundProfile::by_id(&arg(2, "polynesian")).expect("recipient profile");
     let kind = match arg(3, "neighbours").as_str() {
         "neighbours" => ContactKind::Neighbours,
         "trade" => ContactKind::Trade,

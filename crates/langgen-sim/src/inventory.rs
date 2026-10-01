@@ -12,6 +12,10 @@ const MIN_WEIGHT: f32 = 0.08;
 /// inventory samples: a segment in half the world's languages is neutral,
 /// rarer ones are discounted, commoner ones favoured.
 const SAMPLING_TYPICALITY: f32 = 1.0;
+/// Feature economy (Clements 2003): inventories reuse contrasts, so a
+/// candidate one feature away from chosen segments (b beside p and d) is
+/// likelier, per such neighbour, up to four.
+const ECONOMY: f32 = 1.0;
 /// The same, for how often an inventory's segments are used in words.
 const USAGE_TYPICALITY: f32 = 0.7;
 
@@ -36,9 +40,18 @@ pub struct Inventory {
 
 impl Inventory {
     pub fn sample(prior: &InventoryPrior, rng: &mut impl Rng) -> Self {
-        let mut consonants = pick_class(prior, false, prior.consonant_count, rng);
-        let mut vowels = pick_class(prior, true, prior.vowel_count, rng);
-        repair_universals(&mut consonants, &mut vowels, &prior.forbidden);
+        let (mut consonants, mut vowels): (Vec<PhonemeId>, Vec<PhonemeId>) = if prior.exact {
+            prior
+                .required
+                .iter()
+                .filter_map(|ipa| CATALOG.id_by_ipa(ipa))
+                .partition(|id| !CATALOG.get(*id).is_vowel())
+        } else {
+            let mut consonants = pick_class(prior, false, prior.consonant_count, rng);
+            let mut vowels = pick_class(prior, true, prior.vowel_count, rng);
+            repair_universals(&mut consonants, &mut vowels, &prior.forbidden);
+            (consonants, vowels)
+        };
 
         consonants.sort_by_key(|id| CATALOG.get(*id).ipa());
         vowels.sort_by_key(|id| CATALOG.get(*id).ipa());
@@ -96,10 +109,39 @@ fn pick_class(
         .collect();
     let target = (rng.gen_range(lo..=hi) as usize).max(chosen.len());
     while chosen.len() < target && !pool.is_empty() {
-        let i = weighted_index(rng, pool.iter().map(|(_, w)| *w));
+        let weights = pool
+            .iter()
+            .map(|(id, w)| w * (1.0 + ECONOMY * neighbours(*id, &chosen).min(4) as f32));
+        let i = weighted_index(rng, weights);
         chosen.push(pool.swap_remove(i).0);
     }
     chosen
+}
+
+/// Chosen segments that differ from `id` in exactly one feature: voicing,
+/// place, or secondary articulation for consonants; height, backness, or
+/// rounding for vowels.
+fn neighbours(id: PhonemeId, chosen: &[PhonemeId]) -> usize {
+    let differences = |a: Segment, b: Segment| -> Option<usize> {
+        match (a, b) {
+            (Segment::Consonant(x), Segment::Consonant(y)) if x.manner == y.manner => Some(
+                usize::from(x.voiced != y.voiced)
+                    + usize::from(x.place != y.place)
+                    + usize::from(x.secondary != y.secondary),
+            ),
+            (Segment::Vowel(x), Segment::Vowel(y)) => Some(
+                usize::from(x.height != y.height)
+                    + usize::from(x.backness != y.backness)
+                    + usize::from(x.rounded != y.rounded),
+            ),
+            _ => None,
+        }
+    };
+    let seg = CATALOG.get(id);
+    chosen
+        .iter()
+        .filter(|c| differences(seg, CATALOG.get(**c)) == Some(1))
+        .count()
 }
 
 /// Preference score for a segment that may already be in use: the
@@ -194,7 +236,7 @@ mod tests {
 
     #[test]
     fn respects_required_forbidden_and_counts() {
-        for profile in SoundProfile::examples() {
+        for profile in SoundProfile::presets() {
             let prior = &profile.inventory;
             for seed in 0..200 {
                 let inv = Inventory::sample(prior, &mut stream(seed, &[]));
@@ -224,7 +266,7 @@ mod tests {
     /// they are across the world's languages.
     #[test]
     fn neutral_inventories_track_world_frequencies() {
-        let prior = SoundProfile::by_id("neutral").unwrap().inventory;
+        let prior = SoundProfile::by_id("typical").unwrap().inventory;
         let seeds = 300;
         let mut counts = vec![0u32; CATALOG.segments.len()];
         for seed in 0..seeds {
@@ -241,5 +283,37 @@ mod tests {
             .collect();
         let rho = crate::wold::spearman(&pairs);
         assert!(rho >= 0.7, "Spearman {rho:.2} against PHOIBLE");
+    }
+
+    /// Feature economy: once b and g are in, d is more likely than its world
+    /// frequency alone would make it.
+    #[test]
+    fn inventories_fill_out_series() {
+        let prior = SoundProfile::by_id("typical").unwrap().inventory;
+        let id = |s: &str| CATALOG.id_by_ipa(s).unwrap();
+        let (mut both, mut both_with_d, mut neither, mut neither_with_d) = (0, 0, 0, 0);
+        for seed in 0..600 {
+            let inv = Inventory::sample(&prior, &mut stream(seed, &[]));
+            let has = |s: &str| inv.contains(id(s));
+            match (has("b") && has("g"), !has("b") && !has("g")) {
+                (true, _) => {
+                    both += 1;
+                    both_with_d += usize::from(has("d"));
+                }
+                (_, true) => {
+                    neither += 1;
+                    neither_with_d += usize::from(has("d"));
+                }
+                _ => {}
+            }
+        }
+        let (with, without) = (
+            both_with_d as f32 / both as f32,
+            neither_with_d as f32 / neither.max(1) as f32,
+        );
+        assert!(
+            with > without + 0.2,
+            "d with b and g {with:.2}, without {without:.2}"
+        );
     }
 }

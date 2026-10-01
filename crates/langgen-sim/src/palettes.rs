@@ -467,7 +467,7 @@ mod tests {
     /// segments, and its signature sounds appear in every inventory.
     #[test]
     fn palettes_reach_their_signature_sounds() {
-        let neutral = SoundProfile::by_id("neutral").unwrap();
+        let neutral = SoundProfile::typical();
         for flavor in all() {
             for s in flavor.require.iter().chain(&flavor.forbid) {
                 assert!(

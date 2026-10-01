@@ -2,15 +2,14 @@
 //! generation is recovered by replaying those actions, which the engine's
 //! determinism makes exact; cached checkpoints keep scrubbing quick.
 
-use crate::flavor::Flavor;
-use crate::profile::SoundProfile;
+use crate::design::LanguageDesign;
 use crate::world::{ContactKind, Params, World};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Bumped whenever an engine change would make an existing recipe replay
 /// differently. Saves record it so a mismatch can be reported.
-pub const ENGINE_REVISION: u32 = 4;
+pub const ENGINE_REVISION: u32 = 5;
 /// Identifies saved recipes.
 pub const FORMAT: &str = "langgen-sim-recipe";
 /// Generations between cached checkpoints.
@@ -24,9 +23,9 @@ const MAX_RUN: u32 = 2000;
 pub enum Action {
     Found {
         name: String,
-        profile: String,
-        #[serde(default)]
-        flavors: Vec<String>,
+        design: LanguageDesign,
+        /// The language's own seed: the one its design was previewed with.
+        seed: u64,
         power: f32,
         openness: f32,
     },
@@ -264,21 +263,16 @@ fn apply(world: &mut World, action: &Action) -> Result<(), String> {
     match action {
         Action::Found {
             name,
-            profile,
-            flavors,
+            design,
+            seed,
             power,
             openness,
         } => {
-            let mut sound = SoundProfile::by_id(profile)
-                .ok_or_else(|| format!("unknown sound profile '{profile}'"))?;
-            for id in flavors {
-                let flavor = Flavor::by_id(id).ok_or_else(|| format!("unknown flavor '{id}'"))?;
-                sound = sound.flavored(&flavor);
-            }
+            design.validate()?;
             if name.trim().is_empty() {
                 return Err("a community needs a name".into());
             }
-            world.found(name.trim(), &sound, *power, *openness);
+            world.found_seeded(name.trim(), &design.profile(), *seed, *power, *openness);
         }
         Action::Connect {
             a,
@@ -329,11 +323,12 @@ fn apply(world: &mut World, action: &Action) -> Result<(), String> {
 mod tests {
     use super::*;
 
-    fn found(name: &str, profile: &str) -> Action {
+    fn found(name: &str, preset: &str) -> Action {
         Action::Found {
             name: name.into(),
-            profile: profile.into(),
-            flavors: vec![],
+            design: LanguageDesign::preset(preset, 0)
+                .unwrap_or_else(|| LanguageDesign::typical(0, 14, 5)),
+            seed: name.len() as u64,
             power: 0.5,
             openness: 0.5,
         }
@@ -351,8 +346,8 @@ mod tests {
 
     fn sample() -> Chronicle {
         let mut c = Chronicle::new(7);
-        c.act(found("Hill", "neutral")).unwrap();
-        c.act(found("Coast", "kuo-toa")).unwrap();
+        c.act(found("Hill", "typical")).unwrap();
+        c.act(found("Coast", "polynesian")).unwrap();
         c.act(Action::Run { generations: 15 }).unwrap();
         c.act(Action::Connect {
             a: 0,
@@ -375,8 +370,9 @@ mod tests {
     fn past_generations_replay_exactly() {
         let mut c = sample();
         let mut direct = World::new(7, Params::default());
-        direct.found("Hill", &SoundProfile::by_id("neutral").unwrap(), 0.5, 0.5);
-        direct.found("Coast", &SoundProfile::by_id("kuo-toa").unwrap(), 0.5, 0.5);
+        let design = |p: &str| LanguageDesign::preset(p, 0).unwrap().profile();
+        direct.found_seeded("Hill", &design("typical"), 4, 0.5, 0.5);
+        direct.found_seeded("Coast", &design("polynesian"), 5, 0.5, 0.5);
         direct.run(12);
         assert!(same(&c.world_at(12), &direct));
         // Actions taken at a generation are part of that generation's view.
@@ -426,8 +422,12 @@ mod tests {
             })
             .is_err()
         );
-        assert!(c.act(found("", "neutral")).is_err());
-        assert!(c.act(found("X", "no-such-profile")).is_err());
+        assert!(c.act(found("", "typical")).is_err());
+        let mut bad = found("X", "typical");
+        if let Action::Found { design, .. } = &mut bad {
+            design.sounds.clear();
+        }
+        assert!(c.act(bad).is_err());
         assert_eq!(c.actions().len(), before, "rejected actions change nothing");
     }
 
@@ -444,7 +444,7 @@ mod tests {
         assert!(same(&cold.world_at(39), c.latest()));
 
         let mut world = Chronicle::new(1);
-        world.act(found("Hill", "neutral")).unwrap();
+        world.act(found("Hill", "typical")).unwrap();
         let ran = world.run_until_event(400);
         assert!(ran < 400, "a growing community eventually splits");
         assert_eq!(world.latest().events.len(), 1);

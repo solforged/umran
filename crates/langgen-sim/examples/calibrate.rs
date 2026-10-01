@@ -1,6 +1,6 @@
 //! Averages drift statistics over many seeds, for tuning `Params`.
 //!
-//! cargo run --release -p langgen-sim --example calibrate -- [seeds] [generations]
+//! cargo run --release -p langgen-sim --example calibrate -- [seeds] [generations] [preset]
 
 use langgen_sim::{Lexicon, Params, SoundProfile, World};
 use std::collections::HashMap;
@@ -22,9 +22,13 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let seeds: usize = args.next().map_or(200, |s| s.parse().expect("seeds"));
     let generations: u32 = args.next().map_or(40, |s| s.parse().expect("generations"));
+    let only: Option<String> = args.next();
 
     let mut sums: HashMap<&str, f32> = HashMap::new();
-    let profiles = SoundProfile::examples();
+    let profiles: Vec<SoundProfile> = match &only {
+        Some(id) => vec![SoundProfile::by_id(id).expect("preset")],
+        None => SoundProfile::presets(),
+    };
     for n in 0..seeds {
         let profile = &profiles[n % profiles.len()];
         let mut sim = World::solo(n as u64, profile, Params::default());

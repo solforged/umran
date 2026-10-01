@@ -19,8 +19,10 @@ Record milestone progress there, not here; this file is for lasting rules.
 - `web/src/engine.ts`: WASM initialization and the typed adapter.
 - `web/src/model.ts`: the TypeScript presentation contract.
 - `web/src/App.tsx`: view state, actions, branching, and persistence.
-- `web/src/components/`: `Timeline` (scrubber), `Communities`, `Lexicon`,
-  `Inspector` (word history and sound system), `ActionDialog`, `Modal`.
+- `web/src/components/`: `Designer` (sound chart, knobs, live preview,
+  used for new worlds and new communities), `Timeline` (scrubber),
+  `Communities`, `Lexicon`, `Inspector` (word history and sound system),
+  `RunControls`, `ActionDialog` (split, connect, shift), `Modal`.
 
 React, TypeScript, and Vite provide the interface; all linguistic logic runs
 in Rust/WASM. No backend, network language service, component suite, or
@@ -35,17 +37,19 @@ before development or production builds.
   25-year generations. `Variety` holds a `SoundProfile` and a `Lexicon` of
   `Slot`s, where words compete for each concept with usage weights. Words
   keep a log of every sound law, borrowing, extension, and loss.
-- `SoundProfile`s are numbers; the four packs (`elvish`, `kuo-toa`,
-  `illithid`, `neutral`) are only examples, and `neutral` has flat tastes so
-  world frequencies decide. A `Flavor` is stored adjustments written from a
-  plain brief (`familiar` targets English readers), which the engine never
-  reads; `palettes.rs` holds family-inspired nudges (Indic, Iranian,
-  Germanic, Semitic, Nahuatl-like, Bantu-like, Polynesian-like, Finnic,
-  Caucasian) that require signature sounds and set word shape, vowel
-  length, word building, and spelling. Flavors stack. One preference
-  score, taste plus cross-linguistic frequency from PHOIBLE
+- Languages are founded from a `LanguageDesign` (`design.rs`): the exact
+  sounds, each used or favoured, plus knobs (word length, final consonants,
+  inner clusters, repetition, long vowels, affixes or root-and-pattern,
+  suffixing, derivation) and spelling. It resolves to an internal
+  `SoundProfile`: chosen sounds exactly, favoured ones preferred, absent
+  ones discouraged but reachable by sound change. There are no named
+  culture packs; `SoundProfile::typical()` is the plain base for "fill
+  typical", and presets (typical, or typical plus a `Flavor` from
+  `flavor.rs` or `palettes.rs`) only produce starting designs to edit.
+- One preference score, taste plus cross-linguistic frequency from PHOIBLE
   (`typology.rs`), drives inventories, how often sounds are used, sound-law
-  odds, and acceptance of foreign sounds. A forbidden sound beats the
+  odds, and acceptance of foreign sounds. Sampled inventories favour
+  feature economy (series like b d g), and a forbidden sound beats the
   "voiced implies voiceless" repair (Arabic has b without p).
 - The catalog (`phoneme.rs`) describes consonants by place, manner,
   voicing, and a `Secondary` articulation (aspirated, breathy,
@@ -88,7 +92,9 @@ before development or production builds.
 ## History and saving
 
 A history is a seed plus ordered `Action`s (`chronicle.rs`): found, connect,
-split, shift, run. Consecutive runs merge, so playing stays one action and
+split, shift, run. Found records the full design and the language's own
+seed, the one its preview used, so founding gives exactly the previewed
+words. Consecutive runs merge, so playing stays one action and
 undo removes the whole stretch. Any past generation is recovered by
 replaying, with checkpoints every 10 generations; the timeline needs no
 separate data. Play and "next event" work only at the present.

@@ -4,11 +4,12 @@
 use langgen_sim::compare::intelligibility;
 use langgen_sim::concepts::related;
 use langgen_sim::morphology::Slot;
+use langgen_sim::phoneme::{Backness, Manner, Secondary};
 use langgen_sim::{
     Action, CATALOG, Chronicle, ENGINE_REVISION, Event, Flavor, Form, Lexeme, Origin, PhonemeId,
-    Recipe, SoundProfile, World, WorldEvent, catalog,
+    Recipe, World, WorldEvent, catalog,
 };
-use langgen_sim::{MorphologyKind, Variety};
+use langgen_sim::{LanguageDesign, MorphologyKind, Segment, Variety};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
@@ -40,6 +41,21 @@ impl Workbench {
 
     pub fn catalog() -> Result<String, JsValue> {
         Bench::catalog().map_err(fail)
+    }
+
+    /// A preset resolved into an editable design.
+    pub fn design(preset: &str, seed: u32) -> Result<String, JsValue> {
+        Bench::design(preset, seed).map_err(fail)
+    }
+
+    #[wasm_bindgen(js_name = typicalDesign)]
+    pub fn typical_design(seed: u32, consonants: u8, vowels: u8) -> Result<String, JsValue> {
+        Bench::typical_design(seed, consonants, vowels).map_err(fail)
+    }
+
+    /// Sample words from a design, without founding anything.
+    pub fn preview(design: &str, seed: u32) -> Result<String, JsValue> {
+        Bench::preview(design, seed).map_err(fail)
     }
 
     pub fn act(&mut self, action: &str) -> Result<(), JsValue> {
@@ -118,22 +134,26 @@ impl Bench {
     /// Sound profiles, flavors, and contact kinds to offer in forms.
     pub fn catalog() -> Result<String, String> {
         to_json(&CatalogView {
-            profiles: SoundProfile::examples()
-                .into_iter()
-                .map(|p| Choice {
-                    id: p.id,
-                    name: p.name,
-                    description: p.description,
-                })
+            sounds: CATALOG
+                .segments
+                .iter()
+                .enumerate()
+                .map(|(i, seg)| sound_view(PhonemeId(i as u16), *seg))
                 .collect(),
-            flavors: Flavor::examples()
-                .into_iter()
-                .map(|f| Choice {
-                    id: f.id,
-                    name: f.name,
-                    description: f.brief,
-                })
-                .collect(),
+            places: PLACES.to_vec(),
+            manners: MANNERS.to_vec(),
+            heights: HEIGHTS.to_vec(),
+            presets: std::iter::once(Choice {
+                id: "typical".into(),
+                name: "Typical".into(),
+                description: "Sounds chosen by how common they are worldwide.".into(),
+            })
+            .chain(Flavor::examples().into_iter().map(|f| Choice {
+                id: f.id,
+                name: f.name,
+                description: f.brief,
+            }))
+            .collect(),
             contacts: [
                 (
                     "neighbours",
@@ -164,6 +184,72 @@ impl Bench {
                 description: description.into(),
             })
             .collect(),
+        })
+    }
+
+    pub fn design(preset: &str, seed: u32) -> Result<String, String> {
+        let design = LanguageDesign::preset(preset, u64::from(seed))
+            .ok_or_else(|| format!("unknown preset '{preset}'"))?;
+        to_json(&design)
+    }
+
+    pub fn typical_design(seed: u32, consonants: u8, vowels: u8) -> Result<String, String> {
+        to_json(&LanguageDesign::typical(
+            u64::from(seed),
+            consonants,
+            vowels,
+        ))
+    }
+
+    /// Founds a throwaway language from `design` and returns a sample of its
+    /// words, its word families, and a few numbers.
+    pub fn preview(design: &str, seed: u32) -> Result<String, String> {
+        let design: LanguageDesign =
+            serde_json::from_str(design).map_err(|e| format!("Malformed design: {e}"))?;
+        design.validate()?;
+        let variety = Variety::found(u64::from(seed), &design.profile());
+        let lexicon = &variety.lexicon;
+        let row = |concept: &'static langgen_sim::Concept| {
+            let word = lexicon.word_for(concept)?;
+            let from = match word.origin {
+                Origin::Derived { base, relation } => Some(format!(
+                    "{} ({})",
+                    lexicon.get(base).first_sense.gloss,
+                    relation.label()
+                )),
+                _ => None,
+            };
+            Some(PreviewWord {
+                gloss: concept.gloss,
+                spelled: variety.spell(&word.form),
+                ipa: word.form.ipa(),
+                from,
+            })
+        };
+        let words = PREVIEW
+            .iter()
+            .filter_map(|id| langgen_sim::concepts::by_id(id))
+            .filter_map(row)
+            .collect();
+        let families = langgen_sim::FAMILIES
+            .iter()
+            .filter_map(|(_, word, _)| langgen_sim::concepts::by_id(word))
+            .filter_map(row)
+            .filter(|w| w.from.is_some())
+            .collect();
+        let forms: Vec<&Form> = lexicon
+            .slots
+            .iter()
+            .filter_map(|s| Some(&lexicon.word_for(s.concept)?.form))
+            .collect();
+        let homophones = forms.len() - forms.iter().collect::<std::collections::HashSet<_>>().len();
+        let syllables = forms.iter().map(|f| f.syllables().len()).sum::<usize>() as f32
+            / forms.len().max(1) as f32;
+        to_json(&Preview {
+            words,
+            families,
+            homophones,
+            syllables,
         })
     }
 
@@ -388,19 +474,7 @@ impl Bench {
         let mut out: Vec<Marker> = Vec::new();
         for (generation, action) in self.chronicle.timeline() {
             let label = match action {
-                Action::Found {
-                    name,
-                    profile,
-                    flavors,
-                    ..
-                } => {
-                    let flavor = if flavors.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" + {}", flavors.join(", "))
-                    };
-                    format!("{name} founded ({profile}{flavor})")
-                }
+                Action::Found { name, .. } => format!("{name} founded"),
                 Action::Connect {
                     a,
                     b,
@@ -717,9 +791,141 @@ struct Choice {
 
 #[derive(Serialize)]
 struct CatalogView {
-    profiles: Vec<Choice>,
-    flavors: Vec<Choice>,
+    sounds: Vec<SoundView>,
+    /// Chart columns and rows, in display order.
+    places: Vec<&'static str>,
+    manners: Vec<&'static str>,
+    heights: Vec<&'static str>,
+    presets: Vec<Choice>,
     contacts: Vec<Choice>,
+}
+
+/// One catalog segment, placed for the sound chart.
+/// Concepts shown in a design preview: basics, nursery words, nature, and
+/// a few actions and qualities.
+const PREVIEW: &[&str] = &[
+    "mother", "father", "child", "person", "1sg", "2sg", "fire", "water", "sun", "moon", "star",
+    "night", "stone", "tree", "river", "mountain", "eye", "hand", "heart", "blood", "bird", "dog",
+    "fish", "go", "see", "eat", "die", "say", "big", "small", "red", "good",
+];
+
+#[derive(Serialize)]
+struct PreviewWord {
+    gloss: &'static str,
+    spelled: String,
+    ipa: String,
+    from: Option<String>,
+}
+
+#[derive(Serialize)]
+struct Preview {
+    words: Vec<PreviewWord>,
+    families: Vec<PreviewWord>,
+    /// Concepts sharing a form with another concept.
+    homophones: usize,
+    /// Mean syllables per word.
+    syllables: f32,
+}
+
+#[derive(Serialize)]
+struct SoundView {
+    ipa: &'static str,
+    roman: &'static str,
+    vowel: bool,
+    /// Consonants: place and manner; vowels: backness and height.
+    column: &'static str,
+    row: &'static str,
+    voiced: bool,
+    /// "plain", "aspirated", "breathy", "labialized", or "rounded" for
+    /// rounded vowels.
+    secondary: &'static str,
+    /// Share of the world's languages that have it.
+    share: f32,
+}
+
+const PLACES: [&str; 11] = [
+    "bilabial",
+    "labiodental",
+    "dental",
+    "alveolar",
+    "postalveolar",
+    "retroflex",
+    "palatal",
+    "velar",
+    "uvular",
+    "pharyngeal",
+    "glottal",
+];
+const MANNERS: [&str; 12] = [
+    "stop",
+    "affricate",
+    "fricative",
+    "nasal",
+    "trill",
+    "tap",
+    "lateral",
+    "lateral-fricative",
+    "lateral-affricate",
+    "approximant",
+    "ejective",
+    "implosive",
+];
+const HEIGHTS: [&str; 7] = [
+    "close",
+    "near-close",
+    "close-mid",
+    "mid",
+    "open-mid",
+    "near-open",
+    "open",
+];
+
+fn sound_view(id: PhonemeId, seg: Segment) -> SoundView {
+    let share = langgen_sim::typology::share(id);
+    match seg {
+        Segment::Consonant(c) => SoundView {
+            ipa: c.ipa,
+            roman: c.roman,
+            vowel: false,
+            column: PLACES[c.place as usize],
+            row: match c.manner {
+                Manner::Stop => "stop",
+                Manner::Affricate => "affricate",
+                Manner::Fricative => "fricative",
+                Manner::Nasal => "nasal",
+                Manner::Trill => "trill",
+                Manner::Tap => "tap",
+                Manner::Lateral => "lateral",
+                Manner::LateralFricative => "lateral-fricative",
+                Manner::LateralAffricate => "lateral-affricate",
+                Manner::Approximant => "approximant",
+                Manner::Ejective => "ejective",
+                Manner::Implosive => "implosive",
+            },
+            voiced: c.voiced,
+            secondary: match c.secondary {
+                Secondary::Plain => "plain",
+                Secondary::Aspirated => "aspirated",
+                Secondary::Breathy => "breathy",
+                Secondary::Labialized => "labialized",
+            },
+            share,
+        },
+        Segment::Vowel(v) => SoundView {
+            ipa: v.ipa,
+            roman: v.roman,
+            vowel: true,
+            column: match v.backness {
+                Backness::Front => "front",
+                Backness::Central => "central",
+                Backness::Back => "back",
+            },
+            row: HEIGHTS[v.height as usize],
+            voiced: true,
+            secondary: if v.rounded { "rounded" } else { "plain" },
+            share,
+        },
+    }
 }
 
 #[derive(Serialize)]
@@ -863,11 +1069,18 @@ mod tests {
     use super::*;
     use langgen_sim::CONCEPTS;
 
+    fn found(name: &str, preset: &str) -> String {
+        let design = LanguageDesign::preset(preset, 1).unwrap();
+        serde_json::json!({
+            "kind": "found", "name": name, "design": design, "seed": 7, "power": 0.5, "openness": 0.5
+        })
+        .to_string()
+    }
+
     fn bench() -> Bench {
         let mut w = Bench::new(5);
-        w.act(r#"{"kind":"found","name":"Hill","profile":"neutral","power":0.5,"openness":0.5}"#)
-            .unwrap();
-        w.act(r#"{"kind":"found","name":"Coast","profile":"kuo-toa","flavors":["fish-mouthed"],"power":0.6,"openness":0.5}"#).unwrap();
+        w.act(&found("Hill", "typical")).unwrap();
+        w.act(&found("Coast", "polynesian")).unwrap();
         w.act(r#"{"kind":"connect","a":0,"b":1,"intensity":0.6,"contact":"trade"}"#)
             .unwrap();
         w.act(r#"{"kind":"run","generations":12}"#).unwrap();
@@ -875,6 +1088,43 @@ mod tests {
             .unwrap();
         w.act(r#"{"kind":"run","generations":10}"#).unwrap();
         w
+    }
+
+    #[test]
+    fn founding_matches_its_preview() {
+        let design = Bench::design("indic", 2).unwrap();
+        let preview: serde_json::Value =
+            serde_json::from_str(&Bench::preview(&design, 99).unwrap()).unwrap();
+        let mut w = Bench::new(1);
+        let action = format!(
+            r#"{{"kind":"found","name":"Ridge","design":{design},"seed":99,"power":0.5,"openness":0.5}}"#
+        );
+        w.act(&action).unwrap();
+        let word: serde_json::Value =
+            serde_json::from_str(&w.word(0, 0, "water").unwrap()).unwrap();
+        let shown = preview["words"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["gloss"] == "water")
+            .unwrap();
+        assert_eq!(word["variants"][0]["ipa"], shown["ipa"]);
+    }
+
+    #[test]
+    fn designs_preview_without_founding() {
+        let design = Bench::design("semitic", 3).unwrap();
+        let preview: serde_json::Value =
+            serde_json::from_str(&Bench::preview(&design, 3).unwrap()).unwrap();
+        assert!(preview["words"].as_array().unwrap().len() > 20);
+        assert!(!preview["families"].as_array().unwrap().is_empty());
+        let typical: serde_json::Value =
+            serde_json::from_str(&Bench::typical_design(4, 15, 5).unwrap()).unwrap();
+        assert_eq!(typical["sounds"].as_array().unwrap().len(), 20);
+        assert!(Bench::preview("{}", 1).is_err());
+        let catalog: serde_json::Value = serde_json::from_str(&Bench::catalog().unwrap()).unwrap();
+        assert!(catalog["sounds"].as_array().unwrap().len() > 70);
+        assert!(catalog["presets"].as_array().unwrap().len() > 5);
     }
 
     #[test]

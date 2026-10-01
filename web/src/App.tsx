@@ -4,6 +4,7 @@ import type { Action, Catalog, Engine } from "./model";
 import { YEARS } from "./model";
 import { ActionDialog, type DialogKind } from "./components/ActionDialog";
 import { Communities } from "./components/Communities";
+import { Designer, type Founding } from "./components/Designer";
 import { Inspector } from "./components/Inspector";
 import { Lexicon } from "./components/Lexicon";
 import { Modal } from "./components/Modal";
@@ -19,6 +20,10 @@ type Boot =
   | { status: "fresh" }
   | { status: "ready" }
   | { status: "recovery"; raw: string; error: string };
+
+function foundingAction(f: Founding): Action {
+  return { kind: "found", name: f.name, design: f.design, seed: f.seed, power: f.power, openness: f.openness };
+}
 
 function readSaved(): string | null {
   try {
@@ -153,10 +158,10 @@ export default function App() {
   );
 
   const startWorld = useCallback(
-    async (seed: number, founding: Action) => {
+    async (founding: Founding) => {
       try {
-        const next = await createEngine(seed);
-        next.act(founding);
+        const next = await createEngine(founding.worldSeed);
+        next.act(foundingAction(founding));
         adopt(next);
         persist();
         setDialog(null);
@@ -202,17 +207,8 @@ export default function App() {
     return (
       <main className="splash">
         <h1>Langgen</h1>
-        <p>Start from a seed and one founding community, then poke at its words and let history happen.</p>
-        <ActionDialog
-          kind="world"
-          inline
-          catalog={catalog}
-          overview={null}
-          selected={0}
-          onClose={() => undefined}
-          onAction={() => undefined}
-          onWorld={startWorld}
-        />
+        <p>Design a first language and the community that speaks it, then poke at its words and let history happen.</p>
+        <Designer catalog={catalog} newWorld onFound={(f) => void startWorld(f)} />
         {error ? <p className="error">{error}</p> : null}
       </main>
     );
@@ -326,7 +322,23 @@ export default function App() {
         />
       </main>
 
-      {dialog ? (
+      {dialog === "world" || dialog === "found" ? (
+        <Modal open wide title={dialog === "world" ? "New world" : "Found a community"} onClose={() => setDialog(null)}>
+          <Designer
+            catalog={catalog}
+            newWorld={dialog === "world"}
+            onCancel={() => setDialog(null)}
+            onFound={(f) => {
+              if (dialog === "world") {
+                void startWorld(f);
+              } else {
+                setDialog(null);
+                perform(foundingAction(f));
+              }
+            }}
+          />
+        </Modal>
+      ) : dialog ? (
         <ActionDialog
           kind={dialog}
           catalog={catalog}
@@ -337,7 +349,6 @@ export default function App() {
             setDialog(null);
             perform(action);
           }}
-          onWorld={startWorld}
         />
       ) : null}
 

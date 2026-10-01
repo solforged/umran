@@ -1,5 +1,14 @@
 import init, { Workbench } from "./wasm/langgen_web";
-import type { Action, Catalog, Engine, LexiconRow, Overview, WordDetail } from "./model";
+import type {
+  Action,
+  Catalog,
+  Engine,
+  LanguageDesign,
+  LexiconRow,
+  Overview,
+  Preview,
+  WordDetail,
+} from "./model";
 
 // One WASM module; the Workbench owns the history and React only holds view
 // selections. Errors from the engine arrive as strings.
@@ -45,6 +54,25 @@ export async function loadEngine(json: string): Promise<Engine> {
 export async function loadCatalog(): Promise<Catalog> {
   await ready();
   return JSON.parse(Workbench.catalog()) as Catalog;
+}
+
+// Design helpers; call only after `loadCatalog` has resolved, which
+// initializes the module.
+export function presetDesign(preset: string, seed: number): LanguageDesign {
+  return JSON.parse(Workbench.design(preset, seed)) as LanguageDesign;
+}
+
+export function typicalDesign(seed: number, consonants: number, vowels: number): LanguageDesign {
+  return JSON.parse(Workbench.typicalDesign(seed, consonants, vowels)) as LanguageDesign;
+}
+
+/// Sample words for a design, or the reason it cannot found a language.
+export function preview(design: LanguageDesign, seed: number): Preview | string {
+  try {
+    return JSON.parse(Workbench.preview(JSON.stringify(design), seed)) as Preview;
+  } catch (error) {
+    return message(error);
+  }
 }
 
 export function message(error: unknown): string {
