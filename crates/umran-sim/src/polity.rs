@@ -371,11 +371,15 @@ impl World {
         }
     }
 
-    /// `rulers` come to rule `ruled`, at `intensity`: the ruled join the
-    /// rulers' state, which they raise if they have none. Conquered rulers
-    /// bring their whole state, which falls, its subjects passing to the
-    /// conquerors. Rulers who were themselves subjects break away first.
+    /// `rulers` come to rule reachable `ruled`, at `intensity`: the ruled
+    /// join the rulers' state, which they raise if they have none. A
+    /// conquered state falls; only subjects the conquerors can reach pass
+    /// to them, while the others become independent. Rulers who were
+    /// themselves subjects break away first.
     pub(crate) fn subject(&mut self, rulers: usize, ruled: usize, intensity: f32) {
+        if rulers == ruled || !self.can_rule(rulers, ruled) {
+            return;
+        }
         if let Some(s) = self.ruled_by(rulers) {
             self.leave(s, rulers);
         }
@@ -388,7 +392,10 @@ impl World {
         };
         let taken: Vec<usize> = match self.rules(ruled) {
             Some(old) => {
-                let subjects: Vec<usize> = self.states[old].subjects().collect();
+                let subjects: Vec<usize> = self.states[old]
+                    .subjects()
+                    .filter(|&c| c != rulers && self.can_rule(rulers, c))
+                    .collect();
                 self.fall(old, Fall::Conquered { by: rulers });
                 subjects
             }
@@ -408,13 +415,16 @@ impl World {
         }
     }
 
-    /// A people split off from `parent` stays in its parent's state, under
-    /// the same rulers.
+    /// A people split off from `parent` stays in its parent's state only
+    /// when that state's actual rulers can reach it.
     pub(crate) fn inherit_state(&mut self, parent: usize, daughter: usize) {
         let Some(s) = self.state_of(parent) else {
             return;
         };
         let rulers = self.states[s].rulers;
+        if !self.can_rule(rulers, daughter) {
+            return;
+        }
         self.link(rulers, daughter, RULE_INTENSITY, ContactKind::Rule);
         self.states[s].members.push(Member {
             community: daughter,
@@ -424,8 +434,9 @@ impl World {
     }
 
     /// `community` is no longer under state `s`; its rule contact, if any,
-    /// leaves them neighbours, as the end of any rule does.
-    fn leave(&mut self, s: usize, community: usize) {
+    /// becomes a neighbour contact only where the two peoples share or
+    /// border land. Contact removal here emits no Parted event.
+    pub(crate) fn leave(&mut self, s: usize, community: usize) {
         let generation = self.generation;
         let rulers = self.states[s].rulers;
         for m in &mut self.states[s].members {
@@ -439,7 +450,10 @@ impl World {
         }) {
             let intensity = self.contacts[i].intensity;
             self.contacts.remove(i);
-            if self.communities[community].living() && self.communities[rulers].living() {
+            if self.communities[community].living()
+                && self.communities[rulers].living()
+                && self.nearness(rulers, community) > 0.0
+            {
                 self.link(rulers, community, intensity / 2.0, ContactKind::Neighbours);
             }
         }
@@ -642,6 +656,7 @@ impl World {
 mod tests {
     use super::*;
     use crate::concepts::CONCEPTS;
+    use crate::ideas::Craft;
     use crate::profile::SoundProfile;
     use crate::world::Params;
 
@@ -656,7 +671,10 @@ mod tests {
         let mut world = World::new(seed, params);
         let rulers = world.found(&SoundProfile::base(), 0.9, 0.5);
         let subjects = world.split(rulers, None, 0.0);
-        world.connect(rulers, subjects, 0.8, ContactKind::Rule);
+        world.communities[subjects].lands = vec![world.communities[rulers].home()];
+        world
+            .connect(rulers, subjects, 0.8, ContactKind::Rule)
+            .unwrap();
         let s = world.rules(rulers).expect("rule raises a state");
         if standard {
             world.states[s].standard = Some(0);
@@ -691,9 +709,12 @@ mod tests {
             world.found(&profile, 0.6, 0.5),
             world.found(&profile, 0.3, 0.5),
         );
-        world.connect(b, c, 0.8, ContactKind::Rule);
+        let home = world.communities[a].home();
+        world.communities[b].lands = vec![home];
+        world.communities[c].lands = vec![home];
+        world.connect(b, c, 0.8, ContactKind::Rule).unwrap();
         let old = world.rules(b).expect("b rules c");
-        world.connect(a, b, 0.8, ContactKind::Rule);
+        world.connect(a, b, 0.8, ContactKind::Rule).unwrap();
         let new = world.rules(a).expect("a rules b");
         assert_eq!(
             world.states[old].fell.map(|(_, f)| f),
@@ -704,6 +725,113 @@ mod tests {
         world.run(5);
         assert_eq!(world.state_of(c), Some(new), "the rule holds");
     }
+
+    fn coastal_world() -> (World, usize, usize) {
+        let world = World::new(
+            3,
+            Params {
+                conquest_reach: 1800.0,
+                ..Params::static_society()
+            },
+        );
+        let shores = (0..world.map.regions.len())
+            .filter(|&a| world.map.coastal(a))
+            .find_map(|a| {
+                world
+                    .map
+                    .voyage_row(a, world.params.conquest_reach)
+                    .iter()
+                    .find(|&&(b, _)| world.map.overseas(a, b as usize))
+                    .map(|&(b, _)| (a, b as usize))
+            })
+            .expect("the fixture has separate coasts within naval reach");
+        (world, shores.0, shores.1)
+    }
+
+    fn found_at(world: &mut World, land: usize, prestige: f32) -> usize {
+        let community = world.found(&SoundProfile::base(), prestige, 0.5);
+        world.communities[community].lands = vec![land];
+        community
+    }
+
+    #[test]
+    fn a_subjects_ships_do_not_supply_its_rulers_navy() {
+        let (mut world, home, overseas) = coastal_world();
+        let rulers = found_at(&mut world, home, 0.9);
+        let parent = found_at(&mut world, home, 0.6);
+        let daughter = found_at(&mut world, overseas, 0.3);
+        world.connect(rulers, parent, 0.8, ContactKind::Rule).unwrap();
+        let state = world.rules(rulers).unwrap();
+        world.communities[parent].crafts.push(Craft::Seafaring);
+        assert!(world.can_rule(parent, daughter));
+        assert!(!world.can_rule(rulers, daughter));
+
+        world.inherit_state(parent, daughter);
+        assert_eq!(world.state_of(daughter), None);
+        assert_eq!(world.states[state].subjects().collect::<Vec<_>>(), vec![parent]);
+        assert!(!world.contacts.iter().any(|k| {
+            k.kind == ContactKind::Rule && (k.a == daughter || k.b == daughter)
+        }));
+
+        world.communities[rulers].crafts.push(Craft::Seafaring);
+        world.inherit_state(parent, daughter);
+        assert_eq!(world.ruled_by(daughter), Some(state));
+        assert!(world.rules_over(rulers, daughter));
+    }
+
+    #[test]
+    fn conquered_states_unreachable_subjects_become_independent() {
+        let (mut world, home, overseas) = coastal_world();
+        let conquerors = found_at(&mut world, home, 0.9);
+        let rulers = found_at(&mut world, home, 0.6);
+        let remote = found_at(&mut world, overseas, 0.3);
+        let local = found_at(&mut world, home, 0.2);
+        world.communities[rulers].crafts.push(Craft::Seafaring);
+        world.connect(rulers, remote, 0.8, ContactKind::Rule).unwrap();
+        world.connect(rulers, local, 0.8, ContactKind::Rule).unwrap();
+        let old = world.rules(rulers).unwrap();
+
+        world.connect(conquerors, rulers, 0.8, ContactKind::Rule).unwrap();
+        let new = world.rules(conquerors).unwrap();
+        assert_eq!(
+            world.states[old].fell.map(|(_, how)| how),
+            Some(Fall::Conquered { by: conquerors })
+        );
+        assert_eq!(world.states[old].subjects().count(), 0);
+        assert_eq!(world.states[new].subjects().collect::<Vec<_>>(), vec![rulers, local]);
+        assert_eq!(world.state_of(remote), None);
+        assert!(!world.contacts.iter().any(|k| {
+            k.kind == ContactKind::Rule && (k.a == remote || k.b == remote)
+        }));
+    }
+
+    #[test]
+    fn leaving_over_water_does_not_make_neighbours() {
+        let (mut world, home, overseas) = coastal_world();
+        let rulers = found_at(&mut world, home, 0.9);
+        let subject = found_at(&mut world, overseas, 0.3);
+        world.communities[rulers].crafts.push(Craft::Seafaring);
+        world.connect(rulers, subject, 0.8, ContactKind::Rule).unwrap();
+        let state = world.rules(rulers).unwrap();
+        assert_eq!(world.nearness(rulers, subject), 0.0);
+
+        world.leave(state, subject);
+        assert_eq!(world.ruled_by(subject), None);
+        assert_eq!(world.states[state].members[0].left, Some(world.generation));
+        assert!(!world.contacts.iter().any(|k| {
+            (k.a, k.b) == (rulers, subject) || (k.a, k.b) == (subject, rulers)
+        }));
+
+        world.communities[subject].lands = vec![home];
+        world.connect(rulers, subject, 0.8, ContactKind::Rule).unwrap();
+        world.leave(state, subject);
+        let contact = world.contacts.iter().find(|k| {
+            (k.a, k.b) == (rulers, subject) || (k.a, k.b) == (subject, rulers)
+        }).expect("shared land retains neighbour contact");
+        assert_eq!(contact.kind, ContactKind::Neighbours);
+        assert_eq!(contact.intensity, 0.4);
+    }
+
 
     #[test]
     fn a_standard_levels_its_kindred_dialects() {

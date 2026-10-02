@@ -17,7 +17,7 @@ use crate::names::{
 use crate::phoneme::PhonemeId;
 use crate::phonotactics::Phonotactics;
 use crate::polity::{
-    LEVEL_FLOOR, LEVELLING, PURIST_COST, PURIST_PRESSURE, STANDARD_PRESTIGE, STANDARD_SHIFT, State,
+    Fall, LEVEL_FLOOR, LEVELLING, PURIST_COST, PURIST_PRESSURE, STANDARD_PRESTIGE, STANDARD_SHIFT, State,
 };
 use crate::profile::SoundProfile;
 use crate::rng::{index, key, stream, weighted_index};
@@ -381,6 +381,10 @@ pub struct Journey {
 fn row_distance(row: &[(u32, f32)], region: usize) -> f32 {
     row.binary_search_by_key(&(region as u32), |&(r, _)| r)
         .map_or(f32::INFINITY, |i| row[i].1)
+}
+
+fn pair(a: usize, b: usize) -> (usize, usize) {
+    (a.min(b), a.max(b))
 }
 
 /// A group of people with a home variety and a few traits.
@@ -1242,6 +1246,7 @@ impl World {
             },
         ));
         self.inherit_ethos(index, region != home);
+        self.reconcile_contacts();
         self.refresh_places();
         index
     }
@@ -1309,6 +1314,11 @@ impl World {
         } else {
             self.link(a, b, intensity, kind);
         }
+        if kind == ContactKind::Rule {
+            self.reconcile_contacts();
+        } else {
+            self.reconcile_memberships();
+        }
         Ok(())
     }
 
@@ -1327,6 +1337,74 @@ impl World {
         });
     }
 
+    fn rule_relation(&self, contact: &Contact) -> Option<(usize, usize, usize)> {
+        for (ruler, subject) in [(contact.a, contact.b), (contact.b, contact.a)] {
+            if let Some(state) = self.ruled_by(subject)
+                && self.states[state].rulers == ruler {
+                return Some((state, ruler, subject));
+            }
+        }
+        None
+    }
+
+    fn part_contact(&mut self, contact: Contact) {
+        let Some(index) = self.contacts.iter().position(|k| {
+            k.kind == contact.kind && pair(k.a, k.b) == pair(contact.a, contact.b)
+        }) else { return };
+        let relation = (contact.kind == ContactKind::Rule)
+            .then(|| self.rule_relation(&contact)).flatten();
+        let (a, b) = if let Some((state, ruler, subject)) = relation {
+            self.leave(state, subject);
+            (ruler, subject)
+        } else {
+            self.contacts.remove(index);
+            if matches!(contact.kind, ContactKind::Rule | ContactKind::Intermarriage)
+                && self.contact_eligible(contact.a, contact.b, ContactKind::Neighbours) {
+                self.link(contact.a, contact.b, contact.intensity / 2.0, ContactKind::Neighbours);
+            }
+            (contact.a, contact.b)
+        };
+        self.events.push((self.generation, WorldEvent::Parted { a, b, kind: contact.kind }));
+        if contact.kind == ContactKind::Rule {
+            self.freed_ethos(b);
+        }
+    }
+
+    /// Territorial changes end inaccessible relations, even without turnover.
+    fn reconcile_contacts(&mut self) {
+        let invalid: Vec<_> = self.contacts.iter().copied().filter(|k| {
+            if k.kind == ContactKind::Rule {
+                !self.communities[k.a].living() || !self.communities[k.b].living()
+                    || self.rule_relation(k).is_none_or(|(_, ruler, subject)| !self.can_rule(ruler, subject))
+            } else { !self.contact_eligible(k.a, k.b, k.kind) }
+        }).collect();
+        for contact in invalid { self.part_contact(contact); }
+        self.reconcile_memberships();
+        for state in 0..self.states.len() {
+            if !self.states[state].standing() { continue; }
+            let ruler = self.states[state].rulers;
+            if !self.communities[ruler].living() {
+                self.fall(state, Fall::RulersEnded);
+            } else if !self.communities[ruler].lands.contains(&self.states[state].capital) {
+                self.fall(state, Fall::CapitalLost);
+            }
+        }
+    }
+
+    fn reconcile_memberships(&mut self) {
+        let rules: HashSet<_> = self.contacts.iter().filter(|k| k.kind == ContactKind::Rule)
+            .map(|k| pair(k.a, k.b)).collect();
+        let mut orphaned = Vec::new();
+        for (state, s) in self.states.iter().enumerate().filter(|(_, s)| s.standing()) {
+            for community in s.subjects() {
+                if !self.communities[community].living() || !rules.contains(&pair(s.rulers, community)) {
+                    orphaned.push((state, community));
+                }
+            }
+        }
+        for (state, community) in orphaned { self.leave(state, community); }
+    }
+
     /// The home variety of `community`.
     pub fn variety_of(&self, community: usize) -> &Variety {
         &self.varieties[self.communities[community].variety]
@@ -1339,6 +1417,7 @@ impl World {
     }
 
     pub fn step(&mut self) {
+        self.reconcile_contacts();
         self.preserve_places();
         self.generation += 1;
         let spoken = self.spoken();
@@ -1363,12 +1442,15 @@ impl World {
         self.displace();
         self.split_large();
         self.migrate();
+        self.reconcile_contacts();
         self.adopt();
         self.merge();
+        self.reconcile_contacts();
         self.shift_languages();
         self.end_contacts();
         self.make_contacts();
         self.hold_states();
+        self.reconcile_contacts();
         self.rise_states();
         self.grow_cities();
         self.standardize();
@@ -2642,7 +2724,7 @@ impl World {
         let generation = self.generation;
         let mut ended = Vec::new();
         let (struck, _) = self.recent_challenges();
-        for (i, contact) in self.contacts.iter().enumerate() {
+        for contact in &self.contacts {
             let mut rng = stream(
                 self.seed,
                 &[
@@ -2670,35 +2752,11 @@ impl World {
             let settled = generation - contact.since >= (lifespan / 3.0) as u32;
             let hazard = self.params.contact_turnover * 1.5 / lifespan;
             if settled && rng.r#gen::<f32>() < hazard {
-                ended.push(i);
+                ended.push(*contact);
             }
         }
-        for &i in ended.iter().rev() {
-            let Contact {
-                a,
-                b,
-                kind,
-                intensity,
-                ..
-            } = self.contacts.remove(i);
-            // Peoples that ruled or married one another still live near
-            // each other afterwards.
-            if matches!(kind, ContactKind::Rule | ContactKind::Intermarriage) {
-                self.link(a, b, intensity / 2.0, ContactKind::Neighbours);
-            }
-            let ruler_first = self.rules_over(a, b)
-                || (!self.rules_over(b, a)
-                    && self.communities[a].prestige >= self.communities[b].prestige);
-            let (a, b) = if kind == ContactKind::Rule && !ruler_first {
-                (b, a)
-            } else {
-                (a, b)
-            };
-            self.events
-                .push((generation, WorldEvent::Parted { a, b, kind }));
-            if kind == ContactKind::Rule {
-                self.freed_ethos(b);
-            }
+        for contact in ended.into_iter().rev() {
+            self.part_contact(contact);
         }
     }
 
@@ -3751,6 +3809,31 @@ mod tests {
     }
 
     #[test]
+    fn movement_ends_actual_rulers_unreachable_rule_once_without_turnover() {
+        let (mut world, ruler, subject) = water_pair();
+        let remote = world.communities[subject].home();
+        world.communities[subject].lands = world.communities[ruler].lands.clone();
+        world.connect(ruler, subject, 0.8, ContactKind::Rule).unwrap();
+        let state = world.rules(ruler).unwrap();
+        world.communities[subject].lands = vec![remote];
+        world.learn(subject, Craft::Seafaring, None);
+        world.communities[subject].prestige = 1.0;
+        world.communities[ruler].prestige = 0.1;
+        world.params.conquest_reach = 1800.0;
+        assert!(world.can_rule(subject, ruler));
+        assert!(!world.can_rule(ruler, subject));
+        world.reconcile_contacts();
+        assert_eq!(world.ruled_by(subject), None);
+        assert!(world.states[state].subjects().next().is_none());
+        assert!(world.contacts.is_empty());
+        world.reconcile_contacts();
+        let parted: Vec<_> = world.events.iter().filter(|(_, e)| matches!(e,
+            WorldEvent::Parted { a, b, kind: ContactKind::Rule } if *a == ruler && *b == subject)).collect();
+        assert_eq!(parted.len(), 1);
+        assert!(world.states[state].standing());
+    }
+
+    #[test]
     fn pilgrimage_reaches_the_site_not_the_holders_other_lands() {
         let (mut world, pilgrim, holder) = water_pair();
         let shrine = world.communities[holder].home();
@@ -4698,24 +4781,6 @@ mod tests {
                     .iter()
                     .any(|(_, e)| matches!(e, WorldEvent::Met { .. })),
             );
-            for (_, e) in events {
-                if let WorldEvent::Parted {
-                    a,
-                    b,
-                    kind: ContactKind::Rule,
-                } = *e
-                {
-                    let pair = |x: usize, y: usize| (x, y) == (a, b) || (y, x) == (a, b);
-                    let neighbours = world
-                        .contacts
-                        .iter()
-                        .any(|k| k.kind == ContactKind::Neighbours && pair(k.a, k.b));
-                    let since = world.events.iter().any(|(_, later)| {
-                        matches!(*later, WorldEvent::Parted { a: x, b: y, kind: ContactKind::Neighbours } if pair(x, y))
-                    });
-                    assert!(neighbours || since, "rule left no neighbourhood");
-                }
-            }
         }
         assert!(ended >= 15, "trade ended in {ended} of 20");
         assert!(freed >= 8, "rule ended in {freed} of 20");
