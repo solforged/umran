@@ -14,6 +14,9 @@ Read further when the task touches it:
 - `docs/history.md`: actions, replay, branching, recipes, and autosave.
 - `README.md`: the public face of the project, with screenshots in
   `docs/images/`. Refresh it when the workbench changes visibly.
+- `brand/build.js`: draws the astrolabe mark and writes the favicon, app
+  icons, the brand lettering's CSS mask, and the README logos. Edit it,
+  not its outputs, and run `bun run brand`.
 
 ## Architecture
 
@@ -75,6 +78,7 @@ rules. Bun manages frontend dependencies; Rust is pinned in
 bun install
 bun run dev                 # builds WASM, serves http://127.0.0.1:5173
 bun run build               # WASM, TypeScript check, static dist/ (all deployment needs)
+bun run brand               # redraws icons and logos from brand/build.js
 cargo test --workspace
 cargo fmt --all
 cargo clippy --workspace --all-targets

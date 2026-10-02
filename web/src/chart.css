@@ -414,6 +414,17 @@
   color: var(--desk-ink);
   text-decoration: none;
 }
+/* The astrolabe before the name, inked in the theme's gold. */
+:root .brand::before {
+  content: "";
+  display: inline-block;
+  width: 0.95em;
+  height: 1.15em;
+  margin-right: 0.45em;
+  vertical-align: -0.2em;
+  background: var(--gold);
+  mask: url("./assets/mark-mask.svg") center / contain no-repeat;
+}
 :root .setup .stage-map {
   margin: 0 0 0 0.9rem;
   box-shadow: 0 2px 0 rgb(0 0 0 / 0.2), 0 10px 30px rgb(0 0 0 / 0.5);

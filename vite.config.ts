@@ -15,8 +15,8 @@ export default defineConfig({
       includeAssets: ["icon.svg", "apple-touch-icon.png"],
       manifest: {
         id: "./",
-        name: "Umran · Peoples and their languages",
-        short_name: "Umran",
+        name: "ʿUmrān · A chronicle of peoples and their tongues",
+        short_name: "ʿUmrān",
         description: "A seeded language-change simulator: communities, contact, sound change, and borrowing.",
         start_url: "./",
         scope: "./",

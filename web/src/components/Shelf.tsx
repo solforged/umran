@@ -59,7 +59,7 @@ export function Shelf({
   return (
     <main className="shelf">
       <header className="shelf-head">
-        <span className="brand">Umran</span>
+        <span className="brand">‘Umrān</span>
         <h1>The chart room</h1>
         <p>Every world charted so far, the last one opened on top.</p>
       </header>

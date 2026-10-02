@@ -1,4 +1,7 @@
-# Umran
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo-dark.svg" />
+  <img src="docs/images/logo.svg" alt="ʿUmrān: a chronicle of peoples and their tongues" width="460" />
+</picture>
 
 [![CI](https://github.com/solforged/umran/actions/workflows/ci.yml/badge.svg)](https://github.com/solforged/umran/actions/workflows/ci.yml)
 [![Live demo](https://img.shields.io/badge/demo-solforged.github.io%2Fumran-c8553d)](https://solforged.github.io/umran/)
@@ -165,6 +168,7 @@ crates/umran-sim   the engine: world, map, sounds, words, names, history
 crates/umran-web   the WebAssembly facade and its JSON views
 web/src            the React workbench: shelf, world setup, stage, cards
 docs/              the engine model and the history format
+brand/             the astrolabe mark; `bun run brand` redraws icons and logos
 AGENTS.md          architecture notes and the rules every change keeps
 ```
 
@@ -181,6 +185,10 @@ list is at the end of
 *Muqaddimah* (1377): how peoples come together, rise, meet, and rule one
 another. Umran is a small, playful attempt at the same subject, told
 through the words people speak.
+
+The mark is an astrolabe, the brass instrument of his world. Its plates
+were engraved one for each clime, the latitude bands Ibn Khaldun used to
+divide the inhabited quarter of the earth, *al-rubʿ al-maʿmūr*.
 
 ## License
 

@@ -1,11 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <rect width="512" height="512" fill="#ece0c2"/>
-  <circle cx="256" cy="256" r="174" fill="none" stroke="#a8812c" stroke-width="6"/>
-  <circle cx="256" cy="256" r="157" fill="none" stroke="#6b5a43" stroke-width="2"/>
-  <path d="M256 82v38m0 272v38M82 256h38m272 0h38" stroke="#6b5a43" stroke-width="4"/>
-  <path d="m152 152 104 60 104-60-60 104 60 104-104-60-104 60 60-104Z" fill="#a8812c"/>
-  <path d="m256 98 36 122 122 36-122 36-36 122-36-122-122-36 122-36Z" fill="#f4ead2" stroke="#2b2117" stroke-width="5" stroke-linejoin="round"/>
-  <path d="m256 98 36 122-36 36Z" fill="#9b2c1c"/>
-  <path d="m414 256-122 36-36-36Zm-158 158-36-122 36-36ZM98 256l122-36 36 36Z" fill="#2b2117"/>
-  <circle cx="256" cy="256" r="14" fill="#a8812c" stroke="#2b2117" stroke-width="4"/>
+<rect width="512" height="512" fill="#ece0c2"/>
+<g transform="translate(256 25.6) scale(0.9) translate(-256 0)"><g stroke-linejoin="round">
+<circle cx="256" cy="40" r="17" fill="none" stroke="#a8812c" stroke-width="14.4"/>
+<path d="M190 106C200 78 226 62 256 60C286 62 312 78 322 106Z" fill="#a8812c" stroke="#2b2117" stroke-width="8"/>
+
+<circle cx="256" cy="292" r="196" fill="#a8812c" stroke="#2b2117" stroke-width="9.600000000000001"/>
+
+<circle cx="256" cy="292" r="160" fill="#f4ead2" stroke="#2b2117" stroke-width="6.4"/>
+
+
+<polygon points="256,160 388,292 256,424 124,292" fill="none" stroke="#2b2117" stroke-width="15"/><polygon points="162.66,198.66 349.34,198.66 349.34,385.34 162.66,385.34" fill="none" stroke="#2b2117" stroke-width="15"/>
+<path d="M256 154l18 40h-36Z" fill="#9b2c1c" stroke="#2b2117" stroke-width="3"/>
+<circle cx="256" cy="292" r="22" fill="#a8812c" stroke="#2b2117" stroke-width="6.4"/>
+</g></g>
 </svg>

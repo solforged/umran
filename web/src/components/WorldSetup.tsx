@@ -191,10 +191,10 @@ export function WorldSetup({
         <nav>
           {onShelf ? (
             <button type="button" className="link brand" onClick={onShelf} title="Back to the shelf">
-              Umran
+              ‘Umrān
             </button>
           ) : (
-            <span className="brand">Umran</span>
+            <span className="brand">‘Umrān</span>
           )}
         </nav>
       </header>
