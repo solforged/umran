@@ -2,6 +2,7 @@ use crate::form::{Form, Seg};
 use crate::phoneme::{Backness, CATALOG, Height, Manner, PhonemeId, Place, Secondary, Segment};
 use crate::prosody::StressRule;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 
 /// A natural class of segments; unset features match anything.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -285,8 +286,26 @@ impl SoundChange {
     /// Simultaneous application, last-vowel protection, and remapping of
     /// morpheme boundaries and lexical stress to surviving nuclei.
     pub fn apply(&self, form: &Form, rule: StressRule) -> Form {
+        self.apply_borrowed(form, rule).into_owned()
+    }
+
+    /// Most candidate laws do not touch a word. Borrow those inputs instead
+    /// of allocating an outcome and remapping unchanged segments.
+    pub(crate) fn apply_borrowed<'a>(&self, form: &'a Form, rule: StressRule) -> Cow<'a, Form> {
+        let mut hits = self.hits(form, rule);
+        let first = hits.next();
+        if first.is_none()
+            && form
+                .boundaries
+                .iter()
+                .all(|&b| b > 0 && b < form.segs.len())
+            && form.boundaries.windows(2).all(|b| b[0] != b[1])
+            && form.stress.is_none_or(|s| s < form.vowel_count())
+        {
+            return Cow::Borrowed(form);
+        }
         let mut outcome: Vec<Option<Seg>> = form.segs.iter().copied().map(Some).collect();
-        for (i, out) in self.hits(form, rule) {
+        for (i, out) in first.into_iter().chain(hits) {
             outcome[i] = out;
         }
         // Side effects also read the input and never resurrect a deletion.
@@ -329,11 +348,11 @@ impl SoundChange {
             .filter(|&b| b > 0 && b < segs.len())
             .collect();
         boundaries.dedup();
-        Form {
+        Cow::Owned(Form {
             segs,
             boundaries,
             stress,
-        }
+        })
     }
 }
 

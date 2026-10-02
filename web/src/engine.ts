@@ -28,14 +28,37 @@ async function ready(): Promise<void> {
 }
 
 function wrap(bench: Workbench): Engine {
+  // Re-renders and saving often ask for the same view. Keep only that view;
+  // any history mutation also invalidates metadata on views of the past.
+  let cached: { generation: number; view: Overview } | undefined;
   return {
-    act: (action: Action) => bench.act(JSON.stringify(action)),
-    undo: () => bench.undo(),
-    runUntilEvent: (limit) => bench.runUntilEvent(limit),
-    branch: (generation) => bench.branch(generation),
-    restore: (index) => bench.restore(index),
+    act: (action: Action) => {
+      cached = undefined;
+      bench.act(JSON.stringify(action));
+    },
+    undo: () => {
+      cached = undefined;
+      return bench.undo();
+    },
+    runUntilEvent: (limit) => {
+      cached = undefined;
+      return bench.runUntilEvent(limit);
+    },
+    branch: (generation) => {
+      cached = undefined;
+      bench.branch(generation);
+    },
+    restore: (index) => {
+      cached = undefined;
+      bench.restore(index);
+    },
     latest: () => bench.latest(),
-    overview: (generation) => JSON.parse(bench.overview(generation)) as Overview,
+    overview: (generation) => {
+      if (cached?.generation !== generation) {
+        cached = { generation, view: JSON.parse(bench.overview(generation)) as Overview };
+      }
+      return cached.view;
+    },
     lexicon: (generation, variety) => JSON.parse(bench.lexicon(generation, variety)) as LexiconRow[],
     kin: (generation, variety) => JSON.parse(bench.kin(generation, variety)) as Kin[],
     word: (generation, variety, concept) =>
@@ -43,7 +66,10 @@ function wrap(bench: Workbench): Engine {
     map: () => JSON.parse(bench.map()) as WorldMap,
     wordMap: (generation, concept) => JSON.parse(bench.wordMap(generation, concept)) as WordMap,
     save: () => bench.save(),
-    dispose: () => bench.free(),
+    dispose: () => {
+      cached = undefined;
+      bench.free();
+    },
   };
 }
 

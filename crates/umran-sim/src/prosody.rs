@@ -99,8 +99,8 @@ impl MinimalWord {
     /// Whether a change from `before` to `after` would wear a word below
     /// the minimum, or further below it. Such a change passes the word by.
     pub fn blocks(self, before: &Form, after: &Form) -> bool {
-        let (was, is) = (self.size(before), self.size(after));
-        is < was && is < self.least()
+        let is = self.size(after);
+        is < self.least() && is < self.size(before)
     }
 
     /// Whether a word is below the minimum, as words founded short or

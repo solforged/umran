@@ -4,6 +4,7 @@ use crate::inventory::preference;
 use crate::phoneme::{Backness, Height, Manner, PhonemeId, Place, Secondary};
 use crate::profile::InventoryPrior;
 use crate::prosody::{MinimalWord, StressRule};
+use std::borrow::Cow;
 use std::collections::HashSet;
 
 /// A named sound law: one or more rules applied in order, each regularly
@@ -54,14 +55,15 @@ impl Law {
     /// The law's rules in order, each passing by a word it would wear
     /// below the language's `minimal` size.
     pub fn apply(&self, form: &Form, minimal: MinimalWord, stress: StressRule) -> Form {
-        let mut current = form.clone();
+        let mut current = Cow::Borrowed(form);
         for rule in &self.rules {
-            let next = rule.apply(&current, stress);
-            if !minimal.blocks(&current, &next) {
-                current = next;
+            if let Cow::Owned(next) = rule.apply_borrowed(&current, stress)
+                && !minimal.blocks(&current, &next)
+            {
+                current = Cow::Owned(next);
             }
         }
-        current
+        current.into_owned()
     }
     pub fn changes(&self, form: &Form, after: &Form, stress: StressRule) -> bool {
         form != after
@@ -94,16 +96,15 @@ impl Law {
         let (mut words, mut total) = (0, 0.0);
         let mut shifts = Vec::new();
         for form in forms {
-            // Judge by the real result, so matches blocked by last-vowel
-            // protection or the minimal word do not make a law look
-            // applicable.
-            if !self.changes(form, &self.apply(form, minimal, stress), stress) {
-                continue;
-            }
-            words += 1;
-            let mut current = form.clone();
+            // Keep the original accumulation order, but apply each rule only
+            // once. Roll back its assessment if the full chain cancels out.
+            let before_total = total;
+            let before_shifts = shifts.len();
+            let mut current = Cow::Borrowed(form);
             for rule in &self.rules {
-                let next = rule.apply(&current, stress);
+                let Cow::Owned(next) = rule.apply_borrowed(&current, stress) else {
+                    continue;
+                };
                 if minimal.blocks(&current, &next) {
                     continue;
                 }
@@ -118,7 +119,13 @@ impl Law {
                     }
                     shifts.push((old, out));
                 }
-                current = next;
+                current = Cow::Owned(next);
+            }
+            if self.changes(form, &current, stress) {
+                words += 1;
+            } else {
+                total = before_total;
+                shifts.truncate(before_shifts);
             }
         }
         (words > 0).then(|| Assessment {
@@ -969,6 +976,41 @@ mod tests {
         assert_eq!(run("pharyngeal-weakening", "ħaʕa"), "haʔa");
         assert_eq!(run("uvular-fronting", "qaχa"), "kaxa");
         assert_eq!(run("lateral-affricate-loss", "tɬatɬ"), "tat");
+    }
+
+    #[test]
+    fn assessment_ignores_words_unchanged_by_the_complete_chain() {
+        let id = |ipa| crate::phoneme::CATALOG.id_by_ipa(ipa).unwrap();
+        let change = |from, to| {
+            rule(
+                Matcher::Phone(id(from)),
+                Rewrite::Phone(id(to)),
+                Env::Any,
+                Env::Any,
+            )
+        };
+        let law = law(
+            "round-trip",
+            "",
+            1.0,
+            vec![change("t", "s"), change("s", "t"), change("p", "b")],
+        );
+        let prior = SoundProfile::by_id("polynesian").unwrap().inventory;
+        let forms = ["ta", "pa", "ta"].map(|ipa| Form::from_ipa(ipa).unwrap());
+        let assessment = law
+            .assess(
+                forms.iter(),
+                &prior,
+                MinimalWord::Syllable,
+                StressRule::Initial,
+            )
+            .unwrap();
+        assert_eq!(assessment.words, 1);
+        assert_eq!(assessment.shifts, vec![(id("p"), Some(id("b")))]);
+        assert_eq!(
+            assessment.pull,
+            preference(&prior, id("b")) - preference(&prior, id("p"))
+        );
     }
 
     #[test]

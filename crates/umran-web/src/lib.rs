@@ -351,6 +351,10 @@ impl Bench {
     /// Each telling set aside, with what it told that the present history
     /// does not, up to `generation` when viewing the past.
     fn tellings(&mut self, generation: u32) -> Vec<TellingView> {
+        if self.chronicle.tellings().is_empty() {
+            self.told.clear();
+            return Vec::new();
+        }
         let current = self.chronicle.actions().to_vec();
         let present = annals(self.chronicle.latest());
         let until = if generation < self.latest() {

@@ -3105,18 +3105,8 @@ impl World {
             let donor_lexicon = &self.varieties[channel.donor].lexicon;
             let recipient_lexicon = &self.varieties[r.variety].lexicon;
             for (i, concept) in CONCEPTS.iter().enumerate() {
-                let borrowability = if levelled {
-                    concept.borrowability().max(LEVEL_FLOOR)
-                } else {
-                    concept.borrowability()
-                };
-                let hazard = base * channel.kind.affinity(concept.field) * borrowability;
-                let mut rng =
-                    self.at(r.variety)
-                        .rng(&[key("borrow"), channel.donor as u64, key(concept.id)]);
-                if rng.r#gen::<f32>() >= hazard {
-                    continue;
-                }
+                // Each concept has its own stream. Reject impossible loans
+                // before constructing it; accepted loans keep the same draws.
                 if recipient_lexicon.slots[i].variants.is_empty() {
                     continue;
                 }
@@ -3138,6 +3128,18 @@ impl World {
                         }
                 });
                 if already {
+                    continue;
+                }
+                let borrowability = if levelled {
+                    concept.borrowability().max(LEVEL_FLOOR)
+                } else {
+                    concept.borrowability()
+                };
+                let hazard = base * channel.kind.affinity(concept.field) * borrowability;
+                let mut rng =
+                    self.at(r.variety)
+                        .rng(&[key("borrow"), channel.donor as u64, key(concept.id)]);
+                if rng.r#gen::<f32>() >= hazard {
                     continue;
                 }
                 let adapter = adapters[r.variety].get_or_insert_with(|| {
