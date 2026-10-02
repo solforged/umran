@@ -82,7 +82,7 @@ pub struct CategoryEligibility {
 impl CategoryEligibility {
     pub const fn allows(self, category: Category) -> bool {
         match category {
-            Category::Plural => self.plural,
+            Category::Plural | Category::Object => self.plural,
             Category::Past => self.past,
         }
     }

@@ -16,7 +16,8 @@ use umran_sim::compare::intelligibility;
 use umran_sim::concepts::{Concept, by_id, related};
 use umran_sim::geography::{KM_PER_UNIT, LandmassKind, RIVER_TRAVEL_FLOW};
 use umran_sim::grammar::{
-    Category, GrammarChoice, GrammarEntry, GrammarEvent, Marker as GrammarMarker, MarkerOrigin,
+    Category, GrammarChoice, GrammarEntry, GrammarEvent, Marker as GrammarMarker, MarkerKind,
+    MarkerOrigin, PossessorOrder, Side, WordOrder,
 };
 use umran_sim::ideas::{NEEDS, Need, SacredKind};
 use umran_sim::morphology::Slot;
@@ -2625,19 +2626,19 @@ fn grammar_choice(choice: GrammarChoice) -> Choice {
     let (name, description) = match choice {
         GrammarChoice::Suffix => (
             "Suffix",
-            "A grammatical ending follows the word: one word marks plural or past.",
+            "A grammatical ending follows the word: one word marks plural, past, or the object.",
         ),
         GrammarChoice::Prefix => (
             "Prefix",
-            "A grammatical beginning precedes the word: one word marks plural or past.",
+            "A grammatical beginning precedes the word: one word marks plural, past, or the object.",
         ),
         GrammarChoice::Particle => (
             "Separate word",
-            "A separate grammatical word marks plural or past.",
+            "A separate grammatical word marks plural, past, or the object.",
         ),
         GrammarChoice::None => (
             "No marker",
-            "Plural or past has no overt marker at founding; marking may develop later.",
+            "The category has no overt marker at founding; marking may develop later.",
         ),
     };
     Choice {
@@ -3059,7 +3060,7 @@ struct VarietyView {
     specimen: Vec<SpecimenWord>,
     /// Grammar expressed within one audible word, across eligible uses.
     how_synthetic: f32,
-    /// Eligible uses whose plural or past still sounds different from the base.
+    /// Eligible uses whose plural, past, or object form differs from the base.
     contrast_retention: f32,
     grammar: GrammarView,
     /// The standing state whose standard it is, if any.
@@ -3392,6 +3393,14 @@ pub(crate) fn language_label(world: &World, variety: usize) -> String {
 fn grammar_view(world: &World, variety: usize) -> GrammarView {
     let v = &world.varieties[variety];
     GrammarView {
+        order: v.grammar.order,
+        possessor: v.grammar.possessor,
+        marking: if v.grammar.has_object_marking() {
+            "case"
+        } else {
+            "order"
+        },
+        sample: grammar_sample(v, world.generation),
         markers: v
             .grammar
             .markers
@@ -3447,6 +3456,7 @@ fn grammar_view(world: &World, variety: usize) -> GrammarView {
                     description: match category {
                         Category::Plural => "Plural marks more than one countable thing.",
                         Category::Past => "Past marks an event before the present.",
+                        Category::Object => "The object marks the countable thing acted upon.",
                     },
                     eligible: summary.eligible,
                     how_synthetic: summary.how_synthetic,
@@ -3455,6 +3465,102 @@ fn grammar_view(world: &World, variety: usize) -> GrammarView {
             })
             .collect(),
     }
+}
+
+fn grammar_sample(variety: &Variety, generation: u32) -> Option<GrammarSample> {
+    let words = [
+        ("child", None),
+        ("see", Some(Category::Past)),
+        ("dog", Some(Category::Object)),
+    ];
+    let order = match variety.grammar.order {
+        WordOrder::SOV => [0, 2, 1],
+        WordOrder::SVO => [0, 1, 2],
+        WordOrder::VSO => [1, 0, 2],
+    };
+    let mut sentence = GrammarRendering::default();
+    for index in order {
+        let (concept, category) = words[index];
+        sample_word(variety, concept, category, generation, &mut sentence)?;
+    }
+    let possession_order = match variety.grammar.possessor {
+        PossessorOrder::Before => ["child", "fish"],
+        PossessorOrder::After => ["fish", "child"],
+    };
+    let mut possession = GrammarRendering::default();
+    for concept in possession_order {
+        sample_word(variety, concept, None, generation, &mut possession)?;
+    }
+    Some(GrammarSample {
+        sentence,
+        possession,
+    })
+}
+
+fn sample_word(
+    variety: &Variety,
+    concept: &'static str,
+    category: Option<Category>,
+    generation: u32,
+    rendering: &mut GrammarRendering,
+) -> Option<()> {
+    let word = variety
+        .lexicon
+        .word_for(umran_sim::concepts::by_id(concept)?)?;
+    let realization = category.and_then(|category| {
+        word.paradigms
+            .iter()
+            .find(|p| p.category == category)?
+            .realizations
+            .iter()
+            .filter(|r| r.born <= generation && r.retired.is_none() && r.share > 0.0)
+            .max_by(|a, b| a.share.total_cmp(&b.share))
+    });
+    let append = |rendering: &mut GrammarRendering, form: &Form, gloss: String| {
+        if !rendering.gloss.is_empty() {
+            rendering.text.push(' ');
+            rendering.ipa.push(' ');
+        }
+        rendering.text.push_str(&variety.spell(form));
+        rendering.ipa.push_str(&form.ipa_stressed(variety.stress()));
+        rendering.gloss.push(gloss);
+    };
+    if let Some(realization) = realization {
+        let marker = variety.grammar.marker(realization.marker);
+        let forms = variety
+            .grammar
+            .surface_at(&word.form, realization, generation);
+        if forms.iter().any(|form| form.segs.is_empty()) {
+            return None;
+        }
+        let label = match category? {
+            Category::Past => "PAST",
+            Category::Object => "OBJ",
+            Category::Plural => "PL",
+        };
+        for (index, form) in forms.iter().enumerate() {
+            let gloss = match marker.kind {
+                // A bound mark that sound change has worn to nothing is no
+                // longer audible; the sample says so by glossing it bare.
+                MarkerKind::Bound if form.segs == word.form.segs => concept.into(),
+                MarkerKind::Bound => format!("{concept}-{label}"),
+                MarkerKind::Particle
+                    if (marker.side == Side::Prefix && index == 0)
+                        || (marker.side == Side::Suffix && index == 1) =>
+                {
+                    label.into()
+                }
+                _ => concept.into(),
+            };
+            append(rendering, form, gloss);
+        }
+    } else {
+        if word.form.segs.is_empty() {
+            return None;
+        }
+        append(rendering, &word.form, concept.into());
+    }
+    Some(())
 }
 
 fn grammar_origin_view(world: &World, variety: usize, marker: &GrammarMarker) -> GrammarOriginView {
@@ -3935,8 +4041,26 @@ struct HistoryLine {
 
 #[derive(Serialize)]
 struct GrammarView {
+    order: WordOrder,
+    possessor: PossessorOrder,
+    marking: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sample: Option<GrammarSample>,
     markers: Vec<GrammarMarkerView>,
     categories: Vec<GrammarCategoryView>,
+}
+
+#[derive(Serialize)]
+struct GrammarSample {
+    sentence: GrammarRendering,
+    possession: GrammarRendering,
+}
+
+#[derive(Default, Serialize)]
+struct GrammarRendering {
+    text: String,
+    ipa: String,
+    gloss: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -5334,6 +5458,9 @@ mod tests {
         v.written = Some(1);
         v.profile.stress = Some(StressRule::Initial);
         v.stress_history = vec![(8, StressRule::Final)];
+        for word in &mut v.lexicon.lexemes {
+            word.paradigms.clear();
+        }
         v.grammar.markers = vec![
             GrammarMarker {
                 id: 0,
@@ -5647,6 +5774,174 @@ mod tests {
                 (0, "plural".to_string(), "contrast-loss".to_string()),
                 (1, "past".to_string(), "contrast-loss".to_string()),
             ]
+        );
+    }
+    fn grammar_world(object: GrammarChoice, order: WordOrder) -> World {
+        use umran_sim::grammar::{GrammarDesign, GrammarPrior};
+        let mut profile = umran_sim::SoundProfile::by_id("germanic").unwrap();
+        profile.grammar = GrammarPrior::fixed(GrammarDesign {
+            plural: GrammarChoice::None,
+            past: GrammarChoice::Suffix,
+            object: Some(object),
+            order: Some(order),
+            possessor: Some(PossessorOrder::Before),
+        });
+        World::solo(7, &profile, umran_sim::Params::static_society())
+    }
+
+    #[test]
+    fn grammar_sample_orders_subject_object_and_complete_past_form() {
+        for (order, gloss) in [
+            (WordOrder::SOV, ["child", "dog-OBJ", "see-PAST"]),
+            (WordOrder::SVO, ["child", "see-PAST", "dog-OBJ"]),
+            (WordOrder::VSO, ["see-PAST", "child", "dog-OBJ"]),
+        ] {
+            let world = grammar_world(GrammarChoice::Suffix, order);
+            let variety = &world.varieties[0];
+            let view = grammar_view(&world, 0);
+            assert_eq!(view.marking, "case");
+            let sample = view.sample.unwrap();
+            assert_eq!(sample.sentence.gloss, gloss);
+            let expected: Vec<_> = gloss
+                .iter()
+                .map(|gloss| {
+                    let concept = gloss.split('-').next().unwrap();
+                    let word = variety
+                        .lexicon
+                        .word_for(umran_sim::concepts::by_id(concept).unwrap())
+                        .unwrap();
+                    if concept == "child" {
+                        word.form.clone()
+                    } else {
+                        let category = if concept == "see" {
+                            Category::Past
+                        } else {
+                            Category::Object
+                        };
+                        word.paradigms
+                            .iter()
+                            .find(|p| p.category == category)
+                            .unwrap()
+                            .realizations[0]
+                            .form
+                            .clone()
+                            .unwrap()
+                    }
+                })
+                .collect();
+            assert_eq!(sample.sentence.text, spell_surface(variety, &expected));
+            assert_eq!(
+                sample.sentence.ipa,
+                ipa_surface(&expected, variety.stress())
+            );
+            assert_eq!(sample.possession.gloss, ["child", "fish"]);
+        }
+    }
+
+    #[test]
+    fn grammar_sample_keeps_particles_on_their_recorded_side_and_omits_absent_words() {
+        let mut world = grammar_world(GrammarChoice::Particle, WordOrder::VSO);
+        for side in [Side::Prefix, Side::Suffix] {
+            let variety = &mut world.varieties[0];
+            let object = variety
+                .grammar
+                .markers
+                .iter_mut()
+                .find(|m| m.category == Category::Object)
+                .unwrap();
+            object.side = side;
+            let particle = object.form.clone();
+            variety.grammar.possessor = PossessorOrder::After;
+            let sample = grammar_view(&world, 0).sample.unwrap();
+            let expected = match side {
+                Side::Prefix => ["see-PAST", "child", "OBJ", "dog"],
+                Side::Suffix => ["see-PAST", "child", "dog", "OBJ"],
+            };
+            assert_eq!(sample.sentence.gloss, expected);
+            let position = expected.iter().position(|gloss| *gloss == "OBJ").unwrap();
+            assert_eq!(
+                sample.sentence.text.split_whitespace().nth(position),
+                Some(world.varieties[0].spell(&particle).as_str()),
+            );
+            assert_eq!(sample.possession.gloss, ["fish", "child"]);
+        }
+        world.varieties[0]
+            .lexicon
+            .slot_mut(umran_sim::concepts::by_id("fish").unwrap())
+            .variants
+            .clear();
+        let view = serde_json::to_value(grammar_view(&world, 0)).unwrap();
+        assert!(view.get("sample").is_none());
+    }
+
+    #[test]
+    fn grammar_object_apocope_loses_case_without_changing_inherited_order() {
+        let mut world = grammar_world(GrammarChoice::Suffix, WordOrder::SOV);
+        let variety = &mut world.varieties[0];
+        variety.minimal = umran_sim::MinimalWord::Syllable;
+        variety
+            .grammar
+            .markers
+            .iter_mut()
+            .find(|m| m.category == Category::Object)
+            .unwrap()
+            .form = Form::from_ipa("a").unwrap();
+        for word in &mut variety.lexicon.lexemes {
+            if word
+                .paradigms
+                .iter()
+                .any(|p| p.category == Category::Object)
+            {
+                word.form = Form::from_ipa("kat").unwrap();
+                word.paradigms.retain(|p| p.category != Category::Object);
+            }
+        }
+        let stress = variety.stress();
+        variety
+            .grammar
+            .sync(&mut variety.lexicon, &variety.morphology, stress, 0);
+        assert_eq!(grammar_view(&world, 0).marking, "case");
+        let variety = &mut world.varieties[0];
+        let law = catalog()
+            .into_iter()
+            .find(|law| law.id == "apocope")
+            .unwrap();
+        variety
+            .grammar
+            .apply_law(&mut variety.lexicon, &law, variety.minimal, stress, 1);
+        world.generation = 1;
+        let view = grammar_view(&world, 0);
+        assert_eq!(view.marking, "order");
+        assert_eq!(view.order, WordOrder::SOV);
+        assert_eq!(view.possessor, PossessorOrder::Before);
+        let entries = annals(&world);
+        let loss = entries
+            .iter()
+            .find(|entry| {
+                entry.grammar.as_ref().is_some_and(|event| {
+                    let event = serde_json::to_value(event).unwrap();
+                    event["category"] == "object" && event["event"] == "contrast-loss"
+                })
+            })
+            .expect("object contrast loss reaches the chronicle");
+        println!("Object-loss annal: {}", loss.text);
+        // The worn mark is no longer audible, so the sample shows a bare dog.
+        let sample = view.sample.expect("sample survives the loss");
+        assert!(
+            !sample.sentence.gloss.iter().any(|g| g == "dog-OBJ"),
+            "an eroded bound mark must not be glossed: {:?}",
+            sample.sentence.gloss
+        );
+    }
+
+    #[test]
+    fn grammar_sample_without_object_marking_uses_the_bare_object() {
+        let world = grammar_world(GrammarChoice::None, WordOrder::SOV);
+        let view = grammar_view(&world, 0);
+        assert_eq!(view.marking, "order");
+        assert_eq!(
+            view.sample.unwrap().sentence.gloss,
+            ["child", "dog", "see-PAST"]
         );
     }
 }

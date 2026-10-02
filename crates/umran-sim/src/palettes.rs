@@ -9,6 +9,7 @@
 //! Stress and consonant length can be designed and changed by sound laws.
 
 use crate::flavor::Flavor;
+use crate::grammar::{PossessorOrder, WordOrder};
 use crate::phoneme::{Backness, Height, Manner, Place};
 use crate::profile::{LongVowel, MorphologyKind};
 use crate::prosody::StressRule;
@@ -60,6 +61,8 @@ pub fn all() -> Vec<Flavor> {
 fn indic() -> Flavor {
     Flavor {
         id: "indic".into(),
+        order: Some(WordOrder::SOV),
+        possessor: Some(PossessorOrder::Before),
         name: "Breathy, with stops let out in a puff".into(),
         brief: "Like Sanskrit: aspirated and breathy stops, retroflexes, long vowels.".into(),
         segments: weighted(&[
@@ -114,6 +117,8 @@ fn indic() -> Flavor {
 fn iranian() -> Flavor {
     Flavor {
         id: "iranian".into(),
+        order: Some(WordOrder::SOV),
+        possessor: Some(PossessorOrder::Before),
         name: "Soft-spoken, rich in f, th, and kh".into(),
         brief: "Like Old Persian: fricatives where others have stops, three vowels.".into(),
         segments: weighted(&[
@@ -151,6 +156,8 @@ fn iranian() -> Flavor {
 fn germanic() -> Flavor {
     Flavor {
         id: "germanic".into(),
+        order: Some(WordOrder::SVO),
+        possessor: Some(PossessorOrder::Before),
         stress: Some(StressRule::Initial),
         name: "Clipped, with th and short closed syllables".into(),
         brief: "Like Old English: θ, ð, æ, y, closed syllables, Old English spelling.".into(),
@@ -204,6 +211,8 @@ fn semitic() -> Flavor {
     use Place::*;
     Flavor {
         id: "semitic".into(),
+        order: Some(WordOrder::VSO),
+        possessor: Some(PossessorOrder::After),
         name: "Guttural, built on roots of three consonants".into(),
         brief: "Like Arabic or Hebrew: consonant roots, pharyngeals, three vowels.".into(),
         manner: vec![(Fricative, 0.8)],
@@ -243,6 +252,8 @@ fn semitic() -> Flavor {
 fn nahuatl() -> Flavor {
     Flavor {
         id: "nahuatl".into(),
+        order: Some(WordOrder::VSO),
+        possessor: Some(PossessorOrder::After),
         name: "Full of tl and tz, without b, d, or g".into(),
         brief: "Like Classical Nahuatl: tl, tz, kw, no voiced stops or r, four vowels.".into(),
         segments: weighted(&[
@@ -295,6 +306,8 @@ fn nahuatl() -> Flavor {
 fn bantu() -> Flavor {
     Flavor {
         id: "bantu".into(),
+        order: Some(WordOrder::SVO),
+        possessor: Some(PossessorOrder::After),
         name: "Rounded and open, every syllable ending in a vowel".into(),
         brief: "Like the Bantu languages: open syllables, two-syllable roots, prefixes.".into(),
         segments: weighted(&[
@@ -330,6 +343,8 @@ fn polynesian() -> Flavor {
     use Manner::*;
     Flavor {
         id: "polynesian".into(),
+        order: Some(WordOrder::VSO),
+        possessor: Some(PossessorOrder::After),
         stress: Some(StressRule::Penult),
         name: "Spare and open, with few consonants".into(),
         brief: "Like Hawaiian or Māori: few sounds, open syllables, reduplication.".into(),
@@ -379,6 +394,8 @@ fn finnic() -> Flavor {
     use Height::*;
     Flavor {
         id: "finnic".into(),
+        order: Some(WordOrder::SVO),
+        possessor: Some(PossessorOrder::Before),
         stress: Some(StressRule::Initial),
         name: "Bright, with ä, ö, and doubled vowels".into(),
         brief: "Like Finnish: ä, ö, and y, long vowels written double, only suffixes.".into(),
@@ -423,6 +440,8 @@ fn finnic() -> Flavor {
 fn caucasian() -> Flavor {
     Flavor {
         id: "caucasian".into(),
+        order: Some(WordOrder::SOV),
+        possessor: Some(PossessorOrder::Before),
         name: "Harsh, crowded with popped stops".into(),
         brief: "Like the languages of the Caucasus: ejectives, uvulars, few vowels.".into(),
         segments: weighted(&[

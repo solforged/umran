@@ -1,4 +1,4 @@
-//! Two grammatical contrasts and their changing spoken realizations.
+//! Three grammatical contrasts and their changing spoken realizations.
 //! Inflection changes a word for grammar. Particles remain separate words.
 
 use crate::concepts::{Concept, by_id};
@@ -19,31 +19,36 @@ use std::collections::{BTreeMap, HashMap};
 pub enum Category {
     Plural,
     Past,
+    Object,
 }
 impl Category {
-    pub const ALL: [Self; 2] = [Self::Plural, Self::Past];
+    pub const ALL: [Self; 3] = [Self::Plural, Self::Past, Self::Object];
     pub fn id(self) -> &'static str {
         match self {
             Self::Plural => "plural",
             Self::Past => "past",
+            Self::Object => "object",
         }
     }
     pub fn label(self) -> &'static str {
         match self {
             Self::Plural => "plural",
             Self::Past => "past",
+            Self::Object => "the object",
         }
     }
     pub fn position(self) -> usize {
         match self {
             Self::Plural => 0,
             Self::Past => 1,
+            Self::Object => 2,
         }
     }
     fn sources(self) -> &'static [&'static str] {
         match self {
             Self::Plural => &["many", "all", "people"],
             Self::Past => &["finish", "have"],
+            Self::Object => &["take", "give", "hand"],
         }
     }
 }
@@ -66,17 +71,43 @@ impl GrammarChoice {
         }
     }
 }
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WordOrder {
+    #[default]
+    SOV,
+    SVO,
+    VSO,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PossessorOrder {
+    #[default]
+    Before,
+    After,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GrammarDesign {
     pub plural: GrammarChoice,
     pub past: GrammarChoice,
+    /// Omitted settings are drawn when the founding seed is known.
+    #[serde(default)]
+    pub object: Option<GrammarChoice>,
+    #[serde(default)]
+    pub order: Option<WordOrder>,
+    #[serde(default)]
+    pub possessor: Option<PossessorOrder>,
 }
 impl Default for GrammarDesign {
     fn default() -> Self {
         Self {
             plural: GrammarChoice::Suffix,
             past: GrammarChoice::Suffix,
+            object: None,
+            order: None,
+            possessor: None,
         }
     }
 }
@@ -85,6 +116,7 @@ impl GrammarDesign {
         match category {
             Category::Plural => self.plural,
             Category::Past => self.past,
+            Category::Object => self.object.expect("resolved founding object choice"),
         }
     }
 }
@@ -92,26 +124,37 @@ impl GrammarDesign {
 pub struct GrammarPrior {
     pub plural: Option<GrammarChoice>,
     pub past: Option<GrammarChoice>,
+    #[serde(default)]
+    pub object: Option<GrammarChoice>,
+    #[serde(default)]
+    pub order: Option<WordOrder>,
+    #[serde(default)]
+    pub possessor: Option<PossessorOrder>,
 }
 impl GrammarPrior {
     pub fn fixed(design: GrammarDesign) -> Self {
         Self {
             plural: Some(design.plural),
             past: Some(design.past),
+            object: design.object,
+            order: design.order,
+            possessor: design.possessor,
         }
     }
     pub fn draw(self, seed: u64, morphology: &MorphologyPrior) -> GrammarDesign {
-        let mut choices = [GrammarChoice::None; 2];
+        let mut choices = [GrammarChoice::None; Category::ALL.len()];
         for category in Category::ALL {
             let resolved = match category {
                 Category::Plural => self.plural,
                 Category::Past => self.past,
+                Category::Object => self.object,
             };
             choices[category.position()] = resolved.unwrap_or_else(|| {
                 let mut rng = stream(seed, &[key("grammar founding"), key(category.id())]);
-                let (bound, particle) = match morphology.kind {
-                    MorphologyKind::Concatenative => (0.6, 0.3),
-                    MorphologyKind::RootPattern => (0.5, 0.4),
+                let (bound, particle, none) = match (category, morphology.kind) {
+                    (Category::Object, _) => (0.45, 0.15, 0.4),
+                    (_, MorphologyKind::Concatenative) => (0.6, 0.3, 0.1),
+                    (_, MorphologyKind::RootPattern) => (0.5, 0.4, 0.1),
                 };
                 match weighted_index(
                     &mut rng,
@@ -119,7 +162,7 @@ impl GrammarPrior {
                         bound * morphology.suffixing,
                         bound * (1.0 - morphology.suffixing),
                         particle,
-                        0.1,
+                        none,
                     ]
                     .into_iter(),
                 ) {
@@ -130,9 +173,36 @@ impl GrammarPrior {
                 }
             });
         }
+        let order = self.order.unwrap_or_else(|| {
+            let suffixing = morphology.suffixing;
+            let weights = [
+                0.15 + 0.40 * suffixing,
+                0.50 - 0.15 * suffixing,
+                0.35 - 0.25 * suffixing,
+            ];
+            let mut rng = stream(seed, &[key("grammar word order")]);
+            [WordOrder::SOV, WordOrder::SVO, WordOrder::VSO]
+                [weighted_index(&mut rng, weights.into_iter())]
+        });
+        let possessor = self.possessor.unwrap_or_else(|| {
+            let before = match order {
+                WordOrder::SOV => 0.8,
+                WordOrder::SVO => 0.5,
+                WordOrder::VSO => 0.15,
+            };
+            let mut rng = stream(seed, &[key("grammar possessor order")]);
+            if rng.r#gen::<f32>() < before {
+                PossessorOrder::Before
+            } else {
+                PossessorOrder::After
+            }
+        });
         GrammarDesign {
             plural: choices[0],
             past: choices[1],
+            object: Some(choices[2]),
+            order: Some(order),
+            possessor: Some(possessor),
         }
     }
 }
@@ -276,17 +346,19 @@ pub struct CategorySummary {
 pub struct GrammarSummary {
     pub how_synthetic: f32,
     pub contrast_retention: f32,
-    pub categories: [CategorySummary; 2],
+    pub categories: [CategorySummary; Category::ALL.len()],
     pub marker_shares: Vec<f32>,
 }
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Grammar {
+    pub order: WordOrder,
+    pub possessor: PossessorOrder,
     pub markers: Vec<Marker>,
     pub events: Vec<GrammarNotice>,
     pub summary: GrammarSummary,
     /// Consecutive generations of strong bilingual contact, by donor variety.
     pub contact_generations: BTreeMap<usize, u32>,
-    usage: Vec<[f32; 2]>,
+    usage: Vec<[f32; Category::ALL.len()]>,
 }
 
 fn historical<'a>(form: &'a Form, history: &'a [GrammarEntry], generation: u32) -> &'a Form {
@@ -315,6 +387,16 @@ impl Grammar {
             .get(id as usize)
             .copied()
             .unwrap_or(0.0)
+    }
+    /// Case marking includes adpositions, provided a productive contrast survives.
+    pub fn has_object_marking(&self) -> bool {
+        self.summary.categories[Category::Object.position()].contrast_retention > 0.5
+            && self.markers.iter().any(|marker| {
+                marker.category == Category::Object
+                    && marker.kind != MarkerKind::None
+                    && marker.productive
+                    && marker.retired.is_none()
+            })
     }
     pub fn surface(&self, base: &Form, realization: &Realization) -> Vec<Form> {
         self.surface_at(base, realization, u32::MAX)
@@ -351,7 +433,11 @@ impl Grammar {
         lexicon: &mut Lexicon,
     ) -> Self {
         let design = profile.grammar.draw(seed, &profile.morphology);
-        let mut grammar = Self::default();
+        let mut grammar = Self {
+            order: design.order.expect("resolved founding order"),
+            possessor: design.possessor.expect("resolved founding possessor"),
+            ..Self::default()
+        };
         for category in Category::ALL {
             let choice = design.choice(category);
             let mut rng = stream(seed, &[key("grammar marker founding"), key(category.id())]);
@@ -461,8 +547,9 @@ impl Grammar {
         });
     }
     fn uses(&mut self, lexicon: &Lexicon) {
-        self.usage.resize(lexicon.lexemes.len(), [0.0; 2]);
-        self.usage.fill([0.0; 2]);
+        self.usage
+            .resize(lexicon.lexemes.len(), [0.0; Category::ALL.len()]);
+        self.usage.fill([0.0; Category::ALL.len()]);
         for slot in &lexicon.slots {
             for category in Category::ALL {
                 if slot.concept.categories.allows(category) {
@@ -597,7 +684,7 @@ impl Grammar {
             marker_shares: vec![0.0; self.markers.len()],
             ..GrammarSummary::default()
         };
-        let mut totals = [0.0; 2];
+        let mut totals = [0.0; Category::ALL.len()];
         for word in lexicon.living() {
             for p in &word.paradigms {
                 let i = p.category.position();
@@ -1272,6 +1359,7 @@ mod tests {
         profile.grammar = GrammarPrior::fixed(GrammarDesign {
             plural: GrammarChoice::Particle,
             past: GrammarChoice::None,
+            ..GrammarDesign::default()
         });
         profile.stress = Some(StressRule::Initial);
         profile.phonotactics.open_medial = false;
@@ -1584,5 +1672,39 @@ mod tests {
         assert!(!grammar.marker(particle).productive);
         assert!(!grammar.marker(fused).productive);
         assert_eq!(grammar.productive(Category::Plural), Some(native));
+    }
+
+    #[test]
+    fn daughters_keep_founding_orders_through_grammar_evolution() {
+        for order in [WordOrder::SOV, WordOrder::SVO, WordOrder::VSO] {
+            for possessor in [PossessorOrder::Before, PossessorOrder::After] {
+                let mut profile = SoundProfile::base();
+                profile.grammar.order = Some(order);
+                profile.grammar.possessor = Some(possessor);
+                let parent =
+                    Variety::found(42, &profile, Livelihood::Farming, crate::Ethos::default());
+                let mut daughter = parent.fork(0, 5);
+                let stress = daughter.stress();
+                for generation in 6..40 {
+                    daughter.grammar.evolve(
+                        42,
+                        1,
+                        generation,
+                        &mut daughter.lexicon,
+                        &daughter.morphology,
+                        stress,
+                        1000,
+                    );
+                }
+                assert_eq!(
+                    (daughter.grammar.order, daughter.grammar.possessor),
+                    (order, possessor)
+                );
+                assert_eq!(
+                    (parent.grammar.order, parent.grammar.possessor),
+                    (order, possessor)
+                );
+            }
+        }
     }
 }

@@ -75,16 +75,32 @@ so the engine revision remains 31.
   the language needs. Root-and-pattern derivations use each word's true
   root skeleton, never a surface reading that includes a pattern's prefix.
   New words come from curated semantic shifts (`RELATED`) or fresh roots.
-- Grammar (`grammar.rs`) begins with count noun plural and verb past.
-  Count nouns name separate things, so water and collective people do not
-  take plural forms. Eligibility is explicit for each concept and follows
-  a word's current senses, not only its first meaning. Designs save each
-  category as suffix, prefix, particle, or none. A suffix follows its stem;
-  a prefix precedes it; a particle is a separate grammatical word. Missing
-  choices in older designs deterministically become suffixes. Affix-building
-  profiles draw bound marking, particles, and no marking at weights
-  0.6/0.3/0.1; root-and-pattern profiles use 0.5/0.4/0.1. The suffixing
-  preference divides bound choices between suffixes and prefixes.
+- Grammar (`grammar.rs`) begins with count noun plural and object marking,
+  and verb past. The object is the thing acted upon: an accusative-like
+  contrast, not a complete case system. Count nouns name separate things,
+  so water, fire, and collective people take neither plural nor object
+  forms. Eligibility is explicit for each concept and follows a word's
+  current senses, not only its first meaning. Designs save each category
+  as suffix, prefix, particle, or none. A suffix follows its stem; a prefix
+  precedes it; a particle is a separate grammatical word. Missing plural
+  and past choices in older designs remain suffixes; missing object, word
+  order, and possessor choices are drawn at founding. Affix-building
+  profiles draw plural and past bound marking, particles, and no marking at
+  weights 0.6/0.3/0.1; root-and-pattern profiles use 0.5/0.4/0.1. Object
+  marking uses 0.45/0.15/0.40 in both. The suffixing preference divides
+  bound choices between suffixes and prefixes.
+- Word order and possessor order are fixed at founding and inherited by
+  daughters; neither drifts. SOV means subject–object–verb, SVO means
+  subject–verb–object, and VSO means verb–subject–object. Fully suffixing
+  designs draw SOV/SVO/VSO at 0.55/0.35/0.10; fully prefixing designs draw
+  0.15/0.50/0.35, with linear interpolation for intermediate preferences.
+  The possessor precedes its noun with probability 0.80 for SOV, 0.50 for
+  SVO, and 0.15 for VSO; otherwise it follows. Each setting has its own
+  purpose-keyed stream, after the existing founding choices. Presets fix
+  these as a sketch, not a reconstruction: pie-like, Indic, Iranian, and
+  Caucasian are SOV; Germanic, Bantu, Finnic, and familiar are SVO; Semitic,
+  Polynesian, and Nahuatl are VSO. Possessors follow in Semitic, Polynesian,
+  Bantu, and Nahuatl, and precede in the other named presets.
 - Eligible words store their complete attached forms and their histories.
   Particles share one marker form instead of copying it across all nouns.
   At most three active forms compete for each word and category. A word
@@ -109,8 +125,13 @@ so the engine revision remains 31.
   rare rebuilding chance but never forces recovery. Languages founded with
   no marking retain only a low baseline chance. Grammaticalization is a
   lexical word taking a grammatical job: many, all, or people can supply a
-  plural particle; finish or have can supply a past particle. The source
-  keeps its ordinary lexical use, and its copied particle evolves separately.
+  plural particle; finish or have can supply a past particle; take, give,
+  or hand can supply an object adposition. The source keeps its ordinary
+  lexical use, and its copied particle evolves separately.
+  When object contrast retention crosses from above one half to at most
+  one half, the chronicle says that the object's mark wore away and word
+  order now says who did what to whom. This does not change the already
+  fixed order. The same rebuilding path may later supply a new adposition.
 - New particles enter at a small share. Usage drifts with a modest advantage
   for forms that preserve audible contrast. After eight consecutive
   generations of majority use, a particle becomes eligible for rare fusion
@@ -138,8 +159,40 @@ so the engine revision remains 31.
   synthesis. Word views carry paradigm shares and histories; grammatical
   spelling freezes at attestation just as base spelling does. Grammar
   founding, rebuilding, competition, fusion, analogy, and contact each use
-  independent purpose-keyed random streams. Revision 28 changes replay of
-  older recipes; originals and recovery remain available.
+  independent purpose-keyed random streams. Revision 32 adds the object
+  category and changes the replay of older recipes; originals and recovery
+  remain available.
+- Each language view carries `grammar.order` (SOV, SVO, or VSO),
+  `grammar.possessor` (before or after), and `grammar.marking`: case while
+  there is a productive object marker and object contrast retention exceeds
+  one half, otherwise order. Here "case" includes a separate adposition.
+  The sample sentence is "the child saw the dog": bare child, the current
+  past form of see, and the current object form of dog, in the language's
+  order. Each category uses its most-used living realization, including
+  surviving stem changes. Bound forms gloss as see-PAST and dog-OBJ;
+  particles have their own PAST or OBJ gloss item, on their recorded side.
+  Text and stressed IPA separate spoken words with spaces. The possession
+  sample is "the child's fish", child and fish in possessor order, without
+  a marker: no genitive is modelled. The facade omits the sample if a
+  required word or form is missing. The design JSON keeps plural and past
+  choices and adds nullable object, order, and possessor settings; null or
+  omission draws that setting at founding, while a resolved design saves
+  each drawn value.
+- Calibration follows the founding language in each solo run, like the
+  lexical statistics, rather than counting its cloned daughters as new
+  independent observations. With the default 200 seeds and profiles in
+  rotation, case marking starts at 55.0%. At 1,000 years it is 53.0%:
+  4 of 110 founding case languages have lost contrast (3.6%), mean first
+  loss year 350, with 15 object rebuilds. At 4,000 years it is 45.5%:
+  21 of 110 have lost contrast (19.1%), mean first loss year 2170.2, with
+  46 rebuilds. Rebuilds count new adpositions, not founding markers or
+  fusion; a rebuilt language can regain case marking. Only suffixes lost
+  object contrast in this sample; prefixes and particles did not.
+  The target of one third to one half losing it over 4,000 years is not
+  yet reached. Prior-only trials with bound/particle/none weights
+  0.60/0/0.40 and 1/0/0 gave 28.2% and 28.5% loss, while 0.30/0/0.70 gave
+  26.9%. The original 0.45/0.15/0.40 prior is retained rather than removing
+  adpositions or forcing case marking on every language to chase the band.
 - Sound laws (`laws.rs`) apply simultaneously and regularly to every living
   word, never to obsolete ones, and never delete a word's last vowel.
   "No change" competes with them, so a culture is never forced into a law.
@@ -945,7 +998,9 @@ Fleets, rented ports, mixed inland-and-sea itineraries, exact river channels
 and lakes, seasonal weather, resolved travel times, globe wrapping,
 purism within a classical form,
 compounding and derivation after founding beyond renewal and new meanings,
-inflection beyond count noun plural and verb past, productive root-and-pattern
-inflection, agreement, case, future marking, tone, vowel harmony beyond
-next-syllable umlaut, prenasalized stops, syntax and alignment, and doctrinal
+inflection beyond count noun plural and object marking and verb past,
+productive root-and-pattern inflection, agreement, grammatical gender,
+tense beyond past, pronoun paradigms, genitive marking, tone, vowel harmony
+beyond next-syllable umlaut, prenasalized stops, syntax beyond fixed word
+and possessor order, alignment beyond this object contrast, and doctrinal
 detail beyond the causes of a schism.

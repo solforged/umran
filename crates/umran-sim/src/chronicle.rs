@@ -18,7 +18,9 @@ use std::collections::BTreeMap;
 
 /// Bumped whenever an engine change would make an existing recipe replay
 /// differently. Saves record it so a mismatch can be reported.
-pub const ENGINE_REVISION: u32 = 31;
+/// Revision 32 adds object marking and inherited word and possessor order.
+/// The extra category changes later grammar draws and sound-law selection.
+pub const ENGINE_REVISION: u32 = 32;
 /// Identifies saved recipes. Kept from the project's first name, langgen,
 /// so files saved before the rename still load.
 pub const FORMAT: &str = "langgen-sim-recipe";

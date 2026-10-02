@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 use std::time::Instant;
+use umran_sim::grammar::{Category, NoticeKind};
 use umran_sim::{Craft, Lexicon, MapSize, Params, SoundProfile, World, WorldEvent};
 
 fn kept(lexicon: &Lexicon, ranks: std::ops::RangeInclusive<u8>) -> f32 {
@@ -113,6 +114,11 @@ fn main() {
     let only: Option<String> = args.next();
 
     let mut sums: HashMap<&str, f32> = HashMap::new();
+    let mut founding_cases = 0;
+    let mut case_losses = 0;
+    let mut first_loss_years = 0_u64;
+    let mut first_losses = 0;
+    let mut object_rebuilds = 0;
     let profiles: Vec<SoundProfile> = match &only {
         Some(id) => vec![SoundProfile::by_id(id).expect("preset")],
         None => SoundProfile::presets(),
@@ -120,7 +126,28 @@ fn main() {
     for n in 0..seeds {
         let profile = &profiles[n % profiles.len()];
         let mut sim = World::solo(n as u64, profile, Params::default());
+        let founded_with_case = sim.varieties[0].grammar.has_object_marking();
+        founding_cases += usize::from(founded_with_case);
         sim.run(generations);
+        // Follow the same founder as the lexical measures, not its cloned daughters.
+        let grammar = &sim.varieties[0].grammar;
+        let first_loss = grammar.events.iter().find(|notice| {
+            notice.category == Category::Object && matches!(notice.event, NoticeKind::ContrastLoss)
+        });
+        if let Some(loss) = first_loss {
+            first_loss_years += u64::from(loss.generation) * 25;
+            first_losses += 1;
+            case_losses += usize::from(founded_with_case);
+        }
+        object_rebuilds += grammar
+            .events
+            .iter()
+            .filter(|notice| {
+                notice.category == Category::Object
+                    && notice.generation > 0
+                    && matches!(notice.event, NoticeKind::NewMarker { .. })
+            })
+            .count();
         let lexicon = &sim.varieties[0].lexicon;
         let culture: Vec<_> = lexicon
             .slots
@@ -141,6 +168,11 @@ fn main() {
         let distinct_ids: std::collections::HashSet<_> =
             lexicon.slots.iter().filter_map(|s| s.dominant()).collect();
         let mut add = |k, v: f32| *sums.entry(k).or_default() += v;
+        add("case marking at year 0", u8::from(founded_with_case) as f32);
+        add(
+            "case marking at end",
+            u8::from(grammar.has_object_marking()) as f32,
+        );
         add("core retention", lexicon.core_retention());
         add("ranks 1-20 kept", kept(lexicon, 1..=20));
         add("ranks 81-100 kept", kept(lexicon, 81..=100));
@@ -170,4 +202,17 @@ fn main() {
     for (k, v) in rows {
         println!("  {k:<30} {:.3}", v / seeds as f32);
     }
+    println!(
+        "  founding case languages lost   {case_losses}/{founding_cases} ({:.3})",
+        case_losses as f32 / founding_cases.max(1) as f32
+    );
+    if first_losses > 0 {
+        println!(
+            "  mean first object loss year    {:.1} ({first_losses} languages)",
+            first_loss_years as f64 / first_losses as f64
+        );
+    } else {
+        println!("  mean first object loss year    none");
+    }
+    println!("  object rebuilds                {object_rebuilds}");
 }

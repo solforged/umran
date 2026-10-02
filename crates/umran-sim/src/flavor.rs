@@ -1,3 +1,4 @@
+use crate::grammar::{PossessorOrder, WordOrder};
 use crate::inventory::{UNLISTED_PRIMARY, UNLISTED_SECONDARY};
 use crate::phoneme::{Backness, Height, Manner, Place};
 use crate::profile::{LongVowel, MorphologyKind, SoundProfile};
@@ -37,6 +38,10 @@ pub struct Flavor {
     pub long_vowels: Option<f32>,
     #[serde(default)]
     pub stress: Option<StressRule>,
+    #[serde(default)]
+    pub order: Option<WordOrder>,
+    #[serde(default)]
+    pub possessor: Option<PossessorOrder>,
     /// Word-internal syllables never take a coda (as in Bantu or
     /// Polynesian).
     pub open_medial: Option<bool>,
@@ -80,6 +85,8 @@ impl SoundProfile {
         tac.long_vowels = flavor.long_vowels.unwrap_or(tac.long_vowels);
         tac.open_medial = flavor.open_medial.unwrap_or(tac.open_medial);
         out.stress = flavor.stress.or(out.stress);
+        out.grammar.order = flavor.order.or(out.grammar.order);
+        out.grammar.possessor = flavor.possessor.or(out.grammar.possessor);
 
         let spelling = &mut out.spelling;
         spelling.long_vowels = flavor.long_spelling.unwrap_or(spelling.long_vowels);
@@ -147,6 +154,8 @@ fn pie_like() -> Flavor {
     use Place::*;
     Flavor {
         id: "pie-like".into(),
+        order: Some(WordOrder::SOV),
+        possessor: Some(PossessorOrder::Before),
         name: "Hard, with stops and closed roots".into(),
         brief: "Like Proto-Indo-European: voiced and plain stops, e and o, closed roots.".into(),
         manner: vec![(Stop, 1.2), (Fricative, -1.0)],
@@ -174,6 +183,8 @@ fn pie_like() -> Flavor {
 fn familiar() -> Flavor {
     Flavor {
         id: "familiar".into(),
+        order: Some(WordOrder::SVO),
+        possessor: Some(PossessorOrder::Before),
         name: "Plain, easy on an English ear".into(),
         brief: "Only sounds an English reader has letters for, spelled with five vowels.".into(),
         segments: weighted(&[

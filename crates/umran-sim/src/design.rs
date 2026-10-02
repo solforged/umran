@@ -54,7 +54,7 @@ pub struct LanguageDesign {
     pub suffixing: f32,
     /// 0–1: how often related meanings are built from one another.
     pub derivation: f32,
-    /// Resolved, editable founding choices for plural and past marking.
+    /// Editable founding choices for marking, word order, and possession.
     #[serde(default)]
     pub grammar: GrammarDesign,
     pub spelling: Spelling,
@@ -216,6 +216,8 @@ mod tests {
     use crate::variety::Variety;
 
     fn assert_founding_grammar(variety: &Variety, expected: GrammarDesign) {
+        assert_eq!(Some(variety.grammar.order), expected.order);
+        assert_eq!(Some(variety.grammar.possessor), expected.possessor);
         for category in Category::ALL {
             let marker = variety
                 .grammar
@@ -313,14 +315,12 @@ mod tests {
         design.grammar = GrammarDesign {
             plural: GrammarChoice::Particle,
             past: GrammarChoice::Prefix,
+            ..GrammarDesign::default()
         };
         let mut json = serde_json::to_value(&design).unwrap();
         json.as_object_mut().unwrap().remove("grammar");
         let loaded: LanguageDesign = serde_json::from_value(json).unwrap();
-        let suffixes = GrammarDesign {
-            plural: GrammarChoice::Suffix,
-            past: GrammarChoice::Suffix,
-        };
+        let suffixes = GrammarDesign::default();
         assert_eq!(
             loaded,
             LanguageDesign {
@@ -335,7 +335,37 @@ mod tests {
                 crate::Livelihood::Farming,
                 crate::Ethos::default(),
             );
-            assert_founding_grammar(&variety, suffixes);
+            assert_founding_grammar(
+                &variety,
+                loaded
+                    .profile()
+                    .grammar
+                    .draw(seed, &loaded.profile().morphology),
+            );
+        }
+    }
+
+    #[test]
+    fn older_design_draws_missing_object_and_orders_at_founding() {
+        let design = LanguageDesign::preset("germanic", 9).unwrap();
+        let mut json = serde_json::to_value(&design).unwrap();
+        let grammar = json["grammar"].as_object_mut().unwrap();
+        for field in ["object", "order", "possessor"] {
+            grammar.remove(field);
+        }
+        let loaded: LanguageDesign = serde_json::from_value(json).unwrap();
+        let profile = loaded.profile();
+        assert_eq!(profile.grammar.object, None);
+        assert_eq!(profile.grammar.order, None);
+        assert_eq!(profile.grammar.possessor, None);
+        for seed in [0, 7, u64::MAX] {
+            let variety = Variety::found(
+                seed,
+                &profile,
+                crate::Livelihood::Farming,
+                crate::Ethos::default(),
+            );
+            assert_founding_grammar(&variety, profile.grammar.draw(seed, &profile.morphology));
         }
     }
 
@@ -375,6 +405,8 @@ mod tests {
             design.grammar = GrammarDesign {
                 plural,
                 past: choices[(i + 1) % choices.len()],
+                object: Some(choices[(i + 2) % choices.len()]),
+                ..design.grammar
             };
             let json = serde_json::to_string(&design).unwrap();
             let loaded: LanguageDesign = serde_json::from_str(&json).unwrap();
@@ -385,14 +417,18 @@ mod tests {
                 crate::Ethos::default(),
             );
             assert_founding_grammar(&variety, design.grammar);
-            for id in ["water", "people", "blood", "sand", "cattle", "food"] {
+            for id in ["fire", "water", "people", "blood", "sand", "cattle", "food"] {
                 let word = variety
                     .lexicon
                     .word_for(concepts::by_id(id).unwrap())
                     .expect("ordinary founding meaning");
                 assert!(word.paradigms.is_empty(), "{id} must not inflect");
             }
-            for (id, category) in [("fish", Category::Plural), ("go", Category::Past)] {
+            for (id, category) in [
+                ("fish", Category::Plural),
+                ("go", Category::Past),
+                ("dog", Category::Object),
+            ] {
                 let word = variety
                     .lexicon
                     .word_for(concepts::by_id(id).unwrap())

@@ -29,7 +29,7 @@ pub struct Variety {
     pub lexicon: Lexicon,
     /// How this language builds words from words.
     pub morphology: Morphology,
-    /// Plural and past markers and their changing realizations.
+    /// Plural, past, and object markers, with inherited word and possessor order.
     pub grammar: Grammar,
     /// The smallest word sound change may leave.
     pub minimal: MinimalWord,

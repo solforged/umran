@@ -13,7 +13,7 @@ use std::cmp::Reverse;
 use std::collections::BTreeMap;
 use umran_sim::climate::{ClimateCause, ClimateChange};
 use umran_sim::concepts::Concept;
-use umran_sim::grammar::{Marker, MarkerKind, MarkerOrigin, NoticeKind, Side};
+use umran_sim::grammar::{Category, Marker, MarkerKind, MarkerOrigin, NoticeKind, Side};
 use umran_sim::ideas::{NEEDS, Need};
 use umran_sim::names::PlaceOrigin;
 use umran_sim::rng::{index, key, stream};
@@ -1873,7 +1873,8 @@ fn grammar_changes(world: &World) -> Vec<Annal> {
         {
             let generation = notice.generation;
             let people = speakers(world, &shifts, v, generation);
-            let category = notice.category.id();
+            let category_id = notice.category.id();
+            let category = notice.category.label();
             let (text, notes, event, donor) = match &notice.event {
                 NoticeKind::NewMarker { marker } => {
                     let marker = variety.grammar.marker(*marker);
@@ -1955,9 +1956,13 @@ fn grammar_changes(world: &World) -> Vec<Annal> {
                     )
                 }
                 NoticeKind::ContrastLoss => (
-                    format!(
-                        "Among {people}, {category} forms increasingly sounded the same as their unmarked words."
-                    ),
+                    if notice.category == Category::Object {
+                        format!("Among {people}, the object's mark wore away; word order now says who did what to whom.")
+                    } else {
+                        format!(
+                            "Among {people}, {category} forms increasingly sounded the same as their unmarked words."
+                        )
+                    },
                     vec![
                         "A grammatical contrast is an audible difference between the base and the marked form. An ending can disappear without losing that contrast if the stem still sounds different; separate grammatical words can preserve it too.".into(),
                     ],
@@ -1972,7 +1977,7 @@ fn grammar_changes(world: &World) -> Vec<Annal> {
                     let word = variety.lexicon.get(*lexeme);
                     (
                         format!(
-                            "The {category} form for '{}' was reshaped among {people}, from *{}* to *{}*, to follow the pattern used for new words.",
+                            "The {category_id} form for '{}' was reshaped among {people}, from *{}* to *{}*, to follow the pattern used for new words.",
                             word.first_sense.gloss,
                             variety.spell(before),
                             variety.spell(after)
@@ -1995,11 +2000,11 @@ fn grammar_changes(world: &World) -> Vec<Annal> {
                     let language = world.language_title_at(*from, generation);
                     (
                         format!(
-                            "The word for '{}' came to {people} from {language} together with its {category} form.",
+                            "The word for '{}' came to {people} from {language} together with its {category_id} form.",
                             word.first_sense.gloss
                         ),
                         vec![
-                            "Both the base and its marked form were acquired together. A borrowed plural or past does not by itself make the foreign pattern productive on native words.".into(),
+                            "Both the base and its marked form were acquired together. A borrowed marked form does not by itself make the foreign pattern productive on native words.".into(),
                         ],
                         GrammarAnnalEvent::ImportedPair {
                             lexeme: lexeme.0,
@@ -2054,7 +2059,10 @@ fn grammar_changes(world: &World) -> Vec<Annal> {
                 religions: Vec::new(),
                 crafts: Vec::new(),
                 temper: None,
-                grammar: Some(GrammarAnnal { category, event }),
+                grammar: Some(GrammarAnnal {
+                    category: category_id,
+                    event,
+                }),
                 zones: Vec::new(),
                 rivers: Vec::new(),
                 climate: None,

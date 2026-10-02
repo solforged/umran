@@ -29,6 +29,7 @@ export interface LanguageDesign {
   building: "concatenative" | "root-pattern";
   suffixing: number;
   derivation: number;
+  grammar?: GrammarDesign;
   spelling: Spelling;
 }
 
@@ -366,6 +367,21 @@ export interface Variety {
   geminates: boolean;
   /// A few basic words, to know the language by.
   specimen: SpecimenWord[];
+  grammar: {
+    order: WordOrder;
+    possessor: PossessorOrder;
+    marking: "case" | "order";
+    sample?: { sentence: GrammarRendering; possession: GrammarRendering };
+    markers: GrammarMarker[];
+    categories: {
+      category: GrammarCategory;
+      label: string;
+      description: string;
+      eligible: number;
+      howSynthetic: number;
+      contrastRetention: number;
+    }[];
+  };
   standardOf: number | null;
   ownWords: OwnWords;
   names: GivenView[];
@@ -914,4 +930,47 @@ export interface DecisionView {
   variety: number | null;
   /// Original annal ids, including members of grouped entries.
   annals: string[];
+}
+
+export type GrammarCategory = "plural" | "past" | "object";
+export type GrammarChoice = "suffix" | "prefix" | "particle" | "none";
+export type WordOrder = "SOV" | "SVO" | "VSO";
+export type PossessorOrder = "before" | "after";
+
+export interface GrammarDesign {
+  plural: GrammarChoice;
+  past: GrammarChoice;
+  /// Null or omitted means draw at founding.
+  object?: GrammarChoice | null;
+  order?: WordOrder | null;
+  possessor?: PossessorOrder | null;
+}
+
+export interface GrammarRendering {
+  text: string;
+  ipa: string;
+  gloss: string[];
+}
+
+export type GrammarOrigin =
+  | { kind: "founding" }
+  | { kind: "grammaticalized"; source: number; concept: string; gloss: string; sourceForm: { form: string; ipa: string } }
+  | { kind: "fused"; particle: number }
+  | { kind: "imported"; from: number; language: string; marker: number; source: { form: string; ipa: string } };
+
+export interface GrammarMarker {
+  id: number;
+  category: GrammarCategory;
+  kind: "bound" | "particle" | "none";
+  side: "prefix" | "suffix";
+  form: string;
+  spelled: string;
+  said: string | null;
+  ipa: string;
+  share: number;
+  origin: GrammarOrigin;
+  born: number;
+  retired: number | null;
+  productive: boolean;
+  history: HistoryLine[];
 }
