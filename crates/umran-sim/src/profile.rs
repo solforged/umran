@@ -1,5 +1,6 @@
 use crate::flavor::Flavor;
 use crate::phoneme::{Backness, Height, Manner, Place};
+use crate::prosody::StressRule;
 use serde::{Deserialize, Serialize};
 
 /// The full numbers behind a sound system: segment preferences, syllable
@@ -15,6 +16,9 @@ pub struct SoundProfile {
     pub phonotactics: PhonotacticPrior,
     pub morphology: MorphologyPrior,
     pub spelling: Spelling,
+    /// Absent in a design/profile means draw on a separate founding stream.
+    #[serde(default)]
+    pub stress: Option<StressRule>,
 }
 
 /// How words are built from other words.
@@ -80,6 +84,9 @@ pub struct PhonotacticPrior {
     /// length distinguishes words (Sanskrit, Old English, Nahuatl).
     #[serde(default)]
     pub long_vowels: f32,
+    /// Chance an internal consonant is long; disabled unless requested.
+    #[serde(default)]
+    pub geminates: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -199,6 +206,7 @@ fn base() -> SoundProfile {
             disyllabic_roots: 0.25,
             identical_consonants: 0.1,
             long_vowels: 0.0,
+            geminates: 0.0,
         },
         morphology: MorphologyPrior {
             kind: MorphologyKind::Concatenative,
@@ -212,5 +220,6 @@ fn base() -> SoundProfile {
             mark_hiatus: false,
             boundary_mark: None,
         },
+        stress: None,
     }
 }

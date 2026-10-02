@@ -33,6 +33,8 @@ impl Spelling {
                 && ipa(i) == "k"
                 && i + 1 < form.segs.len()
                 && ipa(i + 1) == "w"
+                && !form.segs[i].long
+                && !form.segs[i + 1].long
                 && !form.boundaries.contains(&(i + 1));
             if kw {
                 out.push_str("qu");
@@ -54,6 +56,9 @@ impl Spelling {
             .map_or(segment.roman(), |(_, to)| to.as_str());
         if !seg.long {
             return base.to_string();
+        }
+        if !segment.is_vowel() {
+            return format!("{base}{base}");
         }
         match self.long_vowels {
             LongVowel::Unmarked => base.to_string(),

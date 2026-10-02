@@ -9,7 +9,7 @@ use crate::names::{GivenName, Name, NameStyle, given_stock};
 use crate::phoneme::PhonemeId;
 use crate::phonotactics::Phonotactics;
 use crate::profile::SoundProfile;
-use crate::prosody::MinimalWord;
+use crate::prosody::{MinimalWord, StressRule};
 use crate::rng::{key, stream};
 use crate::root::mint_roots;
 use rand::Rng;
@@ -33,6 +33,8 @@ pub struct Variety {
     /// Sound laws in the order applied, with their generation. A law may
     /// appear more than once: kinds of change recur over long spans.
     pub laws: Vec<(u32, &'static str)>,
+    /// The rule before each stress shift, including inherited shifts.
+    pub stress_history: Vec<(u32, StressRule)>,
     /// Laws among `laws` that reached it from a neighbour rather than
     /// arising in it, by generation, with the variety each came from.
     pub waves: Vec<(u32, &'static str, usize)>,
@@ -110,6 +112,7 @@ impl Variety {
             ),
             founding_inventory: inventory,
             laws: Vec::new(),
+            stress_history: Vec::new(),
             waves: Vec::new(),
             parent: None,
             style,
@@ -119,6 +122,30 @@ impl Variety {
             high: None,
             vernacular: None,
         };
+        let mut prosody_rng = stream(seed, &[key("founding prosody")]);
+        variety.profile.stress = Some(
+            profile
+                .stress
+                .unwrap_or_else(|| StressRule::draw(&mut prosody_rng)),
+        );
+        for word in &mut variety.lexicon.lexemes {
+            if variety.profile.stress == Some(StressRule::Free) {
+                word.form.stress =
+                    Some(crate::rng::index(&mut prosody_rng, word.form.vowel_count()));
+            }
+            if profile.phonotactics.geminates > 0.0 {
+                let end = word.form.segs.len().saturating_sub(1);
+                for i in 1..end {
+                    if !word.form.is_vowel(i)
+                        && word.form.is_vowel(i - 1)
+                        && word.form.is_vowel(i + 1)
+                    {
+                        word.form.segs[i].long =
+                            prosody_rng.r#gen::<f32>() < profile.phonotactics.geminates;
+                    }
+                }
+            }
+        }
         variety.given = given_stock(&variety, livelihood, &mut stream(seed, &[key("given")]));
         variety
     }
@@ -134,6 +161,19 @@ impl Variety {
             }),
             ..self.clone()
         }
+    }
+    pub fn stress(&self) -> StressRule {
+        self.profile
+            .stress
+            .expect("founded varieties have a stress rule")
+    }
+
+    /// The first later shift remembers the rule used at this generation.
+    pub fn stress_at(&self, generation: u32) -> StressRule {
+        self.stress_history
+            .iter()
+            .find(|(g, _)| *g > generation)
+            .map_or(self.stress(), |(_, before)| *before)
     }
 
     /// Segments in at least 2% of living words (and at least two): the

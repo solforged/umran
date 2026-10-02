@@ -63,6 +63,7 @@ pub struct Adapter {
     codas: HashSet<Vec<PhonemeId>>,
     open: bool,
     has_length: bool,
+    has_geminates: bool,
     epenthetic: Option<PhonemeId>,
 }
 
@@ -77,6 +78,7 @@ impl Adapter {
         let mut codas = HashSet::new();
         let mut vowels: BTreeMap<u16, u32> = BTreeMap::new();
         let (mut words, mut closed, mut has_length) = (0u32, 0u32, false);
+        let mut has_geminates = false;
         for form in forms {
             let syllables = form.syllables();
             let Some(last) = syllables.last() else {
@@ -90,7 +92,11 @@ impl Adapter {
                     seen.push(seg.phone);
                     *in_words.entry(seg.phone.0).or_default() += 1;
                 }
-                has_length |= seg.long;
+                if CATALOG.get(seg.phone).is_vowel() {
+                    has_length |= seg.long;
+                } else {
+                    has_geminates |= seg.long;
+                }
             }
             for s in &syllables {
                 *vowels.entry(form.segs[s.nucleus].phone.0).or_default() += 1;
@@ -127,6 +133,7 @@ impl Adapter {
             codas,
             open: words > 0 && (closed as f32 / words as f32) < OPEN_SYLLABLE_THRESHOLD,
             has_length,
+            has_geminates,
             epenthetic,
         }
     }
@@ -151,19 +158,34 @@ impl Adapter {
                 } else {
                     self.nearest(seg.phone)
                 };
-                let long = seg.long && self.has_length && CATALOG.get(phone).is_vowel();
+                let long = seg.long
+                    && if CATALOG.get(phone).is_vowel() {
+                        self.has_length
+                    } else {
+                        self.has_geminates
+                    };
                 Seg { phone, long }
             })
             .collect();
         let mut form = Form {
             segs,
             boundaries: Vec::new(),
+            stress: source.stress,
         };
         for _ in 0..MAX_REPAIRS {
             let Some(at) = self.violation(&form) else {
                 break;
             };
             let Some(vowel) = self.epenthetic else { break };
+            if let Some(stress) = &mut form.stress {
+                let before = form.segs[..at]
+                    .iter()
+                    .filter(|s| CATALOG.get(s.phone).is_vowel())
+                    .count();
+                if before <= *stress {
+                    *stress += 1;
+                }
+            }
             form.segs.insert(
                 at,
                 Seg {

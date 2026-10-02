@@ -11,9 +11,9 @@ use umran_sim::compare::{compare, intelligibility};
 use umran_sim::prosody::moras;
 use umran_sim::{
     Action, CATALOG, CONCEPTS, Chronicle, ContactKind, ENGINE_REVISION, Entry, Env, Event, FORMAT,
-    Form, LanguageDesign, Law, LexemeId, Lexicon, MapSize, MinimalWord, Name, Naming, Origin,
-    Params, PhonemeId, Recipe, Revelation, Rewrite, Rise, Seg, Segment, SoundChange, SoundProfile,
-    Variety, World,
+    Form, LanguageDesign, Law, LexemeId, Lexicon, MapSize, Matcher, MinimalWord, Name, Naming,
+    Origin, Params, PhonemeId, Recipe, Revelation, Rewrite, Rise, Seg, Segment, SoundChange,
+    SoundProfile, StressRule, Syllable, Variety, World,
 };
 
 const SEEDS: u64 = 30;
@@ -33,21 +33,108 @@ fn least(minimal: MinimalWord) -> usize {
     }
 }
 
-fn environment(env: &Env, neighbor: Option<PhonemeId>) -> bool {
+// Syllabification and stress are prosodic primitives, not rule matching.
+// Contextual wrappers are resolved here; Matcher::matches ignores them.
+fn contextual(
+    matcher: &Matcher,
+    form: &Form,
+    i: usize,
+    syllables: &[Syllable],
+    stress: Option<usize>,
+) -> bool {
+    let seg = form.segs[i];
+    match matcher {
+        Matcher::Length { target, long } => {
+            seg.long == *long && contextual(target, form, i, syllables, stress)
+        }
+        Matcher::Stressed { target, stressed } => {
+            // A shared geminate belongs to its preceding coda first.
+            let containing = syllables
+                .iter()
+                .position(|s| s.onset.contains(&i) || s.nucleus == i || s.coda.contains(&i));
+            containing.is_some()
+                && (containing == stress) == *stressed
+                && contextual(target, form, i, syllables, stress)
+        }
+        Matcher::OpenSyllable(target) => {
+            syllables
+                .iter()
+                .any(|s| s.nucleus == i && s.coda.is_empty())
+                && contextual(target, form, i, syllables, stress)
+        }
+        Matcher::MedialVowel => {
+            CATALOG.get(seg.phone).is_vowel()
+                && form.segs[..i]
+                    .iter()
+                    .any(|s| CATALOG.get(s.phone).is_vowel())
+                && form.segs[i + 1..]
+                    .iter()
+                    .any(|s| CATALOG.get(s.phone).is_vowel())
+        }
+        Matcher::Phone(phone) => seg.phone == *phone,
+        Matcher::AnyConsonant => !CATALOG.get(seg.phone).is_vowel(),
+        Matcher::AnyVowel => CATALOG.get(seg.phone).is_vowel(),
+        Matcher::Consonant {
+            place,
+            manner,
+            voiced,
+            secondary,
+        } => match CATALOG.get(seg.phone) {
+            Segment::Consonant(c) => {
+                place.is_none_or(|p| p == c.place)
+                    && manner.is_none_or(|m| m == c.manner)
+                    && voiced.is_none_or(|v| v == c.voiced)
+                    && secondary.is_none_or(|s| s == c.secondary)
+            }
+            _ => false,
+        },
+        Matcher::Vowel {
+            height,
+            backness,
+            rounded,
+        } => match CATALOG.get(seg.phone) {
+            Segment::Vowel(v) => {
+                height.is_none_or(|h| h == v.height)
+                    && backness.is_none_or(|b| b == v.backness)
+                    && rounded.is_none_or(|r| r == v.rounded)
+            }
+            _ => false,
+        },
+    }
+}
+
+fn needs_syllables(matcher: &Matcher) -> bool {
+    match matcher {
+        Matcher::Stressed { .. } | Matcher::OpenSyllable(_) => true,
+        Matcher::Length { target, .. } => needs_syllables(target),
+        _ => false,
+    }
+}
+
+fn environment(
+    env: &Env,
+    form: &Form,
+    neighbor: Option<usize>,
+    syllables: &[Syllable],
+    stress: Option<usize>,
+) -> bool {
     match env {
         Env::Any => true,
         Env::WordEdge => neighbor.is_none(),
-        Env::Matcher(matcher) => neighbor.is_some_and(|id| matcher.matches(id)),
+        Env::Matcher(matcher) => {
+            neighbor.is_some_and(|i| contextual(matcher, form, i, syllables, stress))
+        }
     }
 }
 
 // This oracle does not call Law::apply, SoundChange::apply, or hits: it
 // resolves a whole input before filtering deletions, so it also detects
 // sequential (feeding/bleeding) application within a word.
-fn replacement(rewrite: &Rewrite, old: PhonemeId) -> Option<PhonemeId> {
-    match (rewrite, CATALOG.get(old)) {
-        (Rewrite::Delete, _) => None,
-        (Rewrite::Phone(id), _) => Some(*id),
+fn replacement(rewrite: &Rewrite, old: Seg) -> Option<Seg> {
+    let phone = match (rewrite, CATALOG.get(old.phone)) {
+        (Rewrite::Delete | Rewrite::GeminateNext | Rewrite::Compensate, _) => return None,
+        (Rewrite::Length(long), _) => return Some(Seg { long: *long, ..old }),
+        (Rewrite::Phone(id), _) => *id,
         (
             Rewrite::Consonant {
                 place,
@@ -56,18 +143,16 @@ fn replacement(rewrite: &Rewrite, old: PhonemeId) -> Option<PhonemeId> {
                 secondary,
             },
             Segment::Consonant(c),
-        ) => Some(
-            CATALOG
-                .consonants()
-                .find_map(|(id, candidate)| {
-                    (candidate.place == place.unwrap_or(c.place)
-                        && candidate.manner == manner.unwrap_or(c.manner)
-                        && candidate.voiced == voiced.unwrap_or(c.voiced)
-                        && candidate.secondary == secondary.unwrap_or(c.secondary))
-                    .then_some(id)
-                })
-                .unwrap_or(old),
-        ),
+        ) => CATALOG
+            .consonants()
+            .find_map(|(id, candidate)| {
+                (candidate.place == place.unwrap_or(c.place)
+                    && candidate.manner == manner.unwrap_or(c.manner)
+                    && candidate.voiced == voiced.unwrap_or(c.voiced)
+                    && candidate.secondary == secondary.unwrap_or(c.secondary))
+                .then_some(id)
+            })
+            .unwrap_or(old.phone),
         (
             Rewrite::Vowel {
                 height,
@@ -75,43 +160,75 @@ fn replacement(rewrite: &Rewrite, old: PhonemeId) -> Option<PhonemeId> {
                 rounded,
             },
             Segment::Vowel(v),
-        ) => Some(
-            CATALOG
-                .vowels()
-                .find_map(|(id, candidate)| {
-                    (candidate.height == height.unwrap_or(v.height)
-                        && candidate.backness == backness.unwrap_or(v.backness)
-                        && candidate.rounded == rounded.unwrap_or(v.rounded))
-                    .then_some(id)
-                })
-                .unwrap_or(old),
-        ),
-        _ => Some(old),
-    }
+        ) => CATALOG
+            .vowels()
+            .find_map(|(id, candidate)| {
+                (candidate.height == height.unwrap_or(v.height)
+                    && candidate.backness == backness.unwrap_or(v.backness)
+                    && candidate.rounded == rounded.unwrap_or(v.rounded))
+                .then_some(id)
+            })
+            .unwrap_or(old.phone),
+        _ => old.phone,
+    };
+    Some(Seg { phone, ..old })
 }
 
-fn reference_rule(rule: &SoundChange, before: &Form) -> Form {
+fn reference_rule(rule: &SoundChange, before: &Form, stress_rule: StressRule) -> Form {
+    let needs = needs_syllables(&rule.target)
+        || [&rule.left, &rule.right]
+            .iter()
+            .any(|env| matches!(env, Env::Matcher(matcher) if needs_syllables(matcher)));
+    let syllables = if needs {
+        before.syllables()
+    } else {
+        Vec::new()
+    };
+    let stress = needs
+        .then(|| before.stressed_syllable(stress_rule))
+        .flatten();
     let mut outcomes: Vec<Option<Seg>> = before
         .segs
         .iter()
         .enumerate()
-        .map(|(i, seg)| {
-            let left = i.checked_sub(1).map(|n| before.segs[n].phone);
-            let right = before.segs.get(i + 1).map(|s| s.phone);
-            let phone = if rule.target.matches(seg.phone)
-                && environment(&rule.left, left)
-                && environment(&rule.right, right)
+        .map(|(i, &seg)| {
+            let left = i.checked_sub(1);
+            let right = (i + 1 < before.segs.len()).then_some(i + 1);
+            if contextual(&rule.target, before, i, &syllables, stress)
+                && environment(&rule.left, before, left, &syllables, stress)
+                && environment(&rule.right, before, right, &syllables, stress)
             {
-                replacement(&rule.result, seg.phone)
+                replacement(&rule.result, seg)
             } else {
-                Some(seg.phone)
-            };
-            phone.map(|phone| Seg {
-                phone,
-                long: seg.long && CATALOG.get(phone).is_vowel(),
-            })
+                Some(seg)
+            }
         })
         .collect();
+    if matches!(rule.result, Rewrite::GeminateNext | Rewrite::Compensate) {
+        // Each deletion's side effect reads the input and cannot restore
+        // a neighbor that this same rule deleted.
+        for i in 0..outcomes.len() {
+            if outcomes[i].is_some() {
+                continue;
+            }
+            let neighbor = match rule.result {
+                Rewrite::GeminateNext => before
+                    .segs
+                    .get(i + 1)
+                    .filter(|s| !CATALOG.get(s.phone).is_vowel())
+                    .map(|_| i + 1),
+                Rewrite::Compensate => i
+                    .checked_sub(1)
+                    .filter(|&j| CATALOG.get(before.segs[j].phone).is_vowel()),
+                _ => None,
+            };
+            if let Some(j) = neighbor
+                && let Some(seg) = &mut outcomes[j]
+            {
+                seg.long = true;
+            }
+        }
+    }
     if !outcomes
         .iter()
         .flatten()
@@ -123,6 +240,28 @@ fn reference_rule(rule: &SoundChange, before: &Form) -> Form {
     {
         outcomes[last] = Some(before.segs[last]);
     }
+    // An explicit free accent stays on its nucleus, moves to the next
+    // surviving vowel when lost, and falls back to the final vowel.
+    let stress = before.stress.and_then(|stressed| {
+        let nucleus = before
+            .segs
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| CATALOG.get(s.phone).is_vowel())
+            .nth(stressed)?
+            .0;
+        let surviving_before = outcomes[..nucleus]
+            .iter()
+            .flatten()
+            .filter(|s| CATALOG.get(s.phone).is_vowel())
+            .count();
+        let count = outcomes
+            .iter()
+            .flatten()
+            .filter(|s| CATALOG.get(s.phone).is_vowel())
+            .count();
+        (count > 0).then(|| surviving_before.min(count - 1))
+    });
     let segs: Vec<_> = outcomes.iter().flatten().copied().collect();
     let mut boundaries: Vec<_> = before
         .boundaries
@@ -131,12 +270,16 @@ fn reference_rule(rule: &SoundChange, before: &Form) -> Form {
         .filter(|&b| b > 0 && b < segs.len())
         .collect();
     boundaries.dedup();
-    Form { segs, boundaries }
+    Form {
+        segs,
+        boundaries,
+        stress,
+    }
 }
 
-fn reference_law(law: &Law, before: &Form, minimal: MinimalWord) -> Form {
+fn reference_law(law: &Law, before: &Form, minimal: MinimalWord, stress: StressRule) -> Form {
     law.rules.iter().fold(before.clone(), |current, rule| {
-        let next = reference_rule(rule, &current);
+        let next = reference_rule(rule, &current, stress);
         if size(minimal, &next) < size(minimal, &current) && size(minimal, &next) < least(minimal) {
             current
         } else {
@@ -149,13 +292,15 @@ fn expected_changes(
     before: &Form,
     laws: &[&Law],
     minimal: MinimalWord,
+    mut stress: StressRule,
     generation: u32,
 ) -> (Form, Vec<Entry>) {
     let mut form = before.clone();
     let mut log = Vec::new();
     for law in laws {
-        let after = reference_law(law, &form, minimal);
-        if after != form {
+        let after = reference_law(law, &form, minimal, stress);
+        let next_stress = law.stress.unwrap_or(stress);
+        if after != form || form.stressed_syllable(stress) != after.stressed_syllable(next_stress) {
             log.push(Entry {
                 generation,
                 event: Event::SoundLaw {
@@ -165,6 +310,7 @@ fn expected_changes(
             });
             form = after;
         }
+        stress = next_stress;
     }
     (form, log)
 }
@@ -252,10 +398,9 @@ fn assert_form(form: &Form, seed: u64, year: u32) {
         form.ipa()
     );
     assert!(
-        form.segs
-            .iter()
-            .all(|s| !s.long || CATALOG.get(s.phone).is_vowel()),
-        "seed {seed}, year {year}: consonant has vowel length"
+        form.stress.is_none_or(|s| s < form.vowel_count()),
+        "seed {seed}, year {year}: lexical stress is outside {}",
+        form.ipa()
     );
     assert!(
         form.boundaries
@@ -311,6 +456,7 @@ fn sound_laws_are_regular_protect_words_and_freeze_the_record() {
     let profiles = SoundProfile::presets();
     let laws = umran_sim::catalog();
     let (mut fired, mut obsolete_matches, mut protected, mut changed_names) = (0, 0, 0, 0);
+    let mut stress_shifts = 0;
     let mut seen = HashSet::new();
     for seed in 0..SEEDS {
         let profile = &profiles[seed as usize % profiles.len()];
@@ -329,6 +475,8 @@ fn sound_laws_are_regular_protect_words_and_freeze_the_record() {
         for _ in 0..if seed == 0 { 400 } else { GENERATIONS } {
             let v = world.communities[0].variety;
             let minimal = world.varieties[v].minimal;
+            let stress = world.varieties[v].stress();
+            let stress_history_len = world.varieties[v].stress_history.len();
             let words: Vec<_> = world.varieties[v]
                 .lexicon
                 .lexemes
@@ -354,19 +502,37 @@ fn sound_laws_are_regular_protect_words_and_freeze_the_record() {
                 })
                 .collect();
             fired += applied.len();
+            let mut expected_stress = stress;
+            let mut expected_history = Vec::new();
+            for law in &applied {
+                if let Some(next) = law.stress {
+                    expected_history.push((world.generation, expected_stress));
+                    expected_stress = next;
+                }
+            }
+            stress_shifts += expected_history.len();
+            assert_eq!(
+                world.varieties[v].stress(),
+                expected_stress,
+                "seed {seed}, year {year}: incorrect stress rule"
+            );
+            assert_eq!(
+                &world.varieties[v].stress_history[stress_history_len..],
+                expected_history.as_slice(),
+                "seed {seed}, year {year}: incorrect stress history"
+            );
             for ((before, obsolete, log_len), after) in
                 words.iter().zip(&world.varieties[v].lexicon.lexemes)
             {
                 let (expected, log) = if *obsolete {
-                    if applied
-                        .iter()
-                        .any(|law| reference_law(law, before, minimal) != *before)
-                    {
+                    let (_, hypothetical_log) =
+                        expected_changes(before, &applied, minimal, stress, world.generation);
+                    if !hypothetical_log.is_empty() {
                         obsolete_matches += 1;
                     }
                     (before.clone(), Vec::new())
                 } else {
-                    expected_changes(before, &applied, minimal, world.generation)
+                    expected_changes(before, &applied, minimal, stress, world.generation)
                 };
                 assert_eq!(
                     after.form,
@@ -399,23 +565,22 @@ fn sound_laws_are_regular_protect_words_and_freeze_the_record() {
                         after.id,
                         minimal.label()
                     );
-                    protected += applied
-                        .iter()
-                        .filter(|law| {
-                            law.rules.iter().any(|rule| {
-                                let raw = reference_rule(rule, before);
-                                size(minimal, &raw) < size(minimal, before)
-                                    && size(minimal, &raw) < least(minimal)
-                            })
-                        })
-                        .count();
+                    let mut current_stress = stress;
+                    for law in &applied {
+                        protected += usize::from(law.rules.iter().any(|rule| {
+                            let raw = reference_rule(rule, before, current_stress);
+                            size(minimal, &raw) < size(minimal, before)
+                                && size(minimal, &raw) < least(minimal)
+                        }));
+                        current_stress = law.stress.unwrap_or(current_stress);
+                    }
                 }
             }
             for (key, before, log_len) in before_names {
                 let after = name_at(&world, v, key);
                 let (expected, log) =
-                    expected_changes(&before, &applied, minimal, world.generation);
-                changed_names += usize::from(expected != before);
+                    expected_changes(&before, &applied, minimal, stress, world.generation);
+                changed_names += usize::from(!log.is_empty());
                 assert_eq!(
                     after.form, expected,
                     "seed {seed}, year {year}, {key:?}: irregular name change"
@@ -472,8 +637,9 @@ fn sound_laws_are_regular_protect_words_and_freeze_the_record() {
         changed_names >= 100,
         "matching names were not exercised: {changed_names}"
     );
+    assert!(stress_shifts > 0, "stress-shift laws were not exercised");
     println!(
-        "regularity: {SEEDS} seeds, 4,000–10,000 years, {fired} laws / {} kinds, {obsolete_matches} obsolete matches, {protected} protected words, {changed_names} changed names; {:?}",
+        "regularity: {SEEDS} seeds, 4,000–10,000 years, {fired} laws / {} kinds, {stress_shifts} stress shifts, {obsolete_matches} obsolete matches, {protected} protected words, {changed_names} changed names; {:?}",
         seen.len(),
         start.elapsed()
     );
@@ -492,6 +658,7 @@ fn assert_variety_eq(a: &Variety, b: &Variety, seed: u64, year: u32) {
         morphology,
         minimal,
         laws,
+        stress_history,
         waves,
         parent,
         style,
@@ -582,6 +749,7 @@ fn recipe(seed: u64) -> Recipe {
 #[test]
 fn recipes_replay_identical_histories_in_fresh_worlds() {
     let start = Instant::now();
+    let mut stress_checkpoints = 0;
     for seed in 0..SEEDS {
         let recipe = recipe(seed);
         let a = Chronicle::from_recipe(&recipe).unwrap();
@@ -594,17 +762,37 @@ fn recipes_replay_identical_histories_in_fresh_worlds() {
         let restored: Recipe = serde_json::from_str(&saved).unwrap();
         let mut fresh = Chronicle::from_recipe(&restored).unwrap();
         assert_world_eq(&expected, fresh.latest(), seed);
-        // Exercise historical checkpoints on the longest recipe as well.
-        if seed == 0 {
-            for generation in [1, 60, 120] {
-                let warm = fresh.world_at(generation);
-                let mut prefix = restored.clone();
-                *prefix.actions.last_mut().unwrap() = Action::Run {
-                    generations: generation,
-                };
-                let cold = Chronicle::from_recipe(&prefix).unwrap();
-                assert_world_eq(&warm, cold.latest(), seed);
+        // Compare both sides of actual stress shifts, not merely arbitrary
+        // generations that might precede every suprasegmental law.
+        let mut checkpoints = if seed == 0 {
+            vec![1, 60, 120]
+        } else {
+            Vec::new()
+        };
+        if seed == 0 || stress_checkpoints == 0 {
+            let mut shifts: Vec<_> = fresh
+                .latest()
+                .varieties
+                .iter()
+                .flat_map(|v| v.stress_history.iter().map(|&(g, _)| g))
+                .collect();
+            shifts.sort_unstable();
+            shifts.dedup();
+            stress_checkpoints += shifts.len();
+            for generation in shifts {
+                checkpoints.extend([generation.saturating_sub(1), generation]);
             }
+        }
+        checkpoints.sort_unstable();
+        checkpoints.dedup();
+        for generation in checkpoints {
+            let warm = fresh.world_at(generation);
+            let mut prefix = restored.clone();
+            *prefix.actions.last_mut().unwrap() = Action::Run {
+                generations: generation,
+            };
+            let cold = Chronicle::from_recipe(&prefix).unwrap();
+            assert_world_eq(&warm, cold.latest(), seed);
         }
         for variety in &fresh.latest().varieties {
             assert_slots(&variety.lexicon, seed, fresh.latest().generation * 25);
@@ -613,8 +801,12 @@ fn recipes_replay_identical_histories_in_fresh_worlds() {
             }
         }
     }
+    assert!(
+        stress_checkpoints > 0,
+        "historical checkpoints did not exercise a stress shift"
+    );
     println!(
-        "determinism: {SEEDS} persisted recipes, 2,000–4,000 years, fresh builds and past checkpoints; {:?}",
+        "determinism: {SEEDS} persisted recipes, 2,000–4,000 years, fresh builds and past checkpoints around {stress_checkpoints} stress shifts; {:?}",
         start.elapsed()
     );
 }

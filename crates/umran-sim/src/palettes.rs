@@ -5,12 +5,13 @@
 //! flavors. Signature sounds are required so the nudge is always audible;
 //! the rest are favoured or forbidden.
 //!
-//! Not yet expressible: tone, vowel harmony, consonant length, and
-//! prenasalized stops; comments note where a family relies on them.
+//! Not yet expressible: tone, vowel harmony, and prenasalized stops.
+//! Stress and consonant length can be designed and changed by sound laws.
 
 use crate::flavor::Flavor;
 use crate::phoneme::{Backness, Height, Manner, Place};
 use crate::profile::{LongVowel, MorphologyKind};
+use crate::prosody::StressRule;
 
 fn strings(list: &[&str]) -> Vec<String> {
     list.iter().map(|s| s.to_string()).collect()
@@ -150,6 +151,7 @@ fn iranian() -> Flavor {
 fn germanic() -> Flavor {
     Flavor {
         id: "germanic".into(),
+        stress: Some(StressRule::Initial),
         name: "Clipped, with th and short closed syllables".into(),
         brief: "Like Old English: θ, ð, æ, y, closed syllables, Old English spelling.".into(),
         segments: weighted(&[
@@ -328,6 +330,7 @@ fn polynesian() -> Flavor {
     use Manner::*;
     Flavor {
         id: "polynesian".into(),
+        stress: Some(StressRule::Penult),
         name: "Spare and open, with few consonants".into(),
         brief: "Like Hawaiian or Māori: few sounds, open syllables, reduplication.".into(),
         manner: vec![(Fricative, -1.0), (Affricate, -3.0)],
@@ -376,6 +379,7 @@ fn finnic() -> Flavor {
     use Height::*;
     Flavor {
         id: "finnic".into(),
+        stress: Some(StressRule::Initial),
         name: "Bright, with ä, ö, and doubled vowels".into(),
         brief: "Like Finnish: ä, ö, and y, long vowels written double, only suffixes.".into(),
         height: vec![(Close, 0.5), (CloseMid, 0.5), (NearOpen, 1.0)],

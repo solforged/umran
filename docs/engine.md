@@ -31,8 +31,8 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   roots, so native and WASM draw the same map.
 - Languages are founded from a `LanguageDesign` (`design.rs`): the exact
   sounds, each used or favoured, plus knobs (word length, final consonants,
-  inner clusters, repetition, long vowels, affixes or root-and-pattern,
-  suffixing, derivation) and spelling. It resolves to an internal
+  inner clusters, repetition, long vowels, geminates, stress, affixes or
+  root-and-pattern, suffixing, derivation) and spelling. It resolves to an internal
   `SoundProfile`: chosen sounds exactly, favoured ones preferred, absent
   ones discouraged but reachable by sound change. There are no named
   culture packs; `SoundProfile::base()` weights sounds by world frequency
@@ -45,8 +45,9 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   "voiced implies voiceless" repair (Arabic has b without p).
 - The catalog (`phoneme.rs`) describes consonants by place, manner,
   voicing, and a `Secondary` articulation (aspirated, breathy,
-  labialized); new segments are appended, never inserted. Vowel length is
-  a per-segment flag that profiles can make contrastive.
+  labialized); new segments are appended, never inserted. Length is a
+  per-segment flag: long vowels and geminate consonants. Founding geminates
+  are off unless the design allows them; later laws can create them.
 - Concepts (`concepts.rs`): the Leipzig–Jakarta 100 in rank order plus
   cultural concepts with a `Tier`. Word length follows `length_bias`
   (Zipf's law of abbreviation: basic meanings short, specialist long, one
@@ -71,6 +72,15 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   restore its input sounds, as related consonant shifts happened in
   Germanic and later High German. The quiet span applies to inherited
   laws and incoming waves too; the full history keeps every occurrence.
+  Stress-conditioned laws reduce unstressed vowels to schwa, syncopate
+  medial vowels between single consonants, delete unstressed final vowels,
+  lengthen stressed open-syllable vowels, and voice fricatives after an
+  unstressed vowel (Verner's law). Cluster assimilation and gemination
+  before j create long consonants; degemination removes length. The
+  Western Romance chain voices single intervocalic stops before shortening
+  geminates, so the two inputs remain distinct. Loss of a preconsonantal
+  nasal can lengthen the preceding vowel. Length alone has neutral segment
+  preference; assimilation is scored toward the surviving consonant.
 - Sound laws also spread as waves (`spread_waves`), as the wave model of
   language change describes: a law that took hold in a variety in the
   last ten generations may pass to a variety in contact with it. The
@@ -84,6 +94,9 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   arrival's generation and source (`Variety::waves`). Waves make related
   languages share changes their common ancestor never had, leaving
   isoglosses (the lines where a change stopped) across the family tree.
+  Stress shifts to the first syllable or penult are candidates only when
+  the rule differs and a living word's accent would move. They change no
+  segments, but record word and name histories and spread as waves.
 - Each language has a minimal word (`prosody.rs`), drawn at founding: any
   syllable, a heavy one (two moras), or two syllables, likelier the more
   disyllabic its roots. A rule that would wear a word below it passes that
@@ -94,6 +107,31 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   with a related concept's word (Mandarin ěr > ěrduo). Renewed words keep
   their root, so they count as retained. `examples/length.rs` measures
   word length, homophony, and renewal over time.
+  A language also has a `StressRule`: initial, penult, final, Latin-like
+  weight (heavy penult, otherwise antepenult), or free. Predictable stress
+  is derived from each current form, never cached. Free-stress founding
+  words draw a lexical syllable on the separate founding-prosody stream;
+  newly coined unaccented forms default to initial stress. Deletion keeps
+  that accent on its surviving vowel, or the next vowel if it is lost,
+  falling back to the last vowel. Loan epenthesis moves the index with its
+  vowel. Compounds keep the leftmost explicit lexical accent; otherwise
+  they carry the right accent across the junction, with hiatus coalescence
+  retaining the preceding vowel. Clipped names retain their accent or use
+  their last surviving syllable. Stress rules and their history are
+  inherited on splits; adopting a language inherits its rule, not just
+  its segments. Germanic and Finnic palettes start with initial stress,
+  Polynesian with penult; other unspecified profiles draw independently
+  of earlier founding processes.
+  A geminate is one segment shared by the preceding coda and following
+  onset when intervocalic, so it closes that syllable and contributes a
+  mora. Initial consonant length does not create a mora. The facade's IPA
+  display marks stress before the accented syllable in polysyllables and
+  writes length with `ː`; `Form::ipa()` and its parser remain stress-free.
+  Spelling doubles a geminate's entire letter or multigraph, never marks
+  stress, and retains the existing long-vowel convention. Language views
+  report their stress rule and whether living words contain geminates;
+  specimens include a zero-based stress index and `wasIpa` when IPA changes
+  even if spelling does not. `examples/stress.rs` traces these changes.
 - Borrowability is set per concept (Leipzig–Jakarta rank or `Tier`), never
   per semantic field, so field patterns must emerge. `wold.rs` holds WOLD
   figures for validation only; the model never reads them. Loans adapt to
@@ -381,6 +419,7 @@ cargo run --release -p umran-sim --example calibrate -- <seeds> <generations> [p
 cargo run --release -p umran-sim --example length -- [seeds] [generations]
 cargo run --release -p umran-sim --example audit -- [seeds] [generations]
 cargo run --release -p umran-sim --example faiths -- [seeds] [years] [first-seed] [seeded|natural|sample|sample-unseeded]
+cargo run --release -p umran-sim --example stress -- [seed] [generations]
 ```
 
 The faith report's `seeded` setup begins with three peoples sharing one
@@ -406,5 +445,5 @@ gate trade and conquest (migration, colonies, and pilgrimage need seafaring), a
 map larger than a regional theatre, cities with speech of their own (a city's speech is
 its court's; no koiné), purism within a classical form, compounding and
 derivation after founding beyond renewal and new meanings, inflection,
-stress, tone, vowel harmony, consonant length, prenasalized stops, syntax
-and alignment, doctrinal detail beyond the causes of a schism.
+tone, vowel harmony, prenasalized stops, syntax and alignment, doctrinal
+detail beyond the causes of a schism.

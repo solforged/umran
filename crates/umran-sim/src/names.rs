@@ -79,12 +79,22 @@ pub struct Name {
 
 impl Name {
     /// Applies a sound law; records it if it changed anything.
-    pub fn change(&mut self, after: Form, law: &'static str, generation: u32) {
-        if after != self.form {
+    pub fn change(
+        &mut self,
+        law: &crate::Law,
+        minimal: crate::MinimalWord,
+        stress: crate::prosody::StressRule,
+        generation: u32,
+    ) {
+        let after = law.apply(&self.form, minimal, stress);
+        if law.changes(&self.form, &after, stress) {
             let before = std::mem::replace(&mut self.form, after);
             self.log.push(Entry {
                 generation,
-                event: Event::SoundLaw { law, before },
+                event: Event::SoundLaw {
+                    law: law.id,
+                    before,
+                },
             });
         }
     }
@@ -266,6 +276,7 @@ pub(crate) fn clipped(form: Form, max: usize) -> Form {
             .filter(|&b| b < end)
             .collect(),
         segs: form.segs[..end].to_vec(),
+        stress: form.stress.map(|s| s.min(max - 1)),
     }
 }
 
@@ -719,15 +730,33 @@ mod tests {
 
     #[test]
     fn names_remember_their_older_forms() {
-        let v = variety("familiar", 3);
-        let mut name = Naming::People.coin(&v, None, 0).unwrap();
+        let mut name = Name {
+            form: Form::from_ipa("pataka").unwrap(),
+            ..Name::default()
+        };
+        let laws = crate::catalog();
+        let voicing = laws
+            .iter()
+            .find(|l| l.id == "intervocalic-voicing")
+            .unwrap();
+        let apocope = laws.iter().find(|l| l.id == "apocope").unwrap();
         let first = name.form.clone();
-        let mut second = first.clone();
-        second.segs.pop();
-        name.change(second.clone(), "a law", 4);
-        let mut third = second.clone();
-        third.segs.reverse();
-        name.change(third.clone(), "another law", 9);
+        name.change(
+            voicing,
+            crate::MinimalWord::Syllable,
+            crate::StressRule::Initial,
+            4,
+        );
+        let second = name.form.clone();
+        assert_eq!(second.ipa(), "padaga");
+        name.change(
+            apocope,
+            crate::MinimalWord::Syllable,
+            crate::StressRule::Initial,
+            9,
+        );
+        let third = name.form.clone();
+        assert_eq!(third.ipa(), "padag");
         assert_eq!(name.form_at(0), &first);
         assert_eq!(name.form_at(3), &first);
         assert_eq!(name.form_at(4), &second);

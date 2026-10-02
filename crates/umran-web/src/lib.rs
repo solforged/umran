@@ -276,7 +276,7 @@ impl Bench {
             Some(PreviewWord {
                 gloss: concept.gloss,
                 spelled: variety.spell(&word.form),
-                ipa: word.form.ipa(),
+                ipa: word.form.ipa_stressed(variety.stress()),
                 from,
             })
         };
@@ -302,12 +302,12 @@ impl Bench {
         to_json(&Preview {
             people: NameView {
                 name: spelled,
-                ipa: people.form.ipa(),
+                ipa: people.form.ipa_stressed(variety.stress()),
                 meaning: people.meaning,
             },
             language: NameView {
                 name: variety.title(&language.form),
-                ipa: language.form.ipa(),
+                ipa: language.form.ipa_stressed(variety.stress()),
                 meaning: language.meaning,
             },
             words,
@@ -468,7 +468,11 @@ impl Bench {
                     id,
                     name: world.community_name(id),
                     meaning: c.name.meaning.clone(),
-                    ipa: c.name.form.ipa(),
+                    ipa: c.name.form.ipa_stressed(
+                        world
+                            .variety_of(id)
+                            .stress_at(c.ended.unwrap_or(world.generation)),
+                    ),
                     coined: c.name.coined,
                     faith: c.faith,
                     crafts: c.crafts.clone(),
@@ -570,6 +574,13 @@ impl Bench {
                         word_building: word_building(v),
                         builders: builders(v),
                         minimal_word: v.minimal.label(),
+                        stress: v.stress().id(),
+                        geminates: v.lexicon.living().any(|w| {
+                            w.form
+                                .segs
+                                .iter()
+                                .any(|s| s.long && !CATALOG.get(s.phone).is_vowel())
+                        }),
                         specimen: specimen(v, world.generation),
                         standard_of: standards[id],
                         own_words: own_words(world, id),
@@ -578,7 +589,7 @@ impl Bench {
                             .iter()
                             .map(|g| GivenView {
                                 name: v.title(&g.name.form),
-                                ipa: g.name.form.ipa(),
+                                ipa: g.name.form.ipa_stressed(v.stress()),
                                 meaning: g.name.meaning.clone(),
                                 from: g.from,
                             })
@@ -605,7 +616,7 @@ impl Bench {
                                 Some(KnownLandView {
                                     region,
                                     spelled: v.title(&name.form),
-                                    ipa: name.form.ipa(),
+                                    ipa: name.form.ipa_stressed(v.stress()),
                                 })
                             })
                             .collect(),
@@ -678,7 +689,7 @@ impl Bench {
                     rank: slot.concept.stability,
                     spelled,
                     said,
-                    ipa: word.form.ipa(),
+                    ipa: word.form.ipa_stressed(v.stress()),
                     origin: origin_view(world, variety, word),
                     changes: word
                         .log
@@ -716,7 +727,7 @@ impl Bench {
                 VariantView {
                     spelled,
                     said,
-                    ipa: word.form.ipa(),
+                    ipa: word.form.ipa_stressed(v.stress()),
                     share: var.weight,
                     origin: origin_view(world, variety, word),
                     senses: v.lexicon.senses(word.id).map(|c| c.gloss).collect(),
@@ -735,7 +746,7 @@ impl Bench {
                     variety: other,
                     name: world.language_title(other),
                     spelled: o.spell(&word.form),
-                    ipa: word.form.ipa(),
+                    ipa: word.form.ipa_stressed(o.stress()),
                 })
             })
             .collect();
@@ -810,7 +821,7 @@ impl Bench {
                 Some(MapWord {
                     community,
                     spelled: v.spell(&word.form),
-                    ipa: word.form.ipa(),
+                    ipa: word.form.ipa_stressed(v.stress()),
                     group,
                     origin: origin_view(world, c.variety, word),
                 })
@@ -1068,6 +1079,8 @@ pub(crate) struct SpecimenWord {
     /// How it was spelled before `generation`'s sound changes, if they
     /// changed it.
     was: Option<String>,
+    stress: Option<usize>,
+    was_ipa: Option<String>,
 }
 
 /// `variety`'s specimen as it stood after `generation`'s sound changes,
@@ -1084,12 +1097,20 @@ pub(crate) fn specimen(variety: &Variety, generation: u32) -> Vec<SpecimenWord> 
                 .filter(|w| w.born <= generation)?;
             let form = word.form_at(generation);
             let spelled = variety.spell(form);
-            let was = variety.spell(word.form_at(generation.saturating_sub(1)));
+            let before = word.form_at(generation.saturating_sub(1));
+            let was = variety.spell(before);
+            let stress = variety.stress_at(generation);
+            let ipa = form.ipa_stressed(stress);
+            let was_ipa = before.ipa_stressed(variety.stress_at(generation.saturating_sub(1)));
             Some(SpecimenWord {
                 concept: concept.id,
                 gloss: concept.gloss,
-                ipa: form.ipa(),
                 was: (was != spelled).then_some(was),
+                was_ipa: (was_ipa != ipa).then_some(was_ipa),
+                ipa,
+                stress: (form.vowel_count() > 1)
+                    .then(|| form.stressed_syllable(stress))
+                    .flatten(),
                 spelled,
             })
         })
@@ -1203,7 +1224,7 @@ fn place_views(world: &World) -> Vec<PlaceView> {
                     Some(PlaceExonymView {
                         variety: v,
                         language: language_label(world, v),
-                        ipa: name.form.ipa(),
+                        ipa: name.form.ipa_stressed(speech.stress()),
                         heard: name.coined,
                         once: Some(speech.title(name.form_at(name.coined)))
                             .filter(|once| *once != spelled),
@@ -1216,11 +1237,16 @@ fn place_views(world: &World) -> Vec<PlaceView> {
                 .map(|p| {
                     let speech = &world.varieties[p.variety];
                     let spelled = speech.title(&p.name.form);
+                    let until = p
+                        .name
+                        .log
+                        .last()
+                        .map_or(p.since, |e| e.generation.max(p.since));
                     PlaceNameView {
                         since: p.since,
                         variety: p.variety,
                         language: world.language_title_at(p.variety, p.since),
-                        ipa: p.name.form.ipa(),
+                        ipa: p.name.form.ipa_stressed(speech.stress_at(until)),
                         meaning: p.name.meaning.clone(),
                         origin: match p.origin {
                             PlaceOrigin::Coined { .. } => "coined",
@@ -1441,10 +1467,11 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
         let text = match &entry.event {
             // A kept word was never heard as foreign.
             Event::Borrowed { .. } if kept => continue,
-            Event::Borrowed { source, .. } => format!(
+            Event::Borrowed { source, from } => format!(
                 "Heard as /{}/, adapted to /{}/",
-                source.ipa(),
-                form_after(word, i).ipa()
+                source.ipa_stressed(world.varieties[*from].stress_at(entry.generation)),
+                form_after(word, i)
+                    .ipa_stressed(world.varieties[variety].stress_at(entry.generation))
             ),
             Event::SoundLaw { law, before } => {
                 let label = laws
@@ -1453,8 +1480,11 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
                     .map_or_else(|| substrate_label(law), |l| l.label.to_string());
                 format!(
                     "{label}: /{}/ → /{}/",
-                    before.ipa(),
-                    form_after(word, i).ipa()
+                    before.ipa_stressed(
+                        world.varieties[variety].stress_at(entry.generation.saturating_sub(1))
+                    ),
+                    form_after(word, i)
+                        .ipa_stressed(world.varieties[variety].stress_at(entry.generation))
                 )
             }
             Event::Extended { to } => format!("Also came to mean '{}'", to.gloss),
@@ -1560,7 +1590,9 @@ impl NameView {
     fn new(variety: &Variety, name: &Name) -> Self {
         Self {
             name: variety.title(&name.form),
-            ipa: name.form.ipa(),
+            ipa: name.form.ipa_stressed(
+                variety.stress_at(name.log.last().map_or(name.coined, |e| e.generation)),
+            ),
             meaning: name.meaning.clone(),
         }
     }
@@ -1906,6 +1938,8 @@ struct VarietyView {
     builders: Vec<Builder>,
     /// The smallest word sound change leaves: "two syllables".
     minimal_word: &'static str,
+    stress: &'static str,
+    geminates: bool,
     /// A few basic words, to know the language by.
     specimen: Vec<SpecimenWord>,
     /// The standing state whose standard it is, if any.
@@ -2153,7 +2187,9 @@ fn state_views(world: &World) -> Vec<StateView> {
                     .filter(|once| *once != name),
                 name,
                 meaning: s.name.meaning.clone(),
-                ipa: s.name.form.ipa(),
+                ipa: s.name.form.ipa_stressed(
+                    variety.stress_at(s.name.log.last().map_or(s.name.coined, |e| e.generation)),
+                ),
                 rulers: s.rulers,
                 members: s
                     .members
@@ -2260,7 +2296,7 @@ fn rendering(world: &World, variety: usize, concept: &'static Concept) -> Option
     Some(Rendering {
         variety,
         spelled,
-        ipa: word.form.ipa(),
+        ipa: word.form.ipa_stressed(v.stress()),
         how,
         from,
     })
@@ -2307,7 +2343,7 @@ fn religion_views(world: &World) -> Vec<ReligionView> {
                 id,
                 name: world.faith_name(id),
                 meaning: r.name.meaning.clone(),
-                ipa: r.name.form.ipa(),
+                ipa: NameView::new(&world.varieties[r.name_variety], &r.name).ipa,
                 founder: NameView::new(sacred, &r.founder),
                 people: r.people,
                 land: r.land,
@@ -2980,5 +3016,31 @@ mod tests {
                 .is_err()
         );
         assert!(w.act("not json").is_err());
+    }
+    #[test]
+    fn specimens_show_pure_stress_movement_and_consonant_length() {
+        use umran_sim::StressRule;
+        let mut profile = umran_sim::SoundProfile::base();
+        profile.stress = Some(StressRule::Final);
+        let mut variety = Variety::found(7, &profile, Livelihood::Farming);
+        let word = variety
+            .lexicon
+            .slot(by_id("water").unwrap())
+            .dominant()
+            .unwrap();
+        variety.lexicon.lexemes[word.0 as usize].form = Form::from_ipa("katːata").unwrap();
+        variety.profile.stress = Some(StressRule::Initial);
+        variety.stress_history.push((8, StressRule::Final));
+        let rows = specimen(&variety, 8);
+        let water = rows.iter().find(|w| w.concept == "water").unwrap();
+        assert_eq!(water.spelled, "kattata");
+        assert_eq!(water.ipa, "ˈkatːata");
+        assert!(water.was.is_none());
+        assert_eq!(water.was_ipa.as_deref(), Some("katːaˈta"));
+        assert_eq!(water.stress, Some(0));
+        let earlier = specimen(&variety, 7);
+        let water = earlier.iter().find(|w| w.concept == "water").unwrap();
+        assert_eq!(water.ipa, "katːaˈta");
+        assert!(water.was_ipa.is_none());
     }
 }

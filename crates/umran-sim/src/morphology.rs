@@ -290,6 +290,7 @@ impl Morphology {
             return Form {
                 segs: [segs, tail].concat(),
                 boundaries: Vec::new(),
+                stress: left.stress.or(right.stress),
             };
         };
         let (left_vowel, right_vowel) = (vowel(left, last), vowel(right, 0));
@@ -312,11 +313,24 @@ impl Morphology {
                 long: false,
             });
         }
+        // The leftmost lexical accent wins; otherwise carry the right
+        // accent across the link vowel and any hiatus deletion.
+        let stress = left.stress.or_else(|| {
+            right.stress.map(|s| {
+                let prefix = segs
+                    .iter()
+                    .filter(|s| CATALOG.get(s.phone).is_vowel())
+                    .count();
+                let deleted = usize::from(left_vowel && right_vowel && right.segs.len() > 1);
+                (prefix + s).saturating_sub(deleted)
+            })
+        });
         let boundary = segs.len();
         segs.extend(tail);
         Form {
             segs,
             boundaries: vec![boundary],
+            stress,
         }
     }
 }

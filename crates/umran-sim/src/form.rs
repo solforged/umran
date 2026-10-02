@@ -1,4 +1,5 @@
 use crate::phoneme::{CATALOG, PhonemeId};
+use crate::prosody::StressRule;
 use serde::{Deserialize, Serialize};
 use std::ops::Range;
 
@@ -19,6 +20,10 @@ pub struct Form {
     /// Offsets where a later morpheme begins; never 0 or `segs.len()`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub boundaries: Vec<usize>,
+    /// Lexical stress for free-stress languages; predictable stress ignores
+    /// this. An unaccented new form receives initial lexical stress.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stress: Option<usize>,
 }
 
 /// One syllable as index ranges into `Form::segs`.
@@ -37,6 +42,7 @@ impl Form {
                 .map(|phone| Seg { phone, long: false })
                 .collect(),
             boundaries: Vec::new(),
+            stress: None,
         }
     }
 
@@ -57,6 +63,7 @@ impl Form {
         Some(Self {
             segs,
             boundaries: Vec::new(),
+            stress: None,
         })
     }
 
@@ -82,6 +89,69 @@ impl Form {
     pub fn vowel_count(&self) -> usize {
         (0..self.segs.len()).filter(|&i| self.is_vowel(i)).count()
     }
+    pub fn stressed_syllable(&self, rule: StressRule) -> Option<usize> {
+        let count = self.vowel_count();
+        if count == 0 {
+            return None;
+        }
+        Some(match rule {
+            StressRule::Initial => 0,
+            StressRule::Penult => count.saturating_sub(2),
+            StressRule::Final => count - 1,
+            StressRule::Free => self.stress.unwrap_or(0).min(count - 1),
+            StressRule::Weight if count < 3 => 0,
+            StressRule::Weight => {
+                let penult = count - 2;
+                let mut nuclei = (0..self.segs.len()).filter(|&i| self.is_vowel(i));
+                let nucleus = nuclei.nth(penult).unwrap();
+                let last = nuclei.next().unwrap();
+                let onset = self.onset_start(nucleus + 1, last);
+                let heavy = self.segs[nucleus].long
+                    || onset > nucleus + 1
+                    || (onset < last && self.segs[onset].long);
+                if heavy { penult } else { count - 3 }
+            }
+        })
+    }
+
+    /// Display IPA, without changing the stress-free serialization/parser.
+    /// A shared geminate is written once, with the mark before its onset.
+    pub fn ipa_stressed(&self, rule: StressRule) -> String {
+        if self.vowel_count() < 2 {
+            return self.ipa();
+        }
+        let syllables = self.syllables();
+        let start = syllables[self.stressed_syllable(rule).unwrap()].onset.start;
+        let mut out = String::new();
+        for (i, seg) in self.segs.iter().enumerate() {
+            if i == start {
+                out.push('ˈ');
+            }
+            out.push_str(CATALOG.get(seg.phone).ipa());
+            if seg.long {
+                out.push('ː');
+            }
+        }
+        out
+    }
+
+    /// Keep lexical stress on its surviving nucleus. If that nucleus is
+    /// deleted, use the next surviving vowel, or the last if none follows.
+    pub(crate) fn stress_after(&self, outcome: &[Option<Seg>]) -> Option<usize> {
+        let stressed = self.stress?;
+        let nucleus = (0..self.segs.len())
+            .filter(|&i| self.is_vowel(i))
+            .nth(stressed)?;
+        let before = outcome[..nucleus]
+            .iter()
+            .filter(|s| s.is_some_and(|s| CATALOG.get(s.phone).is_vowel()))
+            .count();
+        let count = outcome
+            .iter()
+            .filter(|s| s.is_some_and(|s| CATALOG.get(s.phone).is_vowel()))
+            .count();
+        (count > 0).then(|| before.min(count - 1))
+    }
 
     /// Syllables by maximal onset: each intervocalic cluster gives the
     /// following vowel the longest tail of rising sonority. A form with no
@@ -95,7 +165,9 @@ impl Form {
                 _ => {
                     let from = nuclei[n - 1] + 1;
                     let start = self.onset_start(from, v);
-                    out.last_mut().unwrap().coda = from..start;
+                    // A geminate is one segment shared by coda and onset.
+                    let shared = usize::from(start < v && self.segs[start].long);
+                    out.last_mut().unwrap().coda = from..start + shared;
                     start
                 }
             };
@@ -113,6 +185,7 @@ impl Form {
 
     fn onset_start(&self, from: usize, to: usize) -> usize {
         let sonority = |i: usize| CATALOG.get(self.segs[i].phone).sonority();
+        let from = (from..to).rfind(|&i| self.segs[i].long).unwrap_or(from);
         (from..=to)
             .find(|&start| (start + 1..to).all(|i| sonority(i - 1) < sonority(i)))
             .unwrap_or(to)

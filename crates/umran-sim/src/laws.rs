@@ -3,7 +3,7 @@ use crate::form::Form;
 use crate::inventory::preference;
 use crate::phoneme::{Backness, Height, Manner, PhonemeId, Place, Secondary};
 use crate::profile::InventoryPrior;
-use crate::prosody::MinimalWord;
+use crate::prosody::{MinimalWord, StressRule};
 use std::collections::HashSet;
 
 /// A named sound law: one or more rules applied in order, each regularly
@@ -17,6 +17,8 @@ pub struct Law {
     /// frequency. Lenition and palatalization are common; wholesale
     /// spirantization is rare.
     pub commonness: f32,
+    /// A suprasegmental law, assessed by movement of word stress.
+    pub stress: Option<StressRule>,
 }
 
 /// What a law would do to a lexicon if chosen now.
@@ -51,15 +53,21 @@ impl Assessment {
 impl Law {
     /// The law's rules in order, each passing by a word it would wear
     /// below the language's `minimal` size.
-    pub fn apply(&self, form: &Form, minimal: MinimalWord) -> Form {
+    pub fn apply(&self, form: &Form, minimal: MinimalWord, stress: StressRule) -> Form {
         let mut current = form.clone();
         for rule in &self.rules {
-            let next = rule.apply(&current);
+            let next = rule.apply(&current, stress);
             if !minimal.blocks(&current, &next) {
                 current = next;
             }
         }
         current
+    }
+    pub fn changes(&self, form: &Form, after: &Form, stress: StressRule) -> bool {
+        form != after
+            || self
+                .stress
+                .is_some_and(|next| form.stressed_syllable(stress) != after.stressed_syllable(next))
     }
 
     /// `None` when the law would change nothing.
@@ -68,25 +76,43 @@ impl Law {
         forms: impl Iterator<Item = &'a Form>,
         prior: &InventoryPrior,
         minimal: MinimalWord,
+        stress: StressRule,
     ) -> Option<Assessment> {
+        if self.stress == Some(stress) {
+            return None;
+        }
+        if let Some(next) = self.stress {
+            let words = forms
+                .filter(|f| f.stressed_syllable(stress) != f.stressed_syllable(next))
+                .count();
+            return (words > 0).then_some(Assessment {
+                words,
+                pull: 0.0,
+                shifts: Vec::new(),
+            });
+        }
         let (mut words, mut total) = (0, 0.0);
         let mut shifts = Vec::new();
         for form in forms {
             // Judge by the real result, so matches blocked by last-vowel
             // protection or the minimal word do not make a law look
             // applicable.
-            if self.apply(form, minimal) == *form {
+            if !self.changes(form, &self.apply(form, minimal, stress), stress) {
                 continue;
             }
             words += 1;
             let mut current = form.clone();
             for rule in &self.rules {
-                let next = rule.apply(&current);
+                let next = rule.apply(&current, stress);
                 if minimal.blocks(&current, &next) {
                     continue;
                 }
-                for (i, out) in rule.hits(&current) {
+                for (i, out) in rule.hits(&current, stress) {
                     let old = current.segs[i].phone;
+                    let out = match rule.result {
+                        Rewrite::GeminateNext => current.segs.get(i + 1).map(|s| s.phone),
+                        _ => out.map(|s| s.phone),
+                    };
                     if let Some(new) = out {
                         total += preference(prior, new) - preference(prior, old);
                     }
@@ -97,7 +123,7 @@ impl Law {
         }
         (words > 0).then(|| Assessment {
             words,
-            pull: total / shifts.len() as f32,
+            pull: total / shifts.len().max(1) as f32,
             shifts,
         })
     }
@@ -187,6 +213,7 @@ fn law(id: &'static str, label: &'static str, commonness: f32, rules: Vec<SoundC
         label,
         rules,
         commonness,
+        stress: None,
     }
 }
 
@@ -200,6 +227,30 @@ fn c() -> Env {
 
 fn at(m: Matcher) -> Env {
     Env::Matcher(m)
+}
+fn length(target: Matcher, long: bool) -> Matcher {
+    Matcher::Length {
+        target: Box::new(target),
+        long,
+    }
+}
+
+fn stressed(target: Matcher, stressed: bool) -> Matcher {
+    Matcher::Stressed {
+        target: Box::new(target),
+        stressed,
+    }
+}
+
+fn phone(ipa: &str) -> Matcher {
+    Matcher::Phone(crate::CATALOG.id_by_ipa(ipa).unwrap())
+}
+
+fn stress_law(id: &'static str, label: &'static str, stress: StressRule) -> Law {
+    Law {
+        stress: Some(stress),
+        ..law(id, label, 0.35, Vec::new())
+    }
 }
 
 const ANY: Env = Env::Any;
@@ -219,7 +270,7 @@ pub fn catalog() -> Vec<Law> {
             "Voiceless stops voice between vowels",
             1.0,
             vec![rule(
-                cons(None, Some(Stop), Some(false)),
+                length(cons(None, Some(Stop), Some(false)), false),
                 into_cons(None, None, Some(true)),
                 v(),
                 v(),
@@ -736,6 +787,133 @@ pub fn catalog() -> Vec<Law> {
                 ANY,
             )],
         ),
+        law(
+            "unstressed-reduction",
+            "Unstressed vowels reduce to schwa",
+            0.7,
+            vec![rule(
+                stressed(Matcher::AnyVowel, false),
+                Rewrite::Phone(crate::CATALOG.id_by_ipa("ə").unwrap()),
+                ANY,
+                ANY,
+            )],
+        ),
+        law(
+            "unstressed-syncope",
+            "Unstressed medial vowels disappear between single consonants",
+            0.45,
+            vec![rule(
+                stressed(Matcher::MedialVowel, false),
+                Rewrite::Delete,
+                at(length(Matcher::AnyConsonant, false)),
+                at(length(Matcher::AnyConsonant, false)),
+            )],
+        ),
+        law(
+            "unstressed-apocope",
+            "Unstressed final vowels are lost",
+            0.45,
+            vec![rule(
+                stressed(Matcher::AnyVowel, false),
+                Rewrite::Delete,
+                c(),
+                EDGE,
+            )],
+        ),
+        law(
+            "stressed-open-lengthening",
+            "Stressed vowels lengthen in open syllables",
+            0.6,
+            vec![rule(
+                stressed(Matcher::OpenSyllable(Box::new(Matcher::AnyVowel)), true),
+                Rewrite::Length(true),
+                ANY,
+                ANY,
+            )],
+        ),
+        law(
+            "verner-voicing",
+            "Fricatives voice after an unstressed vowel",
+            0.45,
+            vec![rule(
+                length(cons(None, Some(Fricative), Some(false)), false),
+                into_cons(None, None, Some(true)),
+                at(stressed(Matcher::AnyVowel, false)),
+                ANY,
+            )],
+        ),
+        law(
+            "cluster-gemination",
+            "Clusters assimilate to geminates: kt, pt > tt; ks > ss",
+            0.7,
+            vec![
+                rule(phone("k"), Rewrite::GeminateNext, ANY, at(phone("t"))),
+                rule(phone("p"), Rewrite::GeminateNext, ANY, at(phone("t"))),
+                rule(phone("k"), Rewrite::GeminateNext, ANY, at(phone("s"))),
+            ],
+        ),
+        law(
+            "j-gemination",
+            "Consonants lengthen before j",
+            0.6,
+            vec![rule(
+                length(Matcher::AnyConsonant, false),
+                Rewrite::Length(true),
+                v(),
+                at(phone("j")),
+            )],
+        ),
+        law(
+            "degemination",
+            "Long consonants shorten",
+            0.6,
+            vec![rule(
+                length(Matcher::AnyConsonant, true),
+                Rewrite::Length(false),
+                ANY,
+                ANY,
+            )],
+        ),
+        law(
+            "romance-lenition",
+            "Single stops voice between vowels, then long consonants shorten",
+            0.65,
+            vec![
+                rule(
+                    length(cons(None, Some(Stop), Some(false)), false),
+                    into_cons(None, None, Some(true)),
+                    v(),
+                    v(),
+                ),
+                rule(
+                    length(Matcher::AnyConsonant, true),
+                    Rewrite::Length(false),
+                    ANY,
+                    ANY,
+                ),
+            ],
+        ),
+        law(
+            "compensatory-lengthening",
+            "Preconsonantal nasals disappear and lengthen the preceding vowel",
+            0.45,
+            vec![rule(
+                cons(None, Some(Nasal), None),
+                Rewrite::Compensate,
+                v(),
+                c(),
+            )],
+        ),
+        stress_law(
+            "initial-stress",
+            "Stress moves to the first syllable",
+            StressRule::Initial,
+        ),
+        stress_law(
+            "penult-stress",
+            "Stress moves to the penult",
+            StressRule::Penult,
+        ),
     ]
 }
 
@@ -747,8 +925,12 @@ mod tests {
 
     fn run(id: &str, ipa: &str) -> String {
         let law = catalog().into_iter().find(|l| l.id == id).unwrap();
-        law.apply(&Form::from_ipa(ipa).unwrap(), MinimalWord::Syllable)
-            .ipa()
+        law.apply(
+            &Form::from_ipa(ipa).unwrap(),
+            MinimalWord::Syllable,
+            StressRule::Initial,
+        )
+        .ipa()
     }
 
     #[test]
@@ -791,13 +973,23 @@ mod tests {
             .unwrap();
         let forms = [Form::from_ipa("pata").unwrap()];
         let a = law
-            .assess(forms.iter(), &prior, MinimalWord::Syllable)
+            .assess(
+                forms.iter(),
+                &prior,
+                MinimalWord::Syllable,
+                StressRule::Initial,
+            )
             .unwrap();
         assert_eq!(a.words, 1);
         assert!(a.pull < 0.0);
         let untouched = [Form::from_ipa("ama").unwrap()];
         assert_eq!(
-            law.assess(untouched.iter(), &prior, MinimalWord::Syllable),
+            law.assess(
+                untouched.iter(),
+                &prior,
+                MinimalWord::Syllable,
+                StressRule::Initial
+            ),
             None
         );
     }

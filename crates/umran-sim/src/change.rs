@@ -1,5 +1,6 @@
 use crate::form::{Form, Seg};
 use crate::phoneme::{Backness, CATALOG, Height, Manner, PhonemeId, Place, Secondary, Segment};
+use crate::prosody::StressRule;
 use serde::{Deserialize, Serialize};
 
 /// A natural class of segments; unset features match anything.
@@ -20,6 +21,17 @@ pub enum Matcher {
     },
     AnyConsonant,
     AnyVowel,
+    Length {
+        target: Box<Matcher>,
+        long: bool,
+    },
+    Stressed {
+        target: Box<Matcher>,
+        stressed: bool,
+    },
+    OpenSyllable(Box<Matcher>),
+    /// A noninitial, nonfinal vowel nucleus.
+    MedialVowel,
 }
 
 /// What a matched segment becomes. A feature rewrite with no catalog
@@ -41,6 +53,11 @@ pub enum Rewrite {
         rounded: Option<bool>,
     },
     Delete,
+    Length(bool),
+    /// Delete this consonant and lengthen the following consonant.
+    GeminateNext,
+    /// Delete this consonant and lengthen the preceding vowel.
+    Compensate,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -92,25 +109,75 @@ impl Matcher {
                     && backness.is_none_or(|b| b == v.backness)
                     && rounded.is_none_or(|r| r == v.rounded)
             }
+            (
+                Matcher::Length { target, .. }
+                | Matcher::Stressed { target, .. }
+                | Matcher::OpenSyllable(target),
+                _,
+            ) => target.matches(id),
+            (Matcher::MedialVowel, _) => seg.is_vowel(),
             _ => false,
+        }
+    }
+    fn needs_syllables(&self) -> bool {
+        match self {
+            Self::Stressed { .. } | Self::OpenSyllable(_) => true,
+            Self::Length { target, .. } => target.needs_syllables(),
+            _ => false,
+        }
+    }
+
+    fn at(
+        &self,
+        form: &Form,
+        i: usize,
+        syllables: &[crate::form::Syllable],
+        stress: Option<usize>,
+    ) -> bool {
+        match self {
+            Self::Length { target, long } => {
+                form.segs[i].long == *long && target.at(form, i, syllables, stress)
+            }
+            Self::Stressed { target, stressed } => {
+                let syllable = syllables
+                    .iter()
+                    .position(|s| s.onset.contains(&i) || s.nucleus == i || s.coda.contains(&i));
+                syllable.is_some()
+                    && (syllable == stress) == *stressed
+                    && target.at(form, i, syllables, stress)
+            }
+            Self::OpenSyllable(target) => {
+                syllables
+                    .iter()
+                    .any(|s| s.nucleus == i && s.coda.is_empty())
+                    && target.at(form, i, syllables, stress)
+            }
+            Self::MedialVowel => {
+                form.is_vowel(i)
+                    && (0..i).any(|j| form.is_vowel(j))
+                    && (i + 1..form.segs.len()).any(|j| form.is_vowel(j))
+            }
+            _ => self.matches(form.segs[i].phone),
         }
     }
 }
 
 impl Env {
-    fn left_ok(&self, form: &Form, i: usize) -> bool {
-        match self {
-            Env::Any => true,
-            Env::WordEdge => i == 0,
-            Env::Matcher(m) => i > 0 && m.matches(form.segs[i - 1].phone),
-        }
+    fn needs_syllables(&self) -> bool {
+        matches!(self, Self::Matcher(m) if m.needs_syllables())
     }
 
-    fn right_ok(&self, form: &Form, i: usize) -> bool {
+    fn at(
+        &self,
+        form: &Form,
+        i: Option<usize>,
+        syllables: &[crate::form::Syllable],
+        stress: Option<usize>,
+    ) -> bool {
         match self {
-            Env::Any => true,
-            Env::WordEdge => i + 1 == form.segs.len(),
-            Env::Matcher(m) => i + 1 < form.segs.len() && m.matches(form.segs[i + 1].phone),
+            Self::Any => true,
+            Self::WordEdge => i.is_none(),
+            Self::Matcher(m) => i.is_some_and(|i| m.at(form, i, syllables, stress)),
         }
     }
 }
@@ -119,7 +186,7 @@ impl Rewrite {
     /// `None` deletes the segment.
     fn apply(&self, id: PhonemeId) -> Option<PhonemeId> {
         match (self, CATALOG.get(id)) {
-            (Rewrite::Delete, _) => None,
+            (Rewrite::Delete | Rewrite::GeminateNext | Rewrite::Compensate, _) => None,
             (Rewrite::Phone(p), _) => Some(*p),
             (
                 Rewrite::Consonant {
@@ -176,52 +243,85 @@ impl Rewrite {
 }
 
 impl SoundChange {
-    /// Positions this change alters in `form`, with what each becomes
-    /// (`None` deletes). Matches that would rewrite a segment to itself are
-    /// left out, as is the last-vowel protection `apply` adds.
+    /// Every match reads the input, including stress and length.
     pub fn hits<'a>(
         &'a self,
         form: &'a Form,
-    ) -> impl Iterator<Item = (usize, Option<PhonemeId>)> + 'a {
+        rule: StressRule,
+    ) -> impl Iterator<Item = (usize, Option<Seg>)> + 'a {
+        let needs = self.target.needs_syllables()
+            || self.left.needs_syllables()
+            || self.right.needs_syllables();
+        let syllables = if needs { form.syllables() } else { Vec::new() };
+        let stress = if needs {
+            form.stressed_syllable(rule)
+        } else {
+            None
+        };
         (0..form.segs.len()).filter_map(move |i| {
-            let id = form.segs[i].phone;
-            let hit = self.target.matches(id)
-                && self.left.left_ok(form, i)
-                && self.right.right_ok(form, i);
-            let out = if hit { self.result.apply(id) } else { Some(id) };
-            (out != Some(id)).then_some((i, out))
+            let seg = form.segs[i];
+            if !self.target.at(form, i, &syllables, stress)
+                || !self.left.at(form, i.checked_sub(1), &syllables, stress)
+                || !self.right.at(
+                    form,
+                    (i + 1 < form.segs.len()).then_some(i + 1),
+                    &syllables,
+                    stress,
+                )
+            {
+                return None;
+            }
+            let out = match self.result {
+                Rewrite::Length(long) => Some(Seg { long, ..seg }),
+                _ => self
+                    .result
+                    .apply(seg.phone)
+                    .map(|phone| Seg { phone, ..seg }),
+            };
+            (out != Some(seg)).then_some((i, out))
         })
     }
 
-    /// Applies the change simultaneously: every environment is matched
-    /// against the input, so a rewrite never feeds or bleeds its own
-    /// application elsewhere in the same word. A word never loses its last
-    /// vowel; morpheme boundaries follow the segments that survive.
-    pub fn apply(&self, form: &Form) -> Form {
-        let mut outcome: Vec<Option<PhonemeId>> = form.phones().map(Some).collect();
-        for (i, out) in self.hits(form) {
+    /// Simultaneous application, last-vowel protection, and remapping of
+    /// morpheme boundaries and lexical stress to surviving nuclei.
+    pub fn apply(&self, form: &Form, rule: StressRule) -> Form {
+        let mut outcome: Vec<Option<Seg>> = form.segs.iter().copied().map(Some).collect();
+        for (i, out) in self.hits(form, rule) {
             outcome[i] = out;
         }
-
+        // Side effects also read the input and never resurrect a deletion.
+        if matches!(self.result, Rewrite::GeminateNext | Rewrite::Compensate) {
+            for (i, _) in self.hits(form, rule) {
+                let neighbor = match self.result {
+                    Rewrite::GeminateNext => {
+                        (i + 1 < form.segs.len() && !form.is_vowel(i + 1)).then_some(i + 1)
+                    }
+                    Rewrite::Compensate => i.checked_sub(1).filter(|&j| form.is_vowel(j)),
+                    _ => None,
+                };
+                if let Some(j) = neighbor
+                    && let Some(seg) = &mut outcome[j]
+                {
+                    seg.long = true;
+                }
+            }
+        }
         let vowel_survives = outcome
             .iter()
-            .any(|o| o.is_some_and(|id| CATALOG.get(id).is_vowel()));
-        let last_vowel = (0..form.segs.len()).rev().find(|&i| form.is_vowel(i));
-        if let (false, Some(i)) = (vowel_survives, last_vowel) {
-            outcome[i] = Some(form.segs[i].phone);
+            .any(|o| o.is_some_and(|s| CATALOG.get(s.phone).is_vowel()));
+        if !vowel_survives && let Some(i) = (0..form.segs.len()).rev().find(|&i| form.is_vowel(i)) {
+            outcome[i] = Some(form.segs[i]);
         }
-
+        let stress = form.stress_after(&outcome);
         let mut segs = Vec::with_capacity(form.segs.len());
         let mut new_index = Vec::with_capacity(form.segs.len() + 1);
-        for (seg, out) in form.segs.iter().zip(&outcome) {
+        for out in &outcome {
             new_index.push(segs.len());
-            if let Some(phone) = *out {
-                let long = seg.long && CATALOG.get(phone).is_vowel();
-                segs.push(Seg { phone, long });
+            if let Some(seg) = out {
+                segs.push(*seg);
             }
         }
         new_index.push(segs.len());
-
         let mut boundaries: Vec<usize> = form
             .boundaries
             .iter()
@@ -229,12 +329,18 @@ impl SoundChange {
             .filter(|&b| b > 0 && b < segs.len())
             .collect();
         boundaries.dedup();
-        Form { segs, boundaries }
+        Form {
+            segs,
+            boundaries,
+            stress,
+        }
     }
 }
 
-pub fn apply_all(form: &Form, rules: &[SoundChange]) -> Form {
-    rules.iter().fold(form.clone(), |f, rule| rule.apply(&f))
+pub fn apply_all(form: &Form, rules: &[SoundChange], stress: StressRule) -> Form {
+    rules
+        .iter()
+        .fold(form.clone(), |f, rule| rule.apply(&f, stress))
 }
 
 #[cfg(test)]
@@ -285,13 +391,24 @@ mod tests {
 
     #[test]
     fn rewrites_by_features_in_context() {
-        assert_eq!(t_to_s_before_i().apply(&form("tita")).ipa(), "sita");
+        assert_eq!(
+            t_to_s_before_i()
+                .apply(&form("tita"), StressRule::Initial)
+                .ipa(),
+            "sita"
+        );
     }
 
     #[test]
     fn never_deletes_the_last_vowel() {
-        assert_eq!(apocope().apply(&form("kata")).ipa(), "kat");
-        assert_eq!(apocope().apply(&form("ta")).ipa(), "ta");
+        assert_eq!(
+            apocope().apply(&form("kata"), StressRule::Initial).ipa(),
+            "kat"
+        );
+        assert_eq!(
+            apocope().apply(&form("ta"), StressRule::Initial).ipa(),
+            "ta"
+        );
     }
 
     #[test]
@@ -308,7 +425,7 @@ mod tests {
             left: Env::Any,
             right: Env::Any,
         };
-        assert_eq!(rule.apply(&form("ta")).ipa(), "ta");
+        assert_eq!(rule.apply(&form("ta"), StressRule::Initial).ipa(), "ta");
     }
 
     #[test]
@@ -322,21 +439,21 @@ mod tests {
             left: Env::Matcher(Matcher::Phone(id("e"))),
             right: Env::Any,
         };
-        assert_eq!(rule.apply(&form("keaa")).ipa(), "keea");
+        assert_eq!(rule.apply(&form("keaa"), StressRule::Initial).ipa(), "keea");
     }
 
     #[test]
     fn length_and_boundaries_follow_surviving_segments() {
         let mut word = form("kaːtiti");
         word.boundaries = vec![2, 4];
-        let out = apply_all(&word, &[t_to_s_before_i(), apocope()]);
+        let out = apply_all(&word, &[t_to_s_before_i(), apocope()], StressRule::Initial);
         assert_eq!(out.ipa(), "kaːsis");
         assert!(out.segs[1].long);
         assert_eq!(out.boundaries, vec![2, 4]);
 
         let mut word = form("katia");
         word.boundaries = vec![4];
-        let out = apocope().apply(&word);
+        let out = apocope().apply(&word, StressRule::Initial);
         assert_eq!(out.ipa(), "kati");
         assert!(
             out.boundaries.is_empty(),

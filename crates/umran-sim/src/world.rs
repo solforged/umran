@@ -1786,7 +1786,7 @@ impl World {
             };
             self.continent_names[landmass] = Some(ContinentName {
                 spelled: speech.title(&name.form),
-                ipa: name.form.ipa(),
+                ipa: name.form.ipa_stressed(speech.stress()),
                 meaning: name.meaning,
                 variety,
                 people,
@@ -2517,6 +2517,8 @@ impl World {
         let mut new = self.varieties[source].fork(source, generation);
         self.inherit_places(source, &mut new);
         new.profile = self.varieties[old].profile.clone();
+        new.profile.stress = self.varieties[source].profile.stress;
+        let stress = new.stress();
         let mut rng = self.community_rng(community, "substrate");
 
         let mut foreign: Vec<PhonemeId> = new
@@ -2552,7 +2554,7 @@ impl World {
                 .iter_mut()
                 .filter(|l| l.obsolete.is_none())
             {
-                let after = merge.apply(&lexeme.form);
+                let after = merge.apply(&lexeme.form, stress);
                 if after != lexeme.form {
                     let before = std::mem::replace(&mut lexeme.form, after);
                     lexeme.log.push(Entry {
@@ -2742,6 +2744,7 @@ impl World {
                     variety.lexicon.living().map(|l| &l.form),
                     prior,
                     variety.minimal,
+                    variety.stress(),
                 )?;
                 let areal: f32 = areal.iter().map(|(target, w)| w * a.toward(target)).sum();
                 let bias = (self.params.preference_pull * a.pull.clamp(-5.0, 3.0)
@@ -2768,12 +2771,13 @@ impl World {
         let generation = self.generation;
         let variety = &mut self.varieties[v];
         let minimal = variety.minimal;
+        let stress = variety.stress();
         for lexeme in &mut variety.lexicon.lexemes {
             if lexeme.obsolete.is_some() {
                 continue;
             }
-            let after = law.apply(&lexeme.form, minimal);
-            if after != lexeme.form {
+            let after = law.apply(&lexeme.form, minimal, stress);
+            if law.changes(&lexeme.form, &after, stress) {
                 let before = std::mem::replace(&mut lexeme.form, after);
                 lexeme.log.push(Entry {
                     generation,
@@ -2785,28 +2789,28 @@ impl World {
             }
         }
         variety.laws.push((generation, law.id));
+        if let Some(next) = law.stress {
+            variety.stress_history.push((generation, stress));
+            variety.profile.stress = Some(next);
+        }
         // Names are words too.
-        let after = law.apply(&variety.name.form, minimal);
-        variety.name.change(after, law.id, generation);
+        variety.name.change(law, minimal, stress, generation);
         for community in self
             .communities
             .iter_mut()
             .filter(|c| c.variety == v && c.living())
         {
-            let after = law.apply(&community.name.form, minimal);
-            community.name.change(after, law.id, generation);
+            community.name.change(law, minimal, stress, generation);
         }
         // And so are the given names in fashion.
         for given in &mut self.varieties[v].given {
-            let after = law.apply(&given.name.form, minimal);
-            given.name.change(after, law.id, generation);
+            given.name.change(law, minimal, stress, generation);
         }
         // The name of a state its speakers rule changes with their speech.
         for s in 0..self.states.len() {
             let state = &self.states[s];
             if state.standing() && self.communities[state.rulers].variety == v {
-                let after = law.apply(&state.name.form, minimal);
-                self.states[s].name.change(after, law.id, generation);
+                self.states[s].name.change(law, minimal, stress, generation);
             }
         }
         // And so are the names of the lands its speakers hold, each once.
@@ -2820,14 +2824,12 @@ impl World {
         held.dedup();
         for region in held {
             if let Some(p) = self.places[region].last_mut().filter(|p| p.variety == v) {
-                let after = law.apply(&p.name.form, minimal);
-                p.name.change(after, law.id, generation);
+                p.name.change(law, minimal, stress, generation);
             }
         }
         // And its names for lands others hold.
         for (_, name) in &mut self.varieties[v].exonyms {
-            let after = law.apply(&name.form, minimal);
-            name.change(after, law.id, generation);
+            name.change(law, minimal, stress, generation);
         }
     }
 
@@ -2896,6 +2898,7 @@ impl World {
                         variety.lexicon.living().map(|l| &l.form),
                         &variety.profile.inventory,
                         variety.minimal,
+                        variety.stress(),
                     )?;
                     let taste = (self.params.preference_pull * a.pull.clamp(-5.0, 3.0))
                         .exp()
@@ -4955,5 +4958,63 @@ mod tests {
             (name.people, name.variety, name.witness, name.since),
             (a, av, earlier, 20)
         );
+    }
+    #[test]
+    fn stress_shifts_record_words_and_names_without_changing_segments() {
+        use crate::StressRule;
+        let mut profile = SoundProfile::base();
+        profile.stress = Some(StressRule::Final);
+        let mut world = World::solo(7, &profile, Params::static_society());
+        let v = world.communities[0].variety;
+        let word = world.varieties[v].lexicon.slots[0].dominant().unwrap();
+        let form = Form::from_ipa("katata").unwrap();
+        world.varieties[v].lexicon.lexemes[word.0 as usize].form = form.clone();
+        world.varieties[v].name.form = form.clone();
+        world.communities[0].name.form = form.clone();
+        world.generation = 8;
+        let daughter = world.split(0, None, 0.0);
+        let receiver = world.communities[daughter].variety;
+        world.connect(0, daughter, 1.0, ContactKind::Neighbours);
+        let law = catalog()
+            .into_iter()
+            .find(|l| l.id == "initial-stress")
+            .unwrap();
+        world.apply_law(v, &law);
+        let speech = &world.varieties[v];
+        assert_eq!(speech.stress(), StressRule::Initial);
+        assert_eq!(speech.stress_at(7), StressRule::Final);
+        assert_eq!(speech.stress_at(8), StressRule::Initial);
+        assert_eq!(speech.lexicon.get(word).form, form);
+        assert_eq!(speech.name.form, form);
+        assert_eq!(world.communities[0].name.form, form);
+        assert_eq!(speech.laws.last(), Some(&(8, "initial-stress")));
+        assert!(matches!(
+            speech.lexicon.get(word).log.last().unwrap().event,
+            Event::SoundLaw {
+                law: "initial-stress",
+                ..
+            }
+        ));
+        assert!(matches!(
+            speech.name.log.last().unwrap().event,
+            Event::SoundLaw {
+                law: "initial-stress",
+                ..
+            }
+        ));
+        assert!(matches!(
+            world.communities[0].name.log.last().unwrap().event,
+            Event::SoundLaw {
+                law: "initial-stress",
+                ..
+            }
+        ));
+        assert_eq!(speech.fork(v, 8).stress_history, speech.stress_history);
+        world.params.wave_rate = 1_000_000.0;
+        world.spread_waves(&world.spoken());
+        let received = &world.varieties[receiver];
+        assert_eq!(received.stress(), StressRule::Initial);
+        assert_eq!(received.lexicon.get(word).form, form);
+        assert!(received.waves.contains(&(8, "initial-stress", v)));
     }
 }

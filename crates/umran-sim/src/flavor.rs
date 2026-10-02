@@ -1,6 +1,7 @@
 use crate::inventory::{UNLISTED_PRIMARY, UNLISTED_SECONDARY};
 use crate::phoneme::{Backness, Height, Manner, Place};
 use crate::profile::{LongVowel, MorphologyKind, SoundProfile};
+use crate::prosody::StressRule;
 use serde::{Deserialize, Serialize};
 
 /// A phonetic vibe layered onto a profile, such as "slightly more plausible
@@ -34,6 +35,8 @@ pub struct Flavor {
     pub preferred_codas: Vec<String>,
     pub identical_consonants: Option<f32>,
     pub long_vowels: Option<f32>,
+    #[serde(default)]
+    pub stress: Option<StressRule>,
     /// Word-internal syllables never take a coda (as in Bantu or
     /// Polynesian).
     pub open_medial: Option<bool>,
@@ -76,6 +79,7 @@ impl SoundProfile {
             .unwrap_or(tac.identical_consonants);
         tac.long_vowels = flavor.long_vowels.unwrap_or(tac.long_vowels);
         tac.open_medial = flavor.open_medial.unwrap_or(tac.open_medial);
+        out.stress = flavor.stress.or(out.stress);
 
         let spelling = &mut out.spelling;
         spelling.long_vowels = flavor.long_spelling.unwrap_or(spelling.long_vowels);

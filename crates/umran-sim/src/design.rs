@@ -6,6 +6,7 @@
 use crate::inventory::Inventory;
 use crate::phoneme::{CATALOG, PhonemeId};
 use crate::profile::{MorphologyKind, MorphologyPrior, PhonotacticPrior, SoundProfile, Spelling};
+use crate::prosody::StressRule;
 use crate::rng::{key, stream};
 use serde::{Deserialize, Serialize};
 
@@ -42,6 +43,11 @@ pub struct LanguageDesign {
     pub repetition: f32,
     /// 0–1: how often a root's vowels are long.
     pub long_vowels: f32,
+    /// 0–1: how often an internal consonant is long; off by default.
+    #[serde(default)]
+    pub geminates: f32,
+    #[serde(default)]
+    pub stress: Option<StressRule>,
     pub building: MorphologyKind,
     /// 0–1: share of affixes that are suffixes rather than prefixes.
     pub suffixing: f32,
@@ -103,6 +109,8 @@ impl LanguageDesign {
             inner_clusters: !tac.open_medial,
             repetition: tac.identical_consonants,
             long_vowels: tac.long_vowels,
+            geminates: tac.geminates,
+            stress: profile.stress,
             building: profile.morphology.kind,
             suffixing: profile.morphology.suffixing,
             derivation: profile.morphology.derivation,
@@ -137,6 +145,7 @@ impl LanguageDesign {
             self.final_consonants,
             self.repetition,
             self.long_vowels,
+            self.geminates,
             self.suffixing,
             self.derivation,
         ];
@@ -180,6 +189,7 @@ impl LanguageDesign {
             disyllabic_roots: self.word_length,
             identical_consonants: self.repetition,
             long_vowels: self.long_vowels,
+            geminates: self.geminates,
         };
         profile.morphology = MorphologyPrior {
             kind: self.building,
@@ -187,6 +197,7 @@ impl LanguageDesign {
             derivation: self.derivation,
         };
         profile.spelling = self.spelling.clone();
+        profile.stress = self.stress;
         profile
     }
 }

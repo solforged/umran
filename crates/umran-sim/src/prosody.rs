@@ -7,6 +7,41 @@
 
 use crate::form::Form;
 use rand::Rng;
+use serde::{Deserialize, Serialize};
+
+/// Predictable word stress, or a lexical syllable carried by each form.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StressRule {
+    Initial,
+    Penult,
+    Final,
+    /// Heavy penult, otherwise antepenult (or the first of two syllables).
+    Weight,
+    Free,
+}
+
+impl StressRule {
+    pub fn draw(rng: &mut impl Rng) -> Self {
+        match crate::rng::index(rng, 10) {
+            0..=2 => Self::Initial,
+            3..=5 => Self::Penult,
+            6 => Self::Final,
+            7..=8 => Self::Weight,
+            _ => Self::Free,
+        }
+    }
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Initial => "initial",
+            Self::Penult => "penult",
+            Self::Final => "final",
+            Self::Weight => "weight",
+            Self::Free => "free",
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MinimalWord {
