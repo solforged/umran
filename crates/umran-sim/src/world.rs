@@ -3,7 +3,9 @@ use crate::concepts::{CONCEPTS, Concept, Field, related};
 use crate::diglossia::{CLASSICAL_PRESTIGE, Vernacular};
 use crate::ethos::{Axis, Effect, Ethos, FoundingEthos, Pole, TemperCause};
 use crate::form::Form;
-use crate::geography::{LandmassKind, Map, MapSize, Terrain};
+use crate::geography::{
+    LandmassKind, Map, MapSize, REFERENCE_AREA_KM2, REFERENCE_TRAVEL_KM, Terrain,
+};
 use crate::ideas::{Craft, Religion, SACRED_INTENSITY, SACRED_PRESTIGE, living_related};
 use crate::laws::{Law, catalog};
 use crate::lexicon::{Entry, Event, LexemeId, Lexicon, Origin};
@@ -59,10 +61,10 @@ const RULE_HOLD: f32 = 3.0;
 const CONQUEST_INTENSITY: f32 = 0.6;
 /// Travel effort beyond which a founding people no longer prefers land
 /// further from others: far enough to be its own.
-const SETTLE_APART: f32 = 8.0;
+const SETTLE_APART: f32 = 800.0;
 /// Furthest a migrating people travels, in travel effort: about five
 /// open plains, or a long way across the steppe.
-const MIGRATION_REACH: f32 = 6.0;
+const MIGRATION_REACH: f32 = 600.0;
 /// How much likelier a people is to leave land it shares with a stronger
 /// people.
 const PUSHED: f32 = 2.0;
@@ -71,7 +73,7 @@ const PUSHED: f32 = 2.0;
 const YIELD: f32 = 0.5;
 /// Furthest a coastal people sends a colony along or across the sea when
 /// the land beside it is full, in travel effort: one or two sea regions.
-const COLONY_REACH: f32 = 8.0;
+const COLONY_REACH: f32 = 800.0;
 /// How many times larger than the land's namers a people must grow before
 /// its own word for the land takes over, so names do not flip back and
 /// forth between peoples of about the same size.
@@ -176,16 +178,15 @@ pub struct Params {
     /// its land's capacity; growth slows logistically as it fills up, and
     /// other ways of living grow more slowly (`Livelihood::growth`).
     pub growth_rate: f32,
-    /// Population an open plain region can support when farmed; other
-    /// land and other ways of living support their share of this
-    /// (`Livelihood::feeds`), and everyone on a land shares it.
+    /// Population fed by a reference-area plain under farming. Actual
+    /// polygon area and livelihood set its share, shared by all residents.
     pub capacity: f32,
     /// Population at which a farming people starts to come apart; other
     /// ways of living hold together at their share of it
     /// (`Livelihood::cohesion`).
     pub cohesion_size: f32,
-    /// Travel effort from its heartland at which a people starts to come
-    /// apart, for farmers; more mobile peoples hold together further.
+    /// Effort-km from its heartland at which a farming people starts to
+    /// come apart; more mobile peoples hold together further.
     pub cohesion_reach: f32,
     /// Chance per generation, per unit of strain beyond holding together,
     /// that a people splits.
@@ -295,7 +296,7 @@ impl Default for Params {
             growth_rate: 0.07,
             capacity: 40000.0,
             cohesion_size: 100000.0,
-            cohesion_reach: 3.0,
+            cohesion_reach: 300.0,
             fission_rate: 0.1,
             spread_rate: 0.3,
             hardship_rate: 0.004,
@@ -846,7 +847,8 @@ impl World {
 
     /// How many `region` feeds a people living by `livelihood`.
     pub fn feeds(&self, region: usize, livelihood: Livelihood) -> f32 {
-        self.params.capacity * livelihood.feeds(self.map.regions[region].terrain)
+        let r = &self.map.regions[region];
+        self.params.capacity * livelihood.feeds(r.terrain) * r.area_km2 / REFERENCE_AREA_KM2
     }
 
     /// How many of `community` live on each of its lands: its people are
@@ -1436,7 +1438,7 @@ impl World {
                 .into_iter()
                 .map(|r| (r, room(r)))
                 .filter(|&(r, f)| f > SPREAD_ROOM * self.feeds(r, livelihood))
-                .map(|(r, f)| (r, f / (1.0 + self.map.distance(heart, r))))
+                .map(|(r, f)| (r, f / (1.0 + self.map.distance(heart, r) / REFERENCE_TRAVEL_KM)))
                 .collect();
             if options.is_empty() {
                 continue;
@@ -1635,7 +1637,7 @@ impl World {
                 .filter(|&r| sails || !self.map.overseas(home, r))
                 .filter(|&r| free(r) > stay && free(r) >= size / 2.0)
                 .map(|r| {
-                    let d = self.map.distance(home, r);
+                    let d = self.map.distance(home, r) / REFERENCE_TRAVEL_KM;
                     (r, (free(r) - stay) / ((1.0 + d) * (1.0 + d)))
                 })
                 .collect();
@@ -2229,7 +2231,9 @@ impl World {
                 .filter(|&r| {
                     map.distance(home, r) <= COLONY_REACH && room(r) * attraction(r) > room(home)
                 })
-                .map(|r| (r, room(r) / (1.0 + map.distance(home, r)) * attraction(r)))
+                .map(|r| {
+                    (r, room(r) / (1.0 + map.distance(home, r) / REFERENCE_TRAVEL_KM) * attraction(r))
+                })
                 .fold(None, |best: Option<(usize, f32)>, (r, score)| match best {
                     Some((_, s)) if s >= score => best,
                     _ => Some((r, score)),
@@ -2582,7 +2586,7 @@ impl World {
                     < self.params.trade_rate * self.communities[c].ethos.factor(Effect::Contact)
             {
                 let reach = |o: usize| {
-                    let d = self.apart(c, o);
+                    let d = self.apart(c, o) / REFERENCE_TRAVEL_KM;
                     1.0 / ((1.0 + d) * (1.0 + d))
                 };
                 let o = strangers[weighted_index(&mut rng, strangers.iter().map(|&o| reach(o)))];
@@ -3526,6 +3530,31 @@ fn renewal(
 mod tests {
     use super::*;
 
+
+    #[test]
+    fn regional_food_and_presence_follow_polygon_area() {
+        let mut world = World::new(7, Params::static_society());
+        let lands: Vec<_> = world.map.regions.iter().enumerate()
+            .filter(|(_, r)| r.terrain == Terrain::Plains)
+            .map(|(r, _)| r).take(2).collect();
+        assert_eq!(lands.len(), 2);
+        let a = world.found(&SoundProfile::base(), 0.5, 0.5);
+        world.communities[a].lands = lands.clone();
+        let fed_a = world.feeds(lands[0], Livelihood::Farming);
+        let fed_b = world.feeds(lands[1], Livelihood::Farming);
+        let area_ratio = world.map.regions[lands[0]].area_km2
+            / world.map.regions[lands[1]].area_km2;
+        assert!((fed_a / fed_b - area_ratio).abs() < 1e-5);
+        let presence = world.presence(a);
+        assert!((presence.iter().map(|(_, n)| n).sum::<f32>()
+            - world.communities[a].size).abs() < 0.01);
+        assert!((presence[0].1 / presence[1].1 - area_ratio).abs() < 1e-5);
+        for (r, region) in world.map.regions.iter().enumerate() {
+            if region.terrain == Terrain::Sea {
+                assert_eq!(world.feeds(r, Livelihood::Farming), 0.0);
+            }
+        }
+    }
     #[test]
     fn runs_are_reproducible() {
         let profile = SoundProfile::by_id("germanic").unwrap();

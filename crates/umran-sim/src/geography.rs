@@ -14,6 +14,12 @@ use serde::{Deserialize, Serialize};
 
 /// Height of one hex-grid row, with points one unit apart: √3 / 2.
 const ROW: f64 = 0.866_025_403_784_438_6;
+/// Physical length represented by one drawing/grid unit.
+pub const KM_PER_UNIT: f32 = 100.0;
+/// Plain-kilometre scale used to soften journey preferences.
+pub const REFERENCE_TRAVEL_KM: f32 = 100.0;
+/// Area of an interior reference hexagon with 100 km centre spacing.
+pub const REFERENCE_AREA_KM2: f32 = 8_660.254;
 /// Furthest a point strays from its grid position, in grid units.
 const JITTER: f64 = 0.3;
 /// Share of regions under water.
@@ -163,6 +169,8 @@ pub struct Region {
     pub site: [f32; 2],
     /// Its border, as a convex polygon in grid units.
     pub outline: Vec<[f32; 2]>,
+    /// Physical area, derived before drawing coordinates are rounded.
+    pub area_km2: f32,
     pub terrain: Terrain,
     /// Regions sharing a border with it, in increasing order.
     pub neighbours: Vec<usize>,
@@ -200,6 +208,8 @@ pub struct Map {
     pub regions: Vec<Region>,
     /// Its bodies of land, numbered as `Region::landmass` numbers them.
     pub landmasses: Vec<Landmass>,
+    /// Symmetric centre-to-centre effort through each shared border midpoint.
+    edges: Vec<Vec<(u32, f32)>>,
     /// Least effort of travel between each pair of regions, by land or sea,
     /// row by row.
     distance: Vec<f32>,
@@ -251,12 +261,13 @@ impl Map {
 
         // The family is finite at each amplitude. Zero jitter is the terminal
         // constructor, proven separately for every size/K and land budget.
-        let (sites, cells, neighbours, plan) = [JITTER, JITTER / 2.0, 0.0]
+        let (sites, cells, borders, neighbours, plan) = [JITTER, JITTER / 2.0, 0.0]
             .into_iter()
             .find_map(|jitter| {
                 let sites = sites(g, &offsets, jitter);
                 let cells: Vec<_> = (0..n).map(|i| cell(&sites, i, width, height)).collect();
-                let neighbours = symmetric(cells.iter().map(|(_, n)| n.clone()).collect());
+                let borders = shared_borders(&cells);
+                let neighbours = border_neighbours(n, &borders);
                 let plan = if jitter == 0.0 {
                     // A canonical terminal ordering makes feasibility a finite
                     // proof over budgets, not another seed-dependent gamble.
@@ -271,7 +282,7 @@ impl Map {
                         },
                     )
                 }?;
-                Some((sites, cells, neighbours, plan))
+                Some((sites, cells, borders, neighbours, plan))
             })
             .expect("the zero-jitter layouts hold every prescribed land budget");
         let quotas = apportion(&plan.continents, &weights, g.minimum, continent_land);
@@ -343,6 +354,7 @@ impl Map {
         }
 
         let landmass = landmasses(&terrain, &neighbours);
+        let edges = travel_edges(&sites, &terrain, &borders);
         let regions: Vec<Region> = cells
             .into_iter()
             .zip(neighbours)
@@ -350,12 +362,13 @@ impl Map {
             .map(|(i, ((outline, _), neighbours))| Region {
                 site: [sites[i][0] as f32, sites[i][1] as f32],
                 outline: outline.iter().map(|&[x, y]| [x as f32, y as f32]).collect(),
+                area_km2: (area(&outline) * f64::from(KM_PER_UNIT).powi(2)) as f32,
                 terrain: terrain[i],
                 neighbours,
                 landmass: landmass[i],
             })
             .collect();
-        let distance = travel_distances(&regions);
+        let distance = travel_distances(&edges);
         let landmasses = describe_landmasses(&regions, size);
         assert_eq!(
             landmasses
@@ -374,6 +387,7 @@ impl Map {
             height: height as f32,
             regions,
             landmasses,
+            edges,
             distance,
         }
     }
@@ -387,15 +401,17 @@ impl Map {
     /// the same land, less across a harder border, and 0 when the two
     /// share no land border.
     pub fn closeness(&self, a: usize, b: usize) -> f32 {
-        if a == b {
-            return 1.0;
-        }
         let (ra, rb) = (&self.regions[a], &self.regions[b]);
+        if a == b {
+            return if ra.terrain.is_land() { 1.0 } else { 0.0 };
+        }
         if !ra.terrain.is_land() || !rb.terrain.is_land() || !ra.neighbours.contains(&b) {
             return 0.0;
         }
-        let effort = ra.terrain.travel() + rb.terrain.travel();
-        (PLAIN_CLOSENESS * 2.0 / effort).min(MAX_CLOSENESS)
+        let position = self.edges[a].binary_search_by_key(&(b as u32), |&(r, _)| r)
+            .expect("a neighbour has a retained shared border");
+        let effort = self.edges[a][position].1;
+        (PLAIN_CLOSENESS * REFERENCE_TRAVEL_KM / effort).min(MAX_CLOSENESS)
     }
 
     /// Whether region `r` is land that borders the sea.
@@ -1028,11 +1044,31 @@ fn smooth(t: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 
+#[derive(Clone, Debug)]
+struct CellBorder {
+    neighbour: usize,
+    ends: [[f64; 2]; 2],
+}
+
+#[derive(Clone, Debug)]
+struct SharedBorder {
+    a: usize,
+    b: usize,
+    midpoint: [f64; 2],
+}
+
+fn area(outline: &[[f64; 2]]) -> f64 {
+    outline.iter().enumerate().map(|(i, &[x0, y0])| {
+        let [x1, y1] = outline[(i + 1) % outline.len()];
+        x0 * y1 - x1 * y0
+    }).sum::<f64>().abs() / 2.0
+}
+
 /// The Voronoi cell of site `i` within the map's bounds, and the sites
 /// whose cells it borders: the bounds clipped by the half-plane nearer `i`
 /// than each other site. Each edge of the polygon remembers the site that
 /// cut it, or none for the map's edge.
-fn cell(sites: &[[f64; 2]], i: usize, width: f64, height: f64) -> (Vec<[f64; 2]>, Vec<usize>) {
+fn cell(sites: &[[f64; 2]], i: usize, width: f64, height: f64) -> (Vec<[f64; 2]>, Vec<CellBorder>) {
     let mut polygon: Vec<([f64; 2], Option<usize>)> = vec![
         ([0.0, 0.0], None),
         ([width, 0.0], None),
@@ -1069,35 +1105,70 @@ fn cell(sites: &[[f64; 2]], i: usize, width: f64, height: f64) -> (Vec<[f64; 2]>
         }
         polygon = next;
     }
-    let mut borders: Vec<usize> = (0..polygon.len())
+    let borders = (0..polygon.len())
         .filter_map(|k| {
             let (a, label) = polygon[k];
             let (b, _) = polygon[(k + 1) % polygon.len()];
             let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
-            let long = dx * dx + dy * dy > 1e-6;
-            label.filter(|_| long)
+            // Keep the existing sliver cutoff, but apply it to unrounded
+            // labelled edges. A surviving side supplies the canonical border.
+            label.filter(|_| dx * dx + dy * dy > 1e-6)
+                .map(|neighbour| CellBorder { neighbour, ends: [a, b] })
         })
         .collect();
-    borders.sort_unstable();
-    borders.dedup();
     (polygon.into_iter().map(|(p, _)| p).collect(), borders)
 }
 
-/// Borders as both sides see them: rounding can leave a sliver of border
-/// on one side only.
-fn symmetric(mut neighbours: Vec<Vec<usize>>) -> Vec<Vec<usize>> {
-    for i in 0..neighbours.len() {
-        for k in 0..neighbours[i].len() {
-            let j = neighbours[i][k];
-            if !neighbours[j].contains(&i) {
-                neighbours[j].push(i);
-            }
-        }
+/// Retain one positive border for each unordered pair before f32 rounding.
+/// Prefer the lower-ID cell's side; a one-sided clipping sliver still yields
+/// exactly one symmetric edge rather than independently recovered geometry.
+fn shared_borders(cells: &[(Vec<[f64; 2]>, Vec<CellBorder>)]) -> Vec<SharedBorder> {
+    let mut sides: Vec<_> = cells.iter().enumerate().flat_map(|(i, (_, borders))| {
+        borders.iter().map(move |border| {
+            (i.min(border.neighbour), i.max(border.neighbour), i, border.ends)
+        })
+    }).collect();
+    sides.sort_unstable_by_key(|&(a, b, source, _)| (a, b, source));
+    sides.dedup_by_key(|side| (side.0, side.1));
+    sides.into_iter().map(|(a, b, _, [p, q])| SharedBorder {
+        a, b, midpoint: [(p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0],
+    }).collect()
+}
+
+fn border_neighbours(n: usize, borders: &[SharedBorder]) -> Vec<Vec<usize>> {
+    let mut neighbours = vec![Vec::new(); n];
+    for border in borders {
+        neighbours[border.a].push(border.b);
+        neighbours[border.b].push(border.a);
     }
-    for n in &mut neighbours {
-        n.sort_unstable();
+    for row in &mut neighbours {
+        row.sort_unstable();
     }
     neighbours
+}
+
+fn travel_edges(
+    sites: &[[f64; 2]],
+    terrain: &[Terrain],
+    borders: &[SharedBorder],
+) -> Vec<Vec<(u32, f32)>> {
+    let mut edges = vec![Vec::new(); sites.len()];
+    for border in borders {
+        let leg = |r: usize| {
+            let [x, y] = sites[r];
+            let [mx, my] = border.midpoint;
+            ((x - mx).powi(2) + (y - my).powi(2)).sqrt()
+        };
+        let effort = (f64::from(KM_PER_UNIT)
+            * (leg(border.a) * f64::from(terrain[border.a].travel())
+                + leg(border.b) * f64::from(terrain[border.b].travel()))) as f32;
+        edges[border.a].push((border.b as u32, effort));
+        edges[border.b].push((border.a as u32, effort));
+    }
+    for row in &mut edges {
+        row.sort_unstable_by_key(|&(r, _)| r);
+    }
+    edges
 }
 
 /// `of` ordered by `value`, lowest first, ties by index.
@@ -1111,15 +1182,14 @@ fn share(len: usize, fraction: f64) -> usize {
     (len as f64 * fraction + 0.5) as usize
 }
 
-/// Least travel effort between every pair of regions (Floyd–Warshall).
-/// Crossing a border costs the mean effort of the two regions it joins.
-fn travel_distances(regions: &[Region]) -> Vec<f32> {
-    let n = regions.len();
+/// Least effort-km between every pair of regions (Floyd–Warshall).
+fn travel_distances(edges: &[Vec<(u32, f32)>]) -> Vec<f32> {
+    let n = edges.len();
     let mut d = vec![f32::INFINITY; n * n];
-    for (i, region) in regions.iter().enumerate() {
+    for (i, row) in edges.iter().enumerate() {
         d[i * n + i] = 0.0;
-        for &j in &region.neighbours {
-            d[i * n + j] = (region.terrain.travel() + regions[j].terrain.travel()) / 2.0;
+        for &(j, effort) in row {
+            d[i * n + j as usize] = effort;
         }
     }
     for k in 0..n {
@@ -1142,12 +1212,43 @@ fn travel_distances(regions: &[Region]) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn border_midpoints_define_reference_and_skewed_effort() {
+        let g = Geography {
+            cols: 5, rows: 5, continents: (1, 1), continent_land: (1, 1), minimum: 1,
+        };
+        let points = sites(&g, &[[0.0, 0.0]; 25], 0.0);
+        let cells: Vec<_> = (0..points.len()).map(|i| cell(&points, i, 5.5, 4.0 * ROW + 1.0)).collect();
+        let borders = shared_borders(&cells);
+        for (terrain, expected) in [(Terrain::Plains, 100.0), (Terrain::Steppe, 80.0)] {
+            let edges = travel_edges(&points, &vec![terrain; points.len()], &borders);
+            let effort = edges[12].iter().find(|&&(r, _)| r == 13).unwrap().1;
+            assert!((effort - expected).abs() < 1e-4);
+        }
+
+        let points = [[0.5, 0.5], [1.5, 0.5], [1.0, 1.4]];
+        let cells: Vec<_> = (0..points.len()).map(|i| cell(&points, i, 2.0, 2.0)).collect();
+        let borders = shared_borders(&cells);
+        let border = borders.iter().find(|b| (b.a, b.b) == (0, 1)).unwrap();
+        let [mx, my] = border.midpoint;
+        let leg = ((mx - 0.5).powi(2) + (my - 0.5).powi(2)).sqrt();
+        assert!(leg > 0.5);
+        let edges = travel_edges(&points, &[Terrain::Plains, Terrain::Hills, Terrain::Sea], &borders);
+        let effort = edges[0].iter().find(|&&(r, _)| r == 1).unwrap().1;
+        assert!((f64::from(effort) - 100.0 * leg * 3.0).abs() < 1e-4);
+        assert_eq!(effort, edges[1].iter().find(|&&(r, _)| r == 0).unwrap().1);
+    }
+
 
     #[test]
     fn regions_tile_the_map_and_border_each_other_both_ways() {
         for size in [MapSize::Small, MapSize::Medium, MapSize::Large] {
             let map = Map::generate(7, size);
             let area: f32 = map.regions.iter().map(|r| polygon_area(&r.outline)).sum();
+            let physical_area: f64 = map.regions.iter().map(|r| f64::from(r.area_km2)).sum();
+            let rectangle = f64::from(map.width) * f64::from(map.height) * 10_000.0;
+            assert!((physical_area - rectangle).abs() / rectangle < 1e-6);
+            assert!(map.regions.iter().all(|r| r.area_km2 > 0.0));
             assert!(
                 (area - map.width * map.height).abs() < 1e-2,
                 "{size:?}: {area}"
@@ -1300,7 +1401,8 @@ mod tests {
             let sites = sites(g, &vec![[0.0, 0.0]; n], 0.0);
             let width = g.cols as f64 + 0.5;
             let height = (g.rows - 1) as f64 * ROW + 1.0;
-            let neighbours = symmetric((0..n).map(|r| cell(&sites, r, width, height).1).collect());
+            let cells: Vec<_> = (0..n).map(|r| cell(&sites, r, width, height)).collect();
+            let neighbours = border_neighbours(n, &shared_borders(&cells));
             for k in g.continents.0..=g.continents.1 {
                 let layouts = layouts(g, k);
                 for continents in g.continent_land.0..=g.continent_land.1 {
@@ -1366,11 +1468,11 @@ mod tests {
     #[test]
     fn travel_follows_the_easiest_route() {
         let map = Map::generate(3, MapSize::Medium);
-        for (i, r) in map.regions.iter().enumerate() {
-            for &j in &r.neighbours {
-                let direct = (r.terrain.travel() + map.regions[j].terrain.travel()) / 2.0;
-                assert!(map.distance(i, j) <= direct + 1e-6);
-                assert_eq!(map.distance(i, j), map.distance(j, i));
+        for i in 0..map.regions.len() {
+            for &(j, direct) in &map.edges[i] {
+                let j = j as usize;
+                assert!(map.distance(i, j) <= direct + 1e-3);
+                assert!((map.distance(i, j) - map.distance(j, i)).abs() < 1e-3);
             }
         }
     }
