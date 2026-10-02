@@ -1,0 +1,737 @@
+//! Real-world invariants, sampled across founding profiles and millennia.
+//! Run alone with `cargo test -p umran-sim --test invariants -- --nocapture`.
+//!
+//! Minimal words are transition guards: founding and borrowing may supply
+//! short words, but sound laws cannot shorten them below or further below
+//! the minimum (docs/engine.md and prosody.rs). All words must keep a vowel.
+
+use std::collections::HashSet;
+use std::time::Instant;
+use umran_sim::compare::{compare, intelligibility};
+use umran_sim::prosody::moras;
+use umran_sim::{
+    Action, CATALOG, CONCEPTS, Chronicle, ContactKind, ENGINE_REVISION, Entry, Env, Event, FORMAT,
+    Form, LanguageDesign, Law, LexemeId, Lexicon, MapSize, MinimalWord, Name, Naming, Origin,
+    Params, PhonemeId, Recipe, Revelation, Rewrite, Rise, Seg, Segment, SoundChange, SoundProfile,
+    Variety, World,
+};
+
+const SEEDS: u64 = 30;
+const GENERATIONS: u32 = 160; // 4,000 years; seed zero continues to 10,000.
+
+fn size(minimal: MinimalWord, form: &Form) -> usize {
+    match minimal {
+        MinimalWord::Syllable | MinimalWord::TwoSyllables => form.vowel_count(),
+        MinimalWord::Heavy => moras(form),
+    }
+}
+
+fn least(minimal: MinimalWord) -> usize {
+    match minimal {
+        MinimalWord::Syllable => 1,
+        MinimalWord::Heavy | MinimalWord::TwoSyllables => 2,
+    }
+}
+
+fn environment(env: &Env, neighbor: Option<PhonemeId>) -> bool {
+    match env {
+        Env::Any => true,
+        Env::WordEdge => neighbor.is_none(),
+        Env::Matcher(matcher) => neighbor.is_some_and(|id| matcher.matches(id)),
+    }
+}
+
+// This oracle does not call Law::apply, SoundChange::apply, or hits: it
+// resolves a whole input before filtering deletions, so it also detects
+// sequential (feeding/bleeding) application within a word.
+fn replacement(rewrite: &Rewrite, old: PhonemeId) -> Option<PhonemeId> {
+    match (rewrite, CATALOG.get(old)) {
+        (Rewrite::Delete, _) => None,
+        (Rewrite::Phone(id), _) => Some(*id),
+        (
+            Rewrite::Consonant {
+                place,
+                manner,
+                voiced,
+                secondary,
+            },
+            Segment::Consonant(c),
+        ) => Some(
+            CATALOG
+                .consonants()
+                .find_map(|(id, candidate)| {
+                    (candidate.place == place.unwrap_or(c.place)
+                        && candidate.manner == manner.unwrap_or(c.manner)
+                        && candidate.voiced == voiced.unwrap_or(c.voiced)
+                        && candidate.secondary == secondary.unwrap_or(c.secondary))
+                    .then_some(id)
+                })
+                .unwrap_or(old),
+        ),
+        (
+            Rewrite::Vowel {
+                height,
+                backness,
+                rounded,
+            },
+            Segment::Vowel(v),
+        ) => Some(
+            CATALOG
+                .vowels()
+                .find_map(|(id, candidate)| {
+                    (candidate.height == height.unwrap_or(v.height)
+                        && candidate.backness == backness.unwrap_or(v.backness)
+                        && candidate.rounded == rounded.unwrap_or(v.rounded))
+                    .then_some(id)
+                })
+                .unwrap_or(old),
+        ),
+        _ => Some(old),
+    }
+}
+
+fn reference_rule(rule: &SoundChange, before: &Form) -> Form {
+    let mut outcomes: Vec<Option<Seg>> = before
+        .segs
+        .iter()
+        .enumerate()
+        .map(|(i, seg)| {
+            let left = i.checked_sub(1).map(|n| before.segs[n].phone);
+            let right = before.segs.get(i + 1).map(|s| s.phone);
+            let phone = if rule.target.matches(seg.phone)
+                && environment(&rule.left, left)
+                && environment(&rule.right, right)
+            {
+                replacement(&rule.result, seg.phone)
+            } else {
+                Some(seg.phone)
+            };
+            phone.map(|phone| Seg {
+                phone,
+                long: seg.long && CATALOG.get(phone).is_vowel(),
+            })
+        })
+        .collect();
+    if !outcomes
+        .iter()
+        .flatten()
+        .any(|s| CATALOG.get(s.phone).is_vowel())
+        && let Some(last) = before
+            .segs
+            .iter()
+            .rposition(|s| CATALOG.get(s.phone).is_vowel())
+    {
+        outcomes[last] = Some(before.segs[last]);
+    }
+    let segs: Vec<_> = outcomes.iter().flatten().copied().collect();
+    let mut boundaries: Vec<_> = before
+        .boundaries
+        .iter()
+        .map(|&b| outcomes[..b].iter().flatten().count())
+        .filter(|&b| b > 0 && b < segs.len())
+        .collect();
+    boundaries.dedup();
+    Form { segs, boundaries }
+}
+
+fn reference_law(law: &Law, before: &Form, minimal: MinimalWord) -> Form {
+    law.rules.iter().fold(before.clone(), |current, rule| {
+        let next = reference_rule(rule, &current);
+        if size(minimal, &next) < size(minimal, &current) && size(minimal, &next) < least(minimal) {
+            current
+        } else {
+            next
+        }
+    })
+}
+
+fn expected_changes(
+    before: &Form,
+    laws: &[&Law],
+    minimal: MinimalWord,
+    generation: u32,
+) -> (Form, Vec<Entry>) {
+    let mut form = before.clone();
+    let mut log = Vec::new();
+    for law in laws {
+        let after = reference_law(law, &form, minimal);
+        if after != form {
+            log.push(Entry {
+                generation,
+                event: Event::SoundLaw {
+                    law: law.id,
+                    before: form,
+                },
+            });
+            form = after;
+        }
+    }
+    (form, log)
+}
+
+#[derive(Clone, Copy, Debug)]
+enum NameKey {
+    Language,
+    People(usize),
+    Given(usize),
+    State(usize),
+    Place(usize),
+    Exonym(usize),
+}
+
+fn names(world: &World, v: usize) -> Vec<(NameKey, &Name)> {
+    let variety = &world.varieties[v];
+    let mut out = vec![(NameKey::Language, &variety.name)];
+    out.extend(
+        world
+            .communities
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.living() && c.variety == v)
+            .map(|(i, c)| (NameKey::People(i), &c.name)),
+    );
+    out.extend(
+        variety
+            .given
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (NameKey::Given(i), &n.name)),
+    );
+    out.extend(
+        world
+            .states
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.standing() && world.communities[s.rulers].variety == v)
+            .map(|(i, s)| (NameKey::State(i), &s.name)),
+    );
+    let held: HashSet<_> = world
+        .communities
+        .iter()
+        .filter(|c| c.living() && c.variety == v)
+        .flat_map(|c| c.lands.iter().copied())
+        .collect();
+    out.extend(
+        world
+            .places
+            .iter()
+            .enumerate()
+            .filter(|(r, _)| held.contains(r))
+            .filter_map(|(r, history)| {
+                history
+                    .last()
+                    .filter(|p| p.variety == v)
+                    .map(|p| (NameKey::Place(r), &p.name))
+            }),
+    );
+    out.extend(
+        variety
+            .exonyms
+            .iter()
+            .enumerate()
+            .map(|(i, (_, n))| (NameKey::Exonym(i), n)),
+    );
+    out
+}
+
+fn name_at(world: &World, v: usize, key: NameKey) -> &Name {
+    match key {
+        NameKey::Language => &world.varieties[v].name,
+        NameKey::People(i) => &world.communities[i].name,
+        NameKey::Given(i) => &world.varieties[v].given[i].name,
+        NameKey::State(i) => &world.states[i].name,
+        NameKey::Place(r) => &world.places[r].last().unwrap().name,
+        NameKey::Exonym(i) => &world.varieties[v].exonyms[i].1,
+    }
+}
+
+fn assert_form(form: &Form, seed: u64, year: u32) {
+    assert!(
+        form.vowel_count() > 0,
+        "seed {seed}, year {year}: {} lost its last vowel",
+        form.ipa()
+    );
+    assert!(
+        form.segs
+            .iter()
+            .all(|s| !s.long || CATALOG.get(s.phone).is_vowel()),
+        "seed {seed}, year {year}: consonant has vowel length"
+    );
+    assert!(
+        form.boundaries
+            .iter()
+            .all(|&b| b > 0 && b < form.segs.len())
+            && form.boundaries.windows(2).all(|b| b[0] < b[1]),
+        "seed {seed}, year {year}: invalid morpheme boundaries in {}",
+        form.ipa()
+    );
+}
+
+fn assert_slots(lexicon: &Lexicon, seed: u64, year: u32) {
+    let mut in_use = HashSet::new();
+    for slot in &lexicon.slots {
+        let total: f32 = slot.variants.iter().map(|v| v.weight).sum();
+        assert!(
+            slot.variants.is_empty() || (total - 1.0).abs() < 1e-4,
+            "seed {seed}, year {year}: {} usage sums to {total}",
+            slot.concept.id
+        );
+        let mut unique = HashSet::new();
+        for variant in &slot.variants {
+            assert!(
+                variant.weight.is_finite() && variant.weight > 0.0 && variant.weight <= 1.0,
+                "seed {seed}, year {year}: invalid usage for {}",
+                slot.concept.id
+            );
+            assert!(
+                unique.insert(variant.lexeme),
+                "seed {seed}, year {year}: duplicate competitor"
+            );
+            let lexeme = lexicon.get(variant.lexeme);
+            assert!(
+                lexeme.obsolete.is_none(),
+                "seed {seed}, year {year}: obsolete word remains in use"
+            );
+            in_use.insert(variant.lexeme);
+        }
+    }
+    for lexeme in &lexicon.lexemes {
+        assert_eq!(
+            lexeme.obsolete.is_none(),
+            in_use.contains(&lexeme.id),
+            "seed {seed}, year {year}: living status disagrees with usage for {:?}",
+            lexeme.id
+        );
+    }
+}
+
+#[test]
+fn sound_laws_are_regular_protect_words_and_freeze_the_record() {
+    let start = Instant::now();
+    let profiles = SoundProfile::presets();
+    let laws = umran_sim::catalog();
+    let (mut fired, mut obsolete_matches, mut protected, mut changed_names) = (0, 0, 0, 0);
+    let mut seen = HashSet::new();
+    for seed in 0..SEEDS {
+        let profile = &profiles[seed as usize % profiles.len()];
+        let params = Params {
+            sound_change_rate: 1.0,
+            preference_pull: 0.0,
+            ..Params::static_society()
+        };
+        let mut world = World::solo(seed, profile, params);
+        world.raise_state(0, None, Rise::Proclaimed);
+        world.found_religion(0, Revelation::Proclaimed);
+        let sacred = world.religions[0].sacred;
+        let frozen = world.varieties[sacred].clone();
+        let founders = (world.states[0].founder.clone(), world.religions[0].clone());
+        let continents = world.continent_names.clone();
+        for _ in 0..if seed == 0 { 400 } else { GENERATIONS } {
+            let v = world.communities[0].variety;
+            let minimal = world.varieties[v].minimal;
+            let words: Vec<_> = world.varieties[v]
+                .lexicon
+                .lexemes
+                .iter()
+                .map(|l| (l.form.clone(), l.obsolete.is_some(), l.log.len()))
+                .collect();
+            let before_names: Vec<_> = names(&world, v)
+                .into_iter()
+                .map(|(key, n)| (key, n.form.clone(), n.log.len()))
+                .collect();
+            let law_count = world.varieties[v].laws.len();
+            world.step();
+            let year = world.generation * 25;
+            let applied: Vec<_> = world.varieties[v].laws[law_count..]
+                .iter()
+                .map(|&(g, id)| {
+                    assert_eq!(
+                        g, world.generation,
+                        "seed {seed}, year {year}: misplaced law"
+                    );
+                    seen.insert(id);
+                    laws.iter().find(|law| law.id == id).expect("catalog law")
+                })
+                .collect();
+            fired += applied.len();
+            for ((before, obsolete, log_len), after) in
+                words.iter().zip(&world.varieties[v].lexicon.lexemes)
+            {
+                let (expected, log) = if *obsolete {
+                    if applied
+                        .iter()
+                        .any(|law| reference_law(law, before, minimal) != *before)
+                    {
+                        obsolete_matches += 1;
+                    }
+                    (before.clone(), Vec::new())
+                } else {
+                    expected_changes(before, &applied, minimal, world.generation)
+                };
+                assert_eq!(
+                    after.form,
+                    expected,
+                    "seed {seed}, year {year}, {:?}, laws {:?}: irregular word change",
+                    after.id,
+                    applied.iter().map(|l| l.id).collect::<Vec<_>>()
+                );
+                let changes: Vec<_> = after.log[*log_len..]
+                    .iter()
+                    .filter(|e| matches!(e.event, Event::SoundLaw { .. }))
+                    .cloned()
+                    .collect();
+                assert_eq!(
+                    changes, log,
+                    "seed {seed}, year {year}, {:?}: incorrect law history",
+                    after.id
+                );
+                if *obsolete {
+                    assert_eq!(
+                        after.log.len(),
+                        *log_len,
+                        "seed {seed}, year {year}: obsolete record changed"
+                    );
+                } else {
+                    assert!(
+                        !(size(minimal, &after.form) < size(minimal, before)
+                            && size(minimal, &after.form) < least(minimal)),
+                        "seed {seed}, year {year}: {:?} wore below {}",
+                        after.id,
+                        minimal.label()
+                    );
+                    protected += applied
+                        .iter()
+                        .filter(|law| {
+                            law.rules.iter().any(|rule| {
+                                let raw = reference_rule(rule, before);
+                                size(minimal, &raw) < size(minimal, before)
+                                    && size(minimal, &raw) < least(minimal)
+                            })
+                        })
+                        .count();
+                }
+            }
+            for (key, before, log_len) in before_names {
+                let after = name_at(&world, v, key);
+                let (expected, log) =
+                    expected_changes(&before, &applied, minimal, world.generation);
+                changed_names += usize::from(expected != before);
+                assert_eq!(
+                    after.form, expected,
+                    "seed {seed}, year {year}, {key:?}: irregular name change"
+                );
+                assert_eq!(
+                    &after.log[log_len..],
+                    log.as_slice(),
+                    "seed {seed}, year {year}, {key:?}: incorrect name history"
+                );
+                assert_form(&after.form, seed, year);
+            }
+            for lexeme in world.varieties[v].lexicon.living() {
+                assert_form(&lexeme.form, seed, year);
+            }
+            assert_slots(&world.varieties[v].lexicon, seed, year);
+            assert_variety_eq(&world.varieties[sacred], &frozen, seed, year);
+            assert_eq!(
+                world.states[0].founder, founders.0,
+                "seed {seed}, year {year}: dead founder changed"
+            );
+            assert_eq!(
+                world.religions[0], founders.1,
+                "seed {seed}, year {year}: frozen faith names changed"
+            );
+            for (now, old) in world.continent_names.iter().zip(&continents) {
+                if old.is_some() {
+                    assert_eq!(
+                        now, old,
+                        "seed {seed}, year {year}: fixed continent heading changed"
+                    );
+                }
+            }
+        }
+    }
+    // Coverage floors, not calibrated frequencies or exact history pins.
+    assert!(
+        fired >= SEEDS as usize * 10,
+        "too few laws exercised: {fired}"
+    );
+    assert!(
+        seen.len() >= 15,
+        "too few kinds of law exercised: {}",
+        seen.len()
+    );
+    assert!(
+        obsolete_matches >= 100,
+        "obsolete matching words were not exercised: {obsolete_matches}"
+    );
+    assert!(
+        protected >= 100,
+        "minimal-word protection was not exercised: {protected}"
+    );
+    assert!(
+        changed_names >= 100,
+        "matching names were not exercised: {changed_names}"
+    );
+    println!(
+        "regularity: {SEEDS} seeds, 4,000–10,000 years, {fired} laws / {} kinds, {obsolete_matches} obsolete matches, {protected} protected words, {changed_names} changed names; {:?}",
+        seen.len(),
+        start.elapsed()
+    );
+}
+
+fn assert_variety_eq(a: &Variety, b: &Variety, seed: u64, year: u32) {
+    macro_rules! same {
+        ($($field:ident),+ $(,)?) => { $(assert_eq!(a.$field, b.$field,
+            "seed {seed}, year {year}: variety {} differs", stringify!($field));)+ };
+    }
+    same!(
+        name,
+        profile,
+        founding_inventory,
+        lexicon,
+        morphology,
+        minimal,
+        laws,
+        waves,
+        parent,
+        style,
+        given,
+        written,
+        exonyms,
+        high,
+        vernacular
+    );
+}
+
+fn assert_world_eq(a: &World, b: &World, seed: u64) {
+    let year = a.generation * 25;
+    macro_rules! same {
+        ($($field:ident),+ $(,)?) => { $(assert_eq!(a.$field, b.$field,
+            "seed {seed}, year {year}: world {} differs", stringify!($field));)+ };
+    }
+    same!(
+        seed,
+        generation,
+        map,
+        communities,
+        contacts,
+        params,
+        events,
+        places,
+        continent_names,
+        states,
+        religions
+    );
+    assert_eq!(
+        a.varieties.len(),
+        b.varieties.len(),
+        "seed {seed}, year {year}: different languages"
+    );
+    for (x, y) in a.varieties.iter().zip(&b.varieties) {
+        assert_variety_eq(x, y, seed, year);
+    }
+}
+
+fn recipe(seed: u64) -> Recipe {
+    let mut actions = Vec::new();
+    for (i, preset) in ["germanic", "polynesian", "semitic"].iter().enumerate() {
+        let language_seed = seed * 3 + i as u64;
+        actions.push(Action::Found {
+            naming: Naming::People,
+            design: LanguageDesign::preset(preset, language_seed).unwrap(),
+            seed: language_seed,
+            power: 0.4 + i as f32 * 0.2,
+            openness: 0.4 + i as f32 * 0.1,
+            region: None,
+            livelihood: None,
+        });
+    }
+    actions.extend([
+        Action::Connect {
+            a: 0,
+            b: 1,
+            intensity: 0.6,
+            contact: ContactKind::Trade,
+        },
+        Action::Connect {
+            a: 2,
+            b: 1,
+            intensity: 0.8,
+            contact: ContactKind::Rule,
+        },
+        Action::Religion { community: 0 },
+        Action::Split {
+            community: 0,
+            naming: None,
+            intensity: 0.5,
+        },
+        Action::Run {
+            generations: if seed == 0 { GENERATIONS } else { 80 },
+        },
+    ]);
+    Recipe {
+        format: FORMAT.into(),
+        revision: ENGINE_REVISION,
+        seed,
+        map: MapSize::Small,
+        actions,
+        tellings: Vec::new(),
+    }
+}
+
+#[test]
+fn recipes_replay_identical_histories_in_fresh_worlds() {
+    let start = Instant::now();
+    for seed in 0..SEEDS {
+        let recipe = recipe(seed);
+        let a = Chronicle::from_recipe(&recipe).unwrap();
+        let b = Chronicle::from_recipe(&recipe).unwrap();
+        assert_world_eq(a.latest(), b.latest(), seed);
+        // Drop both replayers and build from persisted data, not a World clone.
+        let expected = a.latest().clone();
+        let saved = serde_json::to_string(&recipe).unwrap();
+        drop((a, b, recipe));
+        let restored: Recipe = serde_json::from_str(&saved).unwrap();
+        let mut fresh = Chronicle::from_recipe(&restored).unwrap();
+        assert_world_eq(&expected, fresh.latest(), seed);
+        // Exercise historical checkpoints on the longest recipe as well.
+        if seed == 0 {
+            for generation in [1, 60, 120] {
+                let warm = fresh.world_at(generation);
+                let mut prefix = restored.clone();
+                *prefix.actions.last_mut().unwrap() = Action::Run {
+                    generations: generation,
+                };
+                let cold = Chronicle::from_recipe(&prefix).unwrap();
+                assert_world_eq(&warm, cold.latest(), seed);
+            }
+        }
+        for variety in &fresh.latest().varieties {
+            assert_slots(&variety.lexicon, seed, fresh.latest().generation * 25);
+            for lexeme in variety.lexicon.living() {
+                assert_form(&lexeme.form, seed, fresh.latest().generation * 25);
+            }
+        }
+    }
+    println!(
+        "determinism: {SEEDS} persisted recipes, 2,000–4,000 years, fresh builds and past checkpoints; {:?}",
+        start.elapsed()
+    );
+}
+
+fn hide_descent(lexicon: &mut Lexicon) {
+    for lexeme in &mut lexicon.lexemes {
+        lexeme.origin = Origin::Founding;
+        lexeme.born = 0;
+        lexeme.log.clear();
+    }
+}
+
+fn scramble_descent(lexicon: &mut Lexicon) {
+    for (i, lexeme) in lexicon.lexemes.iter_mut().enumerate() {
+        lexeme.origin = if i % 2 == 0 {
+            Origin::Borrowed {
+                from: usize::MAX,
+                source: LexemeId(u32::MAX),
+            }
+        } else {
+            Origin::Renewed {
+                base: LexemeId(u32::MAX),
+                with: Some(LexemeId(u32::MAX)),
+            }
+        };
+        lexeme.born = u32::MAX;
+        lexeme.log = vec![Entry {
+            generation: u32::MAX,
+            event: Event::Borrowed {
+                from: usize::MAX,
+                source: Form::from_phones([]),
+            },
+        }];
+    }
+}
+
+#[test]
+fn comparative_method_ignores_hidden_and_scrambled_descent() {
+    let start = Instant::now();
+    let core: Vec<_> = CONCEPTS.iter().filter(|c| c.stability.is_some()).collect();
+    let profiles = SoundProfile::presets();
+    for seed in 0..SEEDS {
+        let mut world = World::solo(
+            seed,
+            &profiles[seed as usize % profiles.len()],
+            Params::static_society(),
+        );
+        let outsider = world.found(&profiles[(seed as usize + 7) % profiles.len()], 0.5, 0.5);
+        world.run(20);
+        let daughter = world.split(0, None, 0.0);
+        world.run(GENERATIONS - 20);
+        let parent = world.communities[0].variety;
+        for other in [daughter, outsider] {
+            let other = world.communities[other].variety;
+            let (a, b) = (
+                &world.varieties[parent].lexicon,
+                &world.varieties[other].lexicon,
+            );
+            let expected = compare(a, b, &core);
+            let heard = intelligibility(a, b);
+            let (mut hidden_a, mut hidden_b) = (a.clone(), b.clone());
+            hide_descent(&mut hidden_a);
+            hide_descent(&mut hidden_b);
+            assert_eq!(
+                compare(&hidden_a, &hidden_b, &core),
+                expected,
+                "seed {seed}: hidden descent affected comparison"
+            );
+            assert_eq!(
+                intelligibility(&hidden_a, &hidden_b),
+                heard,
+                "seed {seed}: hidden descent affected intelligibility"
+            );
+            scramble_descent(&mut hidden_a);
+            scramble_descent(&mut hidden_b);
+            assert_eq!(
+                compare(&hidden_a, &hidden_b, &core),
+                expected,
+                "seed {seed}: scrambled descent affected comparison"
+            );
+            assert_eq!(
+                intelligibility(&hidden_a, &hidden_b),
+                heard,
+                "seed {seed}: scrambled descent affected intelligibility"
+            );
+        }
+    }
+    println!(
+        "comparison: {SEEDS} seeds, related and unrelated languages at 4,000 years; {:?}",
+        start.elapsed()
+    );
+}
+
+#[test]
+fn existing_segment_ids_retain_their_historical_meaning() {
+    // This is an intentional compatibility fixture, not a generated-output
+    // snapshot. The catalog is immutable during a run; only an edit to its
+    // construction can insert or reinterpret an id. Extend at the END when
+    // adding sounds; never update existing offsets to make this test pass.
+    const HISTORICAL: &[&str] = &[
+        "p", "b", "t", "d", "k", "g", "q", "ʔ", "m", "n", "ɲ", "ŋ", "r", "ɾ", "f", "v", "θ", "ð",
+        "s", "z", "ʃ", "ʒ", "x", "ɣ", "h", "ts", "dz", "tʃ", "dʒ", "w", "j", "l", "ʎ", "ɬ", "ɓ",
+        "ɗ", "pʼ", "tʼ", "kʼ", "i", "y", "ɨ", "u", "ɪ", "ʊ", "e", "ø", "ə", "o", "ɛ", "ɔ", "æ",
+        "a", "ɑ", "pʰ", "tʰ", "kʰ", "tʃʰ", "bʱ", "dʱ", "gʱ", "ʈ", "ɖ", "ɳ", "ʂ", "ʐ", "ɭ", "kʷ",
+        "gʷ", "qʷ", "xʷ", "tɬ", "χ", "ʁ", "ħ", "ʕ", "β", "ɸ",
+    ];
+    for (offset, &ipa) in HISTORICAL.iter().enumerate() {
+        let id = PhonemeId(offset as u16);
+        assert_eq!(
+            CATALOG.get(id).ipa(),
+            ipa,
+            "historical segment {offset} was reinterpreted"
+        );
+        assert_eq!(
+            CATALOG.id_by_ipa(ipa),
+            Some(id),
+            "historical segment {ipa} was moved or duplicated"
+        );
+    }
+}
