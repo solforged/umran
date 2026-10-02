@@ -162,7 +162,7 @@ export function bookMarkdown(title: string, overview: Overview, glossaries: [str
     if (v.sacredOf !== null) out.push(`Sacred to ${overview.religions[v.sacredOf].name}.`);
     out.push("", ...givenNameLines(v, overview).map((line) => `- ${line}`), "");
   }
-  out.push("", "## History");
+  out.push("", "## The chronicle");
   let year = -1;
   for (const a of overview.annals) {
     if (a.generation !== year) {
@@ -177,7 +177,7 @@ export function bookMarkdown(title: string, overview: Overview, glossaries: [str
     for (const r of sorted) out.push(`- **${r.spelled}**${r.said === null ? "" : ` · said *${r.said}*`} /${r.ipa}/ ${r.gloss}`);
   }
   if (notes.length) {
-    out.push("", "## The field notebook", "");
+    out.push("", "## Notes", "");
     for (const note of notes) {
       const telling = overview.tellings.find((t) => t.id === note.target?.reading.telling);
       out.push(`### ${note.title}`, "", `${note.kind}${note.archived ? " · archived" : ""} · year ${note.generation * YEARS}${note.target ? ` · ${telling?.name ?? "Unavailable telling"}` : ""}`, "");

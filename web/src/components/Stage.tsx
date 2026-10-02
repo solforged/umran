@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import { BookOpen, ChevronDown, ChevronUp, Layers, Map as MapIcon, Pause, Play, ScrollText, Search, SkipForward, StepForward, Undo2, X } from "lucide-react";
+import { flushSync } from "react-dom";
+import { BookOpen, ChevronDown, Layers, Map as MapIcon, Pause, Play, ScrollText, Search, SkipForward, Square, StepForward, Undo2, X } from "lucide-react";
 import type { Annal, Catalog, Craft, Destination, HistoryPoint, ReadEngine, EthosAxis, Overview, SettlementChoice, SettlementPreview, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { ETHOS_AXES, ETHOS_POLES, EVENT_KIND, hue } from "../lore";
@@ -12,7 +13,7 @@ import { AtlasIndex } from "./AtlasIndex";
 import type { DictionaryView } from "./Dictionary";
 import { Told } from "./Told";
 import { MapView, type MapMotionReading, type Tint } from "./MapView";
-import { Pedia, type Focus } from "./Pedia";
+import { EntryAnnotations, Pedia, type Focus } from "./Pedia";
 import { emphasizeInk, useLiftedValue } from "../motion";
 import { LightChoice } from "./LightSwitch";
 import { Popover } from "./Popover";
@@ -45,6 +46,25 @@ function stops(on: PauseOn, annal: Annal): boolean {
 /// Most cards the back button remembers.
 const TRAIL_LENGTH = 40;
 
+function exists(subject: Focus, overview: Overview, map: WorldMap): boolean {
+  switch (subject.kind) {
+    case "event": return !!findAnnal(overview.annals, subject.id);
+    case "people": return !!overview.communities[subject.id];
+    case "state": return !!overview.states[subject.id];
+    case "religion": return !!overview.religions[subject.id];
+    case "language": case "word": return !!overview.varieties[subject.variety];
+    case "law": return overview.varieties.some((v) => v.laws.some((l) => l.id === subject.id));
+    case "craft": return overview.crafts.some((c) => c.id === subject.id);
+    case "land": return !!map.regions[subject.region];
+    case "continent": return !!map.landmasses[subject.landmass];
+    case "river": return !!map.rivers[subject.id];
+    case "zone": return !!map.climateZones[subject.id];
+    default: return true;
+  }
+}
+
+const nextRunYear = (latest: number) => Math.max(4000, Math.ceil((latest * YEARS + 1000) / 1000) * 1000);
+
 /// The world as a stage: the map in the middle, what just happened beside
 /// it, the encyclopedia card for whatever is in focus to the side, and
 /// time along the bottom.
@@ -62,12 +82,14 @@ export function Stage({
   selected,
   onSelect,
   onShelf,
-  onExport,
+  onBook,
   onRestore,
   onRenameTelling,
   onCompare,
   onScrub,
   onTick,
+  onRun,
+  onRunStart,
   onStop,
   onNextEvent,
   onUndo,
@@ -96,8 +118,8 @@ export function Stage({
   selected: number;
   onSelect: (community: number) => void;
   onShelf: () => void;
-  /// Open the page for taking names, glossaries, and the world itself out.
-  onExport: () => void;
+  /// Open the book of this world.
+  onBook: () => void;
   /// Tell the history again as a telling set aside told it.
   onRestore: (telling: number) => void;
   onRenameTelling: (telling: number, name: string) => void;
@@ -105,6 +127,9 @@ export function Stage({
   onScrub: (generation: number) => HistoryPoint | null;
   /// One generation at the present, while the years pass on their own.
   onTick: () => boolean;
+  /// A frame's worth of generations, committed together.
+  onRun: (generations: number) => boolean;
+  onRunStart: () => void;
   /// The years stopped passing; a chance to save.
   onStop: () => void;
   onNextEvent: () => void;
@@ -221,7 +246,7 @@ export function Stage({
     });
   };
   const returnTo = (index: number) => {
-    setPlaying(false);
+    halt();
     setFolioFromCard(true);
     setInstantFolio(false);
     setCardMotion({ direction: "back", keyboard: keyboardActivation.current, ink: true });
@@ -258,14 +283,88 @@ export function Stage({
   const [craft, setCraft] = useState<Craft>("metalworking");
   const [axis, setAxis] = useState<EthosAxis>("martial");
 
-  // Time passing on its own.
+  // The primary run yields between chunks so the chart and Stop stay live.
   const [playing, setPlaying] = useState(false);
+  const [running, setRunning] = useState<number | null>(null);
+  const [runYear, setRunYear] = useState(() => nextRunYear(latest));
+  const [runError, setRunError] = useState<string | null>(null);
   const [pace, setPace] = useState(PACES[1][0]);
   const [pauseOn, setPauseOn] = useState<PauseOn>("peoples");
   const tick = useRef(onTick);
   tick.current = onTick;
-  const scrub = (g: number, subject: Focus = focus) => {
-    setPlaying(false); setSettlement(null);
+  const run = useRef(onRun);
+  run.current = onRun;
+  const stop = useRef(onStop);
+  stop.current = onStop;
+  const closeDecisions = () => {
+    afterLift.current = null; suspendedLeaf.current = null; comparing.current = false;
+    setSettlement(null); onRunStart(); setRunError(null);
+    setTrail((visits) => {
+      const current = visits.at(-1)!.subject;
+      const subjects = visits.filter((visit) => visit.subject.kind !== "event");
+      return current.kind === "event" && subjects.at(-1)?.subject.kind !== "world" ? [...subjects, destination({ kind: "world" })] : subjects;
+    });
+    if (focus.kind === "event") setLeaf(null);
+  };
+  const startRun = () => {
+    if (!atPresent || running !== null || !Number.isFinite(runYear) || runYear <= generation * YEARS) return;
+    closeDecisions(); setPlaying(false); setLeaf(null);
+    setRunning(Math.ceil(runYear / YEARS));
+  };
+  const startStudy = () => { closeDecisions(); setRunning(null); setPlaying(true); };
+  const halt = () => { setPlaying(false); setRunning(null); };
+  useEffect(() => {
+    if (running !== null || playing) return;
+    setRunYear((value) => Number.isFinite(value) && value <= latest * YEARS ? nextRunYear(latest) : value);
+  }, [latest, running, playing]);
+  useEffect(() => {
+    if (running === null) return;
+    let frame = 0;
+    let cancelled = false;
+    let current = generation;
+    let chunk = 4;
+    let previousFrame = 0;
+    const advance = (now: number) => {
+      if (cancelled) return;
+      const amount = Math.min(chunk, running - current);
+      let elapsed = 0;
+      try {
+        let advanced = false;
+        // Commit this point before the next frame reads its mutation guard.
+        flushSync(() => {
+          const before = performance.now();
+          advanced = run.current(amount);
+          elapsed = performance.now() - before;
+        });
+        if (!advanced) { setRunning(null); return; }
+      } catch (error) {
+        setRunError(message(error)); setRunning(null); return;
+      }
+      if (cancelled) return;
+      current += amount;
+      // Reserve most of a 30 fps frame for React, cartography, and paint.
+      const budget = previousFrame && now - previousFrame > 34 ? 5 : 10;
+      chunk = Math.max(1, Math.min(16, Math.floor(amount * budget / Math.max(1, elapsed))));
+      previousFrame = now;
+      if (current >= running) setRunning(null);
+      else frame = requestAnimationFrame(advance);
+    };
+    frame = requestAnimationFrame(advance);
+    return () => { cancelled = true; cancelAnimationFrame(frame); stop.current(); };
+  }, [running]);
+  const previousYear = useRef(generation);
+  useEffect(() => {
+    if (previousYear.current === generation) return;
+    previousYear.current = generation;
+    const valid = trail.filter((visit, index) => exists(visit.subject, overview, map) && (visit.subject.kind !== "event" || index === trail.length - 1));
+    if (!exists(focus, overview, map)) {
+      setLeaf(null);
+      if (valid.at(-1)?.subject.kind !== "world") valid.push(destination({ kind: "world" }));
+    }
+    setTrail(valid.map((visit) => destination(visit.subject)));
+  }, [generation]);
+  const scrub = (g: number, subject: Focus = focus.kind === "event" ? { kind: "world" } : focus) => {
+    halt(); setSettlement(null);
     const point = onScrub(g);
     if (point && (point.action !== overview.point.action || point.offset !== overview.point.offset || JSON.stringify(subject) !== JSON.stringify(focus))) {
       leavesByCard.current.set(JSON.stringify(focus), leaf);
@@ -273,7 +372,7 @@ export function Stage({
     }
   };
   const openDialog = (kind: InterventionKind, community = selected) => {
-    setPlaying(false);
+    halt();
     if (kind === "settlement") {
       settlementOpener.current = document.activeElement instanceof HTMLElement
         ? document.activeElement.closest("details")?.querySelector<HTMLElement>("summary") ?? document.activeElement : null;
@@ -287,20 +386,22 @@ export function Stage({
   };
   const reconsider = (annal: Annal) => {
     if (!annal.settlement || !annal.before) return;
-    setPlaying(false);
+    halt();
     settlementOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     liftThen(() => { setPane("map"); setSettlement({ ...annal.settlement!.plan.choice, destination: null, point: annal.before! }); });
   };
   const openIndex = () => {
-    setPlaying(false);
+    halt();
     liftThen(() => setIndexOpen(true), document.activeElement instanceof HTMLElement ? document.activeElement : null);
   };
-  const stop = useRef(onStop);
-  stop.current = onStop;
   useEffect(() => {
     if (!playing) return;
     const timer = window.setInterval(() => {
-      if (!tick.current()) setPlaying(false);
+      try {
+        let advanced = false;
+        flushSync(() => { advanced = tick.current(); });
+        if (!advanced) setPlaying(false);
+      } catch (error) { setRunError(message(error)); setPlaying(false); }
     }, 1000 / pace);
     return () => {
       window.clearInterval(timer);
@@ -309,7 +410,7 @@ export function Stage({
   }, [playing, pace]);
   // Turning back to an earlier year stops the years passing.
   useEffect(() => {
-    if (!atPresent) setPlaying(false);
+    if (!atPresent) halt();
   }, [atPresent]);
 
   // Shortcuts never steal keys from a form, a dialog, or a focused control.
@@ -444,15 +545,15 @@ export function Stage({
     <div className="stage workbench" data-pane={pane} data-settlement={desk !== null}
       onClickCapture={(event) => { keyboardActivation.current = event.detail === 0; }}
       onKeyDownCapture={(event) => { if (event.key === "Enter" || event.key === " ") keyboardActivation.current = true; }}>
-      <div className="stage-notices">{notices}{followed ? <p className="following-note">Following {followed.label}. Playback stops when this subject appears in the record. <button type="button" className="link" onClick={() => setFollowed(null)}>Stop following</button></p> : null}</div>
+      <div className="stage-notices">{notices}{runError ? <p className="notice error" role="alert">{runError}</p> : null}{followed ? <p className="following-note">Following {followed.label}. Study pauses when this subject appears in the chronicle. <button type="button" className="link" onClick={() => setFollowed(null)}>Stop following</button></p> : null}</div>
 
-      <section className="stage-map" aria-label="Map">
+      <section className="stage-map" aria-label="Chart">
         <MapView
           map={map}
           overview={settlement ? settlementReading : overview}
           generation={settlement ? settlementReading.generation : generation}
           tint={settlement ? { kind: "peoples" } : tint}
-          animateChanges={!playing && !desk}
+          animateChanges={!playing && running === null && !desk}
           motionMemory={mapMotion}
           climate={climate}
           riverNames={riverNames}
@@ -465,6 +566,7 @@ export function Stage({
           lands={new Set(highlight.lands)}
           focus={settlement ? map.regions[settlement.destination ?? settlementReading.communities[settlement.community].region].site : highlight.point}
           known={settlement ? null : known}
+          lens={!settlement && veiled && focus.kind === "people" ? { people: focus.id } : null}
           settlement={settlementPreview.preview}
           zoomable
           onPeople={(id) => settlement ? setSettlement({ ...settlement, destination: settlementReading.communities[id].region }) : go({ kind: "people", id })}
@@ -486,19 +588,19 @@ export function Stage({
               </button>
             )}>
             {(close) => (<>
-              <button type="button" onClick={() => { close(); setPlaying(false); go({ kind: "history" }); setLeaf("tellings"); }}>Other tellings</button>
-              <button type="button" onClick={() => { close(); setPlaying(false); liftThen(onNotebook, document.querySelector<HTMLElement>(".cartouche-open")); }}>Field notebook</button>
-              <button type="button" onClick={() => { close(); onExport(); }}>Export…</button>
+              <button type="button" onClick={() => { close(); halt(); go({ kind: "history" }); setLeaf("tellings"); }}>Other tellings</button>
+              <button type="button" onClick={() => { close(); halt(); liftThen(onNotebook, document.querySelector<HTMLElement>(".cartouche-open")); }}>Notes</button>
+              <button type="button" onClick={() => { close(); halt(); onBook(); }}>The book</button>
               <hr />
               <LightChoice />
               <hr />
-              <button type="button" onClick={() => { close(); onShelf(); }}>Back to the shelf</button>
+              <button type="button" onClick={() => { close(); onShelf(); }}>Back to the chart room</button>
             </>)}
           </Popover>
         </div>
         <div className="map-tools">
           <button type="button" className="map-tool" onClick={openIndex} title="Find anything (⌘K or /)"><Search size={15} aria-hidden="true" /><span className="map-tool-label sr-only">Find</span></button>
-          <Popover role="dialog" label="What the map shows" side="bottom" align="end"
+          <Popover role="dialog" label="What the chart shows" side="bottom" align="end"
             trigger={(props) => <button type="button" className="map-tool" title={layerName} {...props}><Layers size={15} aria-hidden="true" /><span className="map-tool-label sr-only">{layerName}</span><ChevronDown size={12} aria-hidden="true" /></button>}>
             {() => <div className="layers-menu">
           <label>
@@ -586,13 +688,13 @@ export function Stage({
           </Popover>
         </div>
         {settlement === null ? <div className="map-caption">
-          {last && LastIcon ? (
+          {generation === 0 ? <span className="chronicle-latest muted">Year 0 · {overview.communities.length} peoples settle {overview.continents.find((c) => c.name)?.name?.name ?? title}</span> : last && LastIcon ? (
             <button
               type="button"
               className="chronicle-latest"
-              title="Open this moment"
+              title="Open this entry"
               onClick={() => {
-                setPlaying(false);
+                halt();
                 go({ kind: "event", id: last.id });
               }}
             >
@@ -605,7 +707,8 @@ export function Stage({
           ) : (
             <span className="chronicle-latest muted">Nothing is written yet.</span>
           )}
-          {sameYear > 1 ? <span className="chronicle-more muted">and {sameYear - 1} more that year</span> : null}
+          {generation > 0 && last ? <EntryAnnotations annal={last} context={{ go: (next) => { halt(); go(next); } }} /> : null}
+          {generation > 0 && sameYear > 1 ? <span className="chronicle-more muted">and {sameYear - 1} more that year</span> : null}
           <button type="button" className="link chronicle-open" onClick={() => go({ kind: "history" })}>
             <ScrollText size={14} aria-hidden="true" /> Chronicle
           </button>
@@ -634,8 +737,8 @@ export function Stage({
         onHistoryView={setHistoryView}
         storyView={storyViews[JSON.stringify(focus)] ?? INITIAL_HISTORY}
         onStoryView={(next) => setStoryViews((views) => ({ ...views, [JSON.stringify(focus)]: next }))}
-        onKeep={(subject, label) => { setPlaying(false); liftThen(() => onKeep(subject, label), document.activeElement instanceof HTMLElement ? document.activeElement : null); }}
-        onFollow={(subject, label) => { setPlaying(false); setFollowed({ subject, label }); }}
+        onKeep={(subject, label) => { halt(); liftThen(() => onKeep(subject, label), document.activeElement instanceof HTMLElement ? document.activeElement : null); }}
+        onFollow={(subject, label) => { halt(); setFollowed({ subject, label }); }}
         dictionaryViews={dictionaryViews}
         onDictionaryView={(variety, view) => setDictionaryViews((views) => ({ ...views, [variety]: view }))}
         engine={engine}
@@ -643,12 +746,14 @@ export function Stage({
         version={version}
         generation={generation}
         overview={overview}
+        title={title}
+        onRun={startRun}
+        running={running !== null}
         map={map}
         words={words}
         go={go}
         onScrub={scrub}
         onVisit={(subject, year) => scrub(year, subject)}
-        onPlay={() => setPlaying(true)}
         canUndo={canUndo}
         onUndo={onUndo}
         onRestore={onRestore}
@@ -669,51 +774,36 @@ export function Stage({
         onReconsider={reconsider}
       />
 
-      <footer className="timebar stage-bar" inert={settlement !== null}>
-        <div className="play-split">
-          <button
-            type="button"
-            className="play primary"
-            disabled={!atPresent}
-            title={atPresent ? (playing ? "Stop the years" : "Let the years pass") : "Turn to this telling’s latest year to go on"}
-            onClick={() => setPlaying(!playing)}
-          >
-            {playing ? <Pause size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}
-            {playing ? "Pause" : "Play"}
-          </button>
-          <Popover label="How the years pass" role="dialog" side="top" align="start"
-            trigger={(props) => <button type="button" className="play-more primary" aria-label="How the years pass" {...props}><ChevronUp size={14} aria-hidden="true" /></button>}>
-            {() => (
-              <div className="pace-menu">
-                <fieldset><legend>How quickly</legend>{PACES.map(([value, name]) => <label key={value}><input type="radio" name="pace" checked={pace === value} onChange={() => setPace(value)} /> {name}</label>)}</fieldset>
-                <fieldset><legend>Stop for</legend>{PAUSE_ON.map(([value, name]) => <label key={value}><input type="radio" name="pause" checked={pauseOn === value} onChange={() => setPauseOn(value)} /> {name}</label>)}</fieldset>
-                {followed ? <p className="small">Following {followed.label}. <button type="button" className="link" onClick={() => setFollowed(null)}>Stop following</button></p>
-                  : <p className="small muted">To follow one subject, open its card and choose “Follow”.</p>}
-              </div>
-            )}
-          </Popover>
-        </div>
-        <button type="button" className="icon step-year" disabled={playing}
-          title="Advance 25 years" aria-label="Advance 25 years" onClick={() => { onTick(); onStop(); }}>
-          <StepForward size={18} aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          className="icon"
-          disabled={playing}
-          title="Until something happens"
-          aria-label="Until something happens"
-          onClick={onNextEvent}
-        >
-          <SkipForward size={18} />
-        </button>
-        <Timeline marks={marks} sounds={sounds} latest={latest} viewed={generation}
-          onScrub={(g) => scrub(g)} onOpen={(mark) => { scrub(mark.generation); go({ kind: "event", id: mark.annal.id }); }} />
+      <footer className="timebar stage-bar">
+        <form className="run-control" onSubmit={(e) => { e.preventDefault(); startRun(); }}>
+          {running !== null ? <button type="button" className="primary play" onClick={(event) => { event.preventDefault(); flushSync(() => setRunning(null)); }}><Square size={14} aria-hidden="true" /> Stop</button>
+            : <button type="submit" className="primary play" disabled={!atPresent || !Number.isFinite(runYear) || runYear <= generation * YEARS}><Play size={15} aria-hidden="true" /> Run</button>}
+          <label>to year <input aria-label="Run to year" type="number" min={(generation + 1) * YEARS} step={YEARS} value={Number.isNaN(runYear) ? "" : runYear} disabled={running !== null}
+            onChange={(e) => setRunYear(e.currentTarget.valueAsNumber)} /></label>
+        </form>
+        <Popover label="Study the years" role="dialog" side="top" align="start"
+          trigger={(props) => <button type="button" className="study-open" disabled={running !== null} {...props}>Study <ChevronDown size={13} aria-hidden="true" /></button>}>
+          {(close) => <div className="pace-menu study-drawer">
+            <div className="study-actions">
+              <button type="button" disabled={!atPresent} onClick={() => { close(); if (playing) setPlaying(false); else startStudy(); }}>
+                {playing ? <Pause size={15} aria-hidden="true" /> : <Play size={15} aria-hidden="true" />}{playing ? "Pause" : "Play"}
+              </button>
+              <button type="button" disabled={playing} onClick={() => { close(); closeDecisions(); onTick(); onStop(); }}><StepForward size={15} aria-hidden="true" /> Step {YEARS} years</button>
+              <button type="button" disabled={playing} onClick={() => { close(); closeDecisions(); onNextEvent(); }}><SkipForward size={15} aria-hidden="true" /> Until something happens</button>
+            </div>
+            <fieldset><legend>Pace</legend>{PACES.map(([value, name]) => <label key={value}><input type="radio" name="pace" checked={pace === value} onChange={() => setPace(value)} /> {name}</label>)}</fieldset>
+            <fieldset><legend>Pause on</legend>{PAUSE_ON.map(([value, name]) => <label key={value}><input type="radio" name="pause" checked={pauseOn === value} onChange={() => setPauseOn(value)} /> {name}</label>)}</fieldset>
+            {followed ? <p className="small">Following {followed.label}. <button type="button" className="link" onClick={() => setFollowed(null)}>Stop following</button></p>
+              : <p className="small muted">To follow one subject, open its card and choose “Follow”.</p>}
+          </div>}
+        </Popover>
+        <Timeline marks={marks} sounds={sounds} latest={running ?? latest} viewed={generation}
+          onScrub={(g) => scrub(Math.min(g, latest))} onOpen={(mark) => { scrub(mark.generation); go({ kind: "event", id: mark.annal.id }); }} />
         <span className={`stage-year${atPresent ? "" : " in-past"}`}>Year {generation * YEARS}{atPresent ? null : <> · <button type="button" className="link" onClick={() => scrub(latest)}>to the present</button></>}</span>
-        <button type="button" className="icon strike-out" disabled={!canUndo} title="Return before the last action" aria-label="Return before the last action" onClick={onUndo}><Undo2 size={16} aria-hidden="true" /></button>
+        <button type="button" className="icon strike-out" disabled={!canUndo || running !== null || playing} title="Return before the last decision" aria-label="Return before the last decision" onClick={onUndo}><Undo2 size={16} aria-hidden="true" /></button>
         <nav className="stage-panes" aria-label="Workspace">
           <button type="button" aria-pressed={pane === "map"} onClick={() => { setPane("map"); setLeaf(null); }}><MapIcon size={16} aria-hidden="true" /> Chart</button>
-          <button type="button" aria-pressed={pane === "reading"} onClick={() => setPane("reading")}><BookOpen size={16} aria-hidden="true" /> Reading</button>
+          <button type="button" aria-pressed={pane === "reading"} onClick={() => setPane("reading")}><BookOpen size={16} aria-hidden="true" /> Card</button>
         </nav>
       </footer>
       <AtlasIndex open={indexOpen} overview={overview} map={map} go={go} onClose={() => setIndexOpen(false)} />

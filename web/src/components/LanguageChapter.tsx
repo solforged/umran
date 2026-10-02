@@ -1,0 +1,264 @@
+import { useMemo, useState, type ReactNode } from "react";
+import type { Annal, HistoryLine, Law, LexiconRow, LoanCause, Origin, Overview, ReadEngine, Subject, Variety, WorldMap } from "../model";
+import { YEARS } from "../model";
+import { CONTACT_NAME, STRESS_RULE } from "../lore";
+import { individualAnnals, findAnnal } from "../history";
+import { Dictionary, INITIAL_DICTIONARY, type DictionaryView } from "./Dictionary";
+import { FamilyTree } from "./FamilyTree";
+import { Specimen } from "./Specimen";
+import { WordGloss } from "./WordGloss";
+import "./chapter.css";
+
+/** Read-only evidence and navigation shared by a card and the book. */
+export interface ChapterContext {
+  engine: ReadEngine;
+  version: number;
+  generation: number;
+  overview: Overview;
+  map: WorldMap;
+  link: (subject: Subject, label: ReactNode) => ReactNode;
+  open: (subject: Subject) => void;
+  dictionaryView?: DictionaryView;
+  onDictionaryView?: (view: DictionaryView) => void;
+  onYear?: (generation: number) => void;
+  wordAnchor?: (variety: number, concept: string) => string;
+}
+interface SectionProps { variety: Variety; ctx: ChapterContext }
+
+// These views are emitted by the facade, but are not yet in model.ts.
+export interface GrammarView {
+  categories: { category: string; label: string; description: string; eligible: number; howSynthetic: number; contrastRetention: number }[];
+  markers: { id: number; category: string; kind: string; side: string; form: string; spelled: string; said: string | null; ipa: string; share: number; born: number; retired: number | null; productive: boolean; history: HistoryLine[]; origin: { kind: string; gloss?: string; from?: number; language?: string } }[];
+}
+export interface ParadigmView {
+  category: string;
+  label: string;
+  realizations: { marker: number; kind: string; side: string; form: string; spelled: string; said: string | null; ipa: string; share: number; retired: number | null; history: HistoryLine[] }[];
+}
+
+const language = (id: number, ctx: ChapterContext) => ctx.link({ kind: "language", variety: id }, ctx.overview.varieties[id]?.name ?? "An unrecorded language");
+const people = (id: number, ctx: ChapterContext) => ctx.link({ kind: "people", id }, ctx.overview.communities[id]?.name ?? "An unrecorded people");
+const year = (at: number) => `year ${at * YEARS}`;
+
+export function Position({ variety: v, ctx }: SectionProps) {
+  const daughters = ctx.overview.varieties.filter((d) => d.parent === v.id);
+  const kin = useMemo(() => ctx.engine.kin(ctx.generation, v.id).filter((k) => k.score >= 0.05), [ctx.engine, ctx.generation, ctx.version, v.id]);
+  return <div className="language-section">
+    <p>{v.parent === null ? <>A founding language of its family, first spoken in {year(v.born)}.</> : <>Descended from {language(v.parent, ctx)}, parted in {year(v.forkedAt ?? v.born)}.</>} {v.spoken ? "Spoken now." : `Silent${v.silentSince === null ? " now" : ` since ${year(v.silentSince)}`}.`}</p>
+    <p>Family: {language(v.family, ctx)}. Daughters: {daughters.length ? daughters.map((d, i) => <span key={d.id}>{i ? ", " : ""}{language(d.id, ctx)}</span>) : "none recorded"}.</p>
+    <FamilyTree overview={ctx.overview} family={v.family} chosen={v.id} onOpen={(id) => ctx.open({ kind: "language", variety: id })} />
+    <h4>Shared core words</h4>
+    {kin.length ? <ul className="roster">{kin.map((k) => <li key={k.other} className="meter-row">{language(k.other, ctx)} <meter min={0} max={1} value={k.score} /> <span>{Math.round(k.score * 100)}%</span></li>)}</ul> : <p className="muted">No other language shares at least 5% of its core words.</p>}
+  </div>;
+}
+
+export function Sounds({ variety: v }: SectionProps) {
+  return <div className="language-section">
+    <h4>Consonants · {v.consonants.length}</h4><p className="segments">{v.consonants.join(" ")}</p>
+    <h4>Vowels · {v.vowels.length}</h4><p className="segments">{v.vowels.join(" ")}</p>
+    <dl className="chapter-facts"><div><dt>Minimal word</dt><dd>{v.minimalWord}; sound change does not wear a word below it.</dd></div><div><dt>Stress</dt><dd>{STRESS_RULE[v.stress]}.</dd></div><div><dt>Geminates</dt><dd>{v.geminates ? "Long consonants occur in living words." : "No long consonants in living words."}</dd></div></dl>
+  </div>;
+}
+
+function lawAnnal(v: Variety, law: Law, ctx: ChapterContext): Annal | undefined {
+  const ancestors = new Set<number>();
+  let ancestor: Variety | undefined = v;
+  while (ancestor) { ancestors.add(ancestor.id); ancestor = ancestor.parent === null ? undefined : ctx.overview.varieties[ancestor.parent]; }
+  return individualAnnals(ctx.overview.annals).find((a) => a.generation === law.generation && a.laws.includes(law.id) && a.variety !== null && ancestors.has(a.variety));
+}
+
+/** Exact forms in a word's recorded ledger, not a browser application of a law. */
+export function LawWords({ variety, law, ctx }: SectionProps & { law: Law }) {
+  const changed = useMemo(() => {
+    const examples: { concept: string; gloss: string; text: string }[] = [];
+    for (const row of ctx.engine.lexicon(ctx.generation, variety.id)) {
+      const detail = ctx.engine.word(ctx.generation, variety.id, row.concept);
+      const seen = new Set<string>();
+      for (const variant of detail.variants) for (const line of variant.history) {
+        if (line.generation !== law.generation || !line.text.startsWith(`${law.label}: /`) || seen.has(line.text)) continue;
+        seen.add(line.text);
+        examples.push({ concept: row.concept, gloss: row.gloss, text: line.text.slice(law.label.length + 2) });
+      }
+    }
+    return examples;
+  }, [ctx.engine, ctx.generation, ctx.version, variety.id, law.id, law.label, law.generation]);
+  return changed.length ? <table className="law-words"><thead><tr><th>Meaning</th><th>Before → after</th></tr></thead><tbody>{changed.map((w, i) => <tr key={i}><td>{ctx.link({ kind: "word", variety: variety.id, concept: w.concept }, w.gloss)}</td><td className="ipa">{w.text}</td></tr>)}</tbody></table> : <p className="muted small">No surviving lexical variant records this law. It may have reached names, grammatical forms, or words that later fell out of use.</p>;
+}
+
+export function LawEvidence({ variety, law, ctx }: SectionProps & { law: Law }) {
+  const annal = lawAnnal(variety, law, ctx);
+  const [expanded, setExpanded] = useState(false);
+  const changed = annal?.specimen.filter((w) => w.was !== null || w.wasIpa !== null) ?? [];
+  return <div className="law-evidence">
+    {law.from !== null ? <p className="muted small">A wave from {language(law.from, ctx)}.</p> : null}
+    {changed.length ? <><p className="muted small">{annal!.laws.length > 1 ? "Specimen across this year’s recorded laws" : "Before and after in the specimen"}</p><Specimen words={changed} changes onWord={(concept) => ctx.open({ kind: "word", variety: variety.id, concept })} /></> : <p className="muted small">This law did not change a recorded specimen word.</p>}
+    <details open={expanded} onToggle={(e) => setExpanded(e.currentTarget.open)}><summary>Words changed · before and after</summary>{expanded ? <LawWords variety={variety} law={law} ctx={ctx} /> : null}</details>
+  </div>;
+}
+
+export function SoundLaws({ variety, ctx }: SectionProps) {
+  return <div className="language-section">
+    <p className="muted small">A dated ledger of regular changes, from earliest to latest. Forms are the engine’s recorded evidence, not reconstructed here.</p>
+    {variety.laws.length ? <ol className="law-ledger">{variety.laws.map((law, i) => <li key={`${law.id}:${law.generation}:${i}`} data-law={law.id}><div className="law-ledger-head"><span className="gen">{law.generation * YEARS}</span> {ctx.link({ kind: "law", id: law.id }, law.label)}</div><LawEvidence variety={variety} law={law} ctx={ctx} /></li>)}</ol> : <p className="muted">No sound laws yet.</p>}
+  </div>;
+}
+
+export function WordBuilding({ variety: v, ctx }: SectionProps) {
+  const grammar = (v as Variety & { grammar?: GrammarView }).grammar;
+  return <div className="language-section">
+    <p>Words are built with {v.wordBuilding}.</p>
+    <dl className="builders">{v.builders.map((b) => <div key={b.relation}><dt>{b.relation}</dt><dd className="ipa">{b.shape}</dd></div>)}</dl>
+    <h4>Grammar</h4>
+    {grammar ? grammar.categories.map((category) => <section key={category.category} className="grammar-category"><h5>{category.label}</h5><p>{category.description} {category.eligible} eligible words; {Math.round(category.howSynthetic * 100)}% bound marking, {Math.round(category.contrastRetention * 100)}% retain a contrast.</p><ul className="roster">{grammar.markers.filter((m) => m.category === category.category).map((m) => <li key={m.id}><span className="word">{m.spelled || "∅"}</span>{m.said !== null ? <> · said <span className="word">{m.said}</span></> : null} <span className="ipa">/{m.ipa}/</span> · {m.side} {m.kind}, {Math.round(m.share * 100)}% of uses; {m.productive ? "productive" : "not productive"}{m.retired !== null ? `; retired in ${year(m.retired)}` : `; since ${year(m.born)}`}.{m.origin.kind === "grammaticalized" ? <> From the word “{m.origin.gloss}”.</> : m.origin.kind === "imported" && m.origin.from !== undefined ? <> Imported from {language(m.origin.from, ctx)}.</> : m.origin.kind === "fused" ? " Fused from a particle." : " Founding marker."}<details><summary>Recorded changes</summary><ol className="history">{m.history.map((line, i) => <li key={i}><span className="gen">{line.generation * YEARS}</span><span>{line.text}</span></li>)}</ol></details></li>)}</ul></section>) : <p className="muted">This engine view does not expose its grammar markers. It models count noun plural and verb past; no further grammar is implied here.</p>}
+    <h4>Not yet modelled</h4>
+    <p className="muted">Inflection beyond count noun plural and verb past; productive root-and-pattern inflection; agreement, case, future marking, syntax and alignment. Compounding and derivation after founding are limited to renewal and new meanings.</p>
+  </div>;
+}
+
+export function LoanCauseText({ cause, ctx }: { cause: LoanCause; ctx: ChapterContext }) {
+  let text: ReactNode;
+  switch (cause.kind) {
+    case "unrecorded": return <span className="muted"> Contact not recorded.</span>;
+    case "contact": text = <>{CONTACT_NAME[cause.contact].toLowerCase()} between {people(cause.donor, ctx)} and {people(cause.recipient, ctx)}, since {year(cause.since)}</>; break;
+    case "rule": text = <>the rule of {people(cause.ruler, ctx)} over {people(cause.ruled, ctx)}</>; break;
+    case "faith": text = <>the faith of {ctx.link({ kind: "religion", id: cause.religion }, ctx.overview.religions[cause.religion]?.name ?? "an unrecorded faith")}{cause.teacher !== null ? <>, taught by {people(cause.teacher, ctx)}</> : null}</>; break;
+    case "shift": text = <>{people(cause.community, ctx)} taking up another tongue, keeping words from {language(cause.fromVariety, ctx)}</>; break;
+    case "city": text = <>contact in {ctx.overview.cities[cause.city]?.name.name ?? "a great city"}</>; break;
+    case "coinage": text = <>a new idea among {cause.peoples.map((id, i) => <span key={id}>{i ? ", " : ""}{people(id, ctx)}</span>)}</>; break;
+    case "classical": text = <>learning from {language(cause.classical, ctx)} by {people(cause.recipient, ctx)}</>; break;
+  }
+  const event = cause.event ? findAnnal(ctx.overview.annals, cause.event) : undefined;
+  return <span className="loan-cause"> Through {text}.{event ? <> After {ctx.link({ kind: "event", id: event.id }, <>{event.kind} in {year(event.generation)}</>)}.</> : null}</span>;
+}
+
+export function WordOrigin({ origin, ctx }: { origin: Origin; ctx: ChapterContext }) {
+  return <span className={`origin origin-${origin.kind}`}>
+    {origin.kind === "borrowed" ? <>Borrowed from {origin.fromVariety !== null ? language(origin.fromVariety, ctx) : origin.from ?? "an unrecorded source"}</> : origin.kind === "kept" ? <>Kept from {origin.fromVariety !== null ? language(origin.fromVariety, ctx) : origin.from ?? "an earlier tongue"}</> : origin.kind === "derived" ? <>Built from “{origin.from}”</> : origin.kind === "coined" ? "Coined" : "Inherited"}, {year(origin.generation)}.
+    {origin.cause ? <LoanCauseText cause={origin.cause} ctx={ctx} /> : null}
+  </span>;
+}
+
+function LexicalEvidence({ row, variety, ctx }: SectionProps & { row: LexiconRow }) {
+  const [open, setOpen] = useState(false);
+  return <details className="lexical-evidence" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+    <summary>{row.competitors ? `${row.competitors} competing ${row.competitors === 1 ? "word" : "words"} · ` : ""}Origins, senses, and family cognates</summary>
+    {open ? <WordGloss engine={ctx.engine} version={ctx.version} generation={ctx.generation}
+      variety={variety.id} concept={row.concept} onScrub={ctx.onYear}
+      onOpenVariety={(id) => ctx.open({ kind: "word", variety: id, concept: row.concept })}
+      renderCause={(cause) => <LoanCauseText cause={cause} ctx={ctx} />}
+      renderOrigin={(origin) => <WordOrigin origin={origin} ctx={ctx} />}
+      family={variety.family} overview={ctx.overview} /> : null}
+  </details>;
+}
+
+export function Lexicon({ variety, ctx }: SectionProps) {
+  const [view, setView] = useState(INITIAL_DICTIONARY);
+  return <div className="language-section">
+    <p className="muted small">Every current meaning, with spelling, speech, and origin. Open a word’s evidence for competitors, stretched senses, paradigms, and family cognates.</p>
+    <Dictionary engine={ctx.engine} version={ctx.version} generation={ctx.generation} variety={variety.id}
+      view={ctx.dictionaryView ?? view} onView={ctx.onDictionaryView ?? setView}
+      onConcept={(concept) => ctx.open({ kind: "word", variety: variety.id, concept })}
+      renderOrigin={(row) => <WordOrigin origin={row.origin} ctx={ctx} />}
+      renderEvidence={(row) => <LexicalEvidence row={row} variety={variety} ctx={ctx} />}
+      rowId={ctx.wordAnchor ? (row) => ctx.wordAnchor!(variety.id, row.concept) : undefined} />
+  </div>;
+}
+
+export function Names({ variety: v, ctx }: SectionProps) {
+  const lands = ctx.overview.places.flatMap((p) => p.names.filter((n) => n.variety === v.id).map((n) => ({ region: p.region, name: n })));
+  const peoples = ctx.overview.communities.filter((c) => c.variety === v.id);
+  const otherNames = ctx.overview.communities.flatMap((c) => c.exonyms
+    .filter((name) => ctx.overview.communities[name.by]?.variety === v.id)
+    .map((name) => ({ community: c.id, name })));
+  return <div className="language-section">
+    <p>{v.nameStyle === "double" ? "Two-part given names, built from two themes." : "One-word given names."}</p>
+    <h4>Given names</h4>
+    {v.names.length ? <ul className="roster given-names">{v.names.map((n, i) => <li key={i}>
+      <span className="word">{n.name}</span> <span className="ipa">/{n.ipa}/</span> “{n.meaning}”
+      {n.from !== null ? <> · from {language(n.from, ctx)} (sacred)</> : null}
+    </li>)}</ul> : <p className="muted">No given names recorded.</p>}
+    <h4>Lands named in this tongue</h4>
+    {lands.length ? <ul className="roster">{lands.map(({ region, name: n }, i) => <li key={i}>
+      {ctx.link({ kind: "land", region }, <span className="word">{n.spelled}</span>)} <span className="ipa">/{n.ipa}/</span>
+      {" "}“{n.meaning}” · {n.origin}, since {year(n.since)}
+      {n.by !== null ? <>; coined by {people(n.by, ctx)}</> : null}{n.once ? `; once ${n.once}` : ""}.
+    </li>)}</ul> : <p className="muted">No land names recorded in this tongue.</p>}
+    <h4>Peoples named in this tongue</h4>
+    {peoples.length ? <ul className="roster">{peoples.map((c) => <li key={c.id}>
+      {people(c.id, ctx)} <span className="ipa">/{c.ipa}/</span> “{c.meaning}” · self-name coined in {year(c.coined)}
+      {c.once ? `; once ${c.once}` : ""}.
+    </li>)}</ul> : <p className="muted">No people’s self-name is recorded in this tongue.</p>}
+    {otherNames.length ? <><h4>Names for other peoples</h4><ul className="roster">
+      {otherNames.map(({ community, name }, i) => <li key={i}>
+        <span className="word">{name.name}</span> for {people(community, ctx)}, as {people(name.by, ctx)} call them.
+      </li>)}
+    </ul></> : null}
+  </div>;
+}
+
+export function Standing({ variety: v, ctx }: SectionProps) {
+  const speakers = ctx.overview.communities.filter((c) => c.ended === null && c.variety === v.id);
+  const writers = ctx.overview.varieties.filter((w) => w.spoken && w.high === v.id && w.vernacular === null);
+  const city = ctx.overview.cities.find((c) => c.townsfolk !== null && ctx.overview.communities[c.townsfolk]?.variety === v.id);
+  const standing = individualAnnals(ctx.overview.annals).filter((a) =>
+    (a.variety === v.id || a.languages.includes(v.id)) &&
+    (a.kind === "standard" || a.kind === "classical" || a.kind === "vernacular" ||
+      a.kind === "respelling" || a.kind === "koine" || a.kind === "faith" || (a.kind === "craft" && a.crafts.includes("writing"))));
+  return <div className="language-section">
+    <dl className="chapter-facts">
+      <div><dt>Speech</dt><dd>{speakers.length ? speakers.map((c, i) => <span key={c.id}>
+        {i ? ", " : ""}{people(c.id, ctx)}
+      </span>) : "No living speakers"}.</dd></div>
+      {v.standardOf !== null ? <div><dt>Standard</dt><dd>Of {ctx.link({ kind: "state", id: v.standardOf }, ctx.overview.states[v.standardOf]?.name)}.</dd></div> : null}
+      {v.classicalOf !== null ? <div><dt>Classical</dt><dd>
+        Kept by {ctx.link({ kind: "state", id: v.classicalOf }, ctx.overview.states[v.classicalOf]?.name)}
+        {writers.length ? <>; written by {writers.map((w, i) => <span key={w.id}>{i ? ", " : ""}{language(w.id, ctx)}</span>)}</> : null}.
+      </dd></div> : null}
+      {v.sacredOf !== null ? <div><dt>Sacred</dt><dd>To {ctx.link({ kind: "religion", id: v.sacredOf }, ctx.overview.religions[v.sacredOf]?.name)}.</dd></div> : null}
+      <div><dt>Writing</dt><dd>{v.high !== null && v.vernacular === null
+        ? <>Its speakers write {language(v.high, ctx)}, their classical tongue.</>
+        : v.written !== null ? <>Written or last respelled in {year(v.written)}.</> : "Unwritten."}
+      </dd></div>
+      {v.vernacular !== null ? <div><dt>Vernacular</dt><dd>
+        Its own speech written since {year(v.vernacular)}{v.high !== null ? <>, in place of {language(v.high, ctx)}</> : null}.
+      </dd></div> : null}
+      {v.koineOf !== null ? <div><dt>City speech</dt><dd>
+        A koiné{city ? ` of ${city.name.name}` : ""}, levelled from {v.koineOf.map((s, i) => <span key={s.variety}>
+          {i ? ", " : ""}{language(s.variety, ctx)} {Math.round(s.share * 100)}%
+        </span>)}.
+      </dd></div> : null}
+    </dl>
+    {standing.length ? <><h4>How it came to stand</h4><ol className="history">
+      {standing.map((a) => <li key={a.id}><span className="gen">{a.generation * YEARS}</span>
+        <span>{ctx.link({ kind: "event", id: a.id }, a.text.replaceAll("*", ""))}</span>
+      </li>)}
+    </ol></> : null}
+  </div>;
+}
+
+export const CHAPTER = [
+  { id: "position", title: "Position", Section: Position },
+  { id: "sounds", title: "Sounds", Section: Sounds },
+  { id: "laws", title: "Sound laws", Section: SoundLaws },
+  { id: "building", title: "Word building", Section: WordBuilding },
+  { id: "lexicon", title: "Lexicon", Section: Lexicon },
+  { id: "names", title: "Names", Section: Names },
+  { id: "standing", title: "Standing", Section: Standing },
+];
+
+export function ChapterSummary({ variety: v, section, ctx }: SectionProps & { section: string }) {
+  switch (section) {
+    case "position": {
+      const size = ctx.overview.varieties.filter((d) => d.family === v.family).length;
+      return <p>{v.parent === null ? "A founding tongue" : <>Descended from {language(v.parent, ctx)}</>};
+        {" "}{size === 1 ? "the only language of its family" : `the ${size} languages of its family`}.
+      </p>;
+    }
+    case "sounds": return <p>{v.consonants.length} consonants, {v.vowels.length} vowels; stress {STRESS_RULE[v.stress]}.</p>;
+    case "laws": return <p>{v.laws.length ? <>{v.laws.length} laws; the latest in {year(v.laws.at(-1)!.generation)}: {v.laws.at(-1)!.label}.</> : "No sound laws yet."}</p>;
+    case "building": return <p>{v.wordBuilding}; count noun plural and verb past.</p>;
+    case "lexicon": return <p>{v.words.toLocaleString()} words, with origins, competitors, and cognates.</p>;
+    case "names": return <p>{v.names.slice(0, 3).map((n) => n.name).join(", ") || "No given names recorded"}; {v.nameStyle === "double" ? "two-part" : "one-word"} names.</p>;
+    default: return <p>{v.spoken ? "Spoken" : "Silent"}{v.standardOf !== null ? "; standard" : ""}{v.classicalOf !== null ? "; classical" : ""}{v.sacredOf !== null ? "; sacred" : ""}; {v.high !== null && v.vernacular === null ? <>writes {language(v.high, ctx)}</> : v.written !== null ? "written" : "unwritten"}.</p>;
+  }
+}

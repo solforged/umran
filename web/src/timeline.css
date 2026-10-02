@@ -94,6 +94,27 @@
   opacity: calc(0.35 + 0.15 * min(var(--count), 4));
 }
 
+/* At a wide span one ruler interval carries one quiet density wash. */
+.timeline .sound.density {
+  width: var(--bin-width);
+  height: 3px;
+  opacity: calc(.12 + .03 * min(var(--count), 6));
+  border-right: 1px solid var(--paper);
+  box-sizing: border-box;
+}
+:root .timeline .mark-cluster {
+  height: 12px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.timeline .mark-cluster small {
+  font-size: .65rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  background: var(--paper);
+}
+
 .timeline .ahead {
   opacity: 0.35;
 }

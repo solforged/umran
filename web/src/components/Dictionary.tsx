@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import type { ReadEngine, LexiconRow } from "../model";
 
 type OriginFilter = "all" | "inherited" | "derived" | "coined" | "borrowed" | "kept";
@@ -19,6 +19,9 @@ export function Dictionary({
   view,
   onView,
   onConcept,
+  renderOrigin,
+  renderEvidence,
+  rowId,
 }: {
   engine: ReadEngine;
   version: number;
@@ -27,6 +30,9 @@ export function Dictionary({
   view: DictionaryView;
   onView: (view: DictionaryView) => void;
   onConcept: (concept: string) => void;
+  renderOrigin?: (row: LexiconRow) => ReactNode;
+  renderEvidence?: (row: LexiconRow) => ReactNode;
+  rowId?: (row: LexiconRow) => string;
 }) {
   const { query, field, origin, concept } = view;
   const filter = (patch: Partial<DictionaryView>) => onView({ ...view, concept: null, ...patch });
@@ -61,7 +67,7 @@ export function Dictionary({
   };
 
   return (
-    <div className="dictionary">
+    <div className="dictionary" data-lexicon-total={rows.length} data-lexicon-shown={shown.length}>
       <div className="filters">
         <input
           type="search"
@@ -117,7 +123,7 @@ export function Dictionary({
           </thead>
           <tbody ref={tableRef}>
             {shown.map((r) => (
-              <Row key={r.concept} row={r} selected={r.concept === concept} onSelect={() => open(r.concept)} />
+              <Row key={r.concept} id={rowId?.(r)} row={r} selected={r.concept === concept} onSelect={() => open(r.concept)} renderOrigin={renderOrigin} renderEvidence={renderEvidence} />
             ))}
           </tbody>
         </table>
@@ -127,9 +133,12 @@ export function Dictionary({
   );
 }
 
-function Row({ row, selected, onSelect }: { row: LexiconRow; selected: boolean; onSelect: () => void }) {
+function Row({ id, row, selected, onSelect, renderOrigin, renderEvidence }: { id?: string; row: LexiconRow; selected: boolean; onSelect: () => void; renderOrigin?: (row: LexiconRow) => ReactNode; renderEvidence?: (row: LexiconRow) => ReactNode }) {
   return (
-    <tr aria-selected={selected} className={selected ? "selected" : ""} onClick={onSelect}>
+    <tr id={id} data-concept={row.concept} aria-selected={selected} className={selected ? "selected" : ""} onClick={(e) => {
+      if ((e.target as HTMLElement).closest("button, a, details, input, select")) return;
+      onSelect();
+    }}>
       <td>
         <button type="button" className="link" onClick={(e) => { e.stopPropagation(); onSelect(); }}>{row.gloss}</button>
         {row.competitors > 0 ? <span className="badge" title="Other words compete for this meaning">+{row.competitors}</span> : null}
@@ -140,7 +149,7 @@ function Row({ row, selected, onSelect }: { row: LexiconRow; selected: boolean; 
       </td>
       <td className="ipa">/{row.ipa}/</td>
       <td>
-        <span className={`origin origin-${row.origin.kind}`}>
+        {renderOrigin ? renderOrigin(row) : <span className={`origin origin-${row.origin.kind}`}>
           {row.origin.kind === "borrowed"
             ? `from ${row.origin.from}`
             : row.origin.kind === "kept"
@@ -148,7 +157,8 @@ function Row({ row, selected, onSelect }: { row: LexiconRow; selected: boolean; 
               : row.origin.kind === "derived"
                 ? `from ${row.origin.from}`
                 : row.origin.kind}
-        </span>
+        </span>}
+        {renderEvidence?.(row)}
       </td>
       <td className="num">{row.changes || ""}</td>
     </tr>

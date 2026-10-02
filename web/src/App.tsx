@@ -4,15 +4,15 @@ import type { Action, Catalog, Engine, HistoryPoint, NotebookNote, Overview, Set
 import type { Focus } from "./components/Pedia";
 import { YEARS } from "./model";
 import { ActionDialog, type DialogKind } from "./components/ActionDialog";
-import { Appendix } from "./components/Appendix";
-import { Designer, type Founding } from "./components/Designer";
+import { Book } from "./components/Book";
+import { Designer, type Founding as FoundingDesign } from "./components/Designer";
 import { Modal } from "./components/Modal";
-import { Shelf } from "./components/Shelf";
+import { ChartRoom } from "./components/ChartRoom";
 import { Stage } from "./components/Stage";
 import { TellingComparison } from "./components/TellingComparison";
 import { Notebook, makeNote } from "./components/Notebook";
 import type { MapMotionReading } from "./components/MapView";
-import { WorldSetup } from "./components/WorldSetup";
+import { Founding } from "./components/Founding";
 import { sampleWorld } from "./sample";
 import { download } from "./takeout";
 import { useLiftedValue } from "./motion";
@@ -40,10 +40,10 @@ type View =
   | { kind: "book"; id: string }
   | { kind: "recovery"; what: string; raw: string; error: string };
 
-/// The stage, or the page for taking things out of the world.
-type Page = "stage" | "export";
+/// The workshop, or the book laid open over its chart.
+type Page = "stage" | "book";
 
-function foundingAction(f: Founding): Action {
+function foundingAction(f: FoundingDesign): Action {
   return { kind: "found", naming: f.naming, design: f.design, seed: f.seed, power: f.power, openness: f.openness };
 }
 
@@ -79,15 +79,19 @@ export default function App() {
   const [info, setInfo] = useState<string | null>(null);
   const bookId = view.kind === "book" ? view.id : null;
 
+  // The author's name for the world, given at founding; kept on every save.
+  const authored = useRef<string | null>(null);
   const persist = useCallback(() => {
     if (!engine.current || bookId === null) return true;
     try {
-      const entry = describe(bookId, engine.current.overview(engine.current.latest()));
+      const prior = shelf.books.find((b) => b.id === bookId);
+      const title = authored.current ?? (prior?.named ? prior.title : null);
+      const entry = describe(bookId, engine.current.overview(engine.current.latest()), title);
       setShelf(saveBook(shelf, entry, engine.current.save()));
       setSaveError(null);
       return true;
     } catch (e) {
-      setSaveError(`Not saved in this browser: ${message(e)}. Export still works.`);
+      setSaveError(`Not saved in this browser: ${message(e)}. The book's save file still works.`);
       return false;
     }
   }, [bookId, shelf]);
@@ -111,9 +115,10 @@ export default function App() {
     }
   }, [unsaved, bookId, persist]);
 
-  const adopt = useCallback((id: string, next: Engine, fresh: boolean) => {
+  const adopt = useCallback((id: string, next: Engine, fresh: boolean, title: string | null = null) => {
     engine.current?.dispose();
     engine.current = next;
+    authored.current = title;
     mapMotion.current = null;
     setNotebook(next.notebook()); setNotebookDraft(undefined);
     setWorldMap(next.map());
@@ -252,7 +257,7 @@ export default function App() {
       setInitialFocus(focus ?? null); setTellingVersion((v) => v + 1);
       setViewing(at === undefined || at >= last ? null : at);
       setCompareWith(null); setError(null);
-    } catch (e) { setError(`This telling could not be read: ${message(e)}. Its saved account is still kept.`); }
+    } catch (e) { setError(`This telling could not be read: ${message(e)}. Its saved telling is still kept.`); }
   }, []);
   const renameTelling = (telling: number, name: string) => {
     try { engine.current?.rename(telling, name); setVersion((v) => v + 1); persist(); }
@@ -269,7 +274,7 @@ export default function App() {
   const openNote = (note: NotebookNote): string | null => {
     try {
       const destination = engine.current?.resolveNote(note.id);
-      if (!destination) return "This entry has no fixed reading.";
+      if (!destination) return "This note has no fixed year.";
       setViewTelling(destination.reading.telling); setViewPoint(destination.reading.point);
       setInitialFocus(destination.subject); setTellingVersion((v) => v + 1);
       setViewing(null); setNotebookDraft(undefined); setError(null);
@@ -277,22 +282,24 @@ export default function App() {
     } catch (e) { return message(e); }
   };
 
-  // One generation at the present, for play; saving waits until play stops.
-  const tick = useCallback((): boolean => {
+  // One frame's run at the selected point; saving waits until it stops.
+  const runYears = useCallback((generations: number): boolean => {
     const current = engine.current;
     if (!current) return false;
     try {
       if (!overview) return false;
-      current.actAt({ telling: overview.telling, point: overview.point }, overview.mutation, { kind: "run", generations: 1 });
+      current.actAt({ telling: overview.telling, point: overview.point }, overview.mutation, { kind: "run", generations });
       if (!overview.atTip) { setInitialFocus(null); setTellingVersion((v) => v + 1); }
       setViewTelling(null); setViewPoint(null); setViewing(null);
       setVersion((v) => v + 1);
+      setError(null);
       return true;
     } catch (e) {
       setError(message(e));
       return false;
     }
   }, [overview]);
+  const tick = useCallback(() => runYears(1), [runYears]);
 
   const nextEvent = useCallback(
     (limit: number) => {
@@ -310,7 +317,7 @@ export default function App() {
     [overview, persist],
   );
 
-  const begin = useCallback((next: Engine) => adopt(newBookId(), next, true), [adopt]);
+  const begin = useCallback((next: Engine, title: string | null = null) => adopt(newBookId(), next, true, title), [adopt]);
 
   const sample = async () => {
     try {
@@ -343,7 +350,7 @@ export default function App() {
             Download saved data
           </button>
           <button type="button" onClick={toShelf}>
-            Go to the shelf
+            Go to the chart room
           </button>
         </div>
       </main>
@@ -353,10 +360,10 @@ export default function App() {
   if (view.kind === "setup") {
     return (
       <div className="app">
-        <WorldSetup
+        <Founding
           catalog={catalog}
           onBegin={begin}
-          onShelf={toShelf}
+          onChartRoom={toShelf}
           onSample={sample}
         />
       </div>
@@ -366,7 +373,7 @@ export default function App() {
   if (view.kind === "shelf" || !overview || !engine.current || !readingEngine) {
     return (
       <>
-        <Shelf
+        <ChartRoom
           revision={catalog.revision}
           books={shelf.books}
           onOpen={openBook}
@@ -392,7 +399,7 @@ export default function App() {
     <>
       {overview.savedRevision !== null ? (
         <p className="notice">
-          This history was saved with engine revision {overview.savedRevision}; this is revision{" "}
+          This world was saved with engine revision {overview.savedRevision}; this is revision{" "}
           {overview.revision}, so its words may differ from when it was saved.
         </p>
       ) : null}
@@ -467,15 +474,15 @@ export default function App() {
     return (
       <div className="app">
         {notices}
-        <Appendix
+        <Book
           engine={readingEngine}
-          notebook={notebook}
+          notes={notebook}
           catalog={catalog}
           version={version}
           generation={generation}
           overview={overview}
           title={title}
-          variety={overview.communities[selected].variety}
+          map={readingEngine.map()}
           onBack={() => setPage("stage")}
         />
         {dialogs}
@@ -495,16 +502,16 @@ export default function App() {
         overview={overview}
         title={title}
         notices={notices}
-        sheet={page === "export" ? (
-          <Appendix
+        sheet={page === "book" ? (
+          <Book
             engine={readingEngine}
-            notebook={notebook}
+            notes={notebook}
             catalog={catalog}
             version={version}
             generation={generation}
             overview={overview}
             title={title}
-            variety={overview.communities[selected].variety}
+            map={worldMap}
             onBack={() => setPage("stage")}
           />
         ) : null}
@@ -521,12 +528,14 @@ export default function App() {
         selected={selected}
         onSelect={setCommunity}
         onShelf={toShelf}
-        onExport={() => setPage("export")}
+        onBook={() => setPage("book")}
         onRestore={readTelling}
         onRenameTelling={renameTelling}
         onCompare={setCompareWith}
         onScrub={scrub}
         onTick={tick}
+        onRun={runYears}
+        onRunStart={() => setDialog(null)}
         onStop={persist}
         onNextEvent={() => nextEvent(EVENT_LIMIT)}
         onUndo={strike}

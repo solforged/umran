@@ -583,6 +583,7 @@ export interface Annal {
   text: string;
   /// The apparatus: what a linguist would note, such as sound laws.
   notes: string[];
+  cause?: Cause;
   variety: number | null;
   /// The peoples it tells of.
   peoples: number[];
@@ -867,4 +868,24 @@ export interface SettlementPreview {
   options: { region: number; reason: string | null; effort: number | null }[];
   plan: SettlementPlan | null;
   reason: string | null;
+}
+
+/// Why a response happened, where the engine knew its trigger when it
+/// decided the response. Absent when it did not; never inferred.
+export type Mechanism =
+  | "hardship"
+  | "crowding"
+  | "stronger-neighbour"
+  | "climate"
+  | "craft"
+  | "conquest"
+  | "city"
+  | "contact"
+  | "pilgrimage"
+  | "unfaithful-holder";
+
+export interface Cause {
+  /// The annal that triggered this one.
+  event: number;
+  mechanism: Mechanism;
 }

@@ -30,32 +30,38 @@ Read further when the task touches it:
   off WASM.
 - `web/src`: React, TypeScript, and Vite. `model.ts` mirrors the facade's
   JSON views; `engine.ts` adapts the WASM; `shelf.ts` stores the saved
-  worlds (still keyed as books, so old saves open); `takeout.ts` formats
-  exports; `lore.ts` holds shared names and the glossary of linguistic
+  worlds (still keyed as books, so old saves open) and names a world
+  after its earliest-named continent unless the author titled it;
+  `takeout.ts` formats exports; `lore.ts` holds shared names, the
+  mechanism phrases for recorded causes, and the glossary of linguistic
   terms; `App.tsx` holds view state and actions. `styles.css` and
   `chart.css` hold the one look, an explorer's chart of strange lands,
-  by day or by lamplight (`LightSwitch`). `components/` holds the
-  shelf (`Shelf`: the chart room, each saved world a miniature of its
-  map, drawn from its seed with the peoples saved in the shelf index),
-  the world setup (`WorldSetup`: a chart with its title box and a
-  book of accounts, one per founding people, its choices set as phrases
-  in the account's sentences, each a `Phrase` that opens a menu), the
-  stage (the only world view: `MapView` with its layers and the chart's
-  inked coast, compass lines, and terrain marks; in `Stage`, the world's
-  cartouche and its menu over the map's top-left corner, Find and the
-  layers over its top-right, the chronicle's latest line as a caption
-  over its foot, and a one-row time bar whose `Timeline` draws turning
-  points over a quieter track of sound changes; the encyclopedia cards
-  in `Pedia`, each opening with a head and a box of facts, with a trail
-  of cards visited, a whole-history card, and `FamilyTree` charts; a
-  card's long or wide sections (`Leaf`) keep a line on the card and open
-  in the folio, a sheet laid over the map), the export sheet (`Appendix`,
-  laid over the map the same way), and dialogs. Every menu is a `Popover`:
-  one open at a time, closed by an outside click or Escape.
-  Annals carry the peoples, lands, and laws they tell of, so every entry
-  can link to their cards. Every language view carries a specimen, a few
-  basic words chosen by `SPECIMEN` in the facade (`Specimen.tsx` shows
-  them), and sound-change annals carry it with each word's form before.
+  by day or by lamplight (`LightSwitch`). `components/` holds the four
+  screens of `docs/book.md`: the chart room (`ChartRoom`: the author's
+  worlds, the last opened leading, each a miniature of its map drawn
+  from its seed with the peoples saved in the shelf index); founding
+  (`Founding`: the chart with its title box and the book of accounts,
+  one line per people when closed, five stages when open, each choice a
+  `Phrase` that opens a menu; `ReachOverlay` draws who can meet whom);
+  the workshop (`Stage`: `MapView` with its layers, label policy by
+  zoom, and the `lens` that draws the chart as one people knew it; the
+  world's cartouche and menu top-left, Find and the layers top-right,
+  the chronicle's latest line as a caption over the foot, and a time bar
+  whose primary verb runs to a year in chunked frames, with play and
+  step in a study drawer, and whose `Timeline` clusters turning points
+  over a quiet density of sound changes; the cards in `Pedia`, the
+  frontispiece as the home card, each subject card opening in
+  derivation order with a `Decide…` menu, a card's long sections
+  (`Leaf`) opening wide over the map; `LanguageChapter` holds the
+  language sections the card and the book share); and the book (`Book`:
+  the world read in chapter order, laid over the map like a wide card).
+  Every menu is a `Popover`: one open at a time, closed by an outside
+  click or Escape. Annals carry the peoples, lands, and laws they tell
+  of, so every entry can link to their cards, and an optional `cause`
+  naming the entry that triggered them where the engine recorded it.
+  Every language view carries a specimen, a few basic words chosen by
+  `SPECIMEN` in the facade (`Specimen.tsx` shows them), and sound-change
+  annals carry it with each word's form before.
 
 All linguistic logic runs in Rust. Presentation code never mints or changes
 words, and there is no backend or second implementation of linguistic

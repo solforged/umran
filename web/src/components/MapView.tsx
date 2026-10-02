@@ -28,6 +28,12 @@ const CLOSEST = 1 / 8;
 const GLIDE = 450;
 /// Pointer travel, in pixels, before a press becomes a drag.
 const DRAG_START = 4;
+/// Land lettering is legible below 6 km/pixel; tongues need below 1.5.
+/// Physical scale keeps the policy steady across maps of different sizes.
+const LAND_KM_PER_PIXEL = 6;
+const TONGUE_KM_PER_PIXEL = 1.5;
+/// Breathing room between the measured, screen-space lettering boxes.
+const LABEL_GAP = 2;
 
 /// What colours the land: language families, word roots, a sound change,
 /// faiths, the holders of one craft, or one leaning of temper.
@@ -350,6 +356,7 @@ export function MapView({
   lands,
   focus = null,
   known = null,
+  lens = null,
   zoomable = false,
   settlement = null,
   animateChanges = false,
@@ -384,6 +391,8 @@ export function MapView({
   /// Lands one language knows by name; the rest of the land is veiled,
   /// with the peoples and names on it.
   known?: Set<number> | null;
+  /// Read the chart in a people's tongue and within its known lands.
+  lens?: { people: number } | null;
   zoomable?: boolean;
   settlement?: SettlementPreview | null;
   animateChanges?: boolean;
@@ -398,6 +407,12 @@ export function MapView({
   onCraft?: (craft: Craft) => void;
   onRiver?: (id: number) => void;
 }) {
+  const reader = lens ? overview.communities.find((c) => c.id === lens.people) : undefined;
+  const readerVariety = reader ? overview.varieties[reader.variety] : undefined;
+  selectedVariety = readerVariety?.id ?? selectedVariety;
+  const readerLands = useMemo(() => readerVariety
+    ? new Set(readerVariety.knownLands.map((land) => land.region)) : null, [readerVariety]);
+  known = readerLands ?? known;
   const full: Box = useMemo(() => [0, 0, map.width, map.height], [map]);
   const view = useRef<Box>(camera ?? full);
   const drawnMap = useRef(map);
@@ -407,6 +422,7 @@ export function MapView({
   const scaleText = useRef<HTMLSpanElement>(null);
   const scaleRule = useRef<HTMLSpanElement>(null);
   const labelLayers = useRef<SVGElement[]>([]);
+  const lettering = useRef<SVGTextElement[]>([]);
   const frame = useRef(0);
   const [labelWidth, setLabelWidth] = useState(() => window.innerWidth);
   const bounds = useMemo(() => map.regions.map((region) => {
@@ -438,6 +454,34 @@ export function MapView({
         if (hidden !== item.hidden) { item.node.style.display = hidden ? "none" : ""; item.hidden = hidden; }
       }
     }
+    const kmPerPixel = map.kmPerUnit / pixelsPerUnit;
+    chart.style.setProperty("--small-label-min", `${10 / pixelsPerUnit}px`);
+    chart.style.setProperty("--state-weight", String(1 + 2 * Math.min(1, (1 - ratio) / 0.6)));
+    const occupied: DOMRect[] = [];
+    const named = new Set<string>();
+    // Measure the actual font, not character-count estimates. Visibility
+    // preserves geometry, so a suppressed label can return on the next frame.
+    for (const text of lettering.current) text.style.visibility = "";
+    const measured = lettering.current.map((text) => ({ text, rect: text.getBoundingClientRect() }));
+    const chartBounds = chart.getBoundingClientRect();
+    for (const { text, rect } of measured) {
+      const kind = text.dataset.labelKind;
+      const people = text.dataset.people;
+      const allowed = kind === "tongue"
+        ? tint.kind === "peoples" && kmPerPixel < TONGUE_KM_PER_PIXEL && named.has(people!)
+        : kind === "land" || kind === "river" ? kmPerPixel < LAND_KM_PER_PIXEL : true;
+      const inView = rect.right > chartBounds.left && rect.left < chartBounds.right &&
+        rect.bottom > chartBounds.top && rect.top < chartBounds.bottom;
+      const collides = occupied.some((other) => other.left < rect.right + LABEL_GAP && rect.left < other.right + LABEL_GAP &&
+        other.top < rect.bottom + LABEL_GAP && rect.top < other.bottom + LABEL_GAP);
+      const visible = allowed && inView && rect.width > 0 && !collides;
+      text.style.visibility = visible ? "" : "hidden";
+      if (visible) { occupied.push(rect); if (kind === "people") named.add(people!); }
+      if (kind === "people") {
+        const dot = text.parentElement?.querySelector<SVGCircleElement>(".people-dot");
+        if (dot) dot.style.visibility = visible ? "hidden" : "";
+      }
+    }
     const km = [50, 100, 200, 500, 1000].filter((length) => length <= value[2] * map.kmPerUnit * 0.15).at(-1) ?? 50;
     scaleRule.current?.style.setProperty("--scale-width", `${km / map.kmPerUnit * pixelsPerUnit}px`);
     const caption = `${km.toLocaleString()} km`;
@@ -460,13 +504,20 @@ export function MapView({
       node, bounds: bounds[Number(node.dataset.chartRegion)], hidden: node.style.display === "none",
     }));
     labelLayers.current = [...(root.current?.querySelectorAll<SVGElement>(".peoples, .place-names, .river-names, .state-capitals, .founding-markers") ?? [])];
+    lettering.current = [...(root.current?.querySelectorAll<SVGTextElement>("[data-label-kind]") ?? [])]
+      .sort((a, b) => Number(b.dataset.labelPriority) - Number(a.dataset.labelPriority));
     drawCamera();
   });
   useEffect(() => {
-    const observer = new ResizeObserver(() => { setLabelWidth(window.innerWidth); drawCamera(); });
+    const refresh = () => { setLabelWidth(window.innerWidth); drawCamera(); };
+    const observer = new ResizeObserver(refresh);
     if (root.current) observer.observe(root.current);
-    return () => { observer.disconnect(); cancelAnimationFrame(frame.current); };
-  }, [map]);
+    document.fonts.addEventListener("loadingdone", refresh);
+    return () => {
+      observer.disconnect(); document.fonts.removeEventListener("loadingdone", refresh);
+      cancelAnimationFrame(frame.current);
+    };
+  }, [map, tint]);
   const routeHead = useId();
   const svg = useRef<SVGSVGElement>(null);
   const localMotion = useRef<MapMotionReading | null>(null);
@@ -630,8 +681,13 @@ export function MapView({
     }
     return out;
   }, [hearts, map]);
-  const placeOf = useMemo(() => new Map(overview.places.map((p) => [p.region, p.names])), [overview.places]);
-  const nameOf = (region: number): string | null => placeOf.get(region)?.at(-1)?.spelled ?? null;
+  const placeOf = useMemo(() => new Map(overview.places.map((p) => [p.region, p])), [overview.places]);
+  const speechLands = useMemo(() => new Map((readerVariety?.knownLands ?? []).map((land) => [land.region, land.spelled])), [readerVariety]);
+  const nameOf = (region: number): string | null => {
+    const place = placeOf.get(region);
+    return speechLands.get(region) ?? place?.exonyms.find((name) => name.variety === selectedVariety)?.spelled ??
+      place?.names.findLast((name) => name.variety === selectedVariety)?.spelled ?? place?.names.at(-1)?.spelled ?? null;
+  };
   const family = (c: Community) => overview.varieties[c.variety].family;
   const wordBy = useMemo(
     () => new Map(tint.kind === "words" ? tint.words.words.map((w) => [w.community, w]) : []),
@@ -753,36 +809,14 @@ export function MapView({
     return known !== null && !known.has(region);
   }
 
-  // Where names would overprint each other, the larger people keeps its name
-  // and the smaller shows as a dot until the view closes in, as a chart
-  // letters only what room allows. Capitals are lettered first, and chosen
-  // peoples always keep theirs. Glyphs in the map's hands run up to about
-  // 0.63 em wide.
-  const crowded = new Set<number>();
-  const lettered: [number, number, number, number][] = [];
+  // Capitals sit below their co-resident peoples. All lettering competes
+  // in drawCamera, with people's names first, largest to smallest.
   // Where each capital's mark sits: below the names of the peoples there.
   const capitalAt = new Map<number, [number, number]>();
   for (const { state } of realms) {
     const [x, y] = map.regions[state.capital].site;
     const below = y + ((hearts.get(state.capital)?.length ?? 0) / 2 * LINE + 0.2) * label;
     capitalAt.set(state.id, [x, below]);
-    const em = 0.21 * label;
-    const half = state.name.length * em * 0.33;
-    const middle = below + 0.27 * label;
-    lettered.push([x - half, middle - em / 2, x + half, middle + em / 2]);
-  }
-  const byClaim = overview.communities
-    .filter((c) => c.ended === null && !hidden(c.region))
-    .sort((a, b) => Number(chosen.has(b.id)) - Number(chosen.has(a.id)) || b.size - a.size);
-  for (const c of byClaim) {
-    const [x, y] = at.get(c.id)!;
-    const em = (chosen.has(c.id) ? 0.3 : 0.24) * label;
-    const text = tint.kind === "words" ? (wordBy.get(c.id)?.spelled ?? "—") : c.name;
-    const half = text.length * em * 0.33;
-    const extent: [number, number, number, number] = [x - half, y - em / 2, x + half, y + em / 2];
-    const overprints = lettered.some(([x0, y0, x1, y1]) => x0 < extent[2] && extent[0] < x1 && y0 < extent[3] && extent[1] < y1);
-    if (overprints && !chosen.has(c.id)) crowded.add(c.id);
-    else lettered.push(extent);
   }
 
   const possible = new Set(settlement?.options.filter((o) => o.reason === null).map((o) => o.region));
@@ -798,7 +832,7 @@ export function MapView({
         <title>{sea ? "Sea" : veiled ? "Unknown land" : (nameOf(r.id) ?? `Unnamed ${TERRAIN_NAME[r.terrain].toLowerCase()}`)}</title>
         <polygon
           data-region={r.id}
-          className={`land terrain-${r.terrain}${sea ? "" : " open"}${lands.has(r.id) ? " shown" : ""}`}
+          className={`land terrain-${r.terrain}${sea ? "" : " open"}${lands.has(r.id) ? " shown" : ""}${reader?.region === r.id ? " lens-heart" : ""}`}
           points={points}
         />
         {colour ? <polygon className={tint.kind === "weather" ? "weather-wash" : "claim"} data-region={r.id} points={points} style={{ fill: colour }} /> : null}
@@ -955,6 +989,7 @@ export function MapView({
                 x={x}
                 y={y}
                 className="continent-name"
+                data-label-kind="continent" data-label-priority={0}
                 role={onContinent ? "button" : undefined}
                 tabIndex={onContinent ? 0 : undefined}
                 onClick={() => dragged() || onContinent?.(c.landmass)}
@@ -989,8 +1024,9 @@ export function MapView({
               const here = hearts.get(p.region)?.length ?? 0;
               const top = here > 0 ? y - (here / 2) * LINE * label - 0.06 * label : y;
               return (
-                <text key={p.region} x={x} y={top} className={here > 0 ? "place-name" : "place-name left"}>
-                  {p.names.at(-1)!.spelled}
+                <text key={p.region} x={x} y={top} className={here > 0 ? "place-name" : "place-name left"}
+                  data-label-kind="land" data-label-priority={2}>
+                  {nameOf(p.region)}
                 </text>
               );
             })}
@@ -1003,7 +1039,8 @@ export function MapView({
             const id = `${routeHead}-river-${river.id}`;
             return <g key={river.id}>
               <defs><path id={id} d={line} /></defs>
-              <text className={`hand-${overview.varieties[name.variety].family % 5}`} dy={-0.06}>
+              <text className={`hand-${overview.varieties[name.variety].family % 5}`} dy={-0.06}
+                data-label-kind="river" data-label-priority={1}>
                 <textPath href={`#${id}`} startOffset="50%" textAnchor="middle">{name.spelled}</textPath>
               </text>
             </g>;
@@ -1076,14 +1113,16 @@ export function MapView({
             if (c.ended !== null || hidden(c.region)) return null;
             const [x, y] = at.get(c.id)!;
             const word = wordBy.get(c.id);
-            const text = tint.kind === "words" ? (word?.spelled ?? "—") : c.name;
+            const localName = selectedVariety === undefined ? c.name : c.exonyms.find((name) =>
+              name.by === reader?.id || overview.communities[name.by]?.variety === selectedVariety)?.name ?? c.name;
+            const text = tint.kind === "words" ? (word?.spelled ?? "—") : localName;
             return (
               <g
                 key={c.id}
                 className={chosen.has(c.id) ? "people chosen" : "people"}
                 role="button"
                 tabIndex={0}
-                aria-label={tint.kind === "words" ? `${c.name}: ${text}` : c.name}
+                aria-label={tint.kind === "words" ? `${localName}: ${text}` : localName}
                 onClick={() => dragged() || onPeople(c.id)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
@@ -1094,15 +1133,21 @@ export function MapView({
               >
                 <title>
                   {tint.kind === "words" && word
-                    ? `${c.name}: ${word.spelled} /${word.ipa}/`
-                    : `${c.name}, ${Math.round(c.size).toLocaleString()} souls`}
+                    ? `${localName}: ${word.spelled} /${word.ipa}/`
+                    : `${localName}, ${Math.round(c.size).toLocaleString()} souls`}
                 </title>
-                {crowded.has(c.id) ? <circle className="people-dot" cx={x} cy={y} r={0.06 * label}
-                  style={{ fill: tint.kind === "words" && word ? hue(word.group) : hue(family(c)) }} /> : null}
-                <text x={x} y={y} className={`hand-${family(c) % 5}${crowded.has(c.id) ? " crowded-name" : ""}`}
+                <circle className="people-dot" cx={x} cy={y} r={0.06 * label}
+                  style={{ fill: tint.kind === "words" && word ? hue(word.group) : hue(family(c)) }} />
+                <text x={x} y={y} className={`hand-${family(c) % 5}`}
+                  data-label-kind="people" data-people={c.id} data-label-priority={100 + c.size}
                   style={{ fill: tint.kind === "words" && word ? hue(word.group) : hue(family(c)) }}>
                   {text}
                 </text>
+                {overview.varieties[c.variety].name !== text && tint.kind === "peoples" ?
+                  <text x={x} y={y + 0.24 * label} className="tongue-name"
+                    data-label-kind="tongue" data-people={c.id} data-label-priority={4}>
+                    {overview.varieties[c.variety].name}
+                  </text> : null}
               </g>
             );
           })}
@@ -1129,7 +1174,8 @@ export function MapView({
               >
                 <title>{`${state.name}: ${Math.round(state.city).toLocaleString()} in its capital city`}</title>
                 <path className="city-marker" d="M-.14,.04V-.08H-.08V-.16H.02V-.04H.08V-.11H.14V.04Z" />
-                <text y={0.27} className={`hand-${family(overview.communities[state.rulers]) % 5}`}>{state.name}</text>
+                <text y={0.27} className={`hand-${family(overview.communities[state.rulers]) % 5}`}
+                  data-label-kind="state" data-label-priority={3}>{state.name}</text>
               </g>
             );
           })}

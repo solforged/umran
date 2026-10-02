@@ -14,17 +14,25 @@ are borrowed and compete, names wear down, and families of related
 languages branch out. It runs entirely in the browser.
 
 **[Try it in your browser](https://solforged.github.io/umran/)**: the first
-visit opens the chart room. Choose "Unknown waters" to set up a new world,
-or "A chronicle already written" to open a sample four thousand years along.
+visit opens the chart room. Choose "Found a new world" to draw coasts and
+choose who lives there, or "Read a chronicle already written" to open a
+sample four thousand years along.
 
-Later visits resume the world left open. On the stage the chart fills the
-window: a cartouche in its top-left corner names the world, its telling,
-and the year, and opens the world's menu (other tellings, the field
-notebook, Export, day or lamplight, and the way back to the shelf);
-leaving for the shelf also makes it the next launch destination. Find and
-the map's layers sit top-right, the chronicle's latest line is a caption
-over the map's foot, and the time bar beneath draws every turning point
-on a timeline, with sound changes as a quieter track below it.
+Umran writes the book of a world: its peoples, their fortunes, and the
+languages that grew out of both. The simulation is how the book gets
+written. You found the world, run its years, read what came of it, and
+decide where a history should turn; each decision opens another telling
+of the same world. Later visits resume the world left open. On the stage
+the chart fills the window: a cartouche in its top-left corner names the
+world, its telling, and the year, and opens the world's menu (other
+tellings, notes, the book, day or lamplight, and the way back to the
+chart room). Find and the map's layers sit top-right, the chronicle's
+latest line is a caption over the map's foot, and the time bar beneath
+runs the years to a date and draws every turning point on a timeline,
+with sound changes as a quieter track below it. Where the engine
+recorded why something happened, the chronicle says so: "after hard
+times", "as the city grew", each phrase a link to the entry that caused
+it.
 
 ![The workbench after 4,000 years: rivers and Weather colouring on the chart under its cartouche, beside the world's encyclopedia card, with the chronicle caption and the drawn timeline below](docs/images/stage.jpg)
 
@@ -154,8 +162,8 @@ quiet. The system's reduced-motion setting makes all these changes immediate.
 
 | | |
 |---|---|
-| ![World setup: an old chart beside one founding people's five-stage account, with all founders and the charter in the book's contents](docs/images/setup.png) | ![Words compared: a table of basic words across related languages, shaded by shared root](docs/images/cognates.png) |
-| **Setting up a world.** Open one people's account at a time: homeland, livelihood, temper, speech, and identity. The charter compares their first words and possible journeys using the engine's travel rules. Begin immediately, or revise any account; optional founding questions become linked entries in the field notebook. Sounds can still be tuned on a full sound chart. | **Words compared.** Basic words across the living languages, shaded alike when they come from one root (cognates). |
+| ![Founding: an old chart beside the book of accounts, one people's five stages open and the rest one line each, with the open people's reach drawn on the chart](docs/images/setup.png) | ![Words compared: a table of basic words across related languages, shaded by shared root](docs/images/cognates.png) |
+| **Founding a world.** Each people is one line in the book of accounts until opened: homeland, livelihood, temper, speech, and identity. Who can meet whom is drawn on the chart from the engine's travel rules. Name the world, or let it take the name of its continent. Sounds can be tuned on a full sound chart. | **Words compared.** Basic words across the living languages, shaded alike when they come from one root (cognates). |
 | ![A language's family tree, with its sounds and word-building patterns](docs/images/family.png) | ![A sound law's card: the peoples who have it and where it spread, with the isogloss drawn on the map](docs/images/law.png) |
 | **A family tree.** Every language card charts its family's descent, its sounds, and how it builds words, here by vowel patterns over consonant roots, as Arabic does. | **A sound law.** Who has a change, whether it arose among them or spread from a neighbour, and on the map, where it stopped. |
 
@@ -242,7 +250,7 @@ are listed in [`docs/engine.md`](docs/engine.md#studying-one-mechanism).
 ```
 crates/umran-sim   the engine: world, map, sounds, words, names, history
 crates/umran-web   the WebAssembly facade and its JSON views
-web/src            the React workbench: shelf, world setup, stage, cards
+web/src            the React workbench: chart room, founding, stage, cards, the book
 docs/              the engine model and the history format
 brand/             the astrolabe mark; `bun run brand` redraws icons and logos
 AGENTS.md          architecture notes and the rules every change keeps

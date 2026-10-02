@@ -248,14 +248,14 @@ export function ActionDialog({
             className="primary"
             disabled={!canSubmit}
           >
-            Write it down
+            Make this decision
           </button>
         </>
       }
     >
-      {overview.generation < overview.latest ? <p className="telling-note">
-        Writing in year {overview.generation * YEARS} begins another telling. The years through {overview.latest * YEARS} stay in the chronicle.
-      </p> : null}
+      <p className="telling-note">A decision in year {overview.generation * YEARS}.
+        {!overview.atTip ? <> This begins another telling. The years through {overview.latest * YEARS} stay in the chronicle.</> : null}
+      </p>
       <form id={`form-${kind}`} className="form" onSubmit={submit}>
         {body}
       </form>

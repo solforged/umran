@@ -1,0 +1,34 @@
+.book { z-index: 8; }
+.book .book-page { scroll-behavior: smooth; padding: 1rem clamp(1rem, 5vw, 4.5rem) 4rem; }
+.book a { color: inherit; text-decoration-color: var(--line); text-underline-offset: .15em; }
+.book a:hover { color: var(--accent); }
+.book-contents { max-width: 54rem; margin: 0 auto 2rem; padding: 1rem 0; border-bottom: 1px solid var(--line); }
+.book-contents h3 { font-family: var(--display); font-weight: 500; }
+.book-contents ol { columns: 2; padding-left: 1.5rem; }
+.book-contents li { padding: .25rem 0; break-inside: avoid; }
+.book-chapter { max-width: 54rem; margin: 0 auto 3rem; scroll-margin-top: 1rem; border-top: 1px solid var(--line); padding-top: 1rem; }
+.book-running-head { display: flex; align-items: baseline; gap: 1rem; color: var(--ink-soft); font-family: var(--display); font-size: .8rem; letter-spacing: .06em; }
+.book-running-head > span { flex: 1; }
+.book-copy { font-family: var(--sans); font-size: .75rem; padding: .2rem .5rem; }
+.book-chapter > h2 { font-family: var(--display); font-size: 2rem; font-weight: 500; margin: 1.5rem 0; }
+.book-frontispiece { text-align: center; }
+.book-kicker { margin-top: 2rem; color: var(--ink-soft); font-family: var(--display); letter-spacing: .15em; text-transform: uppercase; font-size: .8rem; }
+.book-frontispiece h1 { font-family: var(--display); font-size: clamp(2.2rem, 4vw, 3.8rem); font-weight: 500; margin: .5rem 0; }
+.book-frontispiece figure { margin: 2rem 0 1.5rem; }
+.book-frontispiece .miniature { aspect-ratio: 2.2; width: 100%; max-height: 24rem; overflow: hidden; border: 1px solid var(--line); }
+.book-frontispiece .miniature svg { width: 100%; height: 100%; }
+.book-frontispiece figcaption { color: var(--ink-soft); font-style: italic; margin-top: .5rem; }
+.book-subject { margin: 2rem 0; scroll-margin-top: 1rem; }
+.book-subject > h3, .book-family > h3 { font-family: var(--display); font-weight: 500; font-size: 1.5rem; margin-bottom: .3rem; }
+.book-subtitle { color: var(--ink-soft); margin-top: .3rem; }
+.book-subject h4, .book-land h4 { font-family: var(--display); font-weight: 500; font-size: 1.05rem; color: var(--ink-soft); margin: 1.2rem 0 .4rem; }
+.book-language-section { border-top: 1px solid var(--line); padding-top: .3rem; margin-top: 1.5rem; }
+.book-language-section > h4 { font-size: 1.25rem; color: var(--ink); }
+.book-chronicle, .book-name-ledger { list-style: none; padding: 0; }
+.book-chronicle > li, .book-name-ledger > li { display: grid; grid-template-columns: 3.5rem minmax(0, 1fr); gap: 1rem; padding: .6rem 0; scroll-margin-top: 1rem; }
+.book-cause { color: var(--ink-soft); font-size: .85rem; }
+.book-decision { display: block; color: var(--accent); font-style: italic; margin-top: .25rem; }
+.book-note > p:last-child { white-space: pre-wrap; }
+.book-colophon { margin: 2rem 0; text-align: center; font-size: .85rem; color: var(--ink-soft); }
+@media (prefers-reduced-motion: reduce) { .book .book-page { scroll-behavior: auto; } }
+@media (max-width: 700px) { .book-contents ol { columns: 1; } .book-chronicle > li, .book-name-ledger > li { gap: .5rem; grid-template-columns: 2.8rem minmax(0, 1fr); } }

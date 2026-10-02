@@ -89,8 +89,8 @@ export function SettlementDesk({ draft, closing, preview, error, overview, map, 
     if (closing && opener.current?.isConnected) opener.current.focus({ preventScroll: true });
     else if (!closing) close.current?.focus({ preventScroll: true });
   }, [closing]);
-  return <aside className="settlement-desk" data-closing={closing || undefined} inert={closing} aria-hidden={closing || undefined} aria-label="Settlement account">
-    <header><span>A choice of homeland · year {overview.generation * YEARS}</span><button ref={close} type="button" className="icon" aria-label="Close settlement account" onClick={onCancel}><X size={18} /></button></header>
+  return <aside className="settlement-desk" data-closing={closing || undefined} inert={closing} aria-hidden={closing || undefined} aria-label="Settlement decision">
+    <header><span>A decision of homeland · year {overview.generation * YEARS}</span><button ref={close} type="button" className="icon" aria-label="Close settlement decision" onClick={onCancel}><X size={18} /></button></header>
     <div className="settlement-pages">
       <h2>{people.name}</h2>
       <p className="settlement-byline">{count(people.size)} souls · {people.lands.length} {people.lands.length === 1 ? "holding" : "holdings"}</p>
@@ -110,7 +110,7 @@ export function SettlementDesk({ draft, closing, preview, error, overview, map, 
         </select>
       </label>
       <p className="settlement-key"><i className="eligible" />{eligible} possible {draft.intent === "partition" ? "hearts" : "destinations"}<i className="remaining" />Remain<i className="arriving" />{draft.intent === "partition" ? "Part" : "Arrive"}</p>
-      {draft.destination === null ? <p className="settlement-invitation">{eligible ? "Choose a marked land to read the account before deciding." : draft.intent === "partition" ? "A territorial division needs at least two connected holdings. Sending settlers can begin a new people elsewhere." : "No land can receive this group from all its inhabited places. Try a smaller share, or explore seafaring and nearer lands."}</p> : null}
+      {draft.destination === null ? <p className="settlement-invitation">{eligible ? "Choose a marked land to see what the decision would do." : draft.intent === "partition" ? "A territorial division needs at least two connected holdings. Sending settlers can begin a new people elsewhere." : "No land can receive this group from all its inhabited places. Try a smaller share, or explore seafaring and nearer lands."}</p> : null}
       {reason ? <p role="status" className="notice settlement-refusal">{reason}</p> : null}
       {plan ? <>
         <h3>{landTitle(overview, map, plan.choice.destination)}</h3>
@@ -122,7 +122,7 @@ export function SettlementDesk({ draft, closing, preview, error, overview, map, 
           <p className="muted small">Ties can form only where travel permits. Names are coined from their own language.</p>
         </details>
       </> : null}
-      {changedPast ? <p className="telling-note">This rewrites from year {overview.generation * YEARS}, before the choice in view. The present history through year {latest.latest * YEARS} remains another telling.</p> : null}
+      {changedPast ? <p className="telling-note">This decision begins in year {overview.generation * YEARS}. The years through {latest.latest * YEARS} remain another telling.</p> : null}
     </div>
     <footer><button type="button" onClick={onCancel}>Leave undecided</button><button type="button" className="primary" disabled={!plan || !preview || !!error} onClick={() => { if (plan && preview) onCommit({ ...plan.choice, naming, intensity }, preview); }}>
       {draft.intent === "partition" ? "Divide these lands" : draft.intent === "settlers" ? "Found the settlement" : "Move the people"}

@@ -61,7 +61,7 @@ export function TellingComparison({ open, engine, overview, map, other, onClose,
         </select></label>
         <label className="comparison-year">Year {generation * YEARS}<input aria-label="Comparison year" type="range" min={0} max={through} value={generation} disabled={through === 0} onChange={(e) => setYear(Number(e.target.value))} /></label>
       </div>
-      <p className="muted small">Both accounts are read at the same year. The shorter reaches year {through * YEARS}; continuing either account is a separate choice.</p>
+      <p className="muted small">Both tellings are read at the same year. The shorter reaches year {through * YEARS}; continuing either telling is a separate decision.</p>
       {result.error ? <p className="notice error" role="alert">{result.error} Both saved tellings are still kept.</p> : null}
       {comparison ? <>
         <div className="comparison-maps">
@@ -81,11 +81,11 @@ export function TellingComparison({ open, engine, overview, map, other, onClose,
           </section>)}
         </div>
         <section className="comparison-investigation">
-          <h3>A people through both histories</h3>
-          <p className="muted small">These peoples were already present at the shared reading in year {comparison.diverged * YEARS}. Later descendants belong to their own telling.</p>
+          <h3>A people through both tellings</h3>
+          <p className="muted small">These peoples were already present in year {comparison.diverged * YEARS}. Later descendants belong to their own telling.</p>
           {shared.length ? <label>Follow a shared people<select value={selected} onChange={(e) => setPerson(Number(e.target.value))}>
             {shared.map((id) => <option key={id} value={id}>{comparison.left.communities[id].name}{comparison.left.communities[id].name !== comparison.right.communities[id].name ? ` / ${comparison.right.communities[id].name}` : ""}</option>)}
-          </select></label> : <p>No people had yet been founded when these histories separated.</p>}
+          </select></label> : <p>No people had yet been founded when these tellings separated.</p>}
           <div className="comparison-accounts">
             {sides.map((side) => {
               const c = side.communities[selected];

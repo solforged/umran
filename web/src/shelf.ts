@@ -3,12 +3,14 @@
 // the shelf once and otherwise left untouched.
 
 import type { HistoryPoint, MapSize, Overview, Subject as Focus } from "./model";
-import { YEARS } from "./model";
 
 export interface BookEntry {
   id: string;
   title: string;
-  /// The languages spoken at the last save, for the spine.
+  /// True when the author gave the title; otherwise it is the world's own
+  /// name and may be re-derived on each save.
+  named?: boolean;
+  /// The last chronicle line at the latest save.
   subtitle: string;
   generation: number;
   updated: number;
@@ -153,20 +155,34 @@ export function newBookId(): string {
   return `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
 }
 
-/// A book's title and spine, from the world as it stands.
-export function describe(id: string, overview: Overview): BookEntry {
-  const first = overview.communities[0];
-  const spoken = overview.varieties.filter((v) => v.spoken).map((v) => v.name);
+/// A world's entry, using the author's title or the fixed continent name.
+export function describe(id: string, overview: Overview, title?: string | null): BookEntry {
+  const last = overview.latest === 0 ? null : overview.annals.at(-1);
   const peoples = overview.communities
     .filter((c) => c.ended === null)
     .sort((a, b) => b.size - a.size)
     .map((c) => ({ name: c.name, family: overview.varieties[c.variety].family, region: c.region, lands: c.lands }));
   return {
     id,
-    title: first ? `The world of the ${first.name}` : "An empty world",
-    subtitle: `${spoken.join(", ")} · year ${overview.latest * YEARS}`,
+    title: title ?? worldName(overview) ?? "Unknown waters",
+    named: title != null,
+    subtitle: last?.text ?? "Nothing is written yet",
     generation: overview.latest,
     updated: Date.now(),
     peoples,
   };
+}
+
+/// The earliest-named continent, tied by landmass id. A continent's name
+/// is fixed once given, so people's changing names never rename the world.
+export function worldName(overview: Overview): string | null {
+  let first: Overview["continents"][number] | null = null;
+  for (const continent of overview.continents) {
+    if (!continent.name) continue;
+    if (!first || continent.name.since < first.name!.since ||
+      (continent.name.since === first.name!.since && continent.landmass < first.landmass)) {
+      first = continent;
+    }
+  }
+  return first?.name?.name ?? null;
 }

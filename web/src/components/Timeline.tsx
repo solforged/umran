@@ -24,6 +24,8 @@ const PRECEDENCE: Record<MarkKind, number> = {
   found: 0, split: 1, shift: 2, conquest: 3, rose: 4, fell: 5, faith: 6, craft: 7,
 };
 const RULER_STEPS = [100, 200, 500, 1000, 2000, 5000, 10000];
+/// Under eight screen pixels per generation, individual marks overprint.
+const MARK_SPACING = 8;
 
 function isMarkKind(kind: Annal["kind"]): kind is MarkKind {
   return Object.hasOwn(PRECEDENCE, kind);
@@ -98,17 +100,31 @@ export function Timeline({ marks, sounds, latest, viewed, onScrub, onOpen }: {
     return () => observer.disconnect();
   }, []);
 
+  const ticks = useMemo(() => rulerTicks(latest, width), [latest, width]);
+  const wide = latest > 0 && width / latest < MARK_SPACING;
   const groups = useMemo(() => {
     const generations = new Map<number, TimelineMark[]>();
     for (const mark of marks) {
-      const group = generations.get(mark.generation);
+      const generation = wide ? Math.floor(mark.generation * YEARS / ticks.step) * ticks.step / YEARS : mark.generation;
+      const group = generations.get(generation);
       if (group) group.push(mark);
-      else generations.set(mark.generation, [mark]);
+      else generations.set(generation, [mark]);
     }
-    for (const group of generations.values()) group.sort((a, b) => PRECEDENCE[a.kind] - PRECEDENCE[b.kind]);
-    return [...generations];
-  }, [marks]);
-  const ticks = useMemo(() => rulerTicks(latest, width), [latest, width]);
+    for (const group of generations.values()) group.sort((a, b) =>
+      a.generation - b.generation || PRECEDENCE[a.kind] - PRECEDENCE[b.kind]);
+    return [...generations].sort(([a], [b]) => a - b);
+  }, [marks, wide, ticks.step]);
+  const soundTrack = useMemo(() => {
+    if (!wide) return sounds;
+    const bins = new Map<number, number>();
+    for (const sound of sounds) {
+      const generation = Math.floor(sound.generation * YEARS / ticks.step) * ticks.step / YEARS;
+      bins.set(generation, (bins.get(generation) ?? 0) + sound.count);
+    }
+    return [...bins].map(([generation, count]) => ({
+      generation, count, label: `${count} sound changes, years ${generation * YEARS}–${Math.min(latest * YEARS, generation * YEARS + ticks.step - 1)}`,
+    }));
+  }, [sounds, wide, ticks.step, latest]);
   const left = (generation: number) => `${generation / Math.max(latest, 1) * 100}%`;
   const scrub = (generation: number) => {
     const next = Math.max(0, Math.min(latest, generation));
@@ -169,7 +185,22 @@ export function Timeline({ marks, sounds, latest, viewed, onScrub, onOpen }: {
     <div className="timeline-track main">
       {latest === 0 ? null : groups.map(([generation, group]) => {
         const visible = group.length > 4 ? group.slice(0, 3) : group;
-        const ahead = generation > viewed ? " ahead" : "";
+        const ahead = group[0].generation > viewed ? " ahead" : "";
+        if (wide && group.length > 1) {
+          const first = group[0];
+          const title = group.slice(0, 8).map((mark) => mark.label).join("\n") +
+            (group.length > 8 ? `\nand ${group.length - 8} more` : "");
+          return <button type="button" key={generation}
+            className={`mark mark-cluster mark-${first.kind}${ahead}`}
+            style={{ left: left(generation) }} title={title}
+            aria-label={`${group.length} chronicle entries. ${title}`}
+            data-count={group.length} data-first-year={first.generation * YEARS}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => { event.stopPropagation(); scrub(first.generation); }}>
+            <svg viewBox="0 0 10 10" width="12" height="12" aria-hidden="true">{shape(first.kind)}</svg>
+            <small>{group.length}</small>
+          </button>;
+        }
         return <div key={generation}>
           {visible.map((mark, stack) => <button
             type="button"
@@ -193,10 +224,11 @@ export function Timeline({ marks, sounds, latest, viewed, onScrub, onOpen }: {
       })}
     </div>
     <div className="timeline-track sounds">
-      {latest === 0 ? null : sounds.map((sound) => <span
+      {latest === 0 ? null : soundTrack.map((sound) => <span
         key={sound.generation}
-        className={`sound${sound.generation > viewed ? " ahead" : ""}`}
-        style={{ left: left(sound.generation), "--count": sound.count } as CSSProperties}
+        className={`sound${wide ? " density" : ""}${sound.generation > viewed ? " ahead" : ""}`}
+        style={{ left: left(sound.generation), "--count": sound.count,
+          "--bin-width": `${Math.min(ticks.step / YEARS, latest - sound.generation) / Math.max(latest, 1) * 100}%` } as CSSProperties}
         title={sound.label}
       />)}
     </div>

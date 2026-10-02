@@ -202,7 +202,6 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
   .workbench .map-zoom { top: 6.2rem; }
   .stage-bar { gap: .2rem; padding-inline: .5rem; }
   .stage-bar button.play { min-width: 3.3rem; padding-inline: .25rem; gap: .2rem; font-size: .8rem; }
-  :root .stage-bar .play-more { padding-inline: .15rem; }
   .stage-bar > button.icon { width: 1.5rem; padding-inline: .1rem; }
   .stage-year { font-size: .75rem; }
   .stage-panes { gap: .1rem; }
@@ -332,39 +331,13 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 /* Guided founding */
 :root .setup { grid-template-columns: minmax(0, 1fr) minmax(25rem, 33rem); }
 :root .setup .setup-panel { min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0 1.4rem 1.5rem 1.8rem; }
-.founding-contents { position: sticky; top: 0; z-index: 3; background: var(--paper); margin-inline: -1.8rem -1.4rem; padding: .6rem .8rem .4rem; border-bottom: 3px double var(--line); }
-.founding-tabs { display: flex; gap: .2rem; overflow-x: auto; scrollbar-width: thin; padding-bottom: .25rem; }
-:root .founding-tabs button { display: inline-flex; flex: none; align-items: center; gap: .35rem; padding: .3rem .45rem; border-color: transparent; font-size: .95rem; white-space: nowrap; }
-:root .founding-tabs button[aria-selected=true] { color: var(--accent); border-color: var(--line); background: var(--paper-raised); }
-.founding-tabs .swatch { width: .45rem; height: .45rem; flex: none; }
-.founding-contents-acts { display: flex; gap: 1rem; justify-content: space-between; font-size: .8rem; }
-.founding-contents-acts button { display: inline-flex; align-items: center; gap: .25rem; }
 .setup .book-head { padding-top: .8rem; }
 .setup .book-head .sample-note { font-size: .85rem; }
 .setup .account { padding-block: 1rem; border-bottom: 0; }
-.setup .account-name { margin-block: .25rem .9rem; }
 .founding-stage { margin-block: 1rem; }
 :root .founding-stage > .eyebrow { margin: 0 0 .35rem; color: var(--ink-soft); font-size: .75rem; font-weight: 400; letter-spacing: .1em; text-transform: uppercase; }
 :root .setup .account.chosen .founding-stage .account-text::first-letter { font-size: inherit; line-height: inherit; float: none; color: inherit; padding: 0; font-family: inherit; }
 .founding-stage > .small { margin: .3rem 0; }
-.founding-neighbours { list-style: none; padding: .3rem 0 0; margin: 0; font-size: .85rem; color: var(--ink-soft); line-height: 1.4; }
-.founding-neighbours li + li { margin-top: .35rem; }
-.founding-neighbours strong { font-weight: 500; color: var(--ink); }
-.founding-charter { padding-block: 1rem; line-height: 1.45; }
-.founding-charter > h2 { margin: 0; font-size: 1.6rem; font-weight: 400; }
-.founding-charter > section { margin-top: 1.2rem; }
-.founding-charter h3 { margin: 0 0 .45rem; }
-.charter-peoples, .founding-questions { padding-left: 1.1rem; margin-block: .4rem; }
-.charter-peoples li + li, .founding-questions li + li { margin-top: .45rem; }
-.charter-specimens { max-height: none; border: 0; }
-.charter-specimens th, .charter-specimens td { padding: .35rem .45rem; font-size: .9rem; }
-.charter-specimens tbody th { font-weight: 400; text-align: left; }
-.founding-reach h4 { margin: .7rem 0 .25rem; font-weight: 500; font-style: italic; }
-.founding-reach ul { padding-left: 1.1rem; margin: .3rem 0; font-size: .9rem; }
-.founding-reach li + li { margin-top: .4rem; }
-.founding-reach p { margin-block: .2rem; }
-.founding-keep { display: flex; gap: .5rem; align-items: flex-start; margin-top: .8rem; font-size: .9rem; }
-.founding-keep input { flex: none; margin-top: .25rem; accent-color: var(--accent); }
 @media (min-width: 641px) and (max-width: 900px) {
   :root .setup { grid-template-columns: minmax(0, 1fr) minmax(22rem, 45%); grid-template-rows: auto auto minmax(0, 1fr) auto; grid-template-areas: "head head" "notices notices" "map pedia" "time time"; }
 }
@@ -372,7 +345,6 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
   :root .setup { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 40vh minmax(0, 1fr) auto; grid-template-areas: "head" "notices" "map" "pedia" "time"; }
   :root .setup .stage-map { margin: 0 .5rem; }
   :root .setup .setup-panel { padding-inline: 1.2rem; margin: 0; border-left: 0; }
-  .founding-contents { margin-inline: -1.2rem; }
   .setup .cartouche { top: .6rem; bottom: auto; left: .6rem; padding: .6rem .8rem; max-width: calc(100% - 1.2rem); }
   :root .setup .cartouche h1 { font-size: 1.3rem; }
   .setup .cartouche-note, .setup .map-scale-note, .setup .map-hint { display: none; }
@@ -418,7 +390,40 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
   .chart-scale { gap: .5rem; left: .4rem; font-size: .66rem; max-width: calc(100% - 1rem); }
 }
 .chart-ripples path { stroke-linecap: round; }
-:is(.zoom-far, .zoom-mid) .crowded-name { display: none; }
 .zoom-close .people-dot { display: none; }
 .mapview .people text { font-size: max(calc(.24px * var(--label, 1)), var(--people-label-min, 0px)); }
 .mapview .people.chosen text { font-size: max(calc(.3px * var(--label, 1)), var(--people-label-min, 0px)); }
+
+/* The workshop's frontispiece and dated decisions. */
+.frontispiece-caption { color: var(--ink-soft); line-height: 1.5; }
+.frontispiece-peoples { list-style: none; display: flex; flex-wrap: wrap; gap: .65rem 1.2rem; padding: .6rem 0; margin: .3rem 0 1rem; font-size: 1.2rem; }
+.frontispiece-run { display: inline-flex; align-items: center; gap: .5rem; margin-bottom: 1rem; }
+.trail .trail-year { color: var(--ink); white-space: nowrap; }
+.folio-head h2.folio-of { font: 1.6rem var(--serif); margin: .25rem 0 .6rem; }
+.chronicle-tools > .phrase { text-align: left; justify-self: start; border: 0; border-bottom: 1px dotted var(--ink-soft); padding: .3rem 0; background: transparent; color: var(--ink); }
+.annal-cause { font-style: italic; color: var(--ink-soft); font-size: .9em; }
+.map-caption > .annal-cause { flex: none; max-width: 13rem; }
+.decide { margin: .5rem 0; color: var(--accent); border-color: var(--line); }
+.people-land { margin-top: .5rem; }
+.people-temper { margin-bottom: 0; }
+
+.stage-bar { grid-template-columns: auto auto minmax(8rem, 1fr) auto auto; }
+.run-control, .run-control label { display: flex; align-items: center; gap: .5rem; white-space: nowrap; }
+.run-control { margin: 0; }
+.run-control input { width: 5.2rem; min-width: 0; font-variant-numeric: tabular-nums; padding: .3rem .4rem; }
+.study-open { display: inline-flex; align-items: center; gap: .4rem; }
+.study-actions { display: grid; gap: .4rem; grid-column: 1 / -1; }
+.study-actions button { display: flex; align-items: center; gap: .5rem; text-align: left; }
+@media (max-width: 900px) {
+  .stage-bar { grid-template-columns: auto auto minmax(0, 1fr) auto auto; }
+  .stage-bar .stage-panes { grid-column: 5; }
+  .stage-bar .stage-year { grid-column: 3; }
+  .stage-bar .strike-out { grid-column: 4; }
+}
+@media (max-width: 560px) {
+  .run-control, .run-control label { gap: .25rem; font-size: .8rem; }
+  .run-control input { width: 4.4rem; }
+  .study-open { font-size: .8rem; padding-inline: .3rem; gap: 0; }
+  .study-open svg { display: none; }
+}
+.author-decision { color: var(--accent); font-size: .8em; font-variant: small-caps; }

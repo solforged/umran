@@ -20,8 +20,9 @@ a people come upon a craft it lacks; temper nudges one leaning of a
 people's temper, which then drifts and answers events as before.
 Consecutive runs merge up to the per-action limit, so playback stays a compact
 account. Any past generation is recovered by replaying, with checkpoints every
-10 generations; the timeline needs no separate data. Play runs at the present;
-advance and "next event" can continue a past reading as a new telling.
+10 generations; the timeline needs no separate data. Running to a year
+applies one `run` action per animation frame at the present; a step or
+"until something happens" can continue a past reading as a new telling.
 
 An exact `HistoryPoint` names an action position and an offset into a run, so
 two choices in the same year remain distinguishable. A run's endpoint uses its
@@ -64,12 +65,13 @@ charts share a camera, while their populations, holdings, language families and
 word forms come from their own views. Following a link opens that telling;
 continuing either panel is an explicit intervention.
 
-The workbench shows one overlaid sheet at a time. Opening an index, notebook
-or intervention lifts the current folio before the dialog settles, then
-restores its leaf when the dialog closes. Comparison returns to the History
-card's Tellings entry, or the matching folio tab on a phone. Escape dismisses
-only the top sheet. The folio's filters and reading position survive the
-temporary cover, as they do a visit to a word's history.
+The workbench shows one overlaid sheet at a time. Opening Find, the notes,
+or a decision lifts the current wide card before the dialog settles, then
+restores its section when the dialog closes. Comparison returns to the
+chronicle card's "Other tellings" section, or the matching tab on a phone.
+Escape dismisses only the top sheet. A wide card's filters and reading
+position survive the temporary cover, as they do a visit to a word's
+history.
 
 Saves are recipes (`Recipe`: format, `ENGINE_REVISION`, seed, map size,
 active telling ID and all telling records), not resolved states.
@@ -97,28 +99,29 @@ Worlds leave the shelf only when the reader removes one and confirms.
 Unreadable saves or an unreadable shelf open recovery without being
 overwritten; save failures stay visible and export still works. Storage is
 local to the browser, not synced. The sample world (`web/src/sample.ts`)
-is a fixed recipe of four thousand years, offered on the shelf and at the
-top of world setup; opening it puts a fresh copy on the shelf.
+is a fixed recipe of four thousand years, offered in the chart room and
+at the top of founding; opening it puts a fresh copy on the shelf.
 
-Founding setup keeps one account open beside the chart, with independent
-homeland, livelihood, temper, speech, and identity choices. The optional
-charter compares the founders and their possible first journeys. On Begin,
-three to five questions are kept by default through the existing notebook
-save path, each with a `question` kind and a destination at the exact
-year-zero reading. Their people, land, language, and word references open
-from the field notebook and travel with the saved world. Unchecking
-"Keep these questions in the notebook" skips them; the charter itself is
-never required to begin.
+A world is titled by the author at founding, or else named after its
+earliest-named continent (`worldName` in `shelf.ts`); a continent's name
+is fixed once given, so the title never drifts as a people's name wears.
+An authored title is marked `named` on the entry and kept on every save.
 
-The first visit opens the shelf, even when it is empty; setup and the
-sample are explicit choices there. Later visits resume the world left
-open, including one reopened without making changes. Returning to the
-shelf clears that resume choice, so reloading stays on the shelf. The
-world's cartouche on the stage opens a menu with the way back to the
-shelf; setup's cartouche and footer carry the same link. Export is a sheet
-laid over the map, so the stage keeps its cards, layers, and pace while
-it is open. Leaving the stage during playback saves the latest generation
-before recording the shelf as the next launch destination.
+Founding keeps one account open beside the chart, with independent
+homeland, livelihood, temper, speech, and identity choices; the others
+are one inked line each. The chosen people's reach, from the engine's
+founding preview, is drawn on the chart rather than listed.
+
+The first visit opens the chart room, even when it is empty; founding
+and the sample are explicit choices there. Later visits resume the world
+left open, including one reopened without making changes. Returning to
+the chart room clears that resume choice, so reloading stays there. The
+world's cartouche on the stage opens a menu with the way back; the brand
+mark in founding is the same link. The book is a sheet laid over the
+map, so the stage keeps its cards, layers, and pace while it is open;
+its last chapter holds the save file and the text export. Leaving the
+stage during a run saves the latest generation before recording the
+chart room as the next launch destination.
 
 The production workbench is also an installable offline app. Its service
 worker caches the app shell and WebAssembly engine, not worlds; saved

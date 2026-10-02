@@ -1,0 +1,27 @@
+.language-card > .leaf h3 { margin-top: .65rem; }
+.language-section { min-width: 0; }
+.language-section h4, .language-section h5, .card .language-section h4 { font-family: var(--display); font-weight: 500; margin: 1.2rem 0 .4rem; color: var(--ink-soft); text-transform: none; letter-spacing: normal; }
+.language-section h5 { font-size: 1rem; }
+.chapter-facts { margin: 1rem 0; }
+.chapter-facts > div { display: grid; grid-template-columns: 8rem minmax(0, 1fr); gap: .8rem; padding: .4rem 0; border-bottom: 1px solid var(--line); }
+.chapter-facts dt { color: var(--ink-soft); }
+.chapter-facts dd { margin: 0; }
+.law-ledger { list-style: none; padding: 0; }
+.law-ledger > li { border-bottom: 1px solid var(--line); padding: .9rem 0 1.1rem; }
+.law-ledger-head { display: flex; gap: 1rem; align-items: baseline; font-family: var(--display); }
+.law-ledger-head > .gen { min-width: 3rem; }
+.law-evidence { margin-left: 4rem; }
+.law-evidence details { margin-top: .6rem; }
+.language-section summary, .law-evidence summary { cursor: pointer; color: var(--ink-soft); }
+.law-words { margin: .75rem 0; }
+.language-section .table-wrap { max-height: none; }
+.language-section .dictionary .origin { white-space: normal; font-size: .82rem; }
+.lexical-evidence { margin-top: .6rem; font-size: .82rem; }
+.lexical-evidence .gloss { min-width: 17rem; padding: .5rem 0; }
+.lexical-evidence .history { font-size: .8rem; }
+.grammar-category { margin: 1rem 0; }
+.grammar-category details, .word-paradigm details { margin-top: .4rem; }
+@media (max-width: 700px) {
+  .law-evidence { margin-left: 0; }
+  .chapter-facts > div { grid-template-columns: 6rem minmax(0, 1fr); }
+}

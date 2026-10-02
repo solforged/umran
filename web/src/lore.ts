@@ -36,7 +36,7 @@ import {
   WholeWord,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, ClimateView, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Overview, PlaceName, ReligionView, Rendering, SchismCause, StateView, StressRule, Terrain } from "./model";
+import type { Annal, ClimateView, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Mechanism, Overview, PlaceName, ReligionView, Rendering, SchismCause, StateView, StressRule, Terrain } from "./model";
 import { YEARS } from "./model";
 
 export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string }> = {
@@ -297,3 +297,17 @@ export const TERMS = {
 } as const;
 
 export type Term = keyof typeof TERMS;
+
+
+export const MECHANISM_NAME: Record<Mechanism, string> = {
+  hardship: "after hard times",
+  crowding: "pressed for land",
+  "stronger-neighbour": "under a stronger neighbour",
+  climate: "as the weather turned",
+  craft: "with a craft learned",
+  conquest: "after a conquest",
+  city: "as the city grew",
+  contact: "after a meeting",
+  pilgrimage: "along a pilgrim road",
+  "unfaithful-holder": "against an unfaithful holder",
+};
