@@ -166,6 +166,7 @@ fn band(seeds: u64, generations: u32) {
             0.6,
             Some(home),
             None,
+            None,
         );
         let empire = world.found_seeded(
             &umran_sim::Naming::People,
@@ -174,6 +175,7 @@ fn band(seeds: u64, generations: u32) {
             0.85,
             0.3,
             Some(home),
+            None,
             None,
         );
         world.connect(hill, coast, 0.5, ContactKind::Trade).unwrap();

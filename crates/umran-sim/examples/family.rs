@@ -27,6 +27,7 @@ fn main() {
         0.3,
         Some(world.communities[west].home()),
         None,
+        None,
     );
     world.run(5);
     let east = world.split(west, None, 0.0);

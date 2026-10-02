@@ -14,6 +14,13 @@ fn founders(seed: u64, sample: bool, neutral: bool) -> World {
             ..Params::default()
         },
     );
+    // The authored contacts start among neighbours on one farming plain.
+    let home = world
+        .map
+        .regions
+        .iter()
+        .position(|r| r.terrain == umran_sim::Terrain::Plains)
+        .unwrap();
     if sample {
         for (preset, language_seed, naming, power) in [
             (
@@ -42,7 +49,7 @@ fn founders(seed: u64, sample: bool, neutral: bool) -> World {
                 language_seed,
                 power,
                 0.5,
-                None,
+                Some(home),
                 None,
                 None,
             );
@@ -50,20 +57,25 @@ fn founders(seed: u64, sample: bool, neutral: bool) -> World {
     } else {
         let presets = SoundProfile::presets();
         for (i, power, openness) in [(0, 0.5, 0.4), (1, 0.4, 0.6), (2, 0.85, 0.3)] {
-            world.found(
+            world.found_seeded(
+                &Naming::People,
                 &presets[((seed * 3 + i) as usize * 7) % presets.len()],
+                seed.wrapping_add(i),
                 power,
                 openness,
+                Some(home),
+                None,
+                None,
             );
         }
-        world.connect(0, 1, 0.5, ContactKind::Trade);
-        world.connect(2, 1, 0.8, ContactKind::Rule);
-        world.connect(2, 0, 0.3, ContactKind::Neighbours);
+        world.connect(0, 1, 0.5, ContactKind::Trade).unwrap();
+        world.connect(2, 1, 0.8, ContactKind::Rule).unwrap();
+        world.connect(2, 0, 0.3, ContactKind::Neighbours).unwrap();
     }
     world
 }
 
-/// Same ordered actions, designs, language seeds, and defaults as the sample recipe.
+/// An older sample-inspired sequence, with founders placed together.
 fn sample_action(world: &mut World) {
     if world.generation == 100 {
         assert!(
@@ -71,7 +83,7 @@ fn sample_action(world: &mut World) {
             "sample founders ended, seed {}",
             world.seed
         );
-        world.connect(0, 2, 0.8, ContactKind::Rule);
+        world.connect(0, 2, 0.8, ContactKind::Rule).unwrap();
     }
     if world.generation == 130 {
         assert!(

@@ -530,7 +530,7 @@ mod tests {
             world.communities.len() as u64,
             0.5,
             0.5,
-            None,
+            world.communities.first().map(|c| c.home()),
             None,
             Some(&ethos),
         )
@@ -572,7 +572,9 @@ mod tests {
         );
         found(&mut world, all(-0.8));
         found(&mut world, all(0.8));
-        world.connect(0, 1, 1.0, ContactKind::Intermarriage);
+        world
+            .connect(0, 1, 1.0, ContactKind::Intermarriage)
+            .unwrap();
         for _ in 0..120 {
             world.acculturate();
         }
@@ -596,7 +598,7 @@ mod tests {
         );
         found(&mut world, all(0.4));
         found(&mut world, all(0.4));
-        world.connect(0, 1, 0.8, ContactKind::Rule);
+        world.connect(0, 1, 0.8, ContactKind::Rule).unwrap();
         for _ in 0..24 {
             let before = world.communities[1].ethos.martial;
             let events = world.events.len();
@@ -625,7 +627,9 @@ mod tests {
         found(&mut world, all(0.7));
         found(&mut world, all(-0.7));
         let original: Vec<_> = world.communities.iter().map(|c| c.ethos).collect();
-        world.connect(0, 1, 1.0, ContactKind::Intermarriage);
+        world
+            .connect(0, 1, 1.0, ContactKind::Intermarriage)
+            .unwrap();
         world.learn(0, Craft::Seafaring, None);
         let faith = world.found_religion(0, Revelation::Proclaimed);
         world.convert(1, faith, Some(0));
@@ -681,8 +685,29 @@ mod tests {
                 ..Params::static_society()
             },
         );
-        found(&mut world, all(STRONG));
+        let home = world
+            .map
+            .regions
+            .iter()
+            .position(|r| {
+                r.terrain == crate::Terrain::Plains
+                    && r.neighbours
+                        .iter()
+                        .any(|&n| world.feeds(n, crate::Livelihood::Farming) > 0.0)
+            })
+            .unwrap();
+        world.found_seeded(
+            &Naming::People,
+            &SoundProfile::base(),
+            0,
+            0.5,
+            0.5,
+            Some(home),
+            Some(crate::Livelihood::Farming),
+            Some(&all(STRONG)),
+        );
         found(&mut world, all(-STRONG));
+        world.communities[0].size = world.feeds(home, crate::Livelihood::Farming);
         world.temper(0, Axis::Martial, -0.1).unwrap();
         world.temper(0, Axis::Roving, -0.01).unwrap();
         world.temper(1, Axis::Martial, 0.1).unwrap();

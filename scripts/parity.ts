@@ -230,11 +230,12 @@ async function compare(bench: WasmWorkbench, label: string, seed: number, year: 
 }
 
 const presets = ["germanic", "semitic", "polynesian"];
-function actions(seed: number): JsonObject[] {
+function actions(seed: number, region: number): JsonObject[] {
   const found: JsonObject[] = presets.map((preset, index) => ({
     kind: "found", preset, seed: (seed + 31 + 21 * index) >>> 0,
     naming: index === 0 ? { kind: "place", place: "river" } : index === 1 ? { kind: "people" } : { kind: "place", place: "sea" },
     power: [0.7, 0.5, 0.4][index], openness: 0.5,
+    region,
   }));
   return [
     ...found,
@@ -255,12 +256,15 @@ function wasmAct(bench: WasmWorkbench, descriptor: JsonObject): void {
 }
 
 async function generated(seed: number): Promise<void> {
-  const map = ["small", "medium", "large"][seed % 3];
+  const map = ["small", "medium", "large", "vast"][seed % 4];
   const label = `generated/${map}`;
   await rpc({ kind: "new", seed, map });
   const bench = new Workbench(seed, map);
   try {
-    for (const action of actions(seed)) {
+    const regions = array(object(json(JSON.parse(bench.map()))).regions).map(object);
+    const home = regions.find(region => region.terrain === "plains");
+    if (!home) throw new Error("The authored-contact fixture needs a farming plain");
+    for (const action of actions(seed, number(home.id))) {
       await rpc({ kind: "act", action });
       wasmAct(bench, action);
     }

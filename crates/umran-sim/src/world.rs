@@ -1658,7 +1658,14 @@ impl World {
             }
             (contact.a, contact.b)
         };
-        self.events.push((self.generation, WorldEvent::Parted { a, b, kind: contact.kind }));
+        self.events.push((
+            self.generation,
+            WorldEvent::Parted {
+                a,
+                b,
+                kind: contact.kind,
+            },
+        ));
         if contact.kind == ContactKind::Rule {
             self.freed_ethos(b);
         }
@@ -1877,8 +1884,12 @@ impl World {
     /// land alone loses that share of itself; one spread over many lands
     /// loses only what lived there, so small peoples suffer worst.
     fn hard_times(&mut self, occupied: &[f32]) {
-        let peopled: Vec<_> = occupied.iter().enumerate()
-            .filter(|(_, n)| **n > 0.0).map(|(r, _)| r).collect();
+        let peopled: Vec<_> = occupied
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| **n > 0.0)
+            .map(|(r, _)| r)
+            .collect();
         let generation = self.generation;
         let dwellers = self.spatial().dwellers;
         for r in peopled {
@@ -1906,7 +1917,12 @@ impl World {
             let kind = kinds[crate::rng::index(&mut rng, kinds.len())];
             let share = rng.gen_range(0.2..0.5);
             for &(c, _) in &dwellers[r] {
-                let lost = self.presence_iter(c).find(|&(land, _)| land == r).unwrap().1 * share;
+                let lost = self
+                    .presence_iter(c)
+                    .find(|&(land, _)| land == r)
+                    .unwrap()
+                    .1
+                    * share;
                 if lost > 0.0 {
                     let (fed, crowd) = self.fed_and_crowd(c, occupied);
                     self.hardship_ethos(c, crowd >= fed * 0.9);
@@ -2806,7 +2822,13 @@ impl World {
     ) -> (usize, bool) {
         let occupied = self.occupation();
         let room = |r: usize| self.feeds(r, livelihood) - occupied[r];
-        let attraction = |r| if self.map.overseas(home, r) { seaward } else { 1.0 };
+        let attraction = |r| {
+            if self.map.overseas(home, r) {
+                seaward
+            } else {
+                1.0
+            }
+        };
         if let Some(beside) = self.roomiest(&self.map.regions[home].neighbours, livelihood)
             && room(beside) > room(home)
         {
@@ -2816,11 +2838,20 @@ impl World {
             return (home, false);
         }
         let row = route_row(&self.map, home, self.params.colony_reach, true);
-        let colony = row.iter().copied()
-            .filter(|&(r, d)| d <= self.params.colony_reach
-                && !self.map.regions[home].neighbours.contains(&(r as usize))
-                && room(r as usize) * attraction(r as usize) > room(home))
-            .map(|(r, d)| (r as usize, room(r as usize) / (1.0 + d / REFERENCE_TRAVEL_KM) * attraction(r as usize)))
+        let colony = row
+            .iter()
+            .copied()
+            .filter(|&(r, d)| {
+                d <= self.params.colony_reach
+                    && !self.map.regions[home].neighbours.contains(&(r as usize))
+                    && room(r as usize) * attraction(r as usize) > room(home)
+            })
+            .map(|(r, d)| {
+                (
+                    r as usize,
+                    room(r as usize) / (1.0 + d / REFERENCE_TRAVEL_KM) * attraction(r as usize),
+                )
+            })
             .fold(None, |best: Option<(usize, f32)>, (r, score)| match best {
                 Some((_, s)) if s >= score => best,
                 _ => Some((r, score)),
@@ -3198,10 +3229,13 @@ impl World {
                 && rng.r#gen::<f32>()
                     < self.params.trade_rate * self.communities[c].ethos.factor(Effect::Contact)
             {
-                let other = partners[weighted_index(&mut rng, partners.iter().map(|&o| {
-                    let d = effort[o] / REFERENCE_TRAVEL_KM;
-                    1.0 / ((1.0 + d) * (1.0 + d))
-                }))];
+                let other = partners[weighted_index(
+                    &mut rng,
+                    partners.iter().map(|&o| {
+                        let d = effort[o] / REFERENCE_TRAVEL_KM;
+                        1.0 / ((1.0 + d) * (1.0 + d))
+                    }),
+                )];
                 let intensity = rng.gen_range(0.2..0.6);
                 self.connect(c, other, intensity, ContactKind::Trade)
                     .expect("trade candidates are physically eligible");
@@ -4169,6 +4203,7 @@ mod tests {
             0.5,
             Some(from),
             Some(Livelihood::Farming),
+            None,
         );
         let b = world.found_seeded(
             &Naming::People,
@@ -4178,6 +4213,7 @@ mod tests {
             0.5,
             Some(to),
             Some(Livelihood::Farming),
+            None,
         );
         (world, a, b)
     }
@@ -4328,6 +4364,7 @@ mod tests {
             0.5,
             Some(home),
             Some(Livelihood::Farming),
+            None,
         );
         world.communities[blocker].lands = world
             .map
@@ -4349,7 +4386,7 @@ mod tests {
         crowd_walkable_lands(&mut world, a);
         world.learn(b, Craft::Seafaring, None);
         assert_eq!(
-            world.leavers_land(home, Livelihood::Farming, false),
+            world.leavers_land(home, Livelihood::Farming, false, 1.0),
             (home, false)
         );
         world.migrate();
@@ -4491,6 +4528,7 @@ mod tests {
                 0.5,
                 Some(home),
                 Some(Livelihood::Farming),
+                None,
             );
             world.communities[c].size = world.feeds(home, Livelihood::Farming) * share;
         }
@@ -4508,6 +4546,7 @@ mod tests {
             0.5,
             Some(blocked[0]),
             Some(Livelihood::Farming),
+            None,
         );
         world.communities[blocker].lands = blocked;
         world.communities[blocker].size = 100_000_000.0;
@@ -5537,6 +5576,7 @@ mod tests {
             0.5,
             Some(home),
             Some(Livelihood::Farming),
+            None,
         );
         let heart = world.communities[c].home();
         // Its heart, a land beside it, and the land furthest from it.

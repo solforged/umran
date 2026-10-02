@@ -582,12 +582,12 @@ Event means per world, launch HEAD baseline → ethos:
 | Three-founder | 2.350 → 2.025 | .625 → .775 | .025 → .025 |
 | Sample recipe | 1.275 → 1.300 | .275 → .400 | .225 → .250 |
 
-The baseline was built separately at `616cc3c`, without ethos, and its
-band counts match the neutral switch. Neutral `audit 3 160`, `history
-42 160`, and `cities 42 160` reports were byte-identical to that HEAD,
-including names and event ordering (11,044, 19,072, and 3,369 bytes).
-Append `--neutral` after the numeric arguments of those three examples
-to reproduce that comparison without changing the engine's defaults.
+These measurements precede the physical-travel cutover. The baseline was
+built separately at `616cc3c`, without ethos. Neutral `audit 3 160`,
+`history 42 160`, and `cities 42 160` reports were byte-identical to that
+HEAD, including names and event ordering (11,044, 19,072, and 3,369 bytes).
+The examples now place authored-contact founders within physical reach.
+Their `--neutral` switch still disables ethos, not the newer geography.
 
 ## Physical travel and map scale
 
@@ -672,22 +672,20 @@ authored faith; everything thereafter uses default parameters. Over seeds
 0–39 for 4,000 years it gives 69 schisms (median 2, maximum 4 per world
 and per faith family), none by succession, and holy-land changes in 32
 worlds (80%). The 2× holy-war bonus applies to 824 eligible conquest
-comparisons. `natural` leaves that starting faith out. `sample` replays
-the workbench's sample recipe, including its authored faith at year
-3,250, varying only the world seed: the same 40-seed band has 9 schisms
-(median 0, maximum 1), six unseeded faiths in six worlds, holy-land
-changes in 19 worlds (47.5%), and 46 holy-war comparisons.
-`sample-unseeded` omits only that authored founding: eight faiths arise
-in eight worlds, with two schisms (median 0, maximum 1), holy-land changes
-in five worlds (12.5%), and five holy-war comparisons. All sample recipes
-complete. The sparse unseeded result reflects the existing prerequisite
-of a large subject people in an old state, not a higher schism threshold.
+comparisons. These measurements precede physical travel and the revised
+workbench sample. `natural` leaves that starting faith out.
+The earlier `sample` band had 9 schisms (median 0, maximum 1), six
+unseeded faiths, holy-land changes in 19 worlds, and 46 holy-war checks.
+Its `sample-unseeded` control had eight unseeded faiths and two schisms.
+The current `sample` follows the workbench's fixed founding lands, early
+sea realm and writing, and authored conquest, faith, and shift at year
+2,500. `sample-unseeded` omits only that authored faith. Other map seeds
+can refuse this fixed recipe; the report counts those refusals separately.
 
 ## Not yet modelled
 
-Rivers, climates, travel in kilometres, sea crossings that
-gate trade and conquest (migration, colonies, and pilgrimage need seafaring), a
-map larger than a regional theatre, purism within a classical form, compounding and
-derivation after founding beyond renewal and new meanings, inflection,
-tone, vowel harmony, prenasalized stops, syntax and alignment, doctrinal
-detail beyond the causes of a schism.
+Rivers, climates, fleets, rented ports, mixed inland-and-sea itineraries,
+resolved travel times, globe wrapping, purism within a classical form,
+compounding and derivation after founding beyond renewal and new meanings,
+inflection, tone, vowel harmony, prenasalized stops, syntax and alignment,
+and doctrinal detail beyond the causes of a schism.

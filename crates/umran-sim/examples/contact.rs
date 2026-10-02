@@ -26,6 +26,7 @@ fn world(
         0.7,
         Some(world.communities[d].home()),
         None,
+        None,
     );
     world.connect(d, r, 0.8, kind).unwrap();
     world.run(generations);

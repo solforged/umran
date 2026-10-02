@@ -36,6 +36,7 @@ fn main() {
             0.6,
             Some(home),
             None,
+            None,
         );
         let empire = world.found_seeded(
             &Naming::People,
@@ -44,6 +45,7 @@ fn main() {
             0.85,
             0.3,
             Some(home),
+            None,
             None,
         );
         world.connect(hill, coast, 0.5, ContactKind::Trade).unwrap();
@@ -94,11 +96,11 @@ fn main() {
 /// The exact sample.ts recipe and facade preset resolution, varying only
 /// the world seed. The unseeded control omits its authored Religion action.
 fn sample(seed: u64, years: u32, authored: bool) -> Result<Chronicle, String> {
-    if years < 3250 {
-        return Err("sample needs at least 3,250 years".into());
+    if years < 2500 {
+        return Err("sample needs at least 2,500 years".into());
     }
     let mut history = Chronicle::new(seed, MapSize::Medium);
-    for (preset, language_seed, naming, power) in [
+    for (preset, language_seed, naming, power, region) in [
         (
             "germanic",
             31,
@@ -106,8 +108,9 @@ fn sample(seed: u64, years: u32, authored: bool) -> Result<Chronicle, String> {
                 place: "river".into(),
             },
             0.7,
+            73,
         ),
-        ("semitic", 52, Naming::People, 0.5),
+        ("semitic", 52, Naming::People, 0.5, 99),
         (
             "polynesian",
             73,
@@ -115,6 +118,7 @@ fn sample(seed: u64, years: u32, authored: bool) -> Result<Chronicle, String> {
                 place: "sea".into(),
             },
             0.4,
+            76,
         ),
     ] {
         history.act(Action::Found {
@@ -123,11 +127,19 @@ fn sample(seed: u64, years: u32, authored: bool) -> Result<Chronicle, String> {
             seed: language_seed,
             power,
             openness: 0.5,
-            region: None,
+            region: Some(region),
             livelihood: None,
             ethos: None,
         })?;
     }
+    history.act(Action::State {
+        community: 2,
+        capital: None,
+    })?;
+    history.act(Action::Craft {
+        community: 2,
+        craft: umran_sim::Craft::Writing,
+    })?;
     history.act(Action::Run { generations: 100 })?;
     history.act(Action::Connect {
         a: 0,
@@ -135,7 +147,6 @@ fn sample(seed: u64, years: u32, authored: bool) -> Result<Chronicle, String> {
         intensity: 0.8,
         contact: ContactKind::Rule,
     })?;
-    history.act(Action::Run { generations: 30 })?;
     if authored {
         history.act(Action::Religion { community: 2 })?;
     }
@@ -144,7 +155,7 @@ fn sample(seed: u64, years: u32, authored: bool) -> Result<Chronicle, String> {
         toward: 0,
     })?;
     history.act(Action::Run {
-        generations: years / 25 - 130,
+        generations: years / 25 - 100,
     })?;
     Ok(history)
 }
