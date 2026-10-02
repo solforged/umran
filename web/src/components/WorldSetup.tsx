@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Feather, Plus } from "lucide-react";
 import { createEngine, message, presetDesign } from "../engine";
-import type { Catalog, Engine, Livelihood, MapSize, Naming, Overview, Terrain, WorldMap } from "../model";
-import { hue, LIVELIHOOD_NAME, TERRAIN_NAME } from "../lore";
+import type { Catalog, Engine, EthosAxis, Livelihood, MapSize, Naming, Overview, Terrain, WorldMap } from "../model";
+import { ETHOS_AXES, ETHOS_POLES, hue, LIVELIHOOD_NAME, temperament, TERRAIN_NAME } from "../lore";
 import { Designer, randomSeed, type Founding } from "./Designer";
 import { MapView } from "./MapView";
 import { Modal } from "./Modal";
@@ -38,16 +38,21 @@ function lower(name: string): string {
 const FIRST_PEOPLES = 3;
 const MOST_PEOPLES = 8;
 
+/// How strongly a people leans when its account names its temper.
+const BENT = 0.7;
+
 /// A people to found: its language's design and seed, what it calls
 /// itself, and where it lives. `preset` is the starting sound it was drawn
 /// from, or `null` once its sounds were adjusted by hand; `region` is
 /// `null` until the world has chosen a land for it. A null `livelihood`
-/// lets that land choose how the people feeds itself.
+/// lets that land choose how the people feeds itself, and a null `bent`
+/// lets its land and life shape its temper.
 interface Founder extends Founding {
   key: number;
   preset: string | null;
   region: number | null;
   livelihood: Livelihood | null;
+  bent: { axis: EthosAxis; toward: 1 | -1 } | null;
 }
 
 /// The world as the founders would leave it in year 0.
@@ -83,6 +88,7 @@ function drawFounder(catalog: Catalog, key: number): Founder {
     openness: 0.5,
     region: null,
     livelihood: null,
+    bent: null,
   };
 }
 
@@ -134,6 +140,7 @@ export function WorldSetup({
               openness: f.openness,
               ...(f.region === null ? {} : { region: f.region }),
               ...(f.livelihood === null ? {} : { livelihood: f.livelihood }),
+              ...(f.bent === null ? {} : { ethos: { [f.bent.axis]: f.bent.toward * BENT } }),
             });
           }
         } catch (e) {
@@ -341,6 +348,26 @@ export function WorldSetup({
                             {lower(p.name)}
                           </option>
                         ))}
+                      </select>
+                      . By temper they are{" "}
+                      <select
+                        aria-label="Temper"
+                        value={f.bent ? `${f.bent.axis} ${f.bent.toward}` : ""}
+                        onChange={(e) => {
+                          const [axis, toward] = e.target.value.split(" ");
+                          update(i, { bent: e.target.value === "" ? null : { axis: axis as EthosAxis, toward: Number(toward) as 1 | -1 } });
+                        }}
+                      >
+                        {f.bent === null ? (
+                          <option value="">{temperament(c.ethos, 2).join(" and ") || "even-tempered"}, as their land and life make them</option>
+                        ) : (
+                          <option value="">as their land and life make them</option>
+                        )}
+                        {ETHOS_AXES.flatMap((axis) => [1, -1].map((toward) => (
+                          <option key={`${axis} ${toward}`} value={`${axis} ${toward}`}>
+                            {ETHOS_POLES[axis][toward > 0 ? 1 : 0]}
+                          </option>
+                        )))}
                       </select>
                       .
                     </p>

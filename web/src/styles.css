@@ -1883,6 +1883,67 @@ button.icon,
   list-style: none;
 }
 
+/* A people's temper: each leaning a ruled line between its two ends,
+   with a lozenge where the people stands and a tick at the middle. */
+.temper {
+  display: grid;
+  grid-template-columns: max-content minmax(4rem, 1fr) max-content;
+  gap: 0.1rem 0.6rem;
+  align-items: center;
+  margin: 0.3rem 0 0.5rem;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9em;
+}
+
+.temper li {
+  display: contents;
+}
+
+.temper .pole {
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+.temper .pole.low {
+  text-align: right;
+}
+
+.temper .pole.leans {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.temper-scale {
+  position: relative;
+  height: 1em;
+}
+
+.temper-scale::before,
+.temper-scale::after {
+  content: "";
+  position: absolute;
+}
+
+.temper-scale::before {
+  inset: 50% 0 auto;
+  border-top: 1px solid var(--line);
+}
+
+.temper-scale::after {
+  inset: 25% auto 25% 50%;
+  border-left: 1px solid var(--line);
+}
+
+.temper-scale i {
+  position: absolute;
+  top: 50%;
+  width: 0.45em;
+  height: 0.45em;
+  background: var(--accent);
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
 .moment {
   padding: 0;
   border: 0;
@@ -1916,6 +1977,7 @@ button.icon,
   font: inherit;
   text-transform: inherit;
   letter-spacing: inherit;
+  text-align: inherit;
   text-decoration: underline dotted;
   cursor: help;
 }

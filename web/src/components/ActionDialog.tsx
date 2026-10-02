@@ -1,10 +1,11 @@
 import { useState, type FormEvent, type ReactNode } from "react";
-import type { Action, Catalog, ContactKind, Craft, Naming, Overview } from "../model";
+import type { Action, Catalog, ContactKind, Craft, EthosAxis, Naming, Overview } from "../model";
+import { ETHOS_AXES, ETHOS_POLES, temperament } from "../lore";
 import { NamingSelect } from "./NamingSelect";
 import { Modal } from "./Modal";
 
 /// "found" opens the language designer; the rest are here.
-export type DialogKind = "found" | "split" | "connect" | "shift" | "state" | "religion" | "craft";
+export type DialogKind = "found" | "split" | "connect" | "shift" | "state" | "religion" | "craft" | "temper";
 
 const TITLES: Record<Exclude<DialogKind, "found">, string> = {
   split: "A people parts ways",
@@ -13,6 +14,7 @@ const TITLES: Record<Exclude<DialogKind, "found">, string> = {
   state: "Found a state",
   religion: "Found a religion",
   craft: "Teach a craft",
+  temper: "A people's temper turns",
 };
 
 /// Forms for shaping a people's history. Each validates the basics;
@@ -47,8 +49,12 @@ export function ActionDialog({
   const [craft, setCraft] = useState<Craft>((catalog.crafts.find((c) =>
     !overview.communities[first]?.crafts.includes(c.id as Craft))?.id ?? "metalworking") as Craft);
   const people = communities.find((c) => c.id === community);
+  const [axis, setAxis] = useState<EthosAxis>("martial");
+  const [toward, setToward] = useState<1 | -1>(1);
+  const [amount, setAmount] = useState(0.3);
   const canSubmit = !!people && (kind === "state" ? people.lands.includes(capital) :
     kind === "craft" ? !people.crafts.includes(craft) :
+    kind === "temper" ? amount > 0 :
     kind === "split" || kind === "religion" || communities.some((c) => c.id === other && c.id !== community));
 
   const submit = (event: FormEvent) => {
@@ -72,6 +78,9 @@ export function ActionDialog({
         return;
       case "craft":
         onAction({ kind: "craft", community, craft });
+        return;
+      case "temper":
+        onAction({ kind: "temper", community, axis, amount: toward * amount });
     }
   };
 
@@ -100,6 +109,33 @@ export function ActionDialog({
 
   const body: ReactNode = (() => {
     switch (kind) {
+      case "temper":
+        return communities.length === 0 ? (
+          <p className="muted">No living people is left to temper.</p>
+        ) : (
+          <>
+            {pick("People", community, setCommunity)}
+            <label>
+              They grow more
+              <select value={`${axis} ${toward}`} onChange={(e) => {
+                const [a, t] = e.target.value.split(" ");
+                setAxis(a as EthosAxis);
+                setToward(Number(t) as 1 | -1);
+              }}>
+                {ETHOS_AXES.flatMap((a) => [1, -1].map((t) => (
+                  <option key={`${a} ${t}`} value={`${a} ${t}`}>{ETHOS_POLES[a][t > 0 ? 1 : 0]}</option>
+                )))}
+              </select>
+              <small>
+                Now {people ? temperament(people.ethos).join(", ") || "even-tempered" : ""}.
+              </small>
+            </label>
+            {slider("How far", amount, setAmount, "How far along the line toward that end; 1 is half its length.")}
+            <p className="muted">
+              Fate's hand, not a law: their temper still drifts, follows their neighbours', and turns again with what befalls them.
+            </p>
+          </>
+        );
       case "religion":
         return communities.length === 0 ? (
           <p className="muted">No living people can found a religion.</p>

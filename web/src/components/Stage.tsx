@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Feather, Gauge, Layers, Pause, Play, ScrollText, SkipForward } from "lucide-react";
-import type { Annal, Catalog, Craft, Engine, Overview, WorldMap } from "../model";
+import type { Annal, Catalog, Craft, Engine, EthosAxis, Overview, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { EVENT_KIND, hue } from "../lore";
+import { ETHOS_AXES, ETHOS_POLES, EVENT_KIND, hue } from "../lore";
 import { PACES, year } from "../words";
 import type { DialogKind } from "./ActionDialog";
 import { Told } from "./Told";
@@ -116,8 +116,9 @@ export function Stage({
 
   // What the map draws beside the lands and peoples.
   const [layers, setLayers] = useState({ names: true, routes: true, contacts: true, states: true });
-  const [landLayer, setLandLayer] = useState<"peoples" | "faiths" | "crafts">("peoples");
+  const [landLayer, setLandLayer] = useState<"peoples" | "faiths" | "crafts" | "temper">("peoples");
   const [craft, setCraft] = useState<Craft>("metalworking");
+  const [axis, setAxis] = useState<EthosAxis>("martial");
 
   // Time passing on its own.
   const [playing, setPlaying] = useState(false);
@@ -176,8 +177,9 @@ export function Stage({
     if (focus.kind === "craft") return { kind: "crafts", craft: focus.id };
     if (landLayer === "faiths") return { kind: "faiths" };
     if (landLayer === "crafts") return { kind: "crafts", craft };
+    if (landLayer === "temper") return { kind: "temper", axis };
     return { kind: "peoples" };
-  }, [words, law, overview, focus, landLayer, craft]);
+  }, [words, law, overview, focus, landLayer, craft, axis]);
 
   const highlight = useMemo(() => {
     const site = (region: number | undefined) => (region === undefined ? null : map.regions[region].site);
@@ -284,6 +286,7 @@ export function Stage({
               <option value="peoples">Language families</option>
               <option value="faiths">Faiths</option>
               <option value="crafts">Crafts</option>
+              <option value="temper">Temper</option>
               {tint.kind === "words" ? <option value="words" disabled>Word roots</option> : null}
               {tint.kind === "change" ? <option value="change" disabled>Sound change</option> : null}
             </select>
@@ -297,6 +300,16 @@ export function Stage({
                 if (focus.kind === "craft") go({ kind: "craft", id: e.target.value as Craft });
               }}>
                 {catalog.crafts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </label>
+          ) : null}
+          {tint.kind === "temper" ? (
+            <label>
+              Leaning
+              <select value={tint.axis} onChange={(e) => setAxis(e.target.value as EthosAxis)}>
+                {ETHOS_AXES.map((a) => (
+                  <option key={a} value={a}>{ETHOS_POLES[a][0]} or {ETHOS_POLES[a][1]}</option>
+                ))}
               </select>
             </label>
           ) : null}
@@ -314,6 +327,10 @@ export function Stage({
             </>
           ) : tint.kind === "crafts" ? (
             <p className="muted small">Orange lands hold this craft. Squares mark inventors at their heart lands.</p>
+          ) : tint.kind === "temper" ? (
+            <p className="muted small">
+              Orange lands lean {ETHOS_POLES[tint.axis][1]}, blue lands {ETHOS_POLES[tint.axis][0]}; the deeper the colour, the stronger the leaning.
+            </p>
           ) : null}
           {(
             [
@@ -491,6 +508,9 @@ export function Stage({
                   </button>
                   <button type="button" onClick={() => onDialog("shift")}>
                     The {people.name} take up another language
+                  </button>
+                  <button type="button" onClick={() => onDialog("temper")}>
+                    The {people.name}'s temper turns
                   </button>
                 </>
               ) : null}

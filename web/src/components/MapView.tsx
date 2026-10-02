@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { Maximize, Minus, Plus } from "lucide-react";
-import type { Community, Craft, Overview, WordMap, WorldMap } from "../model";
+import type { Community, Craft, EthosAxis, Overview, WordMap, WorldMap } from "../model";
 import type { ShelfPeople } from "../shelf";
 import { YEARS } from "../model";
 import { hue, TERRAIN_NAME } from "../lore";
@@ -24,13 +24,22 @@ const GLIDE = 450;
 const DRAG_START = 4;
 
 /// What colours the land: language families, word roots, a sound change,
-/// faiths, or the holders of one craft.
+/// faiths, the holders of one craft, or one leaning of temper.
 export type Tint =
   | { kind: "peoples" }
   | { kind: "words"; words: WordMap }
   | { kind: "change"; had: ReadonlySet<number> }
   | { kind: "faiths" }
-  | { kind: "crafts"; craft: Craft };
+  | { kind: "crafts"; craft: Craft }
+  | { kind: "temper"; axis: EthosAxis };
+
+/// A leaning from -1 to 1 as a colour: the isogloss view's blue toward the
+/// low end, its orange toward the high, grey between. Peoples seldom lean
+/// past a half, so colour is full there.
+function leaning(value: number): string {
+  const strength = Math.min(1, Math.abs(value) / 0.5);
+  return `hsl(${value < 0 ? 210 : 24} ${12 + 63 * strength}% ${55 - 5 * strength}%)`;
+}
 
 /// The part of the map in view: left, top, width, height, in map units.
 type Box = [number, number, number, number];
@@ -489,6 +498,8 @@ export function MapView({
         return largest.faith === null ? UNCHANGED : hue(largest.faith);
       case "crafts":
         return largest.crafts.includes(tint.craft) ? CHANGED : UNCHANGED;
+      case "temper":
+        return leaning(largest.ethos[tint.axis]);
       case "words": {
         const word = wordBy.get(largest.id);
         return word ? hue(word.group) : null;

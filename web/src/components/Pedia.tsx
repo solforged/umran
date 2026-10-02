@@ -18,9 +18,9 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, Catalog, Community, Craft, CraftView, Engine, HolyLand, Overview, PlaceExonym, ReligionView, RenderingRow, ShrineKind, StateView, TellingView, Variety, WordMap, WorldMap } from "../model";
+import type { Annal, Catalog, Community, Craft, CraftView, Engine, Ethos, HolyLand, Overview, PlaceExonym, ReligionView, RenderingRow, ShrineKind, StateView, TellingView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { CONTACT_NAME, EVENT_KIND, FAITH_HOW, FALL_NAME, howCame, howNamed, hue, LIVELIHOOD_NAME, RISE_NAME, SCHISM_CAUSE, STRESS_RULE, TERMS, TERRAIN_NAME, type Term } from "../lore";
+import { CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, FAITH_HOW, FALL_NAME, howCame, howNamed, hue, LIVELIHOOD_NAME, RISE_NAME, SCHISM_CAUSE, STRESS_RULE, STRONG, temperament, TERMS, TERRAIN_NAME, type Term } from "../lore";
 import { bond } from "../words";
 import type { DialogKind } from "./ActionDialog";
 import { Told } from "./Told";
@@ -1077,6 +1077,60 @@ function HistoryCard({ context }: { context: Context }) {
   );
 }
 
+/// A people's temper: each leaning a ruled line between its two ends,
+/// marked where the people stands, the end it leans to in darker ink.
+function TemperScales({ ethos }: { ethos: Ethos }) {
+  return (
+    <ul className="temper">
+      {ETHOS_AXES.map((axis) => {
+        const value = ethos[axis];
+        const [low, high] = ETHOS_POLES[axis];
+        const leans = Math.abs(value) >= STRONG ? (value > 0 ? "high" : "low") : null;
+        return (
+          <li key={axis}>
+            <span className={leans === "low" ? "pole low leans" : "pole low"}>{low}</span>
+            <span className="temper-scale" role="meter" aria-label={`${low} to ${high}`}
+              aria-valuemin={-1} aria-valuemax={1} aria-valuenow={value}>
+              <i style={{ left: `${(value + 1) * 50}%` }} />
+            </span>
+            <span className={leans === "high" ? "pole leans" : "pole"}>{high}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/// A people's temper on its card, and in the folio, each time it turned.
+function TemperLeaf({ c, told, context }: { c: Community; told: Annal[]; context: Context }) {
+  const turns = told.filter((a) => a.kind === "temper" && a.peoples[0] === c.id);
+  if (turns.length === 0) {
+    return (
+      <>
+        <h3><Explained term="temper">Temper</Explained></h3>
+        <TemperScales ethos={c.ethos} />
+      </>
+    );
+  }
+  return (
+    <Leaf
+      id="temper"
+      title="Temper"
+      summary={
+        <>
+          <TemperScales ethos={c.ethos} />
+          <p>
+            It turned {turns.length === 1 ? "once" : turns.length === 2 ? "twice" : `${turns.length} times`}, last in year{" "}
+            <Year generation={turns.at(-1)!.generation} context={context} />.
+          </p>
+        </>
+      }
+    >
+      <Story annals={[...turns].reverse()} context={context} />
+    </Leaf>
+  );
+}
+
 function PeopleCard({ c, context }: { c: Community; context: Context }) {
   const { overview } = context;
   const name = (id: number) => overview.communities[id];
@@ -1120,6 +1174,10 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
             "Way of life",
             <Explained term="way of life">{LIVELIHOOD_NAME[c.livelihood]}</Explained>,
           ],
+          [
+            "Temper",
+            <Explained term="temper">{temperament(c.ethos).join(", ") || "even-tempered"}</Explained>,
+          ],
           ["Speak", <LanguageLink variety={c.variety} context={context} />],
           [realm?.rulers === c.id ? "Rule" : "Subject of", realm ? <StateLink state={realm} context={context} /> : null],
           ["Faith", c.faith === null ? "its own gods" : <ReligionLink religion={overview.religions[c.faith]} context={context} />],
@@ -1161,6 +1219,7 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
       />
       <LanguageSpecimen variety={c.variety} context={context} />
       <KnownWorldLeaf variety={c.variety} context={context} />
+      <TemperLeaf c={c} told={told} context={context} />
       {contacts.length > 0 ? (
         <Leaf
           id="dealings"
@@ -1245,6 +1304,7 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
             {c.crafts.length < context.catalog.crafts.length ? (
               <button type="button" onClick={() => context.onDialog("craft", c.id)}>Teach a craft</button>
             ) : null}
+            <button type="button" onClick={() => context.onDialog("temper", c.id)}>Their temper turns</button>
           </div>
         </>
       ) : null}

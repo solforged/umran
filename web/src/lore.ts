@@ -12,6 +12,7 @@ import {
   Crown,
   Expand,
   Flag,
+  Flame,
   Footprints,
   GitFork,
   Handshake,
@@ -33,7 +34,7 @@ import {
   WholeWord,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, Community, ContactKind, Law, Livelihood, Overview, PlaceName, ReligionView, Rendering, SchismCause, StateView, StressRule, Terrain } from "./model";
+import type { Annal, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Overview, PlaceName, ReligionView, Rendering, SchismCause, StateView, StressRule, Terrain } from "./model";
 import { YEARS } from "./model";
 
 export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string }> = {
@@ -66,6 +67,7 @@ export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string 
   "holy-land": { icon: MapPinned, name: "A holy land changes hands" },
   city: { icon: Castle, name: "A great city grows" },
   koine: { icon: Blend, name: "A city's speech forms" },
+  temper: { icon: Flame, name: "A people's temper turns" },
 };
 
 export const TERRAIN_NAME: Record<Terrain, string> = {
@@ -131,6 +133,32 @@ export const STRESS_RULE: Record<StressRule, string> = {
   weight: "on the next to last syllable if it is heavy, else the one before",
   free: "where each word has it",
 };
+
+/// A people's six leanings, in the order a card lists them.
+export const ETHOS_AXES: EthosAxis[] = ["martial", "open", "pious", "hierarchical", "roving", "seaward"];
+
+/// Each leaning's two ends, as a word for the people: [low, high].
+export const ETHOS_POLES: Record<EthosAxis, [string, string]> = {
+  martial: ["peaceable", "warlike"],
+  open: ["insular", "welcoming"],
+  pious: ["worldly", "devout"],
+  hierarchical: ["egalitarian", "hierarchical"],
+  roving: ["rooted", "restless"],
+  seaward: ["landbound", "seagoing"],
+};
+
+/// Below this a leaning goes unremarked; below `STRONG` it is "somewhat".
+const MILD = 0.2;
+/// Where the engine records a people's temper turning.
+export const STRONG = 0.5;
+
+/// A people's temper in a few words, strongest leaning first.
+export function temperament(ethos: Ethos, most = 3): string[] {
+  return ETHOS_AXES.filter((axis) => Math.abs(ethos[axis]) >= MILD)
+    .sort((a, b) => Math.abs(ethos[b]) - Math.abs(ethos[a]))
+    .slice(0, most)
+    .map((axis) => `${Math.abs(ethos[axis]) < STRONG ? "somewhat " : ""}${ETHOS_POLES[axis][ethos[axis] > 0 ? 1 : 0]}`);
+}
 
 /// How a language found a word for a craft or a faith.
 export function renderingOrigin(rendering: Rendering): string {
@@ -215,6 +243,8 @@ export const TERMS = {
   family: "Languages that descend from one ancestor language.",
   "way of life":
     "How a people gets its food: gathering and hunting, keeping herds, or farming. Farming feeds many more people on each land, helping farmers’ languages spread over those of foragers.",
+  temper:
+    "A people’s settled bent: how warlike, welcoming, devout, hierarchical, restless, and seagoing it is. Peoples inherit it, take it on from those they live among, and change it in answer to what befalls them, as Toynbee held that hard challenges harden a people and long comfort softens it. It shapes how readily they fight, trade, borrow, convert, organize, wander, and take to the sea.",
   "sacred language":
     "A language kept for a religion’s teaching and worship. Here its words and sounds stay as they were at the founding, even as the followers’ speech changes.",
   pejoration:

@@ -84,6 +84,8 @@ export type Action =
       region?: number;
       /// Without a way of life, the land chooses how the people feeds itself.
       livelihood?: Livelihood;
+      /// Leanings the author sets; the rest its land and life choose.
+      ethos?: Partial<Ethos>;
     }
   | { kind: "connect"; a: number; b: number; intensity: number; contact: ContactKind }
   /// Without `naming`, the new community chooses its own name.
@@ -92,7 +94,22 @@ export type Action =
   | { kind: "state"; community: number; capital?: number }
   | { kind: "religion"; community: number }
   | { kind: "craft"; community: number; craft: Craft }
-  | { kind: "run"; generations: number };
+  | { kind: "run"; generations: number }
+  /// Fate's hand on a people's temper: nudges one axis, by -1 to 1.
+  | { kind: "temper"; community: number; axis: EthosAxis; amount: number };
+
+/// A people's temper: six leanings, each from -1 to 1, toward the second
+/// word in each name (peaceable to martial, insular to open, and so on).
+export interface Ethos {
+  martial: number;
+  open: number;
+  pious: number;
+  hierarchical: number;
+  roving: number;
+  seaward: number;
+}
+
+export type EthosAxis = keyof Ethos;
 
 export interface Choice {
   id: string;
@@ -146,6 +163,8 @@ export interface Community {
   livelihood: Livelihood;
   faith: number | null;
   crafts: Craft[];
+  /// Its temper now, or as it was when it ended.
+  ethos: Ethos;
   /// The generation it ended, or null while it lives.
   ended: number | null;
   /// The people it merged into, or null if it died out.
@@ -505,7 +524,7 @@ export interface TellingView {
 /// One chronicle entry; `variety` is set for a sound law.
 export interface Annal {
   generation: number;
-  kind: "found" | "split" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine";
+  kind: "found" | "split" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper";
   /// The annalist's words; words of the language are marked *thus*.
   text: string;
   /// The apparatus: what a linguist would note, such as sound laws.
@@ -523,6 +542,10 @@ export interface Annal {
   laws: string[];
   /// For a sound change, the language's specimen words after it.
   specimen: SpecimenWord[];
+  /// For a change of temper, the leaning, which end of it, whether the
+  /// people came to lean that way or ceased to, and the engine's id for
+  /// what caused it.
+  temper: { axis: EthosAxis; pole: "high" | "low"; entered: boolean; cause: string } | null;
 }
 
 export interface Origin {

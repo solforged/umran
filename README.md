@@ -80,9 +80,18 @@ writes its own history.
   its own, or kept in a sacred speech its followers no longer understand
   may break into branches. Pilgrims travel to its holy places and carry
   words home, and a holy land held by others draws the faithful to war.
+- **Temper.** Each people leans somewhere between warlike and peaceable,
+  insular and welcoming, worldly and devout, egalitarian and
+  hierarchical, rooted and restless, landbound and seagoing. Its temper
+  comes from its land and way of life, passes to its daughters, drifts
+  toward its neighbours', and turns with what befalls it: subjects who
+  throw off their rulers grow warlike, long comfort softens. Temper
+  shapes how readily a people fights, trades, borrows, converts, founds
+  a state, wanders, and puts to sea.
 - **Personal names.** Each language names its people its own way, from
-  words its way of life favours: herders for horses and cattle, farmers
-  for grain. Kings and prophets carry such names.
+  words its way of life and temper favour: herders for horses and
+  cattle, farmers for grain, warlike peoples for spears. Kings and
+  prophets carry such names.
 - **Language shift.** A people can give up its language for a more
   prestigious one, keeping its own accent and some old words.
 - **Names are words.** Peoples, languages, and lands are named from the
