@@ -1,8 +1,7 @@
-import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createContext, Fragment, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft,
-  BookOpen,
   AudioLines,
   Earth,
   Globe,
@@ -13,18 +12,21 @@ import {
   MapPin,
   Play,
   ScrollText,
+  Search,
+  ChevronRight,
   Users,
   WholeWord,
   X,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, Catalog, Community, Craft, CraftView, Engine, Ethos, HolyLand, Overview, PlaceExonym, ReligionView, RenderingRow, ShrineKind, StateView, TellingView, Variety, WordMap, WorldMap } from "../model";
+import type { Annal, Catalog, Community, Craft, CraftView, Engine, Ethos, HolyLand, Overview, PlaceExonym, ReligionView, RenderingRow, ShrineKind, StateView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, FAITH_HOW, FALL_NAME, howCame, howNamed, hue, LIVELIHOOD_NAME, RISE_NAME, SCHISM_CAUSE, STRESS_RULE, STRONG, temperament, TERMS, TERRAIN_NAME, type Term } from "../lore";
+import { filterHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
 import { bond } from "../words";
 import type { DialogKind } from "./ActionDialog";
 import { Told } from "./Told";
-import { Dictionary } from "./Dictionary";
+import { Dictionary, INITIAL_DICTIONARY, type DictionaryView } from "./Dictionary";
 import { peoplesByRegion } from "./MapView";
 import { Specimen } from "./Specimen";
 import { DescentChart, FamilyTree, type Lineage } from "./FamilyTree";
@@ -50,6 +52,10 @@ export type Focus =
 const KIN_FLOOR = 0.05;
 
 interface Context {
+  historyView: HistoryView;
+  onHistoryView: (view: HistoryView) => void;
+  dictionaryViews: Record<number, DictionaryView>;
+  onDictionaryView: (variety: number, view: DictionaryView) => void;
   engine: Engine;
   catalog: Catalog;
   version: number;
@@ -97,9 +103,16 @@ const TRAIL_SHOWN = 3;
 export function Pedia({
   trail,
   onReturn,
+  onIndex,
   ...context
-}: Context & { trail: Focus[]; onReturn: (index: number) => void }) {
+}: Context & { trail: Focus[]; onReturn: (index: number) => void; onIndex: () => void }) {
   const focus = trail.at(-1)!;
+  const cardKey = JSON.stringify(focus);
+  const aside = useRef<HTMLElement>(null);
+  const folioElement = useRef<HTMLElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const folioId = useId();
+  const readingPositions = useRef(new Map<string, number>());
   const first = Math.max(0, trail.length - 1 - TRAIL_SHOWN);
   const { leaf, onLeaf, folioHost } = context;
   const [leaves, setLeaves] = useState<{ id: string; title: string }[]>([]);
@@ -109,9 +122,20 @@ export function Pedia({
     return () => setLeaves((all) => all.filter((l) => l.id !== id));
   }, []);
   const folio = useMemo<Folio>(() => ({ open: leaf, page, show: onLeaf, register }), [leaf, page, onLeaf, register]);
-  // The page stays chosen from card to card, but shows only where the card
-  // has a section of that name.
+  // A return visit restores the card's chosen section, once it has registered.
   const shown = leaf !== null && leaves.some((l) => l.id === leaf);
+  useLayoutEffect(() => {
+    aside.current?.scrollTo({ top: readingPositions.current.get(cardKey) ?? 0 });
+  }, [cardKey]);
+  useLayoutEffect(() => {
+    page?.scrollTo({ top: readingPositions.current.get(`${cardKey}:${leaf}`) ?? 0 });
+  }, [cardKey, leaf, page]);
+  useEffect(() => {
+    if (!shown) return;
+    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    folioElement.current?.querySelector<HTMLButtonElement>("[aria-selected=true]")?.focus({ preventScroll: true });
+    return () => { if (opener.current?.isConnected) opener.current.focus({ preventScroll: true }); };
+  }, [shown]);
   useEffect(() => {
     if (!shown) return;
     const close = (e: KeyboardEvent) => e.key === "Escape" && onLeaf(null);
@@ -119,19 +143,20 @@ export function Pedia({
     return () => window.removeEventListener("keydown", close);
   }, [shown, onLeaf]);
   return (
-    <aside className="pedia" aria-label="Encyclopedia">
-      <nav className="pedia-nav">
+    <aside className="pedia" ref={aside} aria-label="Encyclopedia" onScroll={(e) => readingPositions.current.set(cardKey, e.currentTarget.scrollTop)}>
+      <nav className="pedia-nav" aria-label="Reading navigation">
         <button
           type="button"
           className="icon"
           disabled={trail.length < 2}
           onClick={() => onReturn(trail.length - 2)}
           title="Back"
+          aria-label="Back to the previous card"
         >
           <ArrowLeft size={16} />
         </button>
         <button type="button" className="icon" onClick={() => context.go({ kind: "world" })} title="The world">
-          <Globe size={16} />
+          <Globe size={16} aria-hidden="true" /><span>World</span>
         </button>
         <button
           type="button"
@@ -139,8 +164,10 @@ export function Pedia({
           onClick={() => context.go({ kind: "history" })}
           title="Everything that has happened"
         >
-          <ScrollText size={16} />
+          <ScrollText size={16} aria-hidden="true" /><span>Chronicle</span>
         </button>
+        <button type="button" className="icon pedia-search" onClick={onIndex} title="Search the atlas" aria-label="Search the atlas"><Search size={16} /></button>
+      </nav>
         {trail.length > 1 ? (
           <ol className="trail" aria-label="Cards visited">
             {first > 0 ? <li aria-hidden="true">…</li> : null}
@@ -153,23 +180,32 @@ export function Pedia({
             ))}
           </ol>
         ) : null}
-      </nav>
       <FolioContext.Provider value={folio}>
-        <article className="card">
+        <article className="card" key={cardKey}>
           <Card focus={focus} context={context} />
         </article>
       </FolioContext.Provider>
       {folioHost && shown
         ? createPortal(
-            <section className="folio" aria-label={`Folio: ${focusLabel(focus, context)}`}>
+            <section className="folio" ref={folioElement} aria-label={`Folio: ${focusLabel(focus, context)}`}>
               <header className="folio-head">
                 <span className="folio-of">{focusLabel(focus, context)}</span>
-                <div className="folio-tabs" role="tablist">
+                <div className="folio-tabs" role="tablist" aria-label="Sections" onKeyDown={(e) => {
+                  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+                  const current = leaves.findIndex((l) => l.id === leaf);
+                  const next = e.key === "Home" ? 0 : e.key === "End" ? leaves.length - 1
+                    : (current + (e.key === "ArrowRight" ? 1 : -1) + leaves.length) % leaves.length;
+                  e.preventDefault(); onLeaf(leaves[next].id);
+                  e.currentTarget.querySelectorAll<HTMLButtonElement>("[role=tab]")[next]?.focus();
+                }}>
                   {leaves.map((l) => (
                     <button
                       key={l.id}
                       type="button"
                       role="tab"
+                      id={`${folioId}-${l.id}`}
+                      aria-controls={`${folioId}-page`}
+                      tabIndex={l.id === leaf ? 0 : -1}
                       aria-selected={l.id === leaf}
                       className="folio-tab"
                       onClick={() => onLeaf(l.id)}
@@ -178,11 +214,11 @@ export function Pedia({
                     </button>
                   ))}
                 </div>
-                <button type="button" className="icon folio-close" title="Close the folio (Esc)" onClick={() => onLeaf(null)}>
+                <button type="button" className="icon folio-close" title="Close the folio (Esc)" aria-label="Close the folio" onClick={() => onLeaf(null)}>
                   <X size={16} />
                 </button>
               </header>
-              <div className="folio-page card" role="tabpanel" ref={setPage} />
+              <div className="folio-page card" role="tabpanel" id={`${folioId}-page`} aria-labelledby={`${folioId}-${leaf}`} tabIndex={0} ref={setPage} onScroll={(e) => readingPositions.current.set(`${cardKey}:${leaf}`, e.currentTarget.scrollTop)} />
             </section>,
             folioHost,
           )
@@ -256,7 +292,8 @@ function Card({ focus, context }: { focus: Focus; context: Context }) {
         <p className="muted">This language has not yet arisen in this year.</p>
       );
     case "word":
-      return <WordCard variety={focus.variety} concept={focus.concept} context={context} />;
+      return overview.varieties[focus.variety] ? <WordCard variety={focus.variety} concept={focus.concept} context={context} />
+        : <p className="muted">This language has not yet arisen in this year.</p>;
     case "law":
       return <LawCard id={focus.id} context={context} />;
     case "land":
@@ -648,7 +685,7 @@ function Leaf({ id, title, summary, children }: { id: string; title: string; sum
       <h3>
         <button type="button" className="leaf-title" aria-expanded={open} onClick={() => folio.show(open ? null : id)}>
           {title}
-          <BookOpen size={13} aria-hidden="true" />
+          <ChevronRight size={13} aria-hidden="true" />
         </button>
       </h3>
       <div className="leaf-summary">{summary}</div>
@@ -975,104 +1012,76 @@ function FamilyTrees({ context }: { context: Context }) {
   );
 }
 
-/// One line of the whole history: written, or struck out from a telling
-/// set aside.
-interface Line {
-  annal: Annal;
-  telling: TellingView | null;
-  /// The first struck line of its telling, which carries the note.
-  opens: boolean;
-}
-
-/// Everything that has happened, oldest first. Nothing written is erased:
-/// what was undone or told otherwise stays where it was, struck through,
-/// and can be told that way again. Sound changes are many, so only one
-/// language's are shown, with its ancestors' before it parted from them.
+/// A reading of the annals, with filters kept by the stage while the
+/// reader follows a person or moment and then returns to the chronicle.
 function HistoryCard({ context }: { context: Context }) {
-  const { overview } = context;
-  const [variety, setVariety] = useState<number | null>(null);
-  const lines = useMemo(() => {
-    const lineage: [number, number][] = [];
-    for (let v = variety, until = Infinity; v !== null; ) {
-      lineage.push([v, until]);
-      until = overview.varieties[v].forkedAt ?? 0;
-      v = overview.varieties[v].parent;
-    }
-    const relevant = (a: Annal) =>
-      a.kind !== "law" || lineage.some(([v, until]) => a.variety === v && a.generation <= until);
-    const written: Line[] = overview.annals.filter(relevant).map((annal) => ({ annal, telling: null, opens: false }));
-    const struck: Line[] = overview.tellings.flatMap((telling) =>
-      telling.struck.filter(relevant).map((annal, i) => ({ annal, telling, opens: i === 0 })),
-    );
-    // Struck lines follow what was written in the same year.
-    return [...written, ...struck].sort((a, b) => a.annal.generation - b.annal.generation);
-  }, [overview, variety]);
-  const spoken = overview.varieties.filter((v) => v.spoken);
-  const struck = lines.filter((l) => l.telling).length;
+  const { overview, historyView: view, onHistoryView } = context;
+  const update = (patch: Partial<HistoryView>) => onHistoryView({ ...view, limit: 100, ...patch });
+  const lines = useMemo(() => filterHistory(overview.annals, overview.varieties, view), [overview, view]);
+  const shown = lines.slice(0, view.limit);
+  const years = new Map<number, Annal[]>();
+  for (const annal of shown) years.set(annal.generation, [...(years.get(annal.generation) ?? []), annal]);
+  const missingLanguage = typeof view.sounds === "number" && !overview.varieties[view.sounds];
   return (
     <>
-      <CardHead icon={ScrollText} kind="History" title="Everything that has happened" />
-      {lines.length === 0 ? (
-        <p className="muted">Nothing has happened yet.</p>
-      ) : (
-        <Leaf
-          id="history"
-          title="The whole history"
-          summary={
-            <p>
-              {lines.length - struck} moments written from year 0 to year {overview.latest * YEARS}
-              {struck > 0 ? `, and ${struck} struck out but kept` : ""}.
-            </p>
-          }
-        >
-          <label className="history-laws">
-            <span>
-              <Explained term="sound law">Sound changes</Explained> in
-            </span>
-            <select
-              value={variety ?? ""}
-              onChange={(e) => setVariety(e.target.value === "" ? null : Number(e.target.value))}
-            >
-              <option value="">no language</option>
-              {spoken.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name}
-                </option>
-              ))}
+      <CardHead icon={ScrollText} kind="The chronicle" title="A history, still unfolding" />
+      <p className="muted">Follow the journeys of peoples, the fortunes of their realms, and the words they leave behind.</p>
+      <Leaf id="history" title="Read the chronicle" summary={
+        <p>{overview.annals.length.toLocaleString()} {overview.annals.length === 1 ? "moment" : "moments"} written through year {overview.generation * YEARS}.
+          {overview.tellings.length > 0 ? ` ${overview.tellings.length} other ${overview.tellings.length === 1 ? "telling" : "tellings"} kept.` : ""}</p>
+      }>
+        <div className="chronicle-tools">
+          <label className="chronicle-search">Search the chronicle
+            <input type="search" value={view.query} placeholder="A name, a word, a journey…" onChange={(e) => update({ query: e.target.value })} />
+          </label>
+          <label>Follow
+            <select value={view.group} onChange={(e) => update({ group: e.target.value as HistoryView["group"] })}>
+              {HISTORY_GROUPS.map((group) => <option key={group}>{group}</option>)}
             </select>
           </label>
-          <ol className="history">
-            {lines.map(({ annal, telling, opens }, i) => (
-              <li key={i} className={telling ? "struck" : undefined}>
-                <Year generation={annal.generation} context={context} />
-                {telling ? (
-                  <span>
-                    {opens ? (
-                      <span className="struck-note">
-                        {telling.why === "undone" ? "Struck out" : "In another telling"}
-                        {" · "}
-                        <button type="button" className="link" onClick={() => context.onRestore(telling.index)}>
-                          tell it this way
-                        </button>
-                      </span>
-                    ) : null}
-                    <del>
-                      <Told text={annal.text} />
-                    </del>
-                  </span>
-                ) : (
-                  <span>
-                    <button type="button" className="moment" onClick={() => context.go({ kind: "event", annal })}>
-                      <Told text={annal.text} />
-                    </button>
-                    <AnnalLinks annal={annal} context={context} />
-                  </span>
-                )}
-              </li>
-            ))}
-          </ol>
-        </Leaf>
-      )}
+          <label>Read
+            <select value={view.order} onChange={(e) => update({ order: e.target.value as HistoryView["order"] })}>
+              <option value="newest">Latest first</option><option value="oldest">From the beginning</option>
+            </select>
+          </label>
+          <label>Sound changes
+            <select value={view.sounds} onChange={(e) => update({ sounds: ["all", "none"].includes(e.target.value) ? e.target.value as "all" | "none" : Number(e.target.value) })}>
+              <option value="all">Every language</option><option value="none">Leave them out</option>
+              {missingLanguage ? <option value={view.sounds}>Language not yet born</option> : null}
+              {overview.varieties.map((v) => <option key={v.id} value={v.id}>{v.name} and its ancestors</option>)}
+            </select>
+          </label>
+        </div>
+        <div className="chronicle-count"><span role="status">{lines.length.toLocaleString()} {lines.length === 1 ? "moment" : "moments"}{view.query || view.group !== "All events" || view.sounds !== "all" ? " matching this reading" : " in this telling"}</span>
+          <button type="button" className="link" onClick={() => onHistoryView(INITIAL_HISTORY)}>Reset filters</button>
+        </div>
+        {missingLanguage ? <p className="muted small">The selected language has not arisen in this year. Its sound changes will appear when you return to its time.</p> : null}
+        {lines.length === 0 ? <p className="index-empty">No moments match this reading. Try a different name or broaden the filters.</p> : null}
+        <div className="chronicle-years">
+          {[...years].map(([generation, annals]) => <section className="chronicle-year-group" key={generation}>
+            <h3><button type="button" className="link" title="See the world in this year" onClick={() => context.onScrub(generation)}>Year {generation * YEARS}</button></h3>
+            <ol className="chronicle-events">{annals.map((annal, i) => {
+              const kind = EVENT_KIND[annal.kind];
+              return <li key={i}>
+                <kind.icon size={17} aria-hidden="true" />
+                <div><span className="event-kind">{kind.name}</span>
+                  <button type="button" className="moment" onClick={() => context.go({ kind: "event", annal })}><Told text={annal.text} /></button>
+                  <AnnalLinks annal={annal} context={context} />
+                </div>
+              </li>;
+            })}</ol>
+          </section>)}
+        </div>
+        {lines.length > shown.length ? <button type="button" className="chronicle-load" onClick={() => update({ limit: view.limit + 100 })}>Read another {Math.min(100, lines.length - shown.length)} moments</button> : null}
+        {overview.tellings.length > 0 ? <section className="other-tellings">
+          <h3>Other tellings</h3><p className="muted small">Histories set aside are kept here. Taking one up keeps this telling in its place.</p>
+          {overview.tellings.map((telling) => <details key={telling.index}>
+            <summary>From year {telling.from * YEARS} · {telling.why === "undone" ? "struck out" : "told differently"} · {telling.struck.length} {telling.struck.length === 1 ? "moment" : "moments"}</summary>
+            <button type="button" onClick={() => context.onRestore(telling.index)}>Take up this telling</button>
+            <ol className="history">{telling.struck.map((annal, i) => <li key={i}><span>{annal.generation * YEARS}</span><del><Told text={annal.text} /></del></li>)}</ol>
+          </details>)}
+        </section> : null}
+      </Leaf>
     </>
   );
 }
@@ -1588,6 +1597,7 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
         hand={v.family}
         sub={v.meaning ? `“${v.meaning}”` : null}
       />
+      <LanguageSpecimen variety={variety} context={context} />
       <Facts
         rows={[
           [
@@ -1644,7 +1654,7 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
           ["Sound change stops at", v.minimalWord],
         ]}
       />
-      <LanguageSpecimen variety={variety} context={context} />
+
       {v.names.length > 0 ? (
         <Leaf
           id="names"
@@ -1769,7 +1779,8 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
           version={version}
           generation={generation}
           variety={variety}
-          concept={null}
+          view={context.dictionaryViews[variety] ?? INITIAL_DICTIONARY}
+          onView={(view) => context.onDictionaryView(variety, view)}
           onConcept={(concept) => context.go({ kind: "word", variety, concept })}
         />
       </Leaf>

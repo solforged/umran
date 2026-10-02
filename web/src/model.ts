@@ -118,6 +118,7 @@ export interface Choice {
 }
 
 export interface Catalog {
+  mapSizes: Choice[];
   sounds: SoundInfo[];
   places: string[];
   manners: string[];
@@ -524,7 +525,7 @@ export interface TellingView {
 /// One chronicle entry; `variety` is set for a sound law.
 export interface Annal {
   generation: number;
-  kind: "found" | "split" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper";
+  kind: "found" | "split" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper" | "grammar";
   /// The annalist's words; words of the language are marked *thus*.
   text: string;
   /// The apparatus: what a linguist would note, such as sound laws.
@@ -592,7 +593,7 @@ export interface WordDetail {
   cognates: { variety: number; name: string; spelled: string; ipa: string }[];
 }
 
-export type MapSize = "small" | "medium" | "large";
+export type MapSize = "small" | "medium" | "large" | "vast";
 
 export type Terrain = "sea" | "plains" | "forest" | "steppe" | "hills" | "mountains" | "desert";
 

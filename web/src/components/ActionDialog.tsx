@@ -1,5 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import type { Action, Catalog, ContactKind, Craft, EthosAxis, Naming, Overview } from "../model";
+import { YEARS } from "../model";
 import { ETHOS_AXES, ETHOS_POLES, temperament } from "../lore";
 import { NamingSelect } from "./NamingSelect";
 import { Modal } from "./Modal";
@@ -209,7 +210,7 @@ export function ActionDialog({
               <small>Built from their own words, so it follows their sound changes.</small>
             </label>
             {slider("Contact afterwards", intensity, setIntensity, "0 means the two lose touch entirely.")}
-            <p className="muted">Half the people leave; from now on their speech changes on its own.</p>
+            <p className="muted">The world chooses where they part. A people holding several lands divides along its holdings; on one land, half form a new people, settling nearby when possible. Their speech begins to change on its own.</p>
           </>
         );
       case "connect":
@@ -274,6 +275,9 @@ export function ActionDialog({
         </>
       }
     >
+      {overview.generation < overview.latest ? <p className="telling-note">
+        Writing in year {overview.generation * YEARS} begins another telling. The years through {overview.latest * YEARS} stay in the chronicle.
+      </p> : null}
       <form id={`form-${kind}`} className="form" onSubmit={submit}>
         {body}
       </form>

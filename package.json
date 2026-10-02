@@ -13,7 +13,8 @@
     "preview": "vite preview --host 127.0.0.1",
     "test:core": "cargo test --workspace",
     "parity": "bun scripts/parity.ts",
-    "brand": "bun brand/build.js"
+    "brand": "bun brand/build.js",
+    "test:web": "bun test tests"
   },
   "dependencies": {
     "lucide-react": "1.41.0",

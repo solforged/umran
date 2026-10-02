@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Feather, Gauge, Layers, Pause, Play, ScrollText, SkipForward } from "lucide-react";
+import { BookOpen, Feather, Gauge, Layers, Map as MapIcon, Pause, Play, ScrollText, Search, SkipForward, StepForward, X } from "lucide-react";
 import type { Annal, Catalog, Craft, Engine, EthosAxis, Overview, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { ETHOS_AXES, ETHOS_POLES, EVENT_KIND, hue } from "../lore";
 import { PACES, year } from "../words";
 import type { DialogKind } from "./ActionDialog";
+import { INITIAL_HISTORY } from "../history";
+import { AtlasIndex } from "./AtlasIndex";
+import type { DictionaryView } from "./Dictionary";
 import { Told } from "./Told";
 import { MapView, type Tint } from "./MapView";
 import { Pedia, type Focus } from "./Pedia";
@@ -25,7 +28,7 @@ function stops(on: PauseOn, annal: Annal): boolean {
       return false;
     case "peoples":
       // Neighbours and gradual spread happen too often to stop the years for.
-      return annal.kind !== "law" && annal.kind !== "neighbours" && annal.kind !== "spread";
+      return annal.kind !== "law" && annal.kind !== "grammar" && annal.kind !== "neighbours" && annal.kind !== "spread";
     case "sounds":
       return annal.kind === "law";
     case "anything":
@@ -94,14 +97,39 @@ export function Stage({
   const focus = trail.at(-1)!;
   // The folio page open over the map, by its section's id.
   const [leaf, setLeaf] = useState<string | null>(null);
+  const leavesByCard = useRef(new Map<string, string | null>());
+  const showLeaf = (next: string | null) => {
+    leavesByCard.current.set(JSON.stringify(focus), next);
+    setLeaf(next);
+  };
   const [folioHost, setFolioHost] = useState<HTMLDivElement | null>(null);
+  const [historyView, setHistoryView] = useState(INITIAL_HISTORY);
+  const [dictionaryViews, setDictionaryViews] = useState<Record<number, DictionaryView>>({});
+  const [indexOpen, setIndexOpen] = useState(false);
+  const [pane, setPane] = useState<"map" | "reading">("map");
   const go = (next: Focus) => {
+    setPane("reading");
+    leavesByCard.current.set(JSON.stringify(focus), leaf);
     if (next.kind === "people") onSelect(next.id);
     // The history card is the whole history, so it opens in the folio.
-    if (next.kind === "history") setLeaf("history");
+    setLeaf(next.kind === "history" ? "history" : null);
     // Opening the card already open adds nothing to the trail.
     setTrail((t) => (JSON.stringify(t.at(-1)) === JSON.stringify(next) ? t : [...t.slice(-TRAIL_LENGTH), next]));
   };
+  const returnTo = (index: number) => {
+    setTrail((t) => t.slice(0, index + 1));
+    setLeaf(leavesByCard.current.get(JSON.stringify(trail[index])) ?? (trail[index].kind === "history" ? "history" : null));
+    setPane("reading");
+  };
+  // Back navigation and time travel must keep actions attached to the
+  // person on the card, just as following a link does.
+  useEffect(() => {
+    if (focus.kind === "people" && overview.communities[focus.id]) onSelect(focus.id);
+    if (focus.kind === "language") {
+      const speaker = overview.communities.find((c) => c.variety === focus.variety && c.ended === null);
+      if (speaker) onSelect(speaker.id);
+    }
+  }, [focus, overview.communities, onSelect]);
   // Whether the map is veiled to what the language in view knows. It
   // follows the people or language card open, and lifts on any other.
   const [veiled, setVeiled] = useState(false);
@@ -110,7 +138,7 @@ export function Stage({
     : focus.kind === "people" ? (overview.communities[focus.id]?.variety ?? null)
     : null;
   const known = useMemo(
-    () => (knownBy === null ? null : new Set(overview.varieties[knownBy].knownLands.map((l) => l.region))),
+    () => (knownBy === null ? null : overview.varieties[knownBy] ? new Set(overview.varieties[knownBy].knownLands.map((l) => l.region)) : null),
     [knownBy, overview],
   );
 
@@ -126,6 +154,9 @@ export function Stage({
   const [pauseOn, setPauseOn] = useState<PauseOn>("peoples");
   const tick = useRef(onTick);
   tick.current = onTick;
+  const scrub = (g: number) => { setPlaying(false); onScrub(g); };
+  const openDialog = (kind: DialogKind) => { setPlaying(false); onDialog(kind); };
+  const openIndex = () => { setPlaying(false); setIndexOpen(true); };
   const stop = useRef(onStop);
   stop.current = onStop;
   useEffect(() => {
@@ -142,6 +173,23 @@ export function Stage({
   useEffect(() => {
     if (!atPresent) setPlaying(false);
   }, [atPresent]);
+
+  // Shortcuts never steal keys from a form, a dialog, or a focused control.
+  useEffect(() => {
+    const shortcut = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement;
+      if (target.closest("input, select, textarea, [contenteditable=true], dialog[open]")) return;
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault(); openIndex();
+      } else if (!event.metaKey && !event.ctrlKey && !event.altKey && event.key === "/") {
+        event.preventDefault(); openIndex();
+      } else if (event.key === "Escape") {
+        document.querySelectorAll<HTMLDetailsElement>(".map-layers[open], .bar-menu[open]").forEach((menu) => menu.open = false);
+      }
+    };
+    window.addEventListener("keydown", shortcut);
+    return () => window.removeEventListener("keydown", shortcut);
+  }, []);
 
   // What happened in the year in view.
   const fresh = useMemo(
@@ -234,8 +282,13 @@ export function Stage({
   const sameYear = last ? overview.annals.filter((a) => a.generation === last.generation).length : 0;
   const LastIcon = last ? EVENT_KIND[last.kind].icon : null;
 
+  const layerName = tint.kind === "peoples" ? "Language families"
+    : tint.kind === "faiths" ? "Faiths" : tint.kind === "crafts" ? catalog.crafts.find((c) => c.id === tint.craft)?.name
+    : tint.kind === "temper" ? `${ETHOS_POLES[tint.axis][0]} — ${ETHOS_POLES[tint.axis][1]}`
+    : tint.kind === "words" ? `Words for “${concept?.replaceAll("_", " ")}”` : "Sound change";
+
   return (
-    <div className="stage">
+    <div className="stage workbench" data-pane={pane}>
       <header className="stage-head">
         <nav>
           <button type="button" className="link brand" onClick={onShelf} title="Back to the shelf" aria-label="Back to the shelf">
@@ -246,8 +299,15 @@ export function Stage({
           </button>
         </nav>
         <span className="stage-title">{title}</span>
+        <button type="button" className="atlas-open" onClick={openIndex} title="Search the atlas (⌘K or /)" aria-label="Open the atlas index">
+          <Search size={16} aria-hidden="true" /> <span>Atlas index</span><kbd>/</kbd>
+        </button>
       </header>
       <div className="stage-notices">{notices}</div>
+      <nav className="stage-panes" aria-label="Workspace">
+        <button type="button" aria-pressed={pane === "map"} onClick={() => { setPane("map"); setLeaf(null); }}><MapIcon size={16} aria-hidden="true" /> Chart</button>
+        <button type="button" aria-pressed={pane === "reading"} onClick={() => setPane("reading")}><BookOpen size={16} aria-hidden="true" /> Reading</button>
+      </nav>
 
       <section className="stage-map" aria-label="Map">
         <MapView
@@ -274,7 +334,7 @@ export function Stage({
         />
         <details className="map-layers">
           <summary title="What the map shows">
-            <Layers size={16} aria-hidden="true" /> Show
+            <Layers size={16} aria-hidden="true" /> {layerName}
           </summary>
           <label>
             Colour lands by
@@ -350,12 +410,22 @@ export function Stage({
             </label>
           ))}
         </details>
+        {known !== null ? <div className="map-perspective">
+          Known to {overview.varieties[knownBy!]?.name}
+          <button type="button" className="icon" aria-label="Show the whole known and unknown world" onClick={() => setVeiled(false)}><X size={14} /></button>
+        </div> : null}
+        <p className="chart-help">Scroll to zoom · drag to explore</p>
       </section>
       <div className="folio-host" ref={setFolioHost} />
 
       <Pedia
         trail={trail}
-        onReturn={(i) => setTrail((t) => t.slice(0, i + 1))}
+        onReturn={returnTo}
+        onIndex={openIndex}
+        historyView={historyView}
+        onHistoryView={setHistoryView}
+        dictionaryViews={dictionaryViews}
+        onDictionaryView={(variety, view) => setDictionaryViews((views) => ({ ...views, [variety]: view }))}
         engine={engine}
         catalog={catalog}
         version={version}
@@ -364,17 +434,17 @@ export function Stage({
         map={map}
         words={words}
         go={go}
-        onScrub={onScrub}
+        onScrub={scrub}
         onPlay={() => setPlaying(true)}
         onRestore={onRestore}
         leaf={leaf}
-        onLeaf={setLeaf}
+        onLeaf={showLeaf}
         folioHost={folioHost}
         knownBy={knownBy}
         onKnownBy={(v) => setVeiled(v !== null)}
         onDialog={(kind, community) => {
           onSelect(community);
-          onDialog(kind);
+          openDialog(kind);
         }}
       />
 
@@ -420,9 +490,14 @@ export function Stage({
             className="icon"
             disabled={!atPresent || playing}
             title="Until something happens"
+            aria-label="Until something happens"
             onClick={onNextEvent}
           >
             <SkipForward size={18} />
+          </button>
+          <button type="button" className="icon step-year" disabled={!atPresent || playing}
+            title="Advance 25 years" aria-label="Advance 25 years" onClick={() => { onTick(); onStop(); }}>
+            <StepForward size={18} aria-hidden="true" />
           </button>
           <div className="track scrub">
             <input
@@ -433,7 +508,7 @@ export function Stage({
               disabled={latest === 0}
               aria-label="Year"
               aria-valuetext={year(generation)}
-              onChange={(e) => onScrub(Number(e.target.value))}
+              onChange={(e) => scrub(Number(e.target.value))}
             />
             <div className="ticks" aria-hidden="true">
               {overview.timeline
@@ -446,17 +521,17 @@ export function Stage({
                     className={`tick tick-${m.kind}`}
                     style={{ left: `${(m.generation / Math.max(latest, 1)) * 100}%` }}
                     title={`In ${year(m.generation)}: ${m.label}`}
-                    onClick={() => onScrub(m.generation)}
+                    onClick={() => scrub(m.generation)}
                   />
                 ))}
             </div>
           </div>
-          <span className="stage-year">
+          <span className={`stage-year${atPresent ? "" : " in-past"}`}>
             Year {generation * YEARS}
             {atPresent ? null : (
               <>
                 {" · "}
-                <button type="button" className="link" onClick={() => onScrub(latest)}>
+                <button type="button" className="link" onClick={() => scrub(latest)}>
                   to the present
                 </button>
               </>
@@ -490,7 +565,7 @@ export function Stage({
               </label>
             </div>
           </details>
-          <details className="bar-menu act">
+          <details className="bar-menu act" onToggle={(e) => { if (e.currentTarget.open) setPlaying(false); }}>
             <summary title="Shape history">
               <Feather size={16} aria-hidden="true" />
               <span className="bar-label">Shape history</span>
@@ -498,32 +573,33 @@ export function Stage({
             <div className="bar-menu-body act-menu" onClick={(e) => {
               if ((e.target as HTMLElement).closest("button")) (e.currentTarget.parentElement as HTMLDetailsElement).removeAttribute("open");
             }}>
+              {!atPresent ? <p className="muted small">Writing here begins another telling. The later years are kept in the chronicle.</p> : null}
               {people?.ended === null ? (
                 <>
-                  <button type="button" onClick={() => onDialog("split")}>
+                  <button type="button" onClick={() => openDialog("split")}>
                     Some of the {people.name} go their own way
                   </button>
-                  <button type="button" onClick={() => onDialog("connect")}>
+                  <button type="button" onClick={() => openDialog("connect")}>
                     The {people.name} meet another people
                   </button>
-                  <button type="button" onClick={() => onDialog("shift")}>
+                  <button type="button" onClick={() => openDialog("shift")}>
                     The {people.name} take up another language
                   </button>
-                  <button type="button" onClick={() => onDialog("temper")}>
+                  <button type="button" onClick={() => openDialog("temper")}>
                     The {people.name}'s temper turns
                   </button>
                 </>
               ) : null}
-              <button type="button" onClick={() => onDialog("found")}>
+              <button type="button" onClick={() => openDialog("found")}>
                 A new people arrives
               </button>
-              <button type="button" onClick={() => onDialog("state")}>
+              <button type="button" onClick={() => openDialog("state")}>
                 Found a state
               </button>
-              <button type="button" onClick={() => onDialog("religion")}>
+              <button type="button" onClick={() => openDialog("religion")}>
                 Found a religion
               </button>
-              <button type="button" onClick={() => onDialog("craft")}>
+              <button type="button" onClick={() => openDialog("craft")}>
                 Teach a craft
               </button>
               <button type="button" disabled={!canUndo} onClick={onUndo}>
@@ -533,6 +609,7 @@ export function Stage({
           </details>
         </div>
       </footer>
+      {indexOpen ? <AtlasIndex open overview={overview} map={map} go={go} onClose={() => setIndexOpen(false)} /> : null}
     </div>
   );
 }

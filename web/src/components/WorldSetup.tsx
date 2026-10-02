@@ -9,12 +9,6 @@ import { Modal } from "./Modal";
 import { NamingSelect } from "./NamingSelect";
 import { Specimen } from "./Specimen";
 
-const SIZES: { id: MapSize; name: string; title: string }[] = [
-  { id: "small", name: "small", title: "About forty lands; peoples soon meet." },
-  { id: "medium", name: "middling", title: "About eighty lands." },
-  { id: "large", name: "wide", title: "About a hundred and fifty lands; peoples keep apart longer." },
-];
-
 /// Each account is numbered as a historian would: the first, the second.
 const ORDINAL = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth"];
 
@@ -205,6 +199,7 @@ export function WorldSetup({
       <section className="stage-map" aria-label="Map">
         {map && overview && overview.communities.length === founders.length ? (
           <MapView
+            key={`${overview.seed}:${map.size}`}
             map={map}
             overview={overview}
             generation={0}
@@ -224,18 +219,19 @@ export function WorldSetup({
           <p className="cartouche-note">
             {lands} lands, as the first travellers drew them · seed {worldSeed}
           </p>
+          <p className="map-scale-note">{catalog.mapSizes.find((s) => s.id === size)?.description}</p>
           <div className="cartouche-tools">
             <span className="sizes" role="radiogroup" aria-label="How wide">
-              {SIZES.map((s) => (
+              {catalog.mapSizes.map((s) => (
                 <button
                   key={s.id}
                   type="button"
                   className="link"
                   role="radio"
                   aria-checked={s.id === size}
-                  title={s.title}
+                  title={s.description}
                   onClick={() => {
-                    setSize(s.id);
+                    setSize(s.id as MapSize);
                     rehome();
                   }}
                 >

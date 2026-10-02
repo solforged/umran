@@ -68,6 +68,7 @@ export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string 
   city: { icon: Castle, name: "A great city grows" },
   koine: { icon: Blend, name: "A city's speech forms" },
   temper: { icon: Flame, name: "A people's temper turns" },
+  grammar: { icon: Languages, name: "Grammar changes" },
 };
 
 export const TERRAIN_NAME: Record<Terrain, string> = {

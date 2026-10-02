@@ -1,0 +1,194 @@
+/* An atlas to browse, a chart to explore, a folio to read. The surfaces
+   share the chart palette; their controls stay legible at every size. */
+.workbench { min-width: 0; }
+.workbench .stage-head {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 3rem;
+}
+.workbench .stage-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  font-size: 1rem;
+}
+.workbench .atlas-open {
+  display: inline-flex;
+  justify-self: end;
+  align-items: center;
+  gap: .45rem;
+  margin-right: 11rem;
+  padding: .3rem .6rem;
+  border-color: var(--line);
+  white-space: nowrap;
+}
+kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(--line); padding: 0 .3em; border-radius: 2px; }
+.app:has(> .workbench) ~ .light-switch { top: 1.5rem; }
+.stage-panes { display: none; }
+.pedia-nav { gap: .35rem; padding-block: .6rem; border-bottom: 1px solid var(--line); }
+.pedia-nav .icon { display: inline-flex; align-items: center; gap: .4rem; min-height: 2rem; border-color: var(--line); }
+.pedia-nav .pedia-search { margin-left: auto; }
+.trail { margin: .5rem 0; padding-bottom: .3rem; border-bottom: 1px dotted var(--line); }
+.trail button { max-width: 10rem; overflow: hidden; text-overflow: ellipsis; }
+.pedia > .card { padding-top: .45rem; }
+.pedia { scrollbar-width: thin; scrollbar-color: var(--line) transparent; overscroll-behavior: contain; }
+:root .leaf-title { width: 100%; justify-content: space-between; gap: 1rem; text-align: left; padding: .5rem 0 .2rem; border-top: 1px solid var(--line); }
+.leaf-title svg { flex: none; }
+.leaf-summary { color: var(--ink-soft); }
+.leaf.open .leaf-title { color: var(--accent); }
+.folio { inset: .8rem; animation: unfold-sheet 160ms ease-out; }
+.folio-head { flex-wrap: wrap; gap: .25rem .6rem; align-items: center; padding: .65rem .7rem 0; }
+.folio-of { flex: 1; min-width: 0; white-space: normal; line-height: 1.15; padding-left: .4rem; }
+.folio-tabs { order: 3; flex-basis: 100%; scrollbar-width: thin; }
+:root .folio-tab { border-color: transparent; }
+:root .folio-tab[aria-selected="true"] { border-color: var(--line); border-bottom-color: var(--paper); color: var(--accent); background: var(--paper); }
+.folio-close { margin: 0 0 .3rem; }
+.folio-page { overscroll-behavior: contain; scrollbar-width: thin; padding: 1rem 1.25rem 2rem; }
+.map-zoom { gap: .3rem; }
+.map-zoom button { background: var(--paper-raised); border-color: var(--line); width: 2.15rem; height: 2.15rem; }
+.map-layers { max-width: min(20rem, calc(100% - 4rem)); }
+.map-layers summary { max-width: 100%; }
+.map-perspective { position: absolute; left: .6rem; bottom: 2.5rem; display: flex; align-items: center; gap: .5rem; background: var(--paper-raised); border: 1px solid var(--line); padding: .2rem .5rem; font-size: .9rem; max-width: calc(100% - 6rem); }
+.chart-help { position: absolute; left: .7rem; bottom: .35rem; margin: 0; color: var(--ink-soft); background: color-mix(in srgb, var(--paper) 88%, transparent); padding: .1rem .4rem; font-size: .8rem; pointer-events: none; }
+.mapview > svg:focus-visible { outline-offset: -3px; }
+.stage-year.in-past { color: var(--accent); }
+.act-menu p { margin: .3rem; }
+.map-scale-note { font-size: .8rem; color: var(--ink-soft); max-width: 26rem; margin: .5rem auto; }
+.telling-note { padding: .65rem .8rem; margin: 0 0 1rem; border-left: 2px solid var(--accent); background: var(--accent-mute); font-size: .95rem; }
+:root .setup .stage-head .brand { color: var(--desk-ink); }
+
+/* The index is a page of entries, not a second encyclopedia. */
+.index-intro { margin: 0 0 1rem; color: var(--ink-soft); }
+.index-search { display: flex; align-items: center; gap: .7rem; padding: .6rem .8rem; border: 1px solid var(--ink-soft); background: var(--paper); }
+.index-search input[type="search"] { width: 100%; min-width: 0; padding: 0; border: 0; border-radius: 0; background: transparent; font-size: 1.15rem; }
+.index-kinds { display: flex; gap: .35rem; flex-wrap: wrap; padding: .8rem 0; }
+.index-kinds button { padding: .3rem .7rem; border-color: var(--line); }
+.index-kinds button[aria-pressed=true] { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+.index-count { display: flex; flex-wrap: wrap; gap: .4rem 1rem; justify-content: space-between; padding-bottom: .6rem; font-size: .9rem; color: var(--ink-soft); border-bottom: 1px solid var(--line); }
+.index-count label { display: inline-flex; align-items: center; gap: .35rem; }
+.index-results { margin: 0; padding: 0; list-style: none; max-height: 48dvh; overflow: auto; overscroll-behavior: contain; }
+.index-results button { display: flex; width: 100%; gap: .8rem; align-items: center; text-align: left; padding: .7rem .4rem; border: 0; border-radius: 0; border-bottom: 1px dotted var(--line); letter-spacing: 0; font-variant: normal; }
+.index-results button:hover, .index-results button:focus-visible { background: var(--accent-mute); outline-offset: -2px; }
+.index-results button > svg { flex: none; color: var(--ink-soft); }
+.index-results button > span:first-of-type { flex: 1; min-width: 0; }
+.index-results strong { display: block; font-size: 1.2rem; font-weight: 500; overflow-wrap: anywhere; }
+.index-results small { display: block; color: var(--ink-soft); line-height: 1.25; }
+.index-kind { color: var(--ink-soft); font-size: .8rem; }
+.index-empty { padding: 2rem 0; text-align: center; color: var(--ink-soft); }
+.modal[open] { animation: unfold-sheet 160ms ease-out; }
+@keyframes unfold-sheet { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; scroll-behavior: auto !important; transition: none !important; }
+}
+
+/* On a small desk, turn between chart and reading instead of squeezing
+   both into shallow strips. Navigation keeps its history in either view. */
+@media (max-width: 900px) {
+  .workbench {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+    grid-template-areas: "head" "notices" "panes" "content" "time";
+  }
+  .workbench .stage-map, .workbench .pedia, .workbench .folio-host { grid-area: content; min-width: 0; }
+  .workbench[data-pane=map] .pedia { display: none; }
+  .workbench[data-pane=reading] .stage-map { visibility: hidden; }
+  .workbench .pedia { border-top: 0; }
+  .stage-panes { grid-area: panes; display: flex; gap: 1rem; align-items: stretch; justify-content: center; padding: 0 .8rem; background: var(--paper-raised); border-bottom: 1px solid var(--line); }
+  :root .stage-panes button { display: flex; align-items: center; justify-content: center; gap: .5rem; min-height: 2.7rem; flex: 1; border: 0; border-bottom: 2px solid transparent; color: var(--ink-soft); border-radius: 0; }
+  :root .stage-panes button[aria-pressed=true] { color: var(--accent); border-bottom-color: var(--accent); }
+  .workbench .folio { inset: 0; border: 0; box-shadow: none; }
+  .workbench:has(.folio) .pedia { visibility: hidden; }
+  .workbench .stage-head { gap: .75rem; }
+  .workbench .atlas-open { margin-right: 9.5rem; }
+  .workbench .atlas-open kbd { display: none; }
+  .workbench .stage-title { font-size: .9rem; }
+  .stage-bar { padding: .4rem .7rem .6rem; }
+  .stage-bar .transport { display: grid; grid-template-columns: auto auto auto minmax(0, 1fr) auto auto; gap: .4rem; }
+  .stage-bar .play { grid-row: 1; grid-column: 1; }
+  .stage-bar .transport > .icon:not(.step-year) { grid-row: 1; grid-column: 2; }
+  .stage-bar .step-year { grid-row: 1; grid-column: 3; }
+  .stage-bar .bar-menu:not(.act) { grid-column: 5; }
+  .stage-bar .act { grid-column: 6; }
+  .stage-bar .scrub { grid-row: 2; grid-column: 1 / -1; min-width: 0; margin-top: .3rem; }
+  .stage-year { grid-column: 4; grid-row: 1; font-size: .9rem; text-align: center; white-space: normal; line-height: 1.15; }
+  .stage-year .link { display: block; }
+  .bar-menu { grid-row: 1; }
+  .bar-menu summary { min-height: 2.5rem; padding: .5rem; }
+  .bar-menu-body { max-height: 55dvh; overflow: auto; max-width: calc(100vw - 1.5rem); }
+  .stage-bar button.play { min-width: 4.6rem; min-height: 2.5rem; padding-inline: .5rem; }
+  .stage-bar button.icon { min-height: 2.5rem; width: 2.25rem; }
+  .chronicle-more { display: none; }
+  .chronicle-line { font-size: .85rem; gap: .4rem; }
+  .chronicle-latest { flex: 1; }
+  .chronicle-open { min-height: 1.8rem; }
+  .map-zoom button { width: 2.75rem; height: 2.75rem; }
+  .map-layers summary { min-height: 2.5rem; }
+  .chart-help { display: none; }
+  .index-results { max-height: 45dvh; }
+  .index-results button { min-height: 3.75rem; }
+}
+@media (max-width: 560px) {
+  .workbench .stage-head { padding: .3rem .7rem .45rem; grid-template-columns: auto 1fr auto; min-height: 4.5rem; row-gap: .2rem; }
+  .workbench .stage-head nav { gap: .8rem; }
+  .workbench .stage-title { grid-row: 2; grid-column: 1 / -1; text-align: left; }
+  .workbench .atlas-open { grid-column: 2; grid-row: 1; justify-self: end; margin-right: 0; border: 0; padding: .4rem; }
+  .workbench .atlas-open span { display: none; }
+  .workbench .stage-head::after { content: ""; width: 6rem; grid-column: 3; grid-row: 1; }
+  .app:has(> .workbench) ~ .light-switch { top: 1.35rem; right: .5rem; font-size: 0; }
+  .app:has(> .workbench) ~ .light-switch select { width: 6.3rem; font-size: .8rem; text-overflow: ellipsis; }
+  .pedia { padding-inline: .8rem; }
+  .pedia-nav .icon { min-height: 2.5rem; padding-inline: .5rem; }
+  .folio-page { padding-inline: .8rem; }
+  .folio-tab { padding: .6rem .65rem; }
+  .index-kind { display: none; }
+  .index-results button { gap: .6rem; }
+  .index-search input[type="search"] { font-size: 1rem; }
+  .modal { width: calc(100vw - 1rem); max-width: calc(100vw - 1rem); max-height: calc(100dvh - 1rem); }
+  .modal-body { padding: .8rem; }
+  .modal-head { padding: .8rem; }
+  .modal-head h2 { font-size: 1.5rem; }
+  .setup { height: auto; min-height: 100dvh; grid-template-rows: repeat(5, auto); }
+  .setup .setup-panel { overflow: visible; }
+  :root .setup .stage-map { margin: .5rem; display: flex; flex-direction: column; }
+  .setup .cartouche { position: relative; order: -1; inset: auto; max-width: none; margin: 1rem; padding: .65rem; }
+  .setup .mapview { height: 21rem; flex: none; }
+  .setup .cartouche h1 { font-size: 1.25rem; }
+  .setup .cartouche-note { font-size: .8rem; }
+  .setup .map-hint { left: .5rem; right: .5rem; bottom: .5rem; font-size: .8rem; }
+  :root .setup .setup-foot { position: sticky; bottom: 0; z-index: 8; background: var(--desk); padding: .6rem .8rem; flex-wrap: nowrap; box-shadow: 0 -4px 16px rgb(0 0 0 / .2); }
+  .setup-foot .year { font-size: 0; }
+  .setup-foot .year strong, .setup-foot .year .error { font-size: .9rem; }
+  .setup-foot .row > .link { display: none; }
+  .setup .setup-foot .begin { min-height: 2.75rem; }
+}
+@media (max-height: 500px) and (max-width: 900px) {
+  .workbench .stage-title { display: none; }
+  .workbench .stage-head { min-height: 2.5rem; }
+  .stage-panes button { min-height: 2rem; }
+  .chronicle-line { display: none; }
+  .index-results { max-height: 28dvh; }
+}
+.chronicle-tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem; padding: .1rem 0 1rem; border-bottom: 1px solid var(--line); }
+.chronicle-tools label { display: grid; gap: .25rem; font-size: .9rem; color: var(--ink-soft); }
+.chronicle-tools select, .chronicle-tools input { min-width: 0; width: 100%; color: var(--ink); }
+.chronicle-tools .chronicle-search { grid-column: 1 / -1; }
+.chronicle-count { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .5rem; margin: .8rem 0; font-size: .85rem; color: var(--ink-soft); }
+.chronicle-year-group { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); gap: 1rem; padding-block: .5rem; border-bottom: 1px solid var(--line); }
+.chronicle-year-group h3 { margin: .35rem 0; }
+.chronicle-events { margin: 0; padding: 0; list-style: none; }
+.chronicle-events li { display: flex; gap: .65rem; padding: .35rem 0 .8rem; }
+.chronicle-events li > svg { color: var(--accent); flex: none; margin-top: .2rem; }
+.chronicle-events li > div { min-width: 0; }
+.event-kind { display: block; font-size: .75rem; color: var(--ink-soft); letter-spacing: .04em; }
+.chronicle-events .moment { text-align: left; display: block; line-height: 1.45; }
+.chronicle-load { display: block; margin: 1.3rem auto; }
+.other-tellings { margin-top: 2rem; border-top: 3px double var(--line); }
+.other-tellings details { padding-block: .6rem; border-bottom: 1px solid var(--line); }
+.other-tellings summary { cursor: pointer; color: var(--accent); }
+.other-tellings details > button { margin-top: .6rem; }
+@media (max-width: 560px) {
+  .chronicle-tools { grid-template-columns: 1fr 1fr; }
+  .chronicle-tools label:last-child { grid-column: 1 / -1; }
+  .chronicle-year-group { grid-template-columns: 1fr; gap: .2rem; }
+  .chronicle-year-group h3 { font-size: 1.2rem; }
+}

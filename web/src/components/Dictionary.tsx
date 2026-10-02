@@ -1,7 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { Engine, LexiconRow } from "../model";
 
 type OriginFilter = "all" | "inherited" | "derived" | "coined" | "borrowed" | "kept";
+export interface DictionaryView {
+  query: string;
+  field: string;
+  origin: OriginFilter;
+  concept: string | null;
+}
+export const INITIAL_DICTIONARY: DictionaryView = { query: "", field: "all", origin: "all", concept: null };
 
 /// Every concept's current word in one language.
 export function Dictionary({
@@ -9,19 +16,21 @@ export function Dictionary({
   version,
   generation,
   variety,
-  concept,
+  view,
+  onView,
   onConcept,
 }: {
   engine: Engine;
   version: number;
   generation: number;
   variety: number;
-  concept: string | null;
+  view: DictionaryView;
+  onView: (view: DictionaryView) => void;
   onConcept: (concept: string) => void;
 }) {
-  const [query, setQuery] = useState("");
-  const [field, setField] = useState("all");
-  const [origin, setOrigin] = useState<OriginFilter>("all");
+  const { query, field, origin, concept } = view;
+  const filter = (patch: Partial<DictionaryView>) => onView({ ...view, concept: null, ...patch });
+  const open = (concept: string) => { onView({ ...view, concept }); onConcept(concept); };
   const tableRef = useRef<HTMLTableSectionElement>(null);
 
   const rows = useMemo(
@@ -48,7 +57,7 @@ export function Dictionary({
     if (shown.length === 0) return;
     const at = shown.findIndex((r) => r.concept === concept);
     const next = at < 0 ? 0 : Math.min(shown.length - 1, Math.max(0, at + delta));
-    onConcept(shown[next].concept);
+    onView({ ...view, concept: shown[next].concept });
   };
 
   return (
@@ -59,9 +68,9 @@ export function Dictionary({
           placeholder="Search meaning, word, or IPA"
           aria-label="Search the lexicon"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => filter({ query: e.target.value })}
         />
-        <select aria-label="Semantic field" value={field} onChange={(e) => setField(e.target.value)}>
+        <select aria-label="Semantic field" value={field} onChange={(e) => filter({ field: e.target.value })}>
           <option value="all">All fields</option>
           {fields.map((f) => (
             <option key={f} value={f}>
@@ -69,7 +78,7 @@ export function Dictionary({
             </option>
           ))}
         </select>
-        <select aria-label="Origin" value={origin} onChange={(e) => setOrigin(e.target.value as OriginFilter)}>
+        <select aria-label="Origin" value={origin} onChange={(e) => filter({ origin: e.target.value as OriginFilter })}>
           <option value="all">Any origin</option>
           <option value="inherited">Inherited</option>
           <option value="derived">Built from another word</option>
@@ -81,7 +90,8 @@ export function Dictionary({
       <div
         className="table-wrap"
         tabIndex={0}
-        aria-label="Words; use arrow keys or j and k to move"
+        role="group"
+        aria-label="Words; use arrow keys or j and k to move, Enter to read"
         onKeyDown={(e) => {
           if (e.key === "ArrowDown" || e.key === "j") {
             e.preventDefault();
@@ -89,6 +99,9 @@ export function Dictionary({
           } else if (e.key === "ArrowUp" || e.key === "k") {
             e.preventDefault();
             move(-1);
+          } else if (e.key === "Enter" && e.target === e.currentTarget && concept !== null && shown.some((r) => r.concept === concept)) {
+            e.preventDefault();
+            open(concept);
           }
         }}
       >
@@ -104,7 +117,7 @@ export function Dictionary({
           </thead>
           <tbody ref={tableRef}>
             {shown.map((r) => (
-              <Row key={r.concept} row={r} selected={r.concept === concept} onSelect={() => onConcept(r.concept)} />
+              <Row key={r.concept} row={r} selected={r.concept === concept} onSelect={() => open(r.concept)} />
             ))}
           </tbody>
         </table>
@@ -118,7 +131,7 @@ function Row({ row, selected, onSelect }: { row: LexiconRow; selected: boolean; 
   return (
     <tr aria-selected={selected} className={selected ? "selected" : ""} onClick={onSelect}>
       <td>
-        {row.gloss}
+        <button type="button" className="link" onClick={(e) => { e.stopPropagation(); onSelect(); }}>{row.gloss}</button>
         {row.competitors > 0 ? <span className="badge" title="Other words compete for this meaning">+{row.competitors}</span> : null}
       </td>
       <td>

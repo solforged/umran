@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
-import { Maximize, Minus, Plus } from "lucide-react";
+import { LocateFixed, Maximize, Minus, Plus } from "lucide-react";
 import type { Community, Craft, EthosAxis, Overview, WordMap, WorldMap } from "../model";
 import type { ShelfPeople } from "../shelf";
 import { YEARS } from "../model";
@@ -325,6 +325,9 @@ export function MapView({
   const svg = useRef<SVGSVGElement>(null);
   const drag = useRef<{ x: number; y: number; scale: number; box: Box; moved: boolean } | null>(null);
   const glide = useRef(0);
+  const pointers = useRef(new Map<number, [number, number]>());
+  const pinch = useRef<{ distance: number; middle: [number, number]; anchor: [number, number]; scale: number; box: Box } | null>(null);
+  const suppressClick = useRef(false);
 
   // Keep the view within the map, and no closer than `CLOSEST`.
   const clamp = ([x, y, w]: Box): Box => {
@@ -335,6 +338,7 @@ export function MapView({
 
   const glideTo = (target: Box) => {
     cancelAnimationFrame(glide.current);
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { setBox(target); return; }
     const from = box;
     const start = performance.now();
     const step = (now: number) => {
@@ -386,30 +390,71 @@ export function MapView({
     return () => element.removeEventListener("wheel", wheel);
   });
 
+  const startDrag = (x: number, y: number, moved = false) => {
+    const ctm = svg.current?.getScreenCTM();
+    drag.current = { x, y, scale: ctm ? 1 / ctm.a : 0, box, moved };
+  };
   const down = (e: PointerEvent<SVGSVGElement>) => {
     if (!zoomable || e.button !== 0) return;
-    const ctm = svg.current?.getScreenCTM();
-    drag.current = { x: e.clientX, y: e.clientY, scale: ctm ? 1 / ctm.a : 0, box, moved: false };
+    if (pointers.current.size === 0) suppressClick.current = false;
+    pointers.current.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pointers.current.size === 1) startDrag(e.clientX, e.clientY);
+    if (pointers.current.size === 2) {
+      const [a, b] = [...pointers.current.values()];
+      const middle: [number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      pinch.current = { distance: Math.hypot(a[0] - b[0], a[1] - b[1]), middle,
+        anchor: pointAt(...middle), scale: drag.current?.scale ?? 1, box };
+      suppressClick.current = true;
+      cancelAnimationFrame(glide.current);
+      for (const id of pointers.current.keys()) svg.current?.setPointerCapture(id);
+    }
   };
   const move = (e: PointerEvent<SVGSVGElement>) => {
+    if (!pointers.current.has(e.pointerId)) return;
+    pointers.current.set(e.pointerId, [e.clientX, e.clientY]);
+    const p = pinch.current;
+    if (p && pointers.current.size >= 2) {
+      const [a, b] = [...pointers.current.values()];
+      const distance = Math.max(1, Math.hypot(a[0] - b[0], a[1] - b[1]));
+      const [x, y, w, h] = p.box;
+      const factor = Math.min(1, Math.max(CLOSEST, w * p.distance / distance / map.width)) / (w / map.width);
+      const dx = ((a[0] + b[0]) / 2 - p.middle[0]) * p.scale * factor;
+      const dy = ((a[1] + b[1]) / 2 - p.middle[1]) * p.scale * factor;
+      setBox(clamp([p.anchor[0] - (p.anchor[0] - x) * factor - dx,
+        p.anchor[1] - (p.anchor[1] - y) * factor - dy, w * factor, h * factor]));
+      return;
+    }
     const d = drag.current;
     if (!d) return;
     const [dx, dy] = [e.clientX - d.x, e.clientY - d.y];
     if (!d.moved && Math.hypot(dx, dy) < DRAG_START) return;
-    if (!d.moved) {
-      d.moved = true;
-      cancelAnimationFrame(glide.current);
-      svg.current?.setPointerCapture(e.pointerId);
-    }
+    d.moved = true;
+    suppressClick.current = true;
+    cancelAnimationFrame(glide.current);
+    svg.current?.setPointerCapture(e.pointerId);
     const [x, y, w, h] = d.box;
     setBox(clamp([x - dx * d.scale, y - dy * d.scale, w, h]));
   };
-  const up = () => {
-    // A drag ends without a click on whatever it ended over.
-    if (drag.current?.moved) window.setTimeout(() => (drag.current = null));
+  const up = (e: PointerEvent<SVGSVGElement>) => {
+    pointers.current.delete(e.pointerId);
+    if (svg.current?.hasPointerCapture(e.pointerId)) svg.current.releasePointerCapture(e.pointerId);
+    pinch.current = null;
+    const remaining = [...pointers.current.values()][0];
+    if (remaining) startDrag(...remaining, true);
     else drag.current = null;
   };
-  const dragged = () => drag.current?.moved === true;
+  const dragged = () => suppressClick.current;
+  const selectedRegions = lands.size > 0 ? [...lands] : [...new Set(overview.communities.filter((c) => chosen.has(c.id)).flatMap((c) => c.lands))];
+  const fitSelection = () => {
+    const points = selectedRegions.flatMap((id) => map.regions[id]?.outline ?? []);
+    if (points.length === 0) return;
+    const xs = points.map((p) => p[0]), ys = points.map((p) => p[1]);
+    const left = Math.min(...xs), right = Math.max(...xs), top = Math.min(...ys), bottom = Math.max(...ys);
+    const scale = Math.max((right - left) / map.width, (bottom - top) / map.height) * 1.3;
+    const w = map.width * Math.min(1, Math.max(CLOSEST, scale));
+    const h = w * map.height / map.width;
+    glideTo(clamp([(left + right - w) / 2, (top + bottom - h) / 2, w, h]));
+  };
 
   const byRegion = useMemo(() => peoplesByRegion(overview), [overview]);
   const dress = useMemo(() => chartDress(map), [map]);
@@ -599,13 +644,29 @@ export function MapView({
       <svg
         ref={svg}
         viewBox={box.join(" ")}
-        role="img"
+        role="group"
+        tabIndex={zoomable ? 0 : undefined}
+        onKeyDown={(e) => {
+          if (!zoomable || e.target !== e.currentTarget) return;
+          const [x, y, w, h] = box;
+          if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
+            e.preventDefault(); cancelAnimationFrame(glide.current);
+            setBox(clamp([x + (e.key === "ArrowLeft" ? -w / 8 : e.key === "ArrowRight" ? w / 8 : 0),
+              y + (e.key === "ArrowUp" ? -h / 8 : e.key === "ArrowDown" ? h / 8 : 0), w, h]));
+          } else if (["+", "=", "-", "Home", "f"].includes(e.key)) {
+            e.preventDefault();
+            if (e.key === "Home") glideTo(full);
+            else if (e.key === "f") fitSelection();
+            else zoom(e.key === "-" ? 1 / 0.7 : 0.7, [x + w / 2, y + h / 2]);
+          }
+        }}
         aria-label={`Map of ${map.regions.length} lands in year ${generation * YEARS}`}
         style={{ "--label": label } as CSSProperties}
         onPointerDown={down}
         onPointerMove={move}
         onPointerUp={up}
         onPointerCancel={up}
+        onPointerLeave={(e) => { if (!svg.current?.hasPointerCapture(e.pointerId)) up(e); }}
       >
         <defs>
           <marker
@@ -897,14 +958,15 @@ export function MapView({
         </g>
       </svg>
       {zoomable ? (
-        <div className="map-zoom">
-          <button type="button" title="Closer" onClick={() => zoom(0.7, [box[0] + box[2] / 2, box[1] + box[3] / 2])}>
+        <div className="map-zoom" role="group" aria-label="Map controls">
+          {selectedRegions.length > 0 ? <button type="button" title="Fit the selected lands (F)" aria-label="Fit the selected lands" onClick={fitSelection}><LocateFixed size={16} /></button> : null}
+          <button type="button" title="Closer (+)" aria-label="Zoom in" disabled={box[2] <= map.width * CLOSEST + 0.001} onClick={() => zoom(0.7, [box[0] + box[2] / 2, box[1] + box[3] / 2])}>
             <Plus size={16} />
           </button>
-          <button type="button" title="Farther" onClick={() => zoom(1 / 0.7, [box[0] + box[2] / 2, box[1] + box[3] / 2])}>
+          <button type="button" title="Farther (−)" aria-label="Zoom out" disabled={box[2] >= map.width - 0.001} onClick={() => zoom(1 / 0.7, [box[0] + box[2] / 2, box[1] + box[3] / 2])}>
             <Minus size={16} />
           </button>
-          <button type="button" title="The whole map" onClick={() => glideTo(full)}>
+          <button type="button" title="The whole map (Home)" aria-label="The whole map" onClick={() => glideTo(full)}>
             <Maximize size={16} />
           </button>
         </div>

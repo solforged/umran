@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./styles.css";
 import "./chart.css";
+import "./workbench.css";
 import { LightSwitch } from "./components/LightSwitch";
 import { PwaNotice } from "./components/PwaNotice";
 

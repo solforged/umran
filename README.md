@@ -21,7 +21,7 @@ Later visits resume the world left open. The top-left astrolabe and name
 return to the shelf from setup, the world, or Export; leaving for the shelf
 also makes it the next launch destination.
 
-![The stage after 4,000 years: three language families spread over two continents with their names lettered across them, the encyclopedia card for the world beside it, and the latest line of the chronicle above the time bar](docs/images/stage.png)
+![The workbench after 4,000 years: a chart of peoples and realms beside the world's encyclopedia card, with the atlas index above and the chronicle and time controls below](docs/images/stage.jpg)
 
 ## What happens in a world
 
@@ -103,6 +103,20 @@ is lost: abandoned histories stay readable, struck through.
 
 ## A closer look
 
+The **atlas index** finds peoples, languages, lands, states, faiths, and crafts
+by name, older name, or meaning. Accents are optional when searching. Open it
+from the chart's header, or press `/` or `⌘/Ctrl K`.
+
+The **chronicle** can be searched, read from either end, and filtered to the
+journeys of peoples, the fortunes of states, faiths, language, or livelihood.
+Sound changes can follow one language and its ancestors. Open a moment to
+follow its people and words, then step back to the same reading. Dictionaries
+also keep their search and selected word when returning from a word's history.
+On a small screen, turn between **Chart** and **Reading** for a full page of each;
+the [atlas index](docs/images/atlas-mobile.jpg) stays within reach in either view.
+
+![The chronicle laid over the chart, showing peoples and journeys grouped by year with search, order, and language controls](docs/images/chronicle.jpg)
+
 | | |
 |---|---|
 | ![World setup: an old chart of the generated lands beside a book of accounts of the three founding peoples and their first words](docs/images/setup.png) | ![Words compared: a table of basic words across related languages, shaded by shared root](docs/images/cognates.png) |
@@ -139,7 +153,9 @@ A few decisions do most of the work:
 
 [`docs/engine.md`](docs/engine.md) describes the model module by module,
 and [`docs/history.md`](docs/history.md) covers replay, branching, and
-saving.
+saving. [`docs/backlog.md`](docs/backlog.md) sets out the interaction direction:
+spatial interventions, connected histories, comparisons between tellings,
+guided founding, believable geography, and motion suited to charts and books.
 
 ## Install and use offline
 

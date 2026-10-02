@@ -46,6 +46,9 @@ export default function App() {
   const [shelf, setShelf] = useState<ShelfIndex>({ books: [], last: null });
   const engine = useRef<Engine | null>(null);
   const [version, setVersion] = useState(0);
+  // Entity IDs belong to one telling. Replacing it starts a fresh reading
+  // so cards and language filters cannot silently point into another branch.
+  const [tellingVersion, setTellingVersion] = useState(0);
   const [viewing, setViewing] = useState<number | null>(null); // null = latest
   const [community, setCommunity] = useState(0);
   const [dialog, setDialog] = useState<DialogKind | null>(null);
@@ -165,7 +168,10 @@ export default function App() {
       const current = engine.current;
       if (!current) return;
       try {
-        if (generation < current.latest()) current.branch(generation);
+        if (generation < current.latest()) {
+          current.branch(generation);
+          setTellingVersion((v) => v + 1);
+        }
         current.act(action);
         setViewing(null);
         setVersion((v) => v + 1);
@@ -186,6 +192,7 @@ export default function App() {
     (telling: number) => {
       try {
         engine.current?.restore(telling);
+        setTellingVersion((v) => v + 1);
         setViewing(null);
         setVersion((v) => v + 1);
         setError(null);
@@ -327,6 +334,7 @@ export default function App() {
 
   const strike = () => {
     engine.current?.undo();
+    setTellingVersion((v) => v + 1);
     setViewing(null);
     setVersion((v) => v + 1);
     persist();
@@ -335,6 +343,7 @@ export default function App() {
   const dialogs =
     dialog === "found" ? (
       <Modal open wide title="A new people arrives" onClose={() => setDialog(null)}>
+        {generation < latest ? <p className="telling-note">Writing in year {generation * YEARS} begins another telling. The years through {latest * YEARS} stay in the chronicle.</p> : null}
         <Designer
           catalog={catalog}
           submit="Found them"
@@ -382,6 +391,7 @@ export default function App() {
   return (
     <div className="app">
       <Stage
+        key={`${view.id}:${tellingVersion}`}
         engine={engine.current}
         catalog={catalog}
         map={worldMap}
