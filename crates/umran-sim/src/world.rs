@@ -69,12 +69,12 @@ const YIELD: f32 = 0.5;
 /// How many times larger than the land's namers a people must grow before
 /// its own word for the land takes over, so names do not flip back and
 /// forth between peoples of about the same size.
-const PLACE_HOLD: f32 = 2.0;
+pub(crate) const PLACE_HOLD: f32 = 2.0;
 /// Chance that newcomers keep a land's old name, fitted to their sounds,
 /// rather than coin their own: likelier when they had dealings with the
 /// namers, as most river names in England are Celtic.
-const PLACE_KEEP_KNOWN: f32 = 0.85;
-const PLACE_KEEP_UNKNOWN: f32 = 0.4;
+pub(crate) const PLACE_KEEP_KNOWN: f32 = 0.85;
+pub(crate) const PLACE_KEEP_UNKNOWN: f32 = 0.4;
 /// Generations a sound change keeps spreading after it takes hold in a
 /// variety, its pull fading over them: a wave runs for a few centuries,
 /// then the change is simply part of the language.
@@ -838,6 +838,10 @@ pub struct World {
     /// oldest first; the last is its name now. Empty for land no one has
     /// held, and for the sea.
     pub places: Vec<Vec<PlaceName>>,
+    /// Historical hydronyms, indexed by stable river id, not by land.
+    /// The last record is the current local name; other languages keep
+    /// their own forms in `Variety::river_exonyms`.
+    pub river_names: Vec<Vec<PlaceName>>,
     /// Fixed chart headings, indexed by landmass; islands remain unnamed.
     pub continent_names: Vec<Option<ContinentName>>,
     /// Every state that has stood, in the order they arose.
@@ -885,6 +889,7 @@ impl World {
             seed,
             generation: 0,
             places: vec![Vec::new(); map.regions.len()],
+            river_names: vec![Vec::new(); map.rivers.len()],
             continent_names: vec![None; map.landmasses.len()],
             map: Arc::new(map),
             climate,
@@ -1363,8 +1368,17 @@ impl World {
         self.inherit_places(parent, &mut daughter);
         let home = self.communities[community].home();
         let (region, leaving, share, by_sea) = self.leavers(community);
-        // The land they settle, as they say it, which they may be named for.
-        let land = self.heard_place(region, parent, &daughter);
+        // Leavers may name themselves for the actual river of their new
+        // homeland, using its name as they know it, not the word "river".
+        let river = (region != home
+            && naming.is_none()
+            && stream(
+                self.seed,
+                &[key("river people"), community as u64, u64::from(self.generation)],
+            ).r#gen::<f32>() < 0.35)
+            .then(|| self.nearby_river_name(parent, region))
+            .flatten();
+        let land = river.cloned().or_else(|| self.heard_place(region, parent, &daughter));
         let naming = match naming {
             Some(n) => n.clone(),
             None => {
@@ -2117,7 +2131,7 @@ impl World {
     }
 
     /// Who lives on each land, and how many of them.
-    fn dwellers(&self) -> Vec<Vec<(usize, f32)>> {
+    pub(crate) fn dwellers(&self) -> Vec<Vec<(usize, f32)>> {
         let mut dwellers = vec![Vec::new(); self.map.regions.len()];
         for c in self.living() {
             for (r, n) in self.presence_iter(c) {
@@ -2414,8 +2428,8 @@ impl World {
             })
     }
 
-    /// Snapshots the parent's local names into a fork's evolving memories.
-    /// Existing exonyms have already cloned and win any regional conflicts.
+    /// Snapshots the parent's local land and river names into a fork's
+    /// evolving memories. Already cloned exonyms win local conflicts.
     pub fn inherit_places(&self, parent: usize, daughter: &mut Variety) {
         for (region, names) in self.places.iter().enumerate() {
             if !daughter.exonyms.iter().any(|(r, _)| *r == region)
@@ -2424,6 +2438,7 @@ impl World {
                 daughter.exonyms.push((region, place.name.clone()));
             }
         }
+        self.inherit_river_names(parent, daughter);
     }
 
     /// Keeps the last local name before its language loses a land or its
@@ -2443,6 +2458,7 @@ impl World {
 
     fn preserve_places(&mut self) {
         let dwellers = self.dwellers();
+        self.preserve_river_names_indexed(&dwellers);
         self.preserve_places_indexed(None, &dwellers);
     }
 
@@ -2550,6 +2566,7 @@ impl World {
         contacts: &ContactIndex,
     ) {
         self.preserve_places_indexed(affected, dwellers);
+        self.refresh_river_names_indexed(dwellers);
         let generation = self.generation;
         let count = affected.map_or(dwellers.len(), <[usize]>::len);
         for index in 0..count {
@@ -2625,7 +2642,14 @@ impl World {
                     };
                     let people = &self.communities[holder].name;
                     let spelled = speech.title(&people.form);
-                    let coined = place_name(speech, land, (people, &spelled), &mut rng, generation);
+                    let coined = place_name(
+                        speech,
+                        land,
+                        (people, &spelled),
+                        self.nearby_river_name(variety, r),
+                        &mut rng,
+                        generation,
+                    );
                     let Some(name) = coined else { continue };
                     name
                 }
@@ -2659,7 +2683,7 @@ impl World {
         self.hear_places_phase(true);
     }
 
-    fn place_heard(
+    pub(crate) fn place_heard(
         &self,
         receiver: usize,
         source: usize,
@@ -2730,6 +2754,7 @@ impl World {
                             island: self.map.island(r),
                         },
                         (people, &speech.title(&people.form)),
+                        self.nearby_river_name(v, r),
                         &mut rng,
                         self.generation,
                     ) else {
@@ -3403,6 +3428,9 @@ impl World {
             };
             new.grammar
                 .apply_law(&mut new.lexicon, &law, new.minimal, stress, generation);
+            for (_, name) in &mut new.river_exonyms {
+                name.change(&law, new.minimal, stress, generation);
+            }
             new.laws.push((generation, "substrate"));
         }
 
@@ -3474,6 +3502,7 @@ impl World {
             self.seed ^ community as u64,
             generation,
         );
+        self.shift_river_names(community, old, &mut new);
         // The people keeps its own name and names its new speech after
         // itself, the new language's way: Bulgars gave Slavic speech theirs.
         new.name = self.fresh_language_name(&new, &self.communities[community].name);
@@ -3492,6 +3521,7 @@ impl World {
                 self.places[region].push(kept);
             }
         }
+        self.keep_river_names(community, old);
         self.events.push((
             generation,
             WorldEvent::Shift {
@@ -3611,8 +3641,8 @@ impl World {
 
     /// Applies `law` to every living word of variety `v`, and to the names
     /// of its language, its peoples, the given names in fashion, and the
-    /// lands they hold. Names of the dead (founders of states and faiths)
-    /// are kept as they were said.
+    /// lands and rivers they hold. Names of the dead (founders of states
+    /// and faiths) are kept as they were said.
     pub(crate) fn apply_law(&mut self, v: usize, law: &Law) {
         let generation = self.generation;
         let variety = &mut self.varieties[v];
@@ -3671,6 +3701,7 @@ impl World {
             .collect();
         held.sort_unstable();
         held.dedup();
+        self.change_river_names(v, law, minimal, stress, &held);
         for region in held {
             if let Some(p) = self.places[region].last_mut().filter(|p| p.variety == v) {
                 p.name.change(law, minimal, stress, generation);

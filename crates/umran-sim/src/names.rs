@@ -1,9 +1,7 @@
-//! What peoples call themselves, their speech, and their land. A name is
-//! coined from the language's own words when a people forms or first
-//! holds a land, then lives on as a word of its own: sound laws reshape
-//! it like any other, even after the words it was built from have changed
-//! or gone (English from Engle "Angles"). Place names outlast their
-//! coiners: newcomers mostly take over the name of the land they come to,
+//! What peoples call themselves, their speech, their land, and their rivers.
+//! Names are coined from a language's words, then live as words of their
+//! own: sound laws reshape them even after their source words have gone.
+//! Place names outlast their coiners: newcomers may keep earlier names,
 //! fitted to their own sounds, as English kept the Celtic Thames.
 
 use crate::concepts::{Relation, by_id};
@@ -31,9 +29,9 @@ pub enum Naming {
     /// An epithet on an older name: "the far Goths", "Little Poland". On a
     /// founding, it qualifies "the people".
     Epithet { epithet: String },
-    /// "The people of Opuw": from the name of the land they settle, as the
+    /// "The people of Opuw": from the name of their land or its river, as
     /// Northumbrians were named for the land north of the Humber. Only a
-    /// people moving off from another takes it; founders have no land
+    /// people moving off from another takes it; founders have no local
     /// name yet.
     Land,
 }
@@ -374,17 +372,25 @@ impl Landscape {
 }
 
 /// What `variety`'s speakers call a land like `land` on first holding it.
-/// `settlers` is their own name, spelled for the gloss, for lands named
-/// after their people. `None` if the language has no word for any kind
-/// of land.
+/// `settlers` is their own name, spelled for the gloss. A known nearby
+/// `river` supplies its actual hydronym when the land is named for a river.
+/// `None` if the language has no word for any kind of land.
 pub fn place_name(
     variety: &Variety,
     land: Landscape,
     settlers: (&Name, &str),
+    river: Option<&Name>,
     rng: &mut impl Rng,
     generation: u32,
 ) -> Option<Name> {
-    let word = |id: &'static str| Some((id, variety.lexicon.word_for(by_id(id)?)?.form.clone()));
+    let word = |id: &'static str| {
+        if id == "river"
+            && let Some(name) = river
+        {
+            return Some((id, name.form.clone()));
+        }
+        Some((id, variety.lexicon.word_for(by_id(id)?)?.form.clone()))
+    };
     let mut heads: Vec<(&str, Form)> = land.heads().iter().filter_map(|&id| word(id)).collect();
     if heads.is_empty() {
         heads.extend(word("soil"));
@@ -401,22 +407,39 @@ pub fn place_name(
         .collect();
     let qualities: Vec<(&str, Form)> = PLACE_QUALITIES.iter().filter_map(|&id| word(id)).collect();
     let morphology = &variety.morphology;
+    let meaning = |id: &str, place: bool| {
+        if id == "river"
+            && let Some(name) = river
+        {
+            let river = variety.title(&name.form);
+            return if place {
+                format!("the place of {river}")
+            } else {
+                format!("the {head_id} of {river}")
+            };
+        }
+        if place {
+            format!("the place of {id}")
+        } else {
+            format!("the {id} {head_id}")
+        }
+    };
     let (form, meaning) = match weighted_index(rng, PLACE_KINDS.iter().copied()) {
         1 if !things.is_empty() || !qualities.is_empty() => {
             let all: Vec<&(&str, Form)> = things.iter().chain(&qualities).collect();
             let (id, modifier) = all[index(rng, all.len())];
             (
                 morphology.compound(modifier, &head),
-                format!("the {id} {head_id}"),
+                meaning(id, false),
             )
         }
         2 if !things.is_empty() => {
             let (id, thing) = &things[index(rng, things.len())];
             match morphology.derive(thing, None, Relation::Place) {
-                Some(form) => (form, format!("the place of {id}")),
+                Some(form) => (form, meaning(id, true)),
                 None => (
                     morphology.compound(thing, &head),
-                    format!("the {id} {head_id}"),
+                    meaning(id, false),
                 ),
             }
         }
@@ -427,6 +450,43 @@ pub fn place_name(
             format!("the {head_id} of the {}", settlers.1),
         ),
         _ => (head, format!("the {head_id}")),
+    };
+    Some(Name {
+        form: clipped(form, MAX_PLACE_NAME),
+        meaning,
+        coined: generation,
+        log: Vec::new(),
+    })
+}
+
+/// A hydronym from the first settlers' own word for river or water,
+/// optionally qualified as a long, dark, wide, or otherwise marked river.
+pub fn river_name(
+    variety: &Variety,
+    rng: &mut impl Rng,
+    generation: u32,
+) -> Option<Name> {
+    let word = |id| variety.lexicon.word_for(by_id(id)?).map(|l| &l.form);
+    let heads: Vec<_> = ["river", "water"]
+        .into_iter()
+        .filter_map(|id| word(id).map(|form| (id, form)))
+        .collect();
+    if heads.is_empty() {
+        return None;
+    }
+    let (id, head) = heads[index(rng, heads.len())];
+    let qualities: Vec<_> = PLACE_QUALITIES
+        .iter()
+        .filter_map(|&id| word(id).map(|form| (id, form)))
+        .collect();
+    let (form, meaning) = if !qualities.is_empty() && rng.r#gen::<f32>() < 0.7 {
+        let (quality, modifier) = qualities[index(rng, qualities.len())];
+        (
+            variety.morphology.compound(modifier, head),
+            format!("the {quality} {id}"),
+        )
+    } else {
+        (head.clone(), format!("the {id}"))
     };
     Some(Name {
         form: clipped(form, MAX_PLACE_NAME),
@@ -476,7 +536,7 @@ pub fn continent_name(
     })
 }
 
-/// How a land came by one of its names.
+/// How a land or river came by one of its names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlaceOrigin {
     /// Given by `community` when its people came to hold the land.
@@ -490,9 +550,9 @@ pub enum PlaceOrigin {
     Borrowed,
 }
 
-/// One language's name for a land, from when its speakers came to hold
-/// it. Each name after a land's first comes from the one before it, unless
-/// it was coined afresh.
+/// One language's name for a land or river from when its speakers held it.
+/// Each name after the first comes from an earlier local name unless it
+/// was coined afresh. Other languages retain their own heard forms.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlaceName {
     pub variety: usize,

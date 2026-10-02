@@ -57,6 +57,9 @@ pub struct Variety {
     /// first-heard foreign names. They evolve through this language's own
     /// sound laws, as German Mailand came from Mediolanum.
     pub exonyms: Vec<(usize, Name)>,
+    /// Remembered hydronyms, indexed by river rather than land. Local
+    /// alternatives survive handovers and evolve with this language.
+    pub river_exonyms: Vec<(usize, Name)>,
     /// The classical form its speakers write, or wrote before writing
     /// their own speech (`diglossia.rs`).
     pub high: Option<usize>,
@@ -133,6 +136,7 @@ impl Variety {
             given: Vec::new(),
             written: None,
             exonyms: Vec::new(),
+            river_exonyms: Vec::new(),
             high: None,
             vernacular: None,
         };
