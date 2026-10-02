@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { Catalog, ReadEngine, Overview } from "../model";
+import type { Catalog, NotebookNote, ReadEngine, Overview } from "../model";
 import { YEARS } from "../model";
 import { bookMarkdown, craftLines, download, fileName, givenNameLines, glossaryCsv, peopleLines, religionLines, renderingLines, stateLines } from "../takeout";
 import { Renderings } from "./Renderings";
@@ -13,6 +13,7 @@ export function Appendix({
   generation,
   overview,
   title,
+  notebook,
   variety,
   onBack,
   onShelf,
@@ -23,6 +24,7 @@ export function Appendix({
   generation: number;
   overview: Overview;
   title: string;
+  notebook: NotebookNote[];
   /// The tongue to open the glossary on.
   variety: number;
   onBack: () => void;
@@ -61,7 +63,7 @@ export function Appendix({
     const glossaries = overview.varieties
       .filter((v) => v.spoken || v.sacredOf !== null)
       .map((v): [string, typeof rows] => [v.name, engine.lexicon(generation, v.id)]);
-    download(fileName(title, "md"), bookMarkdown(title, overview, glossaries, catalog), "text/markdown");
+    download(fileName(title, "md"), bookMarkdown(title, overview, glossaries, catalog, notebook), "text/markdown");
   };
 
   return (
@@ -260,7 +262,7 @@ export function Appendix({
               As text
             </button>{" "}
             <span className="muted">
-              Markdown: peoples, states, religions, crafts, given names, history, and glossaries for spoken and sacred languages.
+              Markdown: peoples, states, religions, crafts, history, glossaries, and every notebook entry, including archived notes.
             </span>
           </li>
           <li>
@@ -271,7 +273,7 @@ export function Appendix({
               As a save file
             </button>{" "}
             <span className="muted">
-              To bring back in from the shelf later, in this or another browser. It holds every telling.
+              To bring back in from the shelf later, in this or another browser. It holds every telling and the complete notebook.
             </span>
           </li>
         </ul>

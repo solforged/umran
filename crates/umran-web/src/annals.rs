@@ -25,6 +25,12 @@ use umran_sim::{
 
 #[derive(Clone, PartialEq, Serialize)]
 pub(crate) struct Annal {
+    /// Source-backed identity within one telling and engine revision.
+    pub id: String,
+    /// Original entries behind a compact yearly account.
+    pub members: Vec<Annal>,
+    /// Languages involved at the recorded time, not the speakers' present speech.
+    pub languages: Vec<usize>,
     pub generation: u32,
     /// "found", "split", "migration", "shift", "contact", "parted",
     /// "neighbours", "conquest", "spread", "displaced", "hardship",
@@ -295,7 +301,11 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
     let mut neighbours: BTreeMap<u32, Neighbours> = BTreeMap::new();
     // Peoples spreading into new land, by generation, told together too.
     let mut spreads: BTreeMap<u32, Vec<(usize, usize)>> = BTreeMap::new();
+    let mut grouped: BTreeMap<(&str, u32), Vec<Annal>> = BTreeMap::new();
     let entry = |generation, kind, text, peoples: &[usize], lands: &[usize]| Annal {
+        id: String::new(),
+        members: Vec::new(),
+        languages: Vec::new(),
         generation,
         kind,
         text,
@@ -332,7 +342,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
         };
         let tongue = |c: usize| world.language_title_at(world.communities[c].variety, generation);
         let g = u64::from(generation);
-        out.push(match *event {
+        let mut annal = match *event {
             WorldEvent::Settlement(ref record) => {
                 use umran_sim::settlement::SettlementIntent;
                 let plan = &record.plan;
@@ -340,15 +350,33 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 let d = record.daughter;
                 let to = place(world, plan.choice.destination, generation);
                 let text = match plan.choice.intent {
-                    SettlementIntent::Partition => format!("The *{}* divided their lands. The *{}* took *{}* as their heart, with {:.0} souls.", name(c), name(d.unwrap()), to, plan.arriving.population),
-                    SettlementIntent::Settlers => format!("{:.0} of the *{}* went to settle *{}*, becoming the *{}*.", plan.arriving.population, name(c), to, name(d.unwrap())),
-                    SettlementIntent::Migration => format!("The *{}* moved together to *{}*, {:.0} souls keeping their language.", name(c), to, plan.arriving.population),
+                    SettlementIntent::Partition => format!(
+                        "The *{}* divided their lands. The *{}* took *{}* as their heart, with {:.0} souls.",
+                        name(c),
+                        name(d.unwrap()),
+                        to,
+                        plan.arriving.population
+                    ),
+                    SettlementIntent::Settlers => format!(
+                        "{:.0} of the *{}* went to settle *{}*, becoming the *{}*.",
+                        plan.arriving.population,
+                        name(c),
+                        to,
+                        name(d.unwrap())
+                    ),
+                    SettlementIntent::Migration => format!(
+                        "The *{}* moved together to *{}*, {:.0} souls keeping their language.",
+                        name(c),
+                        to,
+                        plan.arriving.population
+                    ),
                 };
                 let mut peoples = vec![c];
                 peoples.extend(d);
                 let mut lands = plan.before.lands.clone();
                 lands.extend(&plan.arriving.lands);
-                lands.sort_unstable(); lands.dedup();
+                lands.sort_unstable();
+                lands.dedup();
                 let mut annal = entry(generation, "settlement", text, &peoples, &lands);
                 annal.notes = plan.notes.clone();
                 annal.states = plan.falling_states.clone();
@@ -457,7 +485,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 kind: ContactKind::Neighbours,
             } => {
                 neighbours.entry(generation).or_default().met.push((a, b));
-                continue;
+                pair("neighbours", contact_wording(ContactKind::Neighbours), a, b)
             }
             WorldEvent::Parted {
                 a,
@@ -469,14 +497,14 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     .or_default()
                     .parted
                     .push((a, b));
-                continue;
+                pair("neighbours", parting_wording(ContactKind::Neighbours), a, b)
             }
             WorldEvent::Met { a, b, kind } => pair("contact", contact_wording(kind), a, b),
             WorldEvent::Parted { a, b, kind } => pair("parted", parting_wording(kind), a, b),
             WorldEvent::Conquered { ruler, ruled } => pair("conquest", CONQUEST, ruler, ruled),
             WorldEvent::Spread { community, to } => {
                 spreads.entry(generation).or_default().push((community, to));
-                continue;
+                spread_annal(world, generation, &[(community, to)])
             }
             WorldEvent::Displaced {
                 community,
@@ -596,18 +624,26 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
             WorldEvent::City { city } => {
                 let city = &world.cities[city];
                 let s = &world.states[city.state];
-                let realm = world.varieties[world.communities[s.rulers].variety].title(s.name.form_at(generation));
+                let realm = world.varieties[world.communities[s.rulers].variety]
+                    .title(s.name.form_at(generation));
                 let mut annal = entry(
                     generation,
                     "city",
-                    format!("{}, where {realm} keeps its court, grew into a great city, drawing people from across the realm.", place(world, city.region, generation)),
+                    format!(
+                        "{}, where {realm} keeps its court, grew into a great city, drawing people from across the realm.",
+                        place(world, city.region, generation)
+                    ),
                     &[s.rulers],
                     &[city.region],
                 );
                 annal.states.push(city.state);
                 annal
             }
-            WorldEvent::Koine { city, community, variety } => {
+            WorldEvent::Koine {
+                city,
+                community,
+                variety,
+            } => {
                 let city = &world.cities[city];
                 let mut annal = entry(
                     generation,
@@ -626,7 +662,11 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     world.varieties[variety]
                         .koine_of
                         .iter()
-                        .map(|&(v, share)| format!("{} ({:.0}%)", language_label(world, v), share * 100.0))
+                        .map(|&(v, share)| format!(
+                            "{} ({:.0}%)",
+                            language_label(world, v),
+                            share * 100.0
+                        ))
                         .collect::<Vec<_>>()
                         .join(", ")
                 ));
@@ -669,46 +709,94 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 annal
             }
             WorldEvent::Revealed { religion } => faith_annal(world, generation, religion),
-            WorldEvent::Schism { religion, parent, community, cause } => {
+            WorldEvent::Schism {
+                religion,
+                parent,
+                community,
+                cause,
+            } => {
                 let r = &world.religions[religion];
-                let (people, branch, elder) = (name(community), world.faith_name(religion), world.faith_name(parent));
+                let (people, branch, elder) = (
+                    name(community),
+                    world.faith_name(religion),
+                    world.faith_name(parent),
+                );
                 use umran_sim::schisms::SchismCause;
                 let text = match cause {
-                    SchismCause::Distance => format!("Far from the first faithful, the {people} came to keep {elder} their own way, and called it {branch}."),
-                    SchismCause::Rule => format!("The {people} would answer to no church beyond their own realm, and {branch} broke from {elder}."),
-                    SchismCause::Reform => format!("Among the {people}, who no longer understood the sacred speech of {elder}, reformers began {branch} and taught in their own tongue."),
-                    SchismCause::Succession => format!("Over who should follow the founder, {branch} broke from {elder} among the {people}."),
+                    SchismCause::Distance => format!(
+                        "Far from the first faithful, the {people} came to keep {elder} their own way, and called it {branch}."
+                    ),
+                    SchismCause::Rule => format!(
+                        "The {people} would answer to no church beyond their own realm, and {branch} broke from {elder}."
+                    ),
+                    SchismCause::Reform => format!(
+                        "Among the {people}, who no longer understood the sacred speech of {elder}, reformers began {branch} and taught in their own tongue."
+                    ),
+                    SchismCause::Succession => format!(
+                        "Over who should follow the founder, {branch} broke from {elder} among the {people}."
+                    ),
                 };
                 let mut annal = entry(generation, "schism", text, &[community], &[r.land]);
                 annal.religions = vec![religion, parent];
                 annal.notes = vec![format!("{branch} means “{}”.", r.name.meaning)];
                 annal
             }
-            WorldEvent::Pilgrimage { religion, community, from, to, .. } => {
+            WorldEvent::Pilgrimage {
+                religion,
+                community,
+                from,
+                to,
+                ..
+            } => {
                 let mut annal = entry(
-                    generation, "pilgrimage",
-                    format!("Pilgrims of {} first came from the lands of the {} to {}.", world.faith_name(religion), name(community), place(world, to, generation)),
-                    &[community], &[from, to],
+                    generation,
+                    "pilgrimage",
+                    format!(
+                        "Pilgrims of {} first came from the lands of the {} to {}.",
+                        world.faith_name(religion),
+                        name(community),
+                        place(world, to, generation)
+                    ),
+                    &[community],
+                    &[from, to],
                 );
                 annal.religions = vec![religion];
                 annal.notes.push("They crossed the sea to reach it.".into());
                 annal
             }
-            WorldEvent::HolyLand { religion, region, was_held_by, held_by, faithful } => {
+            WorldEvent::HolyLand {
+                religion,
+                region,
+                was_held_by,
+                held_by,
+                faithful,
+            } => {
                 let mut peoples: Vec<_> = was_held_by.into_iter().chain(held_by).collect();
                 peoples.sort_unstable();
                 peoples.dedup();
                 let mut annal = entry(
-                    generation, "holy-land",
+                    generation,
+                    "holy-land",
                     if faithful {
-                        format!("{} returned to the keeping of the faithful of {}.", place(world, region, generation), world.faith_name(religion))
+                        format!(
+                            "{} returned to the keeping of the faithful of {}.",
+                            place(world, region, generation),
+                            world.faith_name(religion)
+                        )
                     } else {
-                        format!("{} passed out of the keeping of the faithful of {}.", place(world, region, generation), world.faith_name(religion))
+                        format!(
+                            "{} passed out of the keeping of the faithful of {}.",
+                            place(world, region, generation),
+                            world.faith_name(religion)
+                        )
                     },
-                    &peoples, &[region],
+                    &peoples,
+                    &[region],
                 );
                 annal.religions = vec![religion];
-                annal.notes.push("A land keeps the faith of the largest people living there.".into());
+                annal
+                    .notes
+                    .push("A land keeps the faith of the largest people living there.".into());
                 annal
             }
             WorldEvent::Converted {
@@ -724,7 +812,11 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     tell(
                         world,
                         &[key("conversion"), g, community as u64],
-                        if from.is_some() { CONVERTED_BY } else { CONVERTED },
+                        if from.is_some() {
+                            CONVERTED_BY
+                        } else {
+                            CONVERTED
+                        },
                         &[("p", &name(community)), ("t", &teacher), ("r", &faith)],
                     ),
                     &[Some(community), from]
@@ -800,7 +892,13 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
             WorldEvent::Vernacular { variety, by } => {
                 vernacular_annal(world, generation, variety, by)
             }
-            WorldEvent::Temper { community, axis, pole, entered, cause } => {
+            WorldEvent::Temper {
+                community,
+                axis,
+                pole,
+                entered,
+                cause,
+            } => {
                 let mut annal = entry(
                     generation,
                     "temper",
@@ -817,23 +915,77 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     &[community],
                     &[],
                 );
-                annal.temper = Some(Temper { axis, pole, entered, cause });
+                annal.temper = Some(Temper {
+                    axis,
+                    pole,
+                    entered,
+                    cause,
+                });
                 annal
             }
-        });
+        };
+        annal.id = format!("world:{position}");
+        if matches!(annal.kind, "neighbours" | "spread") {
+            grouped
+                .entry((annal.kind, generation))
+                .or_default()
+                .push(annal);
+        } else {
+            out.push(annal);
+        }
     }
-    out.extend(
-        neighbours
-            .into_iter()
-            .map(|(generation, n)| neighbours_annal(world, generation, &n)),
-    );
-    out.extend(
-        spreads
-            .into_iter()
-            .map(|(generation, s)| spread_annal(world, generation, &s)),
-    );
+    out.extend(neighbours.into_iter().map(|(generation, n)| {
+        let mut annal = neighbours_annal(world, generation, &n);
+        annal.id = format!("neighbours:{generation}");
+        annal.members = grouped
+            .remove(&("neighbours", generation))
+            .unwrap_or_default();
+        annal
+    }));
+    out.extend(spreads.into_iter().map(|(generation, s)| {
+        let mut annal = spread_annal(world, generation, &s);
+        annal.id = format!("spread:{generation}");
+        annal.members = grouped.remove(&("spread", generation)).unwrap_or_default();
+        annal
+    }));
     out.extend(sound_changes(world));
     out.extend(grammar_changes(world));
+    let shifts = Shifts::of(world);
+    fn languages(a: &mut Annal, world: &World, shifts: &Shifts) {
+        for member in &mut a.members {
+            languages(member, world, shifts);
+        }
+        a.languages = if !a.members.is_empty() {
+            a.members
+                .iter()
+                .flat_map(|m| m.languages.iter().copied())
+                .collect()
+        } else if let Some(position) =
+            a.id.strip_prefix("world:")
+                .and_then(|p| p.parse::<usize>().ok())
+        {
+            let mut languages: Vec<_> = a
+                .peoples
+                .iter()
+                .map(|&c| shifts.spoken_after(world, c, position))
+                .collect();
+            if let WorldEvent::Shift { from, variety, .. } = world.events[position].1 {
+                languages.extend([from, variety]);
+            }
+            languages
+        } else {
+            a.peoples
+                .iter()
+                .map(|&c| shifts.spoken_by(world, c, a.generation))
+                .collect()
+        };
+        a.languages.extend(a.variety);
+        a.languages.sort_unstable();
+        a.languages.dedup();
+    }
+    for a in &mut out {
+        languages(a, world, &shifts);
+    }
     out.sort_by_key(|a| (a.generation, a.kind == "law"));
     out
 }
@@ -928,6 +1080,9 @@ fn state_annal(world: &World, generation: u32, state: usize, kind: &'static str)
         .map(|&b| world.community_name_at(b, generation))
         .unwrap_or_default();
     Annal {
+        id: String::new(),
+        members: Vec::new(),
+        languages: Vec::new(),
         generation,
         kind,
         text: tell(
@@ -1020,6 +1175,9 @@ fn vernacular_annal(world: &World, generation: u32, variety: usize, by: Vernacul
         }
     };
     Annal {
+        id: String::new(),
+        members: Vec::new(),
+        languages: Vec::new(),
         generation,
         kind: "vernacular",
         text: tell(
@@ -1143,6 +1301,9 @@ fn faith_annal(world: &World, generation: u32, religion: usize) -> Annal {
     }
     notes.extend(new_words(world, r.sacred, Need::Faith, generation));
     Annal {
+        id: String::new(),
+        members: Vec::new(),
+        languages: Vec::new(),
         generation,
         kind: "faith",
         text: tell(
@@ -1345,6 +1506,9 @@ fn spread_annal(world: &World, generation: u32, spreads: &[(usize, usize)]) -> A
         }
     }
     Annal {
+        id: String::new(),
+        members: Vec::new(),
+        languages: Vec::new(),
         generation,
         kind: "spread",
         text,
@@ -1453,6 +1617,9 @@ fn neighbours_annal(world: &World, generation: u32, n: &Neighbours) -> Annal {
         }
     }
     Annal {
+        id: String::new(),
+        members: Vec::new(),
+        languages: Vec::new(),
         generation,
         kind: "neighbours",
         text,
@@ -1574,13 +1741,19 @@ fn sound_changes(world: &World) -> Vec<Annal> {
                 None => label(id),
             };
             out.push(Annal {
+                id: format!("sounds:{v}:{generation}"),
+                members: Vec::new(),
+                languages: Vec::new(),
                 generation,
                 kind: "law",
                 text,
                 notes: ids.iter().map(|id| note(id)).collect(),
                 variety: Some(v),
                 peoples: (0..world.communities.len())
-                    .filter(|&c| world.communities[c].variety == v)
+                    .filter(|&c| {
+                        shifts.alive_at(world, c, generation)
+                            && shifts.spoken_by(world, c, generation) == v
+                    })
                     .collect(),
                 lands: Vec::new(),
                 laws: ids,
@@ -1610,16 +1783,22 @@ fn grammar_changes(world: &World) -> Vec<Annal> {
     for (v, variety) in world.varieties.iter().enumerate() {
         // Inherited events belong to the parent's annals. A daughter can
         // also acquire grammar during the generation of its own fork.
-        for notice in variety.grammar.events.iter().filter(|notice| {
-            variety.parent.is_none_or(|fork| {
-                notice.generation > fork.generation
-                    || (notice.generation == fork.generation
-                        && !world.varieties[fork.variety]
-                            .grammar
-                            .events
-                            .contains(*notice))
+        for (position, notice) in variety
+            .grammar
+            .events
+            .iter()
+            .enumerate()
+            .filter(|(_, notice)| {
+                variety.parent.is_none_or(|fork| {
+                    notice.generation > fork.generation
+                        || (notice.generation == fork.generation
+                            && !world.varieties[fork.variety]
+                                .grammar
+                                .events
+                                .contains(*notice))
+                })
             })
-        }) {
+        {
             let generation = notice.generation;
             let people = speakers(world, &shifts, v, generation);
             let category = notice.category.id();
@@ -1780,6 +1959,9 @@ fn grammar_changes(world: &World) -> Vec<Annal> {
                 }
             };
             out.push(Annal {
+                id: format!("grammar:{v}:{position}"),
+                members: Vec::new(),
+                languages: Vec::new(),
                 generation,
                 kind: "grammar",
                 text,
@@ -1788,7 +1970,8 @@ fn grammar_changes(world: &World) -> Vec<Annal> {
                 peoples: (0..world.communities.len())
                     .filter(|&c| {
                         let spoken = shifts.spoken_by(world, c, generation);
-                        spoken == v || donor == Some(spoken)
+                        shifts.alive_at(world, c, generation)
+                            && (spoken == v || donor == Some(spoken))
                     })
                     .collect(),
                 lands: Vec::new(),
@@ -1829,8 +2012,9 @@ fn grammatical_marker(variety: &Variety, marker: &Marker, generation: u32) -> St
 /// it then, otherwise its speakers, named by the language as it was then
 /// called.
 fn speakers(world: &World, shifts: &Shifts, v: usize, generation: u32) -> String {
-    let mut speaking =
-        (0..world.communities.len()).filter(|&c| shifts.spoken_by(world, c, generation) == v);
+    let mut speaking = (0..world.communities.len()).filter(|&c| {
+        shifts.alive_at(world, c, generation) && shifts.spoken_by(world, c, generation) == v
+    });
     match (speaking.next(), speaking.next()) {
         // Named as they were called going into the year's changes.
         (Some(c), None) => format!(
@@ -1846,20 +2030,38 @@ fn speakers(world: &World, shifts: &Shifts, v: usize, generation: u32) -> String
 
 /// Each community's language shifts, oldest first, gathered once so that
 /// asking who spoke what in a year does not search the whole history.
-struct Shifts(Vec<Vec<(u32, usize)>>);
+struct Shifts(Vec<Vec<(u32, usize, usize)>>, Vec<u32>);
 
 impl Shifts {
     fn of(world: &World) -> Shifts {
         let mut by = vec![Vec::new(); world.communities.len()];
-        for &(g, ref event) in &world.events {
+        let mut born = vec![0; world.communities.len()];
+        for (position, &(g, ref event)) in world.events.iter().enumerate() {
             if let WorldEvent::Shift {
                 community, from, ..
             } = *event
             {
-                by[community].push((g, from));
+                by[community].push((g, from, position));
             }
         }
-        Shifts(by)
+        for &(g, ref event) in &world.events {
+            let community = match event {
+                WorldEvent::Found { community } | WorldEvent::Koine { community, .. } => {
+                    Some(*community)
+                }
+                WorldEvent::Split { daughter, .. } => Some(*daughter),
+                WorldEvent::Settlement(record) => record.daughter,
+                _ => None,
+            };
+            if let Some(c) = community {
+                born[c] = g;
+            }
+        }
+        Shifts(by, born)
+    }
+
+    fn alive_at(&self, world: &World, c: usize, generation: u32) -> bool {
+        self.1[c] <= generation && world.communities[c].ended.is_none_or(|g| g >= generation)
     }
 
     /// The variety community `c` spoke during `generation`'s changes: the
@@ -1869,8 +2071,17 @@ impl Shifts {
     fn spoken_by(&self, world: &World, c: usize, generation: u32) -> usize {
         self.0[c]
             .iter()
-            .find(|(g, _)| *g >= generation)
-            .map_or(world.communities[c].variety, |&(_, from)| from)
+            .find(|(g, _, _)| *g >= generation)
+            .map_or(world.communities[c].variety, |&(_, from, _)| from)
+    }
+
+    /// World events have an order even within one year. The next shift's
+    /// source is the speech used here, after any shift at this position.
+    fn spoken_after(&self, world: &World, c: usize, position: usize) -> usize {
+        self.0[c]
+            .iter()
+            .find(|(_, _, p)| *p > position)
+            .map_or(world.communities[c].variety, |&(_, from, _)| from)
     }
 }
 

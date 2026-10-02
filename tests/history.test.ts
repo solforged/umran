@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { filterHistory, INITIAL_HISTORY, searchText } from "../web/src/history";
-import type { Annal, Variety } from "../web/src/model";
+import { filterHistory, INITIAL_HISTORY, searchText, subjectHistory } from "../web/src/history";
+import type { Annal, Overview, Variety, WorldMap } from "../web/src/model";
 
 const annal = (generation: number, kind: Annal["kind"], variety: number | null, text = "A moment."): Annal => ({
+  id: `${kind}:${variety}:${generation}`, members: [], languages: variety === null ? [] : [variety],
   generation, kind, variety, text, notes: [], peoples: [], lands: [], states: [], religions: [], crafts: [], laws: [], specimen: [], temper: null,
 });
 const family = [
@@ -12,6 +13,13 @@ const family = [
 ] as Variety[];
 
 describe("chronicle readings", () => {
+  test("a subject's story includes its own encounter rather than unrelated neighbours in the year's summary", () => {
+    const a = { ...annal(2, "neighbours", null, "A meets B"), id: "world:3", peoples: [0, 1] };
+    const b = { ...annal(2, "neighbours", null, "C meets D"), id: "world:4", peoples: [2, 3] };
+    const aggregate = { ...annal(2, "neighbours", null), peoples: [0, 1, 2, 3], members: [a, b] };
+    const overview = { annals: [aggregate] } as Overview;
+    expect(subjectHistory({ kind: "people", id: 0 }, overview, {} as WorldMap)).toEqual([a]);
+  });
   test("an unfiltered reading includes sound changes and reads latest first without mutating history", () => {
     const source = [annal(1, "found", 0), annal(2, "law", 0)];
     expect(filterHistory(source, family, INITIAL_HISTORY).map((a) => a.kind)).toEqual(["law", "found"]);

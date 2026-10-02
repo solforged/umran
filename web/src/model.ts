@@ -525,6 +525,28 @@ export interface Move {
 
 /// A history set aside by undoing, or by writing on from an earlier year.
 export interface ReadingRef { telling: number; point: HistoryPoint }
+
+/// A subject is resolved within a telling, never against another account's IDs.
+export type Subject =
+  | { kind: "world" } | { kind: "history" }
+  | { kind: "people"; id: number } | { kind: "state"; id: number }
+  | { kind: "religion"; id: number } | { kind: "craft"; id: Craft }
+  | { kind: "language"; variety: number }
+  | { kind: "word"; variety: number; concept: string }
+  | { kind: "law"; id: string } | { kind: "land"; region: number }
+  | { kind: "continent"; landmass: number } | { kind: "event"; id: string };
+export interface Destination { reading: ReadingRef; subject: Subject }
+export interface NotebookNote {
+  id: string;
+  title: string;
+  body: string;
+  kind: "observation" | "question" | "year";
+  target: Destination | null;
+  label: string;
+  generation: number;
+  revision: number;
+  archived: boolean;
+}
 export interface TellingView {
   id: number;
   name: string;
@@ -546,6 +568,9 @@ export interface Comparison {
 
 /// One chronicle entry; `variety` is set for a sound law.
 export interface Annal {
+  id: string;
+  members: Annal[];
+  languages: number[];
   settlement?: SettlementRecord;
   before?: HistoryPoint;
   generation: number;
@@ -682,6 +707,9 @@ export interface ReadEngine {
   save(): string;
 }
 export interface Engine extends ReadEngine {
+  notebook(): NotebookNote[];
+  saveNote(note: NotebookNote): void;
+  resolveNote(id: string): Destination | null;
   dispose(): void;
   read(telling: number, point?: HistoryPoint | null): ReadEngine;
   previous(reading: ReadingRef): ReadingRef;

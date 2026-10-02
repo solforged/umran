@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadCatalog, loadEngine, message } from "./engine";
-import type { Action, Catalog, Engine, HistoryPoint, Overview, SettlementChoice, SettlementPreview, WorldMap } from "./model";
+import type { Action, Catalog, Engine, HistoryPoint, NotebookNote, Overview, SettlementChoice, SettlementPreview, WorldMap } from "./model";
 import type { Focus } from "./components/Pedia";
 import { YEARS } from "./model";
 import { ActionDialog, type DialogKind } from "./components/ActionDialog";
@@ -10,6 +10,7 @@ import { Modal } from "./components/Modal";
 import { Shelf } from "./components/Shelf";
 import { Stage } from "./components/Stage";
 import { TellingComparison } from "./components/TellingComparison";
+import { Notebook, makeNote } from "./components/Notebook";
 import { WorldSetup } from "./components/WorldSetup";
 import { sampleWorld } from "./sample";
 import { download } from "./takeout";
@@ -55,6 +56,8 @@ export default function App() {
   const [viewTelling, setViewTelling] = useState<number | null>(null);
   const [viewPoint, setViewPoint] = useState<HistoryPoint | null>(null);
   const [compareWith, setCompareWith] = useState<number | null>(null);
+  const [notebook, setNotebook] = useState<NotebookNote[]>([]);
+  const [notebookDraft, setNotebookDraft] = useState<NotebookNote | null | undefined>(undefined);
   const [viewing, setViewing] = useState<number | null>(null); // null = latest
   const [community, setCommunity] = useState(0);
   const [dialog, setDialog] = useState<DialogKind | null>(null);
@@ -100,6 +103,7 @@ export default function App() {
   const adopt = useCallback((id: string, next: Engine, fresh: boolean) => {
     engine.current?.dispose();
     engine.current = next;
+    setNotebook(next.notebook()); setNotebookDraft(undefined);
     setWorldMap(next.map());
     setViewTelling(null); setViewPoint(null); setCompareWith(null);
     setInitialFocus(null);
@@ -172,7 +176,14 @@ export default function App() {
   const overview = useMemo(() => readingEngine?.overview(requestedGeneration) ?? null, [readingEngine, requestedGeneration]);
   const generation = overview?.generation ?? requestedGeneration;
   const selected = overview ? Math.min(community, overview.communities.length - 1) : 0;
-  const scrub = useCallback((g: number) => { setViewPoint(null); setViewing(g >= latest ? null : g); }, [latest]);
+  const scrub = useCallback((g: number): HistoryPoint | null => {
+    if (!engine.current || !overview) return null;
+    try {
+      const point = engine.current.read(overview.telling).overview(g).point;
+      setViewPoint(null); setViewing(g >= latest ? null : g);
+      return point;
+    } catch (e) { setError(message(e)); return null; }
+  }, [latest, overview]);
 
   const run = useCallback(
     (action: Action, from: Overview | null = overview) => {
@@ -216,6 +227,24 @@ export default function App() {
   const renameTelling = (telling: number, name: string) => {
     try { engine.current?.rename(telling, name); setVersion((v) => v + 1); persist(); }
     catch (e) { setError(message(e)); }
+  };
+
+  const saveNote = (note: NotebookNote): string | null => {
+    try {
+      engine.current?.saveNote(note);
+      setNotebook(engine.current?.notebook() ?? []);
+      return persist() ? null : "The entry is kept in this open world, but browser storage failed. Export a save file before closing.";
+    } catch (e) { return message(e); }
+  };
+  const openNote = (note: NotebookNote): string | null => {
+    try {
+      const destination = engine.current?.resolveNote(note.id);
+      if (!destination) return "This entry has no fixed reading.";
+      setViewTelling(destination.reading.telling); setViewPoint(destination.reading.point);
+      setInitialFocus(destination.subject); setTellingVersion((v) => v + 1);
+      setViewing(null); setNotebookDraft(undefined); setError(null);
+      return null;
+    } catch (e) { return message(e); }
   };
 
   // One generation at the present, for play; saving waits until play stops.
@@ -365,7 +394,7 @@ export default function App() {
       current.actAt({ telling: preview.telling, point: preview.point }, preview.mutation, { kind: "settle", ...choice });
       const after = current.overview(current.latest());
       const event = after.annals.findLast((a) => a.kind === "settlement");
-      setInitialFocus(event ? { kind: "event", annal: event } : { kind: "people", id: choice.community });
+      setInitialFocus(event ? { kind: "event", id: event.id } : { kind: "people", id: choice.community });
       setCommunity(event?.settlement?.daughter ?? choice.community);
       setViewTelling(null); setViewPoint(null); setViewing(null);
       setTellingVersion((v) => v + 1);
@@ -409,6 +438,7 @@ export default function App() {
         {notices}
         <Appendix
           engine={readingEngine}
+          notebook={notebook}
           catalog={catalog}
           version={version}
           generation={generation}
@@ -437,6 +467,9 @@ export default function App() {
         notices={notices}
         initialFocus={initialFocus}
         onSettle={settle}
+        onNotebook={() => setNotebookDraft(null)}
+        onKeep={(subject, label) => setNotebookDraft(makeNote(overview, subject, label))}
+        onReadPoint={(point) => { setViewTelling(overview.telling); setViewPoint(point); setViewing(null); }}
         canUndo={overview.point.offset > 0 || overview.point.action > 1}
         selected={selected}
         onSelect={setCommunity}
@@ -453,6 +486,8 @@ export default function App() {
         onDialog={setDialog}
       />
       {dialogs}
+      {notebookDraft !== undefined ? <Notebook notes={notebook} overview={overview} initial={notebookDraft}
+        onClose={() => setNotebookDraft(undefined)} onSave={saveNote} onRead={openNote} /> : null}
       {compareWith !== null ? <TellingComparison engine={engine.current} overview={overview} map={worldMap} other={compareWith}
         onClose={() => setCompareWith(null)} onRead={readTelling} onContinue={(from) => { setCompareWith(null); run({ kind: "run", generations: 1 }, from); }} /> : null}
     </div>

@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { BookOpen, Feather, Gauge, Layers, Map as MapIcon, Pause, Play, ScrollText, Search, SkipForward, StepForward, X } from "lucide-react";
-import type { Annal, Catalog, Craft, ReadEngine, EthosAxis, Overview, SettlementChoice, SettlementPreview, WorldMap } from "../model";
+import { BookMarked, BookOpen, Feather, Gauge, Layers, Map as MapIcon, Pause, Play, ScrollText, Search, SkipForward, StepForward, X } from "lucide-react";
+import type { Annal, Catalog, Craft, Destination, HistoryPoint, ReadEngine, EthosAxis, Overview, SettlementChoice, SettlementPreview, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { ETHOS_AXES, ETHOS_POLES, EVENT_KIND, hue } from "../lore";
 import { PACES, year } from "../words";
 import type { DialogKind, InterventionKind } from "./ActionDialog";
 import { message } from "../engine";
 import { SettlementDesk, type SettlementDraft } from "./SettlementDesk";
-import { INITIAL_HISTORY } from "../history";
+import { concerns, findAnnal, individualAnnals, INITIAL_HISTORY } from "../history";
 import { AtlasIndex } from "./AtlasIndex";
 import type { DictionaryView } from "./Dictionary";
 import { Told } from "./Told";
@@ -69,6 +69,9 @@ export function Stage({
   onDialog,
   initialFocus,
   onSettle,
+  onNotebook,
+  onKeep,
+  onReadPoint,
 }: {
   engine: ReadEngine;
   catalog: Catalog;
@@ -88,7 +91,7 @@ export function Stage({
   onRestore: (telling: number) => void;
   onRenameTelling: (telling: number, name: string) => void;
   onCompare: (telling: number) => void;
-  onScrub: (generation: number) => void;
+  onScrub: (generation: number) => HistoryPoint | null;
   /// One generation at the present, while the years pass on their own.
   onTick: () => boolean;
   /// The years stopped passing; a chance to save.
@@ -98,13 +101,17 @@ export function Stage({
   onDialog: (kind: DialogKind) => void;
   initialFocus: Focus | null;
   onSettle: (choice: SettlementChoice, preview: SettlementPreview) => void;
+  onNotebook: () => void;
+  onKeep: (subject: Focus, label: string) => void;
+  onReadPoint: (point: HistoryPoint) => void;
 }) {
   const { latest } = overview;
   const atPresent = overview.atTip;
 
   // The encyclopedia's trail of cards; the last is the one open.
-  const [trail, setTrail] = useState<Focus[]>([initialFocus ?? { kind: "world" }]);
-  const focus = trail.at(-1)!;
+  const [trail, setTrail] = useState<Destination[]>([{ subject: initialFocus ?? { kind: "world" }, reading: { telling: overview.telling, point: overview.point } }]);
+  const focus = trail.at(-1)!.subject;
+  const destination = (subject: Focus): Destination => ({ subject, reading: { telling: overview.telling, point: overview.point } });
   // The folio page open over the map, by its section's id.
   const [leaf, setLeaf] = useState<string | null>(null);
   const leavesByCard = useRef(new Map<string, string | null>());
@@ -114,6 +121,8 @@ export function Stage({
   };
   const [folioHost, setFolioHost] = useState<HTMLDivElement | null>(null);
   const [historyView, setHistoryView] = useState(INITIAL_HISTORY);
+  const [storyViews, setStoryViews] = useState<Record<string, typeof INITIAL_HISTORY>>({});
+  const [followed, setFollowed] = useState<{ subject: Focus; label: string } | null>(null);
   const [dictionaryViews, setDictionaryViews] = useState<Record<number, DictionaryView>>({});
   const [indexOpen, setIndexOpen] = useState(false);
   const [pane, setPane] = useState<"map" | "reading">(initialFocus ? "reading" : "map");
@@ -132,12 +141,18 @@ export function Stage({
     // The history card is the whole history, so it opens in the folio.
     setLeaf(next.kind === "history" ? "history" : null);
     // Opening the card already open adds nothing to the trail.
-    setTrail((t) => (JSON.stringify(t.at(-1)) === JSON.stringify(next) ? t : [...t.slice(-TRAIL_LENGTH), next]));
+    setTrail((t) => {
+      const current = [...t.slice(0, -1), destination(t.at(-1)!.subject)];
+      return JSON.stringify(t.at(-1)!.subject) === JSON.stringify(next) ? current : [...current.slice(-TRAIL_LENGTH), destination(next)];
+    });
   };
   const returnTo = (index: number) => {
+    setPlaying(false);
     setTrail((t) => t.slice(0, index + 1));
-    setLeaf(leavesByCard.current.get(JSON.stringify(trail[index])) ?? (trail[index].kind === "history" ? "history" : null));
+    const visit = trail[index];
+    setLeaf(leavesByCard.current.get(JSON.stringify(visit.subject)) ?? (visit.subject.kind === "history" ? "history" : null));
     setPane("reading");
+    onReadPoint(visit.reading.point);
   };
   // Back navigation and time travel must keep actions attached to the
   // person on the card, just as following a link does.
@@ -172,7 +187,14 @@ export function Stage({
   const [pauseOn, setPauseOn] = useState<PauseOn>("peoples");
   const tick = useRef(onTick);
   tick.current = onTick;
-  const scrub = (g: number) => { setPlaying(false); setSettlement(null); onScrub(g); };
+  const scrub = (g: number, subject: Focus = focus) => {
+    setPlaying(false); setSettlement(null);
+    const point = onScrub(g);
+    if (point && (point.action !== overview.point.action || point.offset !== overview.point.offset || JSON.stringify(subject) !== JSON.stringify(focus))) {
+      leavesByCard.current.set(JSON.stringify(focus), leaf);
+      setTrail((t) => [...t.slice(-TRAIL_LENGTH, -1), destination(focus), { subject, reading: { telling: overview.telling, point } }]);
+    }
+  };
   const openDialog = (kind: InterventionKind, community = selected) => {
     setPlaying(false);
     if (kind === "settlement") {
@@ -228,17 +250,20 @@ export function Stage({
   // Something worth stopping for stops the years and opens its card.
   useEffect(() => {
     if (!playing) return;
-    const stopper = fresh.find((a) => stops(pauseOn, a));
+    const stopper = followed
+      ? individualAnnals(fresh).find((a) => concerns(a, followed.subject, overview, map))
+      : fresh.find((a) => stops(pauseOn, a));
     if (stopper) {
       setPlaying(false);
-      go({ kind: "event", annal: stopper });
+      go({ kind: "event", id: stopper.id });
     }
     // Only a new year can bring something to stop for.
   }, [fresh]);
 
   // The map shows whatever the card is about.
   const concept = focus.kind === "word" ? focus.concept : null;
-  const law = focus.kind === "law" ? focus.id : focus.kind === "event" ? (focus.annal.laws[0] ?? null) : null;
+  const focusedEvent = focus.kind === "event" ? findAnnal(overview.annals, focus.id) : undefined;
+  const law = focus.kind === "law" ? focus.id : focus.kind === "event" ? (focusedEvent?.laws[0] ?? null) : null;
   const words = useMemo(
     () => (concept ? engine.wordMap(generation, concept) : null),
     // `version` changes whenever the history does.
@@ -294,9 +319,9 @@ export function Stage({
         return { chosen: here.map((c) => c.id), lands: [], point: site(here[0]?.region) };
       }
       case "event": {
-        const peoples = focus.annal.peoples.filter((id) => overview.communities[id]);
-        const land = focus.annal.lands.at(-1) ?? overview.communities[peoples[0]]?.region;
-        return { chosen: peoples, lands: focus.annal.lands, point: site(land) };
+        const peoples = (focusedEvent?.peoples ?? []).filter((id) => overview.communities[id]);
+        const land = focusedEvent?.lands.at(-1) ?? overview.communities[peoples[0]]?.region;
+        return { chosen: peoples, lands: focusedEvent?.lands ?? [], point: site(land) };
       }
       default:
         return { chosen: [], lands: [], point: null };
@@ -326,6 +351,7 @@ export function Stage({
           <button type="button" className="link" onClick={onExport}>
             Export
           </button>
+          <button type="button" className="link notebook-open" aria-label="Open the field notebook" onClick={() => { setPlaying(false); onNotebook(); }}><BookMarked size={16} aria-hidden="true" /><span>Notebook</span></button>
         </nav>
         <span className="stage-title">{title}<button type="button" className="link telling-badge" onClick={() => { setPlaying(false); go({ kind: "history" }); setLeaf("tellings"); }} title="Read and compare the tellings of this world">
           {overview.tellings.find((t) => t.id === overview.telling)?.name}
@@ -334,7 +360,7 @@ export function Stage({
           <Search size={16} aria-hidden="true" /> <span>Atlas index</span><kbd>/</kbd>
         </button>
       </header>
-      <div className="stage-notices">{notices}</div>
+      <div className="stage-notices">{notices}{followed ? <p className="following-note">Following {followed.label}. Playback stops when this subject appears in the record. <button type="button" className="link" onClick={() => setFollowed(null)}>Stop following</button></p> : null}</div>
       <nav className="stage-panes" aria-label="Workspace">
         <button type="button" aria-pressed={pane === "map"} onClick={() => { setPane("map"); setLeaf(null); }}><MapIcon size={16} aria-hidden="true" /> Chart</button>
         <button type="button" aria-pressed={pane === "reading"} onClick={() => setPane("reading")}><BookOpen size={16} aria-hidden="true" /> Reading</button>
@@ -453,11 +479,15 @@ export function Stage({
       {settlement ? <SettlementDesk draft={settlement} preview={settlementPreview.preview} error={settlementPreview.error}
         overview={settlementReading} map={map} catalog={catalog} latest={present} onChange={setSettlement}
         onCancel={() => setSettlement(null)} onCommit={onSettle} /> : <Pedia
-        trail={trail}
+        trail={trail.map((visit) => visit.subject)}
         onReturn={returnTo}
         onIndex={openIndex}
         historyView={historyView}
         onHistoryView={setHistoryView}
+        storyView={storyViews[JSON.stringify(focus)] ?? INITIAL_HISTORY}
+        onStoryView={(next) => setStoryViews((views) => ({ ...views, [JSON.stringify(focus)]: next }))}
+        onKeep={(subject, label) => { setPlaying(false); onKeep(subject, label); }}
+        onFollow={(subject, label) => { setPlaying(false); setFollowed({ subject, label }); }}
         dictionaryViews={dictionaryViews}
         onDictionaryView={(variety, view) => setDictionaryViews((views) => ({ ...views, [variety]: view }))}
         engine={engine}
@@ -469,6 +499,7 @@ export function Stage({
         words={words}
         go={go}
         onScrub={scrub}
+        onVisit={(subject, year) => scrub(year, subject)}
         onPlay={() => setPlaying(true)}
         onRestore={onRestore}
         onRenameTelling={onRenameTelling}
@@ -494,7 +525,7 @@ export function Stage({
               title="Open this moment"
               onClick={() => {
                 setPlaying(false);
-                go({ kind: "event", annal: last });
+                go({ kind: "event", id: last.id });
               }}
             >
               <LastIcon size={14} aria-hidden="true" />

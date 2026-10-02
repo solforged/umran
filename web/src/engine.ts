@@ -7,6 +7,8 @@ import type {
   ReadEngine,
   Comparison,
   ReadingRef,
+  NotebookNote,
+  Destination,
   Kin,
   LanguageDesign,
   LexiconRow,
@@ -81,6 +83,9 @@ function wrap(bench: Workbench): Engine {
   };
   return {
     ...root.engine,
+    notebook: () => JSON.parse(bench.notebook()) as NotebookNote[],
+    saveNote: (note) => { bench.saveNote(JSON.stringify(note)); },
+    resolveNote: (id) => JSON.parse(bench.resolveNote(id)) as Destination | null,
     read: (telling, point) => {
       const encoded = point ? JSON.stringify(point) : "";
       const get = () => scope(telling, encoded);

@@ -135,7 +135,7 @@ function renderingMarkdown(rows: RenderingRow[], overview: Overview, sacred?: nu
 
 /// The world as Markdown: peoples, realms, faiths, crafts, names, history,
 /// and a glossary for each spoken or sacred language.
-export function bookMarkdown(title: string, overview: Overview, glossaries: [string, LexiconRow[]][], catalog: Catalog): string {
+export function bookMarkdown(title: string, overview: Overview, glossaries: [string, LexiconRow[]][], catalog: Catalog, notes: import("./model").NotebookNote[] = []): string {
   const out = [`# ${title}`, "", `As it stands in year ${overview.generation * YEARS}.`, "", "## The peoples", ""];
   for (const line of peopleLines(overview)) out.push(`- ${line}`);
   if (overview.states.length > 0) {
@@ -175,6 +175,16 @@ export function bookMarkdown(title: string, overview: Overview, glossaries: [str
     out.push("", `## Glossary of ${tongue}`, "");
     const sorted = [...rows].sort((a, b) => a.spelled.localeCompare(b.spelled));
     for (const r of sorted) out.push(`- **${r.spelled}**${r.said === null ? "" : ` · said *${r.said}*`} /${r.ipa}/ ${r.gloss}`);
+  }
+  if (notes.length) {
+    out.push("", "## The field notebook", "");
+    for (const note of notes) {
+      const telling = overview.tellings.find((t) => t.id === note.target?.reading.telling);
+      out.push(`### ${note.title}`, "", `${note.kind}${note.archived ? " · archived" : ""} · year ${note.generation * YEARS}${note.target ? ` · ${telling?.name ?? "Unavailable telling"}` : ""}`, "");
+      if (note.target) out.push(`Reference: ${note.label}.`, "");
+      if (note.revision !== overview.revision) out.push("The original reference needs checking after an engine change.", "");
+      out.push(note.body, "");
+    }
   }
   return out.join("\n") + "\n";
 }

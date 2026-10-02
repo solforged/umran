@@ -2,8 +2,10 @@
 //! browser asks for presentation-ready views of any generation as JSON.
 
 mod annals;
+mod notebook;
 
 use annals::{Annal, annals};
+use notebook::{Document, Note, Subject};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use umran_sim::climate::ClimateCause;
@@ -22,8 +24,7 @@ use umran_sim::schisms::{BranchNaming, HolyLand, Pilgrimage, SchismCause};
 use umran_sim::{
     Action, CATALOG, CONCEPTS, Challenge, Chronicle, Craft, ENGINE_REVISION, Event, Fall, Flavor,
     Form, HistoryPoint, Lexeme, LexemeId, Livelihood, MapSize, NameStyle, Origin, PhonemeId,
-    ReadingRef, Recipe, Revelation, Rise, StressRule, TellingId, Terrain, World, WorldEvent,
-    catalog,
+    ReadingRef, Revelation, Rise, StressRule, TellingId, Terrain, World, WorldEvent, catalog,
 };
 use umran_sim::{LanguageDesign, MorphologyKind, Naming, Segment, Variety};
 use wasm_bindgen::prelude::*;
@@ -54,6 +55,20 @@ impl Workbench {
 
     pub fn save(&self) -> Result<String, JsValue> {
         self.bench.save().map_err(fail)
+    }
+
+    pub fn notebook(&self) -> Result<String, JsValue> {
+        to_json(&self.bench.notebook).map_err(fail)
+    }
+
+    #[wasm_bindgen(js_name = saveNote)]
+    pub fn save_note(&mut self, note: &str) -> Result<(), JsValue> {
+        self.bench.save_note(note).map_err(fail)
+    }
+
+    #[wasm_bindgen(js_name = resolveNote)]
+    pub fn resolve_note(&self, id: &str) -> Result<String, JsValue> {
+        self.bench.resolve_note(id).map_err(fail)
     }
 
     pub fn catalog() -> Result<String, JsValue> {
@@ -262,6 +277,7 @@ struct CachedReading {
 
 pub struct Bench {
     chronicle: Chronicle,
+    notebook: Vec<Note>,
     /// Invalidates previews even when two decisions happen in the same year.
     mutation: u32,
     /// The last world requested, so repeated views of one generation do not
@@ -280,6 +296,7 @@ impl Bench {
             .map_err(|_| format!("Unknown world size: {size}."))?;
         Ok(Bench {
             chronicle: Chronicle::new(u64::from(seed), map),
+            notebook: Vec::new(),
             mutation: 0,
             cached: None,
             saved_revision: None,
@@ -290,11 +307,13 @@ impl Bench {
 
     /// Restores a saved recipe.
     pub fn load(json: &str) -> Result<Bench, String> {
-        let recipe: Recipe =
+        let document: Document =
             serde_json::from_str(json).map_err(|e| format!("Not an Umran save: {e}"))?;
+        let recipe = document.recipe;
         let chronicle = Chronicle::from_recipe(&recipe)?;
         Ok(Bench {
             chronicle,
+            notebook: document.notebook,
             mutation: 0,
             cached: None,
             saved_revision: (recipe.revision != ENGINE_REVISION).then_some(recipe.revision),
@@ -304,7 +323,88 @@ impl Bench {
     }
 
     pub fn save(&self) -> Result<String, String> {
-        serde_json::to_string_pretty(&self.chronicle.recipe()).map_err(|e| e.to_string())
+        serde_json::to_string_pretty(&Document {
+            recipe: self.chronicle.recipe(),
+            notebook: self.notebook.clone(),
+        })
+        .map_err(|e| e.to_string())
+    }
+
+    pub fn save_note(&mut self, json: &str) -> Result<(), String> {
+        let mut note: Note =
+            serde_json::from_str(json).map_err(|e| format!("Unreadable note: {e}"))?;
+        note.title = note.title.trim().into();
+        if note.id.is_empty() || note.title.is_empty() {
+            return Err("Give this notebook entry a title.".into());
+        }
+        // Editing an imported note must remain possible even if its original
+        // reading cannot replay. Only a newly selected reference is validated.
+        let previous = self.notebook.iter().position(|n| n.id == note.id);
+        if previous.is_none_or(|i| {
+            self.notebook[i].target != note.target || self.notebook[i].revision != note.revision
+        }) {
+            self.validate_note(&note)?;
+        }
+        if let Some(i) = previous {
+            self.notebook[i] = note;
+        } else {
+            self.notebook.push(note);
+        }
+        Ok(())
+    }
+
+    fn validate_note(&self, note: &Note) -> Result<(), String> {
+        let Some(target) = &note.target else {
+            return Ok(());
+        };
+        if note.revision != ENGINE_REVISION {
+            return Err("The original reference needs checking: this world now uses a different engine revision. The note is still kept.".into());
+        }
+        let scope = self.scope(target.reading.telling, &to_json(&target.reading.point)?)?;
+        let scope = scope.borrow();
+        let world = &scope
+            .fixed
+            .as_ref()
+            .ok_or("This note has no exact reading")?
+            .1;
+        let present = match &target.subject {
+            Subject::World | Subject::History => true,
+            Subject::People { id } => world.communities.get(*id).is_some(),
+            Subject::State { id } => world.states.get(*id).is_some(),
+            Subject::Religion { id } => world.religions.get(*id).is_some(),
+            Subject::Craft { .. } => true,
+            Subject::Language { variety } => world.varieties.get(*variety).is_some(),
+            Subject::Word { variety, concept } => {
+                world.varieties.get(*variety).is_some() && by_id(concept).is_some()
+            }
+            Subject::Land { region } => world.map.regions.get(*region).is_some(),
+            Subject::Continent { landmass } => world.map.landmasses.get(*landmass).is_some(),
+            Subject::Law { id } => world
+                .varieties
+                .iter()
+                .any(|v| v.laws.iter().any(|(_, law)| law == id)),
+            Subject::Event { id } => annals(world)
+                .iter()
+                .any(|a| a.id == *id || a.members.iter().any(|m| m.id == *id)),
+        };
+        if present {
+            Ok(())
+        } else {
+            Err(
+                "The original subject is unavailable at this reading. The note is still kept."
+                    .into(),
+            )
+        }
+    }
+
+    pub fn resolve_note(&self, id: &str) -> Result<String, String> {
+        let note = self
+            .notebook
+            .iter()
+            .find(|n| n.id == id)
+            .ok_or("That note is not in this notebook")?;
+        self.validate_note(note)?;
+        to_json(&note.target)
     }
 
     /// Map sizes, sound profiles, flavors, and contact kinds to offer in forms.
@@ -558,6 +658,7 @@ impl Bench {
         };
         Ok(Bench {
             chronicle,
+            notebook: self.notebook.clone(),
             mutation: self.mutation,
             cached: None,
             saved_revision: self.saved_revision,
@@ -4104,6 +4205,113 @@ mod tests {
         )
         .unwrap();
         assert_eq!(again["annals"], overview["annals"]);
+
+        let captured: Vec<_> = laws
+            .iter()
+            .filter(|a| a["variety"] == 0)
+            .map(|a| a["id"].clone())
+            .collect();
+        assert!(!captured.is_empty());
+        w.act(r#"{"kind":"shift","community":0,"toward":1}"#)
+            .unwrap();
+        let shifted: serde_json::Value =
+            serde_json::from_str(&w.overview(w.latest()).unwrap()).unwrap();
+        for id in captured {
+            let event = shifted["annals"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|a| a["id"] == id)
+                .unwrap();
+            assert!(
+                event["peoples"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&serde_json::json!(0)),
+                "a language shift cannot remove a people's earlier sound changes"
+            );
+        }
+    }
+
+    #[test]
+    fn notebook_keeps_exact_readings_and_unavailable_references_without_changing_history() {
+        use notebook::{Destination, NoteKind};
+        let mut w = Bench::new(7, "small").unwrap();
+        w.act(&found("Hill", "familiar")).unwrap();
+        let reading = ReadingRef {
+            telling: 0,
+            point: w.chronicle.end(),
+        };
+        let note = Note {
+            id: "a-discovery".into(),
+            title: "Before the arrival".into(),
+            body: "Will these words survive?".into(),
+            kind: NoteKind::Question,
+            target: Some(Destination {
+                reading,
+                subject: Subject::Event {
+                    id: "world:0".into(),
+                },
+            }),
+            label: "The first founding".into(),
+            generation: 0,
+            revision: ENGINE_REVISION,
+            archived: false,
+        };
+        let recipe = w.chronicle.recipe();
+        let mutation = w.mutation;
+        w.save_note(&to_json(&note).unwrap()).unwrap();
+        assert_eq!(w.chronicle.recipe(), recipe);
+        assert_eq!(
+            w.mutation, mutation,
+            "annotation edits do not invalidate a settlement preview"
+        );
+        w.act(&found("Coast", "polynesian")).unwrap();
+        let target: Option<Destination> =
+            serde_json::from_str(&w.resolve_note(&note.id).unwrap()).unwrap();
+        let mut exact = w
+            .read(0, &to_json(&target.unwrap().reading.point).unwrap())
+            .unwrap();
+        assert_eq!(
+            exact.world(0).communities.len(),
+            1,
+            "the bookmark precedes the same-year second founding"
+        );
+        w.act(r#"{"kind":"shift","community":0,"toward":1}"#)
+            .unwrap();
+        let speech = w.chronicle.latest().communities[0].variety;
+        w.act(r#"{"kind":"religion","community":0}"#).unwrap();
+        let events = annals(w.chronicle.latest());
+        let shift = events.iter().find(|a| a.kind == "shift").unwrap();
+        assert!(shift.languages.contains(&0) && shift.languages.contains(&speech));
+        let faith = events.iter().find(|a| a.kind == "faith").unwrap();
+        assert!(faith.languages.contains(&speech));
+        assert!(
+            !faith.languages.contains(&0),
+            "a later same-year event uses the new speech"
+        );
+        w.chronicle
+            .act_at(reading.point, Action::Run { generations: 1 })
+            .unwrap();
+        let mut saved: Document = serde_json::from_str(&w.save().unwrap()).unwrap();
+        saved.recipe.tellings[0].actions.push(Action::Shift {
+            community: 999,
+            toward: 0,
+        });
+        let mut recovered = Bench::load(&to_json(&saved).unwrap()).unwrap();
+        assert!(recovered.resolve_note(&note.id).is_err());
+        let mut edited = note.clone();
+        edited.body.push_str(" The original reading needs repair.");
+        recovered.save_note(&to_json(&edited).unwrap()).unwrap();
+        let back = Bench::load(&recovered.save().unwrap()).unwrap();
+        assert_eq!(back.notebook, vec![edited]);
+        let mut old = note;
+        old.revision -= 1;
+        assert!(
+            w.validate_note(&old)
+                .unwrap_err()
+                .contains("different engine revision")
+        );
     }
 
     #[test]
@@ -4386,7 +4594,7 @@ mod tests {
             .act(r#"{"kind":"craft","community":0,"craft":"writing"}"#)
             .unwrap();
         loaded.act(r#"{"kind":"run","generations":2}"#).unwrap();
-        let recipe: Recipe = serde_json::from_str(&loaded.save().unwrap()).unwrap();
+        let recipe: umran_sim::Recipe = serde_json::from_str(&loaded.save().unwrap()).unwrap();
         assert_eq!(recipe.map, MapSize::Vast);
         assert_eq!(loaded.latest(), 3);
         let mut replayed = Bench::load(&loaded.save().unwrap()).unwrap();

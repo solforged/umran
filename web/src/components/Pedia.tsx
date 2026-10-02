@@ -2,6 +2,8 @@ import { createContext, Fragment, useCallback, useContext, useEffect, useId, use
 import { createPortal } from "react-dom";
 import {
   ArrowLeft,
+  Bookmark,
+  Eye,
   AudioLines,
   Earth,
   Globe,
@@ -22,7 +24,7 @@ import {
 import type { Annal, Catalog, Community, Craft, CraftView, ReadEngine, Ethos, HolyLand, Overview, PlaceExonym, ReligionView, RenderingRow, ShrineKind, StateView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, FAITH_HOW, FALL_NAME, howCame, howNamed, hue, LIVELIHOOD_NAME, RISE_NAME, SCHISM_CAUSE, STRESS_RULE, STRONG, temperament, TERMS, TERRAIN_NAME, type Term } from "../lore";
-import { filterHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
+import { filterHistory, findAnnal, individualAnnals, relatedMoments, subjectHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
 import { bond } from "../words";
 import type { InterventionKind } from "./ActionDialog";
 import { SettlementAccount } from "./SettlementDesk";
@@ -35,24 +37,16 @@ import { WordGloss } from "./WordGloss";
 import { Renderings } from "./Renderings";
 
 /// What the encyclopedia is open at.
-export type Focus =
-  | { kind: "world" }
-  | { kind: "people"; id: number }
-  | { kind: "state"; id: number }
-  | { kind: "religion"; id: number }
-  | { kind: "craft"; id: Craft }
-  | { kind: "language"; variety: number }
-  | { kind: "word"; variety: number; concept: string }
-  | { kind: "law"; id: string }
-  | { kind: "land"; region: number }
-  | { kind: "continent"; landmass: number }
-  | { kind: "event"; annal: Annal }
-  | { kind: "history" };
+export type Focus = import("../model").Subject;
 
 /// Share of core words below which two languages count as unrelated.
 const KIN_FLOOR = 0.05;
 
 interface Context {
+  storyView: HistoryView;
+  onStoryView: (view: HistoryView) => void;
+  onKeep: (subject: Focus, label: string) => void;
+  onFollow: (subject: Focus, label: string) => void;
   historyView: HistoryView;
   onHistoryView: (view: HistoryView) => void;
   dictionaryViews: Record<number, DictionaryView>;
@@ -67,6 +61,7 @@ interface Context {
   words: WordMap | null;
   go: (focus: Focus) => void;
   onScrub: (generation: number) => void;
+  onVisit: (subject: Focus, generation: number) => void;
   onPlay: () => void;
   onDialog: (kind: InterventionKind, community: number) => void;
   onReconsider: (annal: Annal) => void;
@@ -186,6 +181,10 @@ export function Pedia({
         ) : null}
       <FolioContext.Provider value={folio}>
         <article className="card" key={cardKey}>
+          <div className="card-reading-tools">
+            <button type="button" className="link" onClick={() => context.onKeep(focus, `${focusLabel(focus, context)}${focus.kind === "word" ? ` in ${context.overview.varieties[focus.variety]?.name ?? "its language"}` : ""}`)}><Bookmark size={14} aria-hidden="true" /> Keep this discovery</button>
+            {!["world", "history", "event", "word"].includes(focus.kind) ? <button type="button" className="link" onClick={() => context.onFollow(focus, focusLabel(focus, context))}><Eye size={14} aria-hidden="true" /> Follow through time</button> : null}
+          </div>
           <Card focus={focus} context={context} />
         </article>
       </FolioContext.Provider>
@@ -256,7 +255,7 @@ function focusLabel(focus: Focus, context: Context): string {
     case "continent":
       return continentName(focus.landmass, context);
     case "event":
-      return `Year ${focus.annal.generation * YEARS}`;
+      return `Year ${(findAnnal(overview.annals, focus.id)?.generation ?? context.generation) * YEARS}`;
     case "history":
       return "History";
   }
@@ -304,8 +303,11 @@ function Card({ focus, context }: { focus: Focus; context: Context }) {
       return <LandCard region={focus.region} context={context} />;
     case "continent":
       return <ContinentCard landmass={focus.landmass} context={context} />;
-    case "event":
-      return <EventCard annal={focus.annal} context={context} />;
+    case "event": {
+      const annal = findAnnal(overview.annals, focus.id);
+      return annal ? <EventCard annal={annal} context={context} />
+        : <p className="muted">This moment is not recorded at this reading. Return to its year or open its saved notebook reference.</p>;
+    }
     case "history":
       return <HistoryCard context={context} />;
   }
@@ -666,7 +668,7 @@ function Story({ annals, context }: { annals: Annal[]; context: Context }) {
         <li key={i}>
           <Year generation={a.generation} context={context} />
           <span>
-            <button type="button" className="moment" onClick={() => context.go({ kind: "event", annal: a })}>
+            <button type="button" className="moment" onClick={() => context.go({ kind: "event", id: a.id })}>
               <Told text={a.text} />
             </button>
             <AnnalLinks annal={a} context={context} />
@@ -732,9 +734,34 @@ function StoryLeaf({ title, annals, context }: { title: string; annals: Annal[];
         </p>
       }
     >
-      <Story annals={[...annals].reverse()} context={context} />
+      <SubjectTimeline annals={annals} context={context} />
     </Leaf>
   );
+}
+
+function SubjectTimeline({ annals, context }: { annals: Annal[]; context: Context }) {
+  const view = context.storyView;
+  const update = (patch: Partial<HistoryView>) => context.onStoryView({ ...view, limit: 100, ...patch });
+  const lines = filterHistory(annals, context.overview.varieties, view);
+  const eras = new Map<number, Annal[]>();
+  for (const a of lines.slice(0, view.limit)) {
+    const era = Math.floor(a.generation / 20) * 20;
+    eras.set(era, [...(eras.get(era) ?? []), a]);
+  }
+  return <div className="subject-timeline">
+    <div className="chronicle-tools">
+      <label className="chronicle-search">Search this story<input type="search" value={view.query} onChange={(e) => update({ query: e.target.value })} placeholder="A former name, a word, an encounter…" /></label>
+      <label>Events<select value={view.group} onChange={(e) => update({ group: e.target.value as HistoryView["group"] })}>{HISTORY_GROUPS.map((g) => <option key={g}>{g}</option>)}</select></label>
+      <label>Read<select value={view.order} onChange={(e) => update({ order: e.target.value as HistoryView["order"] })}><option value="newest">Latest first</option><option value="oldest">From the beginning</option></select></label>
+    </div>
+    <p className="muted small" role="status">{lines.length} recorded moments. Names are written as they were known then.</p>
+    {[...eras].map(([era, moments], index) => <details className="story-era" key={`${view.order}:${era}`} open={index === 0 ? true : undefined}>
+      <summary>Years {era * YEARS}–{(era + 19) * YEARS}<span>{moments.length} {moments.length === 1 ? "moment" : "moments"}</span></summary>
+      <Story annals={moments} context={context} />
+    </details>)}
+    {lines.length > view.limit ? <button type="button" className="chronicle-load" onClick={() => update({ limit: view.limit + 100 })}>Read another {Math.min(100, lines.length - view.limit)} moments</button> : null}
+    {!lines.length ? <p className="muted">No recorded moments match these filters.</p> : null}
+  </div>;
 }
 
 /// A language's specimen, each word opening its own card.
@@ -1069,7 +1096,7 @@ function HistoryCard({ context }: { context: Context }) {
               return <li key={i}>
                 <kind.icon size={17} aria-hidden="true" />
                 <div><span className="event-kind">{kind.name}</span>
-                  <button type="button" className="moment" onClick={() => context.go({ kind: "event", annal })}><Told text={annal.text} /></button>
+                  <button type="button" className="moment" onClick={() => context.go({ kind: "event", id: annal.id })}><Told text={annal.text} /></button>
                   <AnnalLinks annal={annal} context={context} />
                 </div>
               </li>;
@@ -1158,7 +1185,7 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
   const other = (k: (typeof contacts)[number]) => name(k.a === c.id ? k.b : k.a);
   const kinds = [...new Set(contacts.map((k) => k.kind))];
   const moves = overview.moves.filter((m) => m.community === c.id);
-  const told = overview.annals.filter((a) => a.peoples.includes(c.id));
+  const told = subjectHistory({ kind: "people", id: c.id }, overview, context.map);
   const realm = overview.states.find((s) => s.fell === null &&
     (s.rulers === c.id || s.members.some((m) => m.community === c.id && m.left === null)));
   return (
@@ -1338,7 +1365,7 @@ function StateCard({ state, context }: { state: StateView; context: Context }) {
   const rulers = overview.communities[state.rulers];
   const current = state.fell === null ? state.members.filter((m) => m.left === null) : [];
   const former = state.members.filter((m) => m.left !== null);
-  const told = overview.annals.filter((a) => a.states.includes(state.id));
+  const told = subjectHistory({ kind: "state", id: state.id }, overview, context.map);
   return (
     <>
       <CardHead
@@ -1413,7 +1440,7 @@ function GreatCity({ state, context }: { state: StateView; context: Context }) {
 
 function ReligionCard({ religion, context }: { religion: ReligionView; context: Context }) {
   const { overview } = context;
-  const told = overview.annals.filter((a) => a.religions.includes(religion.id) &&
+  const told = individualAnnals(overview.annals).filter((a) => a.religions.includes(religion.id) &&
     (a.kind === "faith" || a.kind === "conversion" || a.kind === "meaning" ||
       a.kind === "schism" || a.kind === "pilgrimage" || a.kind === "holy-land"));
   const parent = religion.parent === null ? null : overview.religions[religion.parent];
@@ -1529,7 +1556,7 @@ function FaithTreeLeaf({ religion, context }: { religion: ReligionView; context:
 
 function CraftCard({ craft, context }: { craft: CraftView; context: Context }) {
   const { overview } = context;
-  const told = overview.annals.filter((a) => a.crafts.includes(craft.id));
+  const told = subjectHistory({ kind: "craft", id: craft.id }, overview, context.map);
   return (
     <>
       <CardHead icon={Hammer} kind="A craft" title={craft.name} />
@@ -1796,6 +1823,7 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
           onConcept={(concept) => context.go({ kind: "word", variety, concept })}
         />
       </Leaf>
+      <StoryLeaf title="The history of this language" annals={subjectHistory({ kind: "language", variety }, overview, context.map)} context={context} />
     </>
   );
 }
@@ -1855,7 +1883,15 @@ function WordCard({ variety, concept, context }: { variety: number; concept: str
         generation={generation}
         variety={variety}
         concept={concept}
-        onScrub={context.onScrub}
+        onScrub={(at) => {
+          // An inherited word predates its daughter language. Follow the
+          // recorded parent chain to the language that existed in that year.
+          let then = variety;
+          while (overview.varieties[then].born > at && overview.varieties[then].parent !== null) {
+            then = overview.varieties[then].parent!;
+          }
+          context.onVisit({ kind: "word", variety: then, concept }, at);
+        }}
         onOpenVariety={(other) => context.go({ kind: "word", variety: other, concept })}
       />
       {groups.length > 1 ? (
@@ -1889,7 +1925,7 @@ function LawCard({ id, context }: { id: string; context: Context }) {
   const label =
     had[0]?.law.label ?? overview.varieties.flatMap((v) => v.laws).find((l) => l.id === id)?.label ?? id;
   const without = peoples.filter((c) => !had.some((h) => h.c.id === c.id));
-  const told = overview.annals.filter((a) => a.laws.includes(id));
+  const told = subjectHistory({ kind: "law", id }, overview, context.map);
   const waves = had.filter(({ law }) => law.from !== null).length;
   return (
     <>
@@ -2065,6 +2101,7 @@ function LandCard({ region, context }: { region: number; context: Context }) {
           </ol>
         </Leaf>
       ) : null}
+      <StoryLeaf title="The history of this land" annals={subjectHistory({ kind: "land", region }, overview, context.map)} context={context} />
     </>
   );
 }
@@ -2187,6 +2224,16 @@ function EventCard({ annal, context }: { annal: Annal; context: Context }) {
           See the world in year {annal.generation * YEARS}
         </button>
       ) : null}
+      {annal.members.length ? <Leaf id="entries" title="The individual entries" summary={<p>{annal.members.length} encounters or movements gathered into this account.</p>}>
+        <Story annals={annal.members} context={context} />
+      </Leaf> : null}
+      <Leaf id="related" title="Follow the threads" summary={<p>Other moments involving the same people, places, or languages.</p>}>
+        <p className="muted small">Shared subjects offer places to investigate. They do not, by themselves, establish cause and consequence.</p>
+        <ol className="related-moments">{relatedMoments(annal, overview.annals).slice(0, 24).map(({ annal: related, evidence }) => <li key={related.id}>
+          <span className="event-kind">{evidence} · year {related.generation * YEARS}</span>
+          <button type="button" className="moment" onClick={() => context.go({ kind: "event", id: related.id })}><Told text={related.text} /></button>
+        </li>)}</ol>
+      </Leaf>
     </>
   );
 }
