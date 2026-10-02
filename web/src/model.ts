@@ -201,7 +201,43 @@ export interface ReligionView {
   /// The one place the faith reveres, chosen from the lands its founders
   /// knew, its name frozen in the sacred language.
   shrine: Shrine;
+  /// The faith it broke from, when, and why; null for a founded faith.
+  parent: number | null;
+  split: number | null;
+  cause: SchismCause | null;
+  /// What its name was drawn from: a leader, a land, or an epithet on its
+  /// parent's name.
+  named: "leader" | "land" | "epithet" | null;
+  /// The faiths that broke from it, oldest first.
+  branches: number[];
+  /// Every holy place it reveres; the first is `shrine`.
+  shrines: Shrine[];
+  /// Who holds each holy place now, and whether they keep this faith.
+  holyLand: HolyLand[];
+  /// The roads its pilgrims walk now.
+  pilgrims: Pilgrimage[];
 }
+
+export type SchismCause = "distance" | "rule" | "reform" | "succession";
+
+export interface HolyLand {
+  region: number;
+  heldBy: number | null;
+  faithful: boolean;
+}
+
+export interface Pilgrimage {
+  /// The pilgrims' people, and their home land.
+  people: number;
+  from: number;
+  /// The holy place they go to.
+  to: number;
+  /// Lands along the road, from `from` to `to`.
+  path: number[];
+  since: number;
+}
+
+export type StressRule = "initial" | "penult" | "final" | "weight" | "free";
 
 export type ShrineKind = "home" | "mountain" | "island" | "far-shore";
 
@@ -281,6 +317,10 @@ export interface Variety {
   builders: { relation: string; shape: string }[];
   /// The smallest word sound change leaves, such as "two syllables".
   minimalWord: string;
+  /// Where the language puts its stress.
+  stress: StressRule;
+  /// Whether its living words have long consonants, as Italian *fatto*.
+  geminates: boolean;
   /// A few basic words, to know the language by.
   specimen: SpecimenWord[];
   standardOf: number | null;
@@ -318,6 +358,11 @@ export interface SpecimenWord {
   ipa: string;
   /// In a sound change's entry, how it was spelled before, if it changed.
   was: string | null;
+  /// The stressed syllable, counted from 0; null for a word of one syllable.
+  stress: number | null;
+  /// In a sound change's entry, how it sounded before, if the sound or the
+  /// stress changed, even when the spelling did not.
+  wasIpa: string | null;
 }
 
 /// Another spoken language and the share of core words it shares with one.
@@ -435,7 +480,7 @@ export interface TellingView {
 /// One chronicle entry; `variety` is set for a sound law.
 export interface Annal {
   generation: number;
-  kind: "found" | "split" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling";
+  kind: "found" | "split" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land";
   /// The annalist's words; words of the language are marked *thus*.
   text: string;
   /// The apparatus: what a linguist would note, such as sound laws.

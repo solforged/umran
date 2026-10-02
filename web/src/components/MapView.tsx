@@ -515,12 +515,55 @@ export function MapView({
         return k.kind === "rule" || chosen.has(k.a) || chosen.has(k.b);
       })
     : [];
-
+  // Every faith's holy places, side by side where several faiths revere one
+  // land, and the roads their pilgrims walk, drawn under the faiths layer.
+  const faiths = tint.kind === "faiths";
+  const shrineMarks = faiths
+    ? overview.religions.flatMap((religion) => religion.shrines.map((shrine) => ({ religion, shrine })))
+      .map((mark, i, all) => ({ ...mark, offset: all.slice(0, i).filter((m) => m.shrine.region === mark.shrine.region).length }))
+    : [];
+  const pilgrimRoads = faiths
+    ? overview.religions.flatMap((religion) => religion.pilgrims
+      .filter((p) => !p.path.some(hidden))
+      .map((p) => ({ religion, p })))
+    : [];
   // Labels grow more slowly than the land as the view closes in.
   const label = Math.sqrt(box[2] / map.width);
   // Land a veiling language does not know.
   function hidden(region: number): boolean {
     return known !== null && !known.has(region);
+  }
+
+  // Where names would overprint each other, the larger people keeps its name
+  // and the smaller shows as a dot until the view closes in, as a chart
+  // letters only what room allows. Capitals are lettered first, and chosen
+  // peoples always keep theirs. Glyphs in the map's hands run up to about
+  // 0.63 em wide.
+  const crowded = new Set<number>();
+  const lettered: [number, number, number, number][] = [];
+  // Where each capital's mark sits: below the names of the peoples there.
+  const capitalAt = new Map<number, [number, number]>();
+  for (const { state } of realms) {
+    const [x, y] = map.regions[state.capital].site;
+    const below = y + ((hearts.get(state.capital)?.length ?? 0) / 2 * LINE + 0.2) * label;
+    capitalAt.set(state.id, [x, below]);
+    const em = 0.21 * label;
+    const half = state.name.length * em * 0.33;
+    const middle = below + 0.27 * label;
+    lettered.push([x - half, middle - em / 2, x + half, middle + em / 2]);
+  }
+  const byClaim = overview.communities
+    .filter((c) => c.ended === null && !hidden(c.region))
+    .sort((a, b) => Number(chosen.has(b.id)) - Number(chosen.has(a.id)) || b.size - a.size);
+  for (const c of byClaim) {
+    const [x, y] = at.get(c.id)!;
+    const em = (chosen.has(c.id) ? 0.3 : 0.24) * label;
+    const text = tint.kind === "words" ? (wordBy.get(c.id)?.spelled ?? "—") : c.name;
+    const half = text.length * em * 0.33;
+    const extent: [number, number, number, number] = [x - half, y - em / 2, x + half, y + em / 2];
+    const overprints = lettered.some(([x0, y0, x1, y1]) => x0 < extent[2] && extent[0] < x1 && y0 < extent[3] && extent[1] < y1);
+    if (overprints && !chosen.has(c.id)) crowded.add(c.id);
+    else lettered.push(extent);
   }
 
   const shape = (r: WorldMap["regions"][number]) => {
@@ -674,8 +717,22 @@ export function MapView({
             );
           })}
         </g>
+        {pilgrimRoads.length > 0 ? (
+          <g className="pilgrim-roads">
+            {pilgrimRoads.map(({ religion, p }) => (
+              <polyline
+                key={`${religion.id}-${p.people}-${p.to}`}
+                className="pilgrim-road"
+                points={p.path.map((r) => map.regions[r].site.join(",")).join(" ")}
+                style={{ stroke: hue(religion.id) }}
+              >
+                <title>{`Pilgrims of ${religion.name}, the ${overview.communities[p.people].name}, since year ${p.since * YEARS}`}</title>
+              </polyline>
+            ))}
+          </g>
+        ) : null}
         <g className="beacons" aria-hidden="true">
-          {beacons.map((id) => {
+          {[...new Set(beacons)].map((id) => {
             const point = at.get(id);
             if (!point) return null;
             return <circle key={`${id}-${generation}`} className="beacon" cx={point[0]} cy={point[1]} r={0.5} />;
@@ -707,22 +764,26 @@ export function MapView({
                     ? `${c.name}: ${word.spelled} /${word.ipa}/`
                     : `${c.name}, ${Math.round(c.size).toLocaleString()} souls`}
                 </title>
-                <text
-                  x={x}
-                  y={y}
-                  className={`hand-${family(c) % 5}`}
-                  style={{ fill: tint.kind === "words" && word ? hue(word.group) : hue(family(c)) }}
-                >
-                  {text}
-                </text>
+                {crowded.has(c.id) ? (
+                  <circle className="people-dot" cx={x} cy={y} r={0.06 * label}
+                    style={{ fill: tint.kind === "words" && word ? hue(word.group) : hue(family(c)) }} />
+                ) : (
+                  <text
+                    x={x}
+                    y={y}
+                    className={`hand-${family(c) % 5}`}
+                    style={{ fill: tint.kind === "words" && word ? hue(word.group) : hue(family(c)) }}
+                  >
+                    {text}
+                  </text>
+                )}
               </g>
             );
           })}
         </g>
         <g className="state-capitals">
           {realms.map(({ state }) => {
-            const [x, y] = map.regions[state.capital].site;
-            const below = y + ((hearts.get(state.capital)?.length ?? 0) / 2 * LINE + 0.2) * label;
+            const [x, below] = capitalAt.get(state.id)!;
             return (
               <g
                 key={state.id}
@@ -773,17 +834,17 @@ export function MapView({
               </g>
             );
           }) : null}
-          {tint.kind === "faiths" ? overview.religions.map((religion) => {
-            const [x, y] = map.regions[religion.shrine.region].site;
+          {shrineMarks.map(({ religion, shrine, offset }) => {
+            const [x, y] = map.regions[shrine.region].site;
             return (
               <g
-                key={`shrine-${religion.id}`}
+                key={`shrine-${religion.id}-${shrine.region}`}
                 className="founding-marker shrine-marker"
-                transform={`translate(${x + 0.24 * label} ${y + 0.2 * label}) scale(${label})`}
+                transform={`translate(${x + (0.24 + offset * 0.24) * label} ${y + 0.2 * label}) scale(${label})`}
                 style={{ "--mark": hue(religion.id) } as CSSProperties}
                 role={onReligion ? "button" : undefined}
                 tabIndex={onReligion ? 0 : undefined}
-                aria-label={`${religion.shrine.name.name}, shrine of ${religion.name}`}
+                aria-label={`${shrine.name.name}, holy to ${religion.name}`}
                 onClick={() => dragged() || onReligion?.(religion.id)}
                 onKeyDown={(e) => {
                   if (onReligion && (e.key === "Enter" || e.key === " ")) {
@@ -792,11 +853,11 @@ export function MapView({
                   }
                 }}
               >
-                <title>{`${religion.shrine.name.name}, shrine of ${religion.name}`}</title>
+                <title>{`${shrine.name.name}, holy to ${religion.name}`}</title>
                 <path d="M0,-.13L.035,-.035L.13,0L.035,.035L0,.13L-.035,.035L-.13,0L-.035,-.035Z" />
               </g>
             );
-          }) : null}
+          })}
           {tint.kind === "crafts" ? overview.crafts.find((c) => c.id === tint.craft)?.inventors.map((id) => {
             const people = overview.communities[id];
             const [x, y] = map.regions[people.region].site;

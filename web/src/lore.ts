@@ -14,6 +14,9 @@ import {
   GitFork,
   Handshake,
   Languages,
+  MapPinned,
+  Route,
+  Split,
   Landmark,
   Sprout,
   BookOpen,
@@ -28,7 +31,7 @@ import {
   WholeWord,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, Community, ContactKind, Law, Livelihood, Overview, PlaceName, ReligionView, Rendering, StateView, Terrain } from "./model";
+import type { Annal, Community, ContactKind, Law, Livelihood, Overview, PlaceName, ReligionView, Rendering, SchismCause, StateView, StressRule, Terrain } from "./model";
 import { YEARS } from "./model";
 
 export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string }> = {
@@ -56,6 +59,9 @@ export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string 
   conversion: { icon: Sparkles, name: "A people changes faith" },
   meaning: { icon: WholeWord, name: "A meaning changes" },
   respelling: { icon: BookOpen, name: "A spelling changes" },
+  schism: { icon: Split, name: "A faith divides" },
+  pilgrimage: { icon: Route, name: "Pilgrims cross the sea" },
+  "holy-land": { icon: MapPinned, name: "A holy land changes hands" },
 };
 
 export const TERRAIN_NAME: Record<Terrain, string> = {
@@ -105,6 +111,23 @@ export const FAITH_HOW: Record<ReligionView["how"], string> = {
   proclaimed: "proclaimed",
 };
 
+/// Why a faith divided, completing "It broke from its parent …".
+export const SCHISM_CAUSE: Record<SchismCause, string> = {
+  distance: "when its faithful lived too far from the first to keep one teaching",
+  rule: "when a realm would answer to no church beyond its own",
+  reform: "when the faithful no longer understood its sacred speech",
+  succession: "in a quarrel over who should follow the founder",
+};
+
+/// Where a language puts the stress of a word.
+export const STRESS_RULE: Record<StressRule, string> = {
+  initial: "on the first syllable",
+  penult: "on the next to last syllable",
+  final: "on the last syllable",
+  weight: "on the next to last syllable if it is heavy, else the one before",
+  free: "where each word has it",
+};
+
 /// How a language found a word for a craft or a faith.
 export function renderingOrigin(rendering: Rendering): string {
   switch (rendering.how) {
@@ -124,8 +147,10 @@ export function renderingOrigin(rendering: Rendering): string {
 }
 
 /// A colour for the `n`th family or root, far from its neighbours in hue.
+/// Its lightness follows the light (`--hue-light`), so names stay legible
+/// by lamplight.
 export function hue(n: number): string {
-  return `hsl(${Math.round((n * 137.508) % 360)} 55% 48%)`;
+  return `hsl(${Math.round((n * 137.508) % 360)} 55% var(--hue-light))`;
 }
 
 /// When and how people `c` came to have sound change `law`: before their
@@ -192,6 +217,14 @@ export const TERMS = {
     "A word’s meaning becoming worse. A new faith may use an older word for a god to mean a demon.",
   "learned word":
     "A word taken back from a sacred or classical language. English fragile came from Latin beside frail, which had already descended from the same Latin word.",
+  schism:
+    "A faith dividing into branches that each claim the true teaching, as Christianity did between Rome and Constantinople, and again at the Reformation.",
+  pilgrimage:
+    "A journey to a holy place. Pilgrims meet speakers of other tongues on the road and at the shrine, and carry words home.",
+  stress:
+    "The extra force one syllable of a word gets. Where it falls shapes sound change: unstressed vowels weaken and drop, as Latin calidus became Italian caldo.",
+  geminate:
+    "A long, or doubled, consonant, as the tt in Italian fatto “done”. Many arise when one consonant assimilates to the next, as Latin factum became fatto.",
   diglossia:
     "Two forms of one language for different purposes: a fixed, written high form for law, worship, and learning, and the everyday speech everyone grows up with. Latin beside the early Romance languages and Classical Arabic beside the spoken dialects are examples.",
   "classical language":

@@ -18,16 +18,16 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, Catalog, Community, Craft, CraftView, Engine, Overview, PlaceExonym, ReligionView, RenderingRow, ShrineKind, StateView, TellingView, Variety, WordMap, WorldMap } from "../model";
+import type { Annal, Catalog, Community, Craft, CraftView, Engine, HolyLand, Overview, PlaceExonym, ReligionView, RenderingRow, ShrineKind, StateView, TellingView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { CONTACT_NAME, EVENT_KIND, FAITH_HOW, FALL_NAME, howCame, howNamed, hue, LIVELIHOOD_NAME, RISE_NAME, TERMS, TERRAIN_NAME, type Term } from "../lore";
+import { CONTACT_NAME, EVENT_KIND, FAITH_HOW, FALL_NAME, howCame, howNamed, hue, LIVELIHOOD_NAME, RISE_NAME, SCHISM_CAUSE, STRESS_RULE, TERMS, TERRAIN_NAME, type Term } from "../lore";
 import { bond } from "../words";
 import type { DialogKind } from "./ActionDialog";
 import { Told } from "./Told";
 import { Dictionary } from "./Dictionary";
 import { peoplesByRegion } from "./MapView";
 import { Specimen } from "./Specimen";
-import { FamilyTree } from "./FamilyTree";
+import { DescentChart, FamilyTree, type Lineage } from "./FamilyTree";
 import { WordGloss } from "./WordGloss";
 import { Renderings } from "./Renderings";
 
@@ -1313,21 +1313,29 @@ function StateCard({ state, context }: { state: StateView; context: Context }) {
 function ReligionCard({ religion, context }: { religion: ReligionView; context: Context }) {
   const { overview } = context;
   const told = overview.annals.filter((a) => a.religions.includes(religion.id) &&
-    (a.kind === "faith" || a.kind === "conversion" || a.kind === "meaning"));
+    (a.kind === "faith" || a.kind === "conversion" || a.kind === "meaning" ||
+      a.kind === "schism" || a.kind === "pilgrimage" || a.kind === "holy-land"));
+  const parent = religion.parent === null ? null : overview.religions[religion.parent];
   return (
     <>
-      <CardHead icon={Sparkles} kind="A religion" title={<i>{religion.name}</i>}
+      <CardHead icon={Sparkles} kind={parent ? "A branch of a faith" : "A religion"} title={<i>{religion.name}</i>}
         tone={hue(religion.id)}
         sub={<>“{religion.meaning}” <span className="ipa">/{religion.ipa}/</span></>} />
       <Facts rows={[
         ["Founder", <><span className="word">{religion.founder.name}</span>, “{religion.founder.meaning}” <span className="ipa">/{religion.founder.ipa}/</span></>],
-        ["Founded", <>year <Year generation={religion.founded} context={context} />, {FAITH_HOW[religion.how]}</>],
-        ["Founder's people", <PeopleLink c={overview.communities[religion.people]} context={context} />],
-        ["Founding land", <LandLink region={religion.land} context={context} />],
-        ["Sacred place", <>
-          <span className="word">{religion.shrine.name.name}</span>, “{religion.shrine.name.meaning}”, {SHRINE_KIND[religion.shrine.kind]}:{" "}
-          <LandLink region={religion.shrine.region} context={context} /> (<LandmassOf region={religion.shrine.region} context={context} />)
-        </>],
+        parent && religion.split !== null && religion.cause !== null
+          ? ["Broke from", <><ReligionLink religion={parent} context={context} /> in year <Year generation={religion.split} context={context} />, {SCHISM_CAUSE[religion.cause]}</>]
+          : ["Founded", <>year <Year generation={religion.founded} context={context} />, {FAITH_HOW[religion.how]}</>],
+        [parent ? "Begun among" : "Founder's people", <PeopleLink c={overview.communities[religion.people]} context={context} />],
+        [parent ? "Where it began" : "Founding land", <LandLink region={religion.land} context={context} />],
+        ["Branches", religion.branches.length === 0 ? null : (
+          <Joined items={religion.branches} link={(id) => <ReligionLink religion={overview.religions[id]} context={context} />} />
+        )],
+        ...religion.shrines.map((shrine, i): [string, ReactNode] => [i === 0 ? "Holy place" : "Also holy", <>
+          <span className="word">{shrine.name.name}</span>, “{shrine.name.meaning}”, {i > 0 && shrine.kind === "home" ? "the land where it began" : SHRINE_KIND[shrine.kind]}:{" "}
+          <LandLink region={shrine.region} context={context} /> (<LandmassOf region={shrine.region} context={context} />),{" "}
+          <HolyLandKeeper held={religion.holyLand.find((h) => h.region === shrine.region)} context={context} />
+        </>]),
         ["Sacred language", <LanguageLink variety={religion.sacred} context={context} />],
         ["Converts", religion.converts ? "seeks converts" : "keeps to its own"],
         ["Words", religion.translates ? "followers translate its words" : "followers borrow its words"],
@@ -1338,12 +1346,83 @@ function ReligionCard({ religion, context }: { religion: ReligionView; context: 
       {religion.followers.length === 0 ? <p className="muted">No living people holds this faith.</p> : (
         <p><Joined items={religion.followers} link={(id) => <PeopleLink c={overview.communities[id]} context={context} />} /></p>
       )}
+      {religion.pilgrims.length > 0 ? (
+        <Leaf
+          id="pilgrims"
+          title="Pilgrim roads"
+          summary={
+            <p>
+              <Explained term="pilgrimage">Pilgrims</Explained> come from{" "}
+              <Few items={religion.pilgrims} leaf="pilgrims"
+                link={(p) => <PeopleLink c={overview.communities[p.people]} context={context} />} />.
+            </p>
+          }
+        >
+          <ul className="roster">
+            {religion.pilgrims.map((p) => (
+              <li key={`${p.people}-${p.to}`}>
+                <PeopleLink c={overview.communities[p.people]} context={context} /> from{" "}
+                <LandLink region={p.from} context={context} /> to <LandLink region={p.to} context={context} />,{" "}
+                {p.path.length - 1 === 1 ? "next door" : `${p.path.length - 1} lands on the road`},{" "}
+                <small className="muted">since year <Year generation={p.since} context={context} /></small>
+              </li>
+            ))}
+          </ul>
+          <p className="muted small">Pilgrims meet speakers of other tongues on the road and at the shrine, and carry words and sounds home.</p>
+        </Leaf>
+      ) : null}
+      <FaithTreeLeaf religion={religion} context={context} />
       <RenderingsLeaf title="Words of the faith" rows={religion.words} sacred={religion.sacred} context={context}>
         A <Explained term="learned word">learned word</Explained> may return from the sacred language beside its older descendant,
         making a <Explained term="doublet">doublet</Explained>. Older gods may become demons through <Explained term="pejoration">pejoration</Explained>.
       </RenderingsLeaf>
       <StoryLeaf title="Its story" annals={told} context={context} />
     </>
+  );
+}
+
+/// Who keeps a holy place now.
+function HolyLandKeeper({ held, context }: { held: HolyLand | undefined; context: Context }) {
+  if (!held || held.heldBy === null) return <>where no one lives now</>;
+  const keeper = context.overview.communities[held.heldBy];
+  return held.faithful
+    ? <>kept by the faithful, the <PeopleLink c={keeper} context={context} /></>
+    : <>held by the <PeopleLink c={keeper} context={context} />, who do not keep it</>;
+}
+
+/// The faith a branch descends from at the root, and every branch of it,
+/// drawn as a chart of descent.
+function FaithTreeLeaf({ religion, context }: { religion: ReligionView; context: Context }) {
+  const { overview } = context;
+  const rootOf = (r: ReligionView): ReligionView => (r.parent === null ? r : rootOf(overview.religions[r.parent]));
+  const root = rootOf(religion);
+  const members = overview.religions.filter((r) => rootOf(r).id === root.id);
+  if (members.length < 2) return null;
+  const lineages: Lineage[] = members.map((r) => ({
+    id: r.id,
+    name: r.name,
+    parent: r.parent,
+    born: r.split ?? r.founded,
+    // A faith no living people holds is drawn faded, up to now.
+    ended: r.followers.length === 0 ? overview.generation : null,
+    tone: hue(r.id),
+    label: `${r.name}: ${r.parent === null ? "founded" : "broke away"} in year ${(r.split ?? r.founded) * YEARS}${
+      r.followers.length === 0 ? ", held by no one now" : ""}`,
+  }));
+  return (
+    <Leaf
+      id="faith-tree"
+      title="Its branches"
+      summary={
+        <p>
+          A chart of the {members.length} faiths that descend from <ReligionLink religion={root} context={context} />,
+          through each <Explained term="schism">schism</Explained>.
+        </p>
+      }
+    >
+      <DescentChart lineages={lineages} now={overview.generation} chosen={religion.id} what="faiths"
+        onOpen={(id) => context.go({ kind: "religion", id })} />
+    </Leaf>
   );
 }
 
@@ -1465,14 +1544,18 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
               <Joined items={daughters} link={(d) => <LanguageLink variety={d.id} context={context} />} />
             ),
           ],
-          ["Sounds", `${v.consonants.length} consonants, ${v.vowels.length} vowels`],
+          ["Sounds", <>
+            {v.consonants.length} consonants, {v.vowels.length} vowels
+            {v.geminates ? <>, and <Explained term="geminate">long consonants</Explained></> : null}
+          </>],
+          ["Stress", <Explained term="stress">{STRESS_RULE[v.stress]}</Explained>],
           ["Words", `${v.words.toLocaleString()}, built with ${v.wordBuilding}`],
           ["Own words", <Explained term="own words">
             {v.ownWords.own} of {v.ownWords.meanings} meanings
             {v.ownWords.meanings > 0 ? ` (${Math.round(v.ownWords.own / v.ownWords.meanings * 100)}%)` : ""}
             {` · ${v.ownWords.loans} loans · ${v.ownWords.shared} shared`}
           </Explained>],
-          ["Shortest", v.minimalWord],
+          ["Sound change stops at", v.minimalWord],
         ]}
       />
       <LanguageSpecimen variety={variety} context={context} />

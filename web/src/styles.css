@@ -6,6 +6,7 @@
   --paper: #ece0c2;
   --paper-raised: #f4ead2;
   --ink: #2b2117;
+  --hue-light: 48%;
   --ink-soft: #6b5a43;
   --line: #cdb98f;
   --accent: #9b2c1c;
@@ -37,6 +38,7 @@
     --paper: #2b2318;
     --paper-raised: #33291c;
     --ink: #eadbb8;
+    --hue-light: 70%;
     --ink-soft: #b09c7a;
     --line: #54442e;
     --accent: #e07a52;
@@ -60,6 +62,7 @@
   --paper: #2b2318;
   --paper-raised: #33291c;
   --ink: #eadbb8;
+  --hue-light: 70%;
   --ink-soft: #b09c7a;
   --line: #54442e;
   --accent: #e07a52;
@@ -1117,6 +1120,17 @@ table.preview tr {
   fill: var(--ink-soft);
 }
 
+/* A pilgrim road: a dotted track from land to land, in its faith's ink. */
+.pilgrim-road {
+  fill: none;
+  stroke-width: 1.75;
+  stroke-dasharray: 0.5 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-opacity: 0.8;
+  vector-effect: non-scaling-stroke;
+}
+
 /* Where a sound change stopped, drawn on the border it stopped at. */
 .isogloss {
   stroke: var(--danger);
@@ -1246,6 +1260,13 @@ table.preview tr {
 
 .people:focus {
   outline: none;
+}
+
+/* A people whose name would overprint a larger one's, until the view
+   closes in. */
+.people-dot {
+  stroke: var(--paper);
+  stroke-width: calc(0.03px * var(--label, 1));
 }
 .people:focus-visible text {
   stroke: var(--accent-mute);
