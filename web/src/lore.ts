@@ -185,10 +185,10 @@ export function renderingOrigin(rendering: Rendering): string {
 }
 
 /// A colour for the `n`th family or root, far from its neighbours in hue.
-/// Its lightness follows the light (`--hue-light`), so names stay legible
-/// by lamplight.
+/// OKLCH keeps every hue at the same perceived lightness (`--hue-light`),
+/// so green and yellow names read as well as red ones, by day or lamplight.
 export function hue(n: number): string {
-  return `hsl(${Math.round((n * 137.508) % 360)} 55% var(--hue-light))`;
+  return `oklch(var(--hue-light) 0.13 ${Math.round((n * 137.508) % 360)})`;
 }
 
 /// When and how people `c` came to have sound change `law`: before their
