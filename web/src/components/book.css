@@ -1,5 +1,17 @@
-.book { z-index: 8; }
-.book .book-page { scroll-behavior: smooth; padding: 1rem clamp(1rem, 5vw, 4.5rem) 4rem; }
+/* The book is a sheet laid over the chart (the stage's sheet-host); without
+   a chart it is the whole page. */
+.sheet-host { grid-area: map; position: relative; z-index: 7; min-height: 0; min-width: 0; }
+.book { position: absolute; inset: .8rem; z-index: 8; display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--paper); border: 1px solid var(--line); box-shadow: 0 12px 32px rgb(0 0 0 / .3); animation: sheet-settle var(--settle) var(--paper-ease); }
+.app > .book { position: relative; inset: auto; flex: 1; }
+.book-sheet-head { display: flex; flex-wrap: wrap; flex-shrink: 0; align-items: baseline; gap: .8rem; padding: .65rem 1rem .4rem; border-bottom: 1px solid var(--line); }
+.book-sheet-head h2 { flex: 1; min-width: 0; margin: 0; font-family: var(--display); font-weight: 500; overflow-wrap: anywhere; }
+.book-of { font-family: var(--display); font-size: .8rem; letter-spacing: .15em; text-transform: uppercase; color: var(--ink-soft); }
+.book-close { margin-left: auto; }
+.book-page { min-height: 0; overflow: auto; overscroll-behavior: contain; scroll-behavior: smooth; padding: 1rem clamp(1rem, 5vw, 4.5rem) 4rem; }
+@media (max-width: 900px) {
+  .book-sheet-head { gap: .5rem; padding-inline: .6rem; }
+  .book-page { padding-inline: .8rem; }
+}
 .book a { color: inherit; text-decoration-color: var(--line); text-underline-offset: .15em; }
 .book a:hover { color: var(--accent); }
 .book-contents { max-width: 54rem; margin: 0 auto 2rem; padding: 1rem 0; border-bottom: 1px solid var(--line); }

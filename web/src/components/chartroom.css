@@ -95,7 +95,8 @@
 }
 
 .room-last-line {
-  font-size: 0.85rem;
+  font-style: italic;
+  font-size: 0.9rem;
   line-height: 1.4;
   color: var(--ink-soft);
   display: -webkit-box;
@@ -111,7 +112,7 @@
 }
 
 .room-world-leading .room-world-title strong { font-size: 2rem; }
-.room-world-leading .room-last-line { font-size: 0.95rem; }
+.room-world-leading .room-last-line { font-size: 1rem; }
 
 .room-continue {
   display: flex;
@@ -147,7 +148,8 @@
   border-radius: 0;
   background: none;
   color: var(--desk-ink);
-  font-size: 0.95rem;
+  font-family: var(--display);
+  font-size: 1.1rem;
   text-align: left;
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, var(--desk-ink) 40%, transparent);
@@ -179,15 +181,14 @@
 .chart-room-empty .room-action p { font-size: 0.95rem; }
 
 :root:has(main.chart-room) .light-switch {
-  top: 0.4rem;
+  top: 1.6rem;
   bottom: auto;
-  right: 0.8rem;
-  padding: 0.1rem 0.3rem;
+  right: 1.2rem;
   border: 0;
   box-shadow: none;
+  color: var(--desk-ink);
+  background: transparent;
 }
-:root:has(main.chart-room) .light-switch,
-:root:has(main.chart-room) .light-switch select { color: var(--desk-ink); background: var(--desk); }
 
 @media (max-width: 760px) {
   .room-world-leading { width: 100%; aspect-ratio: 1.6; }

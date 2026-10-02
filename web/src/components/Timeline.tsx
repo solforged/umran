@@ -24,8 +24,9 @@ const PRECEDENCE: Record<MarkKind, number> = {
   found: 0, split: 1, shift: 2, conquest: 3, rose: 4, fell: 5, faith: 6, craft: 7,
 };
 const RULER_STEPS = [100, 200, 500, 1000, 2000, 5000, 10000];
-/// Under eight screen pixels per generation, individual marks overprint.
-const MARK_SPACING = 8;
+/// A mark is ten pixels wide; under fourteen screen pixels per generation,
+/// marks in neighbouring generations overprint.
+const MARK_SPACING = 14;
 
 function isMarkKind(kind: Annal["kind"]): kind is MarkKind {
   return Object.hasOwn(PRECEDENCE, kind);

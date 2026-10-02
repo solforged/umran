@@ -273,9 +273,13 @@ input[type="checkbox"] {
 
 /* The chart room's miniatures; the room itself is styled in chartroom.css. */
 
-/* Names lettered at the shelf's scale, so they stay inside the sheet. */
+/* Names lettered at the shelf's scale, so they stay inside the sheet; the
+   halo thinner, since at this size it swallows the letters. */
 .miniature svg {
   --label: 1.5;
+}
+.miniature .people text {
+  stroke-width: calc(0.035px * var(--label, 1));
 }
 
 /* At this size a people's lands need a stronger wash to show. */
@@ -882,15 +886,6 @@ table.preview tr {
 @media (max-width: 900px) {
   .workbench .sheet-host {
     grid-area: content;
-  }
-
-  .export-sheet .sheet-head {
-    gap: 0.5rem;
-    padding-inline: 0.6rem;
-  }
-
-  .export-sheet .sheet-page {
-    padding-inline: 0.8rem;
   }
 }
 
@@ -1856,10 +1851,12 @@ button.icon,
   accent-color: var(--accent);
 }
 
-/* A family as a chart of descent: a bar for each language over time. */
+/* A family as a chart of descent: a bar for each language over time. Drawn
+   at 320 units; capped so a wide sheet does not triple its lettering. */
 .family-tree {
   display: block;
   width: 100%;
+  max-width: 34rem;
   height: auto;
   margin: 0.3rem 0 0.8rem;
 }

@@ -210,12 +210,12 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
       </button> : null}
     </header>
   );
-  return <section className="export-sheet book" role="dialog" aria-modal="false" aria-label={`The book of ${title}`}>
-    <header className="sheet-head">
-      <span className="sheet-of">The book</span><h2>{title}</h2>
-      <button ref={close} type="button" className="icon-btn sheet-close" aria-label="Back to the chart" onClick={onBack}>×</button>
+  return <section className="book" role="dialog" aria-modal="false" aria-label={`The book of ${title}`}>
+    <header className="book-sheet-head">
+      <span className="book-of">The book</span><h2>{title}</h2>
+      <button ref={close} type="button" className="icon-btn book-close" aria-label="Back to the chart" onClick={onBack}>×</button>
     </header>
-    <div className="sheet-page book-page">
+    <div className="book-page">
       <nav className="book-contents" id="book-contents" aria-label="Table of contents">
         <h3>Contents</h3>
         <ol>{CONTENTS.map(([id, name]) => <li key={id}><a href={`#book-${id}`}>{name}</a></li>)}</ol>

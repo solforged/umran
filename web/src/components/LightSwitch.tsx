@@ -1,12 +1,15 @@
+import { Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
 import { useEffect, useSyncExternalStore } from "react";
 
 // The chart by day or by lamplight, or as the system sets it. The choice is
 // a per-browser convenience, so storage failures are ignored.
-const LIGHTS = [
-  ["auto", "As the system sets it"],
-  ["light", "By day"],
-  ["dark", "By lamplight"],
-] as const;
+const LIGHTS: readonly (readonly [string, string, LucideIcon])[] = [
+  ["auto", "As the system sets it", Monitor],
+  ["light", "By day", Sun],
+  ["dark", "By lamplight", Moon],
+];
+/// The order the switch cycles through: day, lamplight, then the system.
+const CYCLE = [LIGHTS[1], LIGHTS[2], LIGHTS[0]];
 
 const KEY = "umran.light";
 
@@ -47,23 +50,23 @@ export function useLight(): [string, (light: string) => void] {
 
 export function LightChoice() {
   const [light, setLight] = useLight();
-  return <>{[LIGHTS[1], LIGHTS[2], LIGHTS[0]].map(([id, name]) => (
-    <button key={id} type="button" role="menuitemradio" aria-checked={light === id} onClick={() => setLight(id)}>{name}</button>
+  return <>{CYCLE.map(([id, name, Icon]) => (
+    <button key={id} type="button" role="menuitemradio" aria-checked={light === id} onClick={() => setLight(id)}>
+      <Icon size={15} aria-hidden="true" /> {name}
+    </button>
   ))}</>;
 }
 
+/// One button showing the light in use; each press moves to the next.
 export function LightSwitch() {
   const [light, setLight] = useLight();
+  const at = Math.max(0, CYCLE.findIndex(([id]) => id === light));
+  const [, name, Icon] = CYCLE[at];
+  const [nextId, nextName] = CYCLE[(at + 1) % CYCLE.length];
+  const title = `${name}. Switch to ${nextName.toLowerCase()}`;
   return (
-    <label className="light-switch">
-      Light
-      <select value={light} onChange={(e) => setLight(e.target.value)}>
-        {LIGHTS.map(([id, name]) => (
-          <option key={id} value={id}>
-            {name}
-          </option>
-        ))}
-      </select>
-    </label>
+    <button type="button" className="light-switch icon" title={title} aria-label={title} onClick={() => setLight(nextId)}>
+      <Icon size={16} aria-hidden="true" />
+    </button>
   );
 }
