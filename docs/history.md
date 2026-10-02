@@ -50,6 +50,15 @@ local to the browser, not synced. The sample world (`web/src/sample.ts`)
 is a fixed recipe of four thousand years, offered on the shelf and at the
 top of world setup; opening it puts a fresh copy on the shelf.
 
+The first visit opens the shelf, even when it is empty; setup and the
+sample are explicit choices there. Later visits resume the world left
+open, including one reopened without making changes. Returning to the
+shelf clears that resume choice, so reloading stays on the shelf. The
+top-left astrolabe and name lead to the shelf from setup, the stage, and
+Export; Export also has a separate link back to the map. Leaving the stage
+during playback saves the latest generation before recording the shelf as
+the next launch destination.
+
 The production workbench is also an installable offline app. Its service
 worker caches the app shell and WebAssembly engine, not worlds; saved
 recipes keep the same localStorage keys. Worker cache cleanup never

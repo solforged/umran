@@ -286,7 +286,8 @@
 
 /* The head reads as a chart's border: the name in spaced capitals, the
    world's title in old type, the way back and out kept quiet. */
-:root .stage-head .brand {
+:root .stage-head .brand,
+:root .appendix-head .brand {
   color: var(--ink);
 }
 :root .stage-head nav button.link:not(.brand) {

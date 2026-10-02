@@ -98,8 +98,8 @@ export function WorldSetup({
 }: {
   catalog: Catalog;
   onBegin: (engine: Engine) => void;
-  /// Back to the shelf, if there are worlds on it.
-  onShelf?: () => void;
+  /// Back to the shelf, even before the first world is begun.
+  onShelf: () => void;
   /// Open the sample world, already thousands of years along.
   onSample: () => Promise<void>;
 }) {
@@ -189,13 +189,9 @@ export function WorldSetup({
     <div className="stage setup">
       <header className="stage-head">
         <nav>
-          {onShelf ? (
-            <button type="button" className="link brand" onClick={onShelf} title="Back to the shelf">
-              <span className="brand-name"><span>ʿUmrān</span></span>
-            </button>
-          ) : (
-            <span className="brand"><span className="brand-name"><span>ʿUmrān</span></span></span>
-          )}
+          <button type="button" className="link brand" onClick={onShelf} title="Back to the shelf" aria-label="Back to the shelf">
+            <span className="brand-name"><span>ʿUmrān</span></span>
+          </button>
         </nav>
       </header>
 
@@ -395,11 +391,9 @@ export function WorldSetup({
           )}
         </span>
         <span className="row">
-          {onShelf ? (
-            <button type="button" className="link" onClick={onShelf}>
-              Back to the shelf
-            </button>
-          ) : null}
+          <button type="button" className="link" onClick={onShelf}>
+            Back to the shelf
+          </button>
           <button
             type="button"
             className="primary begin"

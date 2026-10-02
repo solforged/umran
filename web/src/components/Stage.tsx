@@ -221,7 +221,7 @@ export function Stage({
     <div className="stage">
       <header className="stage-head">
         <nav>
-          <button type="button" className="link brand" onClick={onShelf} title="Back to the shelf">
+          <button type="button" className="link brand" onClick={onShelf} title="Back to the shelf" aria-label="Back to the shelf">
             <span className="brand-name"><span>ʿUmrān</span></span>
           </button>
           <button type="button" className="link" onClick={onExport}>

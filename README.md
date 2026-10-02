@@ -13,8 +13,13 @@ every word they speak changes in response: sounds shift regularly, words
 are borrowed and compete, names wear down, and families of related
 languages branch out. It runs entirely in the browser.
 
-**[Try it in your browser](https://solforged.github.io/umran/)**: choose
-"Watch a sample world" to open one already four thousand years along.
+**[Try it in your browser](https://solforged.github.io/umran/)**: the first
+visit opens the chart room. Choose "Unknown waters" to set up a new world,
+or "A chronicle already written" to open a sample four thousand years along.
+
+Later visits resume the world left open. The top-left astrolabe and name
+return to the shelf from setup, the world, or Export; leaving for the shelf
+also makes it the next launch destination.
 
 ![The stage after 4,050 years: three language families spread over the map drawn as an old chart, the encyclopedia card for the world beside it, and the latest line of the chronicle above the time bar](docs/images/stage.png)
 

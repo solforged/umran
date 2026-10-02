@@ -15,6 +15,7 @@ export function Appendix({
   title,
   variety,
   onBack,
+  onShelf,
 }: {
   engine: Engine;
   catalog: Catalog;
@@ -25,6 +26,7 @@ export function Appendix({
   /// The tongue to open the glossary on.
   variety: number;
   onBack: () => void;
+  onShelf: () => void;
 }) {
   const [tongue, setTongue] = useState(variety);
   const [order, setOrder] = useState<"word" | "meaning">("word");
@@ -65,9 +67,14 @@ export function Appendix({
   return (
     <main className="appendix">
       <header className="appendix-head">
-        <button type="button" className="link" onClick={onBack}>
-          ← Back to the map
-        </button>
+        <nav className="row">
+          <button type="button" className="link brand" onClick={onShelf} title="Back to the shelf" aria-label="Back to the shelf">
+            <span className="brand-name"><span>ʿUmrān</span></span>
+          </button>
+          <button type="button" className="link" onClick={onBack}>
+            ← Back to the map
+          </button>
+        </nav>
         <h2>Export</h2>
         <p className="muted">
           As the world stands in year {generation * YEARS}. Copy or download anything here to use it elsewhere.

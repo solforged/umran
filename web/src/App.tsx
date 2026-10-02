@@ -134,11 +134,18 @@ export default function App() {
     }
     setShelf(loaded);
     if (loaded.last !== null && loaded.books.some((b) => b.id === loaded.last)) openBook(loaded.last);
-    else setView({ kind: loaded.books.length === 0 ? "setup" : "shelf" });
+    else setView({ kind: "shelf" });
   }, [openBook]);
 
+  // Record the destination after the stage's playback cleanup has saved.
+  // Opening an unchanged world must also make it the one resumed next time.
+  useEffect(() => {
+    if (view.kind === "loading" || view.kind === "recovery") return;
+    const last = view.kind === "book" ? view.id : null;
+    setShelf((current) => current.last === last ? current : setLast(current, last));
+  }, [view]);
+
   const toShelf = useCallback(() => {
-    setShelf((current) => setLast(current, null));
     setError(null);
     setView({ kind: "shelf" });
   }, []);
@@ -250,7 +257,7 @@ export default function App() {
           <button type="button" onClick={() => download("umran-unreadable.json", view.raw)}>
             Download saved data
           </button>
-          <button type="button" onClick={() => setView({ kind: "shelf" })}>
+          <button type="button" onClick={toShelf}>
             Go to the shelf
           </button>
         </div>
@@ -264,7 +271,7 @@ export default function App() {
         <WorldSetup
           catalog={catalog}
           onBegin={begin}
-          onShelf={shelf.books.length > 0 ? () => setView({ kind: "shelf" }) : undefined}
+          onShelf={toShelf}
           onSample={sample}
         />
       </div>
@@ -365,6 +372,7 @@ export default function App() {
           title={title}
           variety={overview.communities[selected].variety}
           onBack={() => setPage("stage")}
+          onShelf={toShelf}
         />
         {dialogs}
       </div>
