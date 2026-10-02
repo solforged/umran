@@ -7,6 +7,7 @@ use annals::{Annal, annals};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use umran_sim::climate::ClimateCause;
+use std::{cell::RefCell, rc::Rc};
 use umran_sim::compare::intelligibility;
 use umran_sim::concepts::{Concept, by_id, related};
 use umran_sim::geography::{KM_PER_UNIT, LandmassKind, RIVER_TRAVEL_FLOW};
@@ -19,9 +20,10 @@ use umran_sim::names::{Name, PlaceName, PlaceOrigin};
 use umran_sim::phoneme::{Backness, Manner, Secondary};
 use umran_sim::schisms::{BranchNaming, HolyLand, Pilgrimage, SchismCause};
 use umran_sim::{
-    Action, CATALOG, CONCEPTS, Challenge, Chronicle, Craft, ENGINE_REVISION, Event, FORMAT, Fall,
-    Flavor, Form, HistoryPoint, Lexeme, LexemeId, Livelihood, MapSize, NameStyle, Origin,
-    PhonemeId, Recipe, Revelation, Rise, SetAside, StressRule, Terrain, World, WorldEvent, catalog,
+    Action, CATALOG, CONCEPTS, Challenge, Chronicle, Craft, ENGINE_REVISION, Event, Fall, Flavor,
+    Form, HistoryPoint, Lexeme, LexemeId, Livelihood, MapSize, NameStyle, Origin, PhonemeId,
+    ReadingRef, Recipe, Revelation, Rise, StressRule, TellingId, Terrain, World, WorldEvent,
+    catalog,
 };
 use umran_sim::{LanguageDesign, MorphologyKind, Naming, Segment, Variety};
 use wasm_bindgen::prelude::*;
@@ -83,8 +85,27 @@ impl Workbench {
         self.bench.act_at(point, mutation, action).map_err(fail)
     }
 
-    pub fn undo(&mut self) -> bool {
-        self.bench.undo()
+    pub fn previous(&self, reading: &str) -> Result<String, JsValue> {
+        self.bench.previous(reading).map_err(fail)
+    }
+
+    pub fn read(&self, telling: u32, point: &str) -> Result<ReadView, JsValue> {
+        Ok(ReadView {
+            bench: self.bench.scope(telling, point).map_err(fail)?,
+        })
+    }
+
+    pub fn rename(&mut self, telling: u32, name: &str) -> Result<(), JsValue> {
+        self.bench.rename(telling, name).map_err(fail)
+    }
+
+    pub fn compare(&self, left: u32, right: u32, generation: u32) -> Result<String, JsValue> {
+        self.bench.compare(left, right, generation).map_err(fail)
+    }
+
+    #[wasm_bindgen(js_name = untilAt)]
+    pub fn until_at(&mut self, reading: &str, mutation: u32, limit: u32) -> Result<u32, JsValue> {
+        self.bench.until_at(reading, mutation, limit).map_err(fail)
     }
 
     #[wasm_bindgen(js_name = runUntilEvent)]
@@ -97,7 +118,7 @@ impl Workbench {
     }
 
     /// Takes up a telling set aside, setting the present one aside.
-    pub fn restore(&mut self, index: usize) -> Result<(), JsValue> {
+    pub fn restore(&mut self, index: TellingId) -> Result<(), JsValue> {
         self.bench.restore(index).map_err(fail)
     }
 
@@ -166,6 +187,79 @@ impl Workbench {
     }
 }
 
+/// A scoped read capability. Every view resolves IDs within this telling and,
+/// when supplied, at the same exact position within a year.
+#[wasm_bindgen]
+pub struct ReadView {
+    bench: Rc<RefCell<Bench>>,
+}
+#[wasm_bindgen]
+impl ReadView {
+    pub fn latest(&self) -> u32 {
+        self.bench.borrow().latest()
+    }
+    pub fn overview(&mut self, generation: u32) -> Result<String, JsValue> {
+        self.bench.borrow_mut().overview(generation).map_err(fail)
+    }
+    #[wasm_bindgen(js_name = overviewAt)]
+    pub fn overview_at(&mut self, point: &str) -> Result<String, JsValue> {
+        self.bench.borrow_mut().overview_at(point).map_err(fail)
+    }
+    pub fn settlement(
+        &self,
+        point: &str,
+        community: usize,
+        intent: &str,
+        share: f32,
+        destination: i32,
+    ) -> Result<String, JsValue> {
+        self.bench
+            .borrow()
+            .settlement(point, community, intent, share, destination)
+            .map_err(fail)
+    }
+    pub fn lexicon(&mut self, generation: u32, variety: usize) -> Result<String, JsValue> {
+        self.bench
+            .borrow_mut()
+            .lexicon(generation, variety)
+            .map_err(fail)
+    }
+    pub fn kin(&mut self, generation: u32, variety: usize) -> Result<String, JsValue> {
+        self.bench
+            .borrow_mut()
+            .kin(generation, variety)
+            .map_err(fail)
+    }
+    pub fn word(
+        &mut self,
+        generation: u32,
+        variety: usize,
+        concept: &str,
+    ) -> Result<String, JsValue> {
+        self.bench
+            .borrow_mut()
+            .word(generation, variety, concept)
+            .map_err(fail)
+    }
+    pub fn map(&self) -> Result<String, JsValue> {
+        self.bench.borrow().map().map_err(fail)
+    }
+    #[wasm_bindgen(js_name = wordMap)]
+    pub fn word_map(&mut self, generation: u32, concept: &str) -> Result<String, JsValue> {
+        self.bench
+            .borrow_mut()
+            .word_map(generation, concept)
+            .map_err(fail)
+    }
+}
+
+struct CachedReading {
+    telling: TellingId,
+    point: String,
+    mutation: u32,
+    bench: Rc<RefCell<Bench>>,
+}
+
 pub struct Bench {
     chronicle: Chronicle,
     /// Invalidates previews even when two decisions happen in the same year.
@@ -175,9 +269,9 @@ pub struct Bench {
     cached: Option<World>,
     /// Engine revision a loaded recipe was saved with, if it differs.
     saved_revision: Option<u32>,
-    /// What each telling set aside told, kept since telling it again means
-    /// replaying it whole.
-    told: Vec<(Vec<Action>, Vec<Annal>)>,
+    /// An exact, read-only view. All language and word queries share it.
+    fixed: Option<(HistoryPoint, World)>,
+    readings: RefCell<Vec<CachedReading>>,
 }
 
 impl Bench {
@@ -189,7 +283,8 @@ impl Bench {
             mutation: 0,
             cached: None,
             saved_revision: None,
-            told: Vec::new(),
+            fixed: None,
+            readings: RefCell::default(),
         })
     }
 
@@ -203,7 +298,8 @@ impl Bench {
             mutation: 0,
             cached: None,
             saved_revision: (recipe.revision != ENGINE_REVISION).then_some(recipe.revision),
-            told: Vec::new(),
+            fixed: None,
+            readings: RefCell::default(),
         })
     }
 
@@ -402,19 +498,144 @@ impl Bench {
                 "The history has changed since this preview. Read it again before deciding.".into(),
             );
         }
-        let point: HistoryPoint = serde_json::from_str(point).map_err(|e| e.to_string())?;
+        let reading: ReadingRef = serde_json::from_str(point).map_err(|e| e.to_string())?;
         let action: Action =
             serde_json::from_str(action).map_err(|e| format!("Malformed action: {e}"))?;
-        self.chronicle.act_at(point, action)?;
+        if reading.telling == self.chronicle.active() {
+            self.chronicle.act_at(reading.point, action)?;
+        } else {
+            let mut candidate = self.chronicle.reading(reading.telling)?;
+            candidate.act_at(reading.point, action)?;
+            self.chronicle = candidate;
+        }
         self.mutation = self.mutation.wrapping_add(1);
         self.cached = None;
         Ok(())
     }
 
-    pub fn undo(&mut self) -> bool {
+    pub fn previous(&self, reading: &str) -> Result<String, String> {
+        let mut reading: ReadingRef = serde_json::from_str(reading).map_err(|e| e.to_string())?;
+        let history = self.chronicle.reading(reading.telling)?;
+        reading.point = history.previous(reading.point)?;
+        to_json(&reading)
+    }
+
+    fn scope(&self, telling: TellingId, point: &str) -> Result<Rc<RefCell<Bench>>, String> {
+        {
+            let mut cache = self.readings.borrow_mut();
+            cache.retain(|r| r.mutation == self.mutation);
+            if let Some(index) = cache
+                .iter()
+                .position(|r| r.telling == telling && r.point == point)
+            {
+                let reading = cache.remove(index);
+                let handle = Rc::clone(&reading.bench);
+                cache.push(reading);
+                return Ok(handle);
+            }
+        }
+        let bench = Rc::new(RefCell::new(self.read(telling, point)?));
+        let mut cache = self.readings.borrow_mut();
+        if cache.len() >= 4 {
+            cache.remove(0);
+        }
+        cache.push(CachedReading {
+            telling,
+            point: point.into(),
+            mutation: self.mutation,
+            bench: Rc::clone(&bench),
+        });
+        Ok(bench)
+    }
+
+    pub fn read(&self, telling: TellingId, point: &str) -> Result<Bench, String> {
+        let chronicle = self.chronicle.reading(telling)?;
+        let fixed = if point.is_empty() {
+            None
+        } else {
+            let point: HistoryPoint = serde_json::from_str(point).map_err(|e| e.to_string())?;
+            Some((point, chronicle.world_at_point(point)?))
+        };
+        Ok(Bench {
+            chronicle,
+            mutation: self.mutation,
+            cached: None,
+            saved_revision: self.saved_revision,
+            fixed,
+            readings: RefCell::default(),
+        })
+    }
+
+    pub fn rename(&mut self, telling: TellingId, name: &str) -> Result<(), String> {
+        self.chronicle.rename(telling, name)?;
         self.mutation = self.mutation.wrapping_add(1);
-        self.cached = None;
-        self.chronicle.undo().is_some()
+        Ok(())
+    }
+
+    pub fn until_at(&mut self, reading: &str, mutation: u32, limit: u32) -> Result<u32, String> {
+        if limit == 0 {
+            return Ok(0);
+        }
+        self.act_at(reading, mutation, r#"{"kind":"run","generations":1}"#)?;
+        // Stop if that first generation already produced an event.
+        let generation = self.latest();
+        if self
+            .chronicle
+            .latest()
+            .events
+            .iter()
+            .any(|(g, _)| *g == generation)
+        {
+            return Ok(1);
+        }
+        Ok(1 + self.run_until_event(limit - 1))
+    }
+
+    pub fn compare(
+        &self,
+        left: TellingId,
+        right: TellingId,
+        generation: u32,
+    ) -> Result<String, String> {
+        let a = self.scope(left, "")?;
+        let b = self.scope(right, "")?;
+        if generation > a.borrow().latest().min(b.borrow().latest()) {
+            return Err("Choose a year already recorded in both tellings.".into());
+        }
+        let common = self.chronicle.common_reading(left, right)?;
+        let shared = self.scope(
+            common.telling,
+            &serde_json::to_string(&common.point).map_err(|e| e.to_string())?,
+        )?;
+        let (diverged, people_count, language_count) = {
+            let mut shared = shared.borrow_mut();
+            let world = shared.world(generation);
+            (
+                world.generation,
+                world.communities.len(),
+                world.varieties.len(),
+            )
+        };
+        let a: serde_json::Value = serde_json::from_str(&a.borrow_mut().overview(generation)?)
+            .map_err(|e| e.to_string())?;
+        let b: serde_json::Value = serde_json::from_str(&b.borrow_mut().overview(generation)?)
+            .map_err(|e| e.to_string())?;
+        let people_count = if generation < diverged {
+            a["communities"].as_array().unwrap().len()
+        } else {
+            people_count
+        };
+        let language_count = if generation < diverged {
+            a["varieties"].as_array().unwrap().len()
+        } else {
+            language_count
+        };
+        to_json(
+            &serde_json::json!({ "generation": generation, "common": common, "diverged": diverged,
+            "sharedPeoples": (0..people_count).collect::<Vec<_>>(),
+            "sharedLanguages": (0..language_count).collect::<Vec<_>>(),
+            "left": a, "right": b }),
+        )
     }
 
     pub fn run_until_event(&mut self, limit: u32) -> u32 {
@@ -430,64 +651,67 @@ impl Bench {
         self.chronicle.branch_at(generation);
     }
 
-    pub fn restore(&mut self, index: usize) -> Result<(), String> {
+    pub fn restore(&mut self, index: TellingId) -> Result<(), String> {
         self.chronicle.restore(index)?;
         self.mutation = self.mutation.wrapping_add(1);
         self.cached = None;
         Ok(())
     }
 
-    /// Each telling set aside, with what it told that the present history
-    /// does not, up to `generation` when viewing the past.
-    fn tellings(&mut self, generation: u32) -> Vec<TellingView> {
-        if self.chronicle.tellings().is_empty() {
-            self.told.clear();
-            return Vec::new();
-        }
-        let current = self.chronicle.actions().to_vec();
-        let present = annals(self.chronicle.latest());
-        let until = if generation < self.latest() {
-            generation
-        } else {
-            u32::MAX
-        };
-        let tellings = self.chronicle.tellings().to_vec();
-        self.told
-            .retain(|(actions, _)| tellings.iter().any(|t| &t.actions == actions));
-        let mut out = Vec::new();
-        for (index, telling) in tellings.iter().enumerate() {
-            let told = match self.told.iter().find(|(a, _)| *a == telling.actions) {
-                Some((_, told)) => told.clone(),
-                None => {
-                    let told = tell(self.chronicle.seed, self.chronicle.map, &telling.actions);
-                    self.told.push((telling.actions.clone(), told.clone()));
-                    told
-                }
-            };
-            let from = divergence(&current, &telling.actions);
-            let mut unmatched: Vec<&Annal> =
-                present.iter().filter(|a| a.generation >= from).collect();
-            let struck: Vec<Annal> = told
-                .into_iter()
-                .filter(|a| a.generation >= from && a.generation <= until)
-                .filter(|a| match unmatched.iter().position(|p| *p == a) {
-                    Some(i) => {
-                        unmatched.swap_remove(i);
-                        false
-                    }
-                    None => true,
-                })
-                .collect();
-            if !struck.is_empty() {
-                out.push(TellingView {
-                    index,
-                    why: telling.why,
-                    from,
-                    struck,
+    /// Metadata never depends on matching annal prose or successful replay.
+    fn tellings(&self) -> Vec<TellingView> {
+        self.chronicle
+            .tellings()
+            .iter()
+            .map(|t| {
+                let latest = t
+                    .actions
+                    .iter()
+                    .filter_map(|a| {
+                        if let Action::Run { generations } = a {
+                            Some(*generations)
+                        } else {
+                            None
+                        }
+                    })
+                    .sum();
+                let tip = match t.actions.last() {
+                    Some(Action::Run { generations }) => HistoryPoint {
+                        action: t.actions.len() - 1,
+                        offset: *generations,
+                    },
+                    _ => HistoryPoint {
+                        action: t.actions.len(),
+                        offset: 0,
+                    },
+                };
+                let from = t.parent.map(|p| {
+                    self.chronicle
+                        .telling(p.telling)
+                        .expect("validated parent")
+                        .actions[..p.point.action]
+                        .iter()
+                        .filter_map(|a| {
+                            if let Action::Run { generations } = a {
+                                Some(*generations)
+                            } else {
+                                None
+                            }
+                        })
+                        .sum::<u32>()
+                        + p.point.offset
                 });
-            }
-        }
-        out
+                TellingView {
+                    id: t.id,
+                    name: t.name.clone(),
+                    parent: t.parent,
+                    from,
+                    latest,
+                    tip,
+                    actions: t.actions.len(),
+                }
+            })
+            .collect()
     }
 
     pub fn latest(&self) -> u32 {
@@ -507,6 +731,7 @@ impl Bench {
         };
         #[derive(Serialize)]
         struct Preview {
+            telling: TellingId,
             point: HistoryPoint,
             mutation: u32,
             options: Vec<SettlementOption>,
@@ -535,6 +760,7 @@ impl Bench {
             }
         };
         to_json(&Preview {
+            telling: self.chronicle.active(),
             point,
             mutation: self.mutation,
             options,
@@ -545,7 +771,7 @@ impl Bench {
 
     /// Communities, varieties, contacts, and the timeline at `generation`.
     pub fn overview(&mut self, generation: u32) -> Result<String, String> {
-        self.overview_reading(generation, None)
+        self.overview_reading(generation, self.fixed.clone())
     }
 
     pub fn overview_at(&mut self, point: &str) -> Result<String, String> {
@@ -577,7 +803,9 @@ impl Bench {
         let timeline = self.timeline();
         let seed = self.chronicle.seed;
         let saved_revision = self.saved_revision;
-        let tellings = self.tellings(generation);
+        let tellings = self.tellings();
+        let telling = self.chronicle.active();
+        let at_tip = self.chronicle.end() == point;
         let world = match &exact {
             Some((_, world)) => world,
             None => self.world(generation),
@@ -644,6 +872,8 @@ impl Bench {
         // Which state, if any, each language is the standard of.
         let standards = world.standards();
         let view = Overview {
+            telling,
+            at_tip,
             seed,
             point,
             mutation,
@@ -1175,6 +1405,9 @@ impl Bench {
 
 impl Bench {
     fn world(&mut self, generation: u32) -> &World {
+        if let Some((_, world)) = &self.fixed {
+            return world;
+        }
         let target = generation.min(self.latest());
         // The present is always at hand; only the past is replayed.
         if target == self.latest() {
@@ -1373,43 +1606,6 @@ impl Bench {
         out.sort_by_key(|m| m.generation);
         out
     }
-}
-
-/// The world's history up to now as annal entries: peoples appearing,
-/// parting, meeting, and changing tongues, plus each language's sound laws.
-/// The annals a telling set aside would have written, or none if it no
-/// longer replays on this engine.
-fn tell(seed: u64, map: MapSize, actions: &[Action]) -> Vec<Annal> {
-    let recipe = Recipe {
-        format: FORMAT.into(),
-        revision: ENGINE_REVISION,
-        seed,
-        map,
-        actions: actions.to_vec(),
-        tellings: Vec::new(),
-    };
-    match Chronicle::from_recipe(&recipe) {
-        Ok(chronicle) => annals(chronicle.latest()),
-        Err(_) => Vec::new(),
-    }
-}
-
-/// The generation from which two histories tell otherwise.
-fn divergence(a: &[Action], b: &[Action]) -> u32 {
-    let mut generation = 0;
-    for (x, y) in a.iter().zip(b) {
-        match (x, y) {
-            (Action::Run { generations: m }, Action::Run { generations: n }) => {
-                generation += m.min(n);
-                if m != n {
-                    break;
-                }
-            }
-            _ if x != y => break,
-            _ => {}
-        }
-    }
-    generation
 }
 
 fn word_building(v: &Variety) -> String {
@@ -2185,6 +2381,8 @@ fn sound_view(id: PhonemeId, seg: Segment) -> SoundView {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Overview {
+    telling: TellingId,
+    at_tip: bool,
     seed: u64,
     point: HistoryPoint,
     mutation: u32,
@@ -2261,11 +2459,13 @@ struct ContinentNameView {
 
 #[derive(Serialize)]
 struct TellingView {
-    index: usize,
-    why: SetAside,
-    /// The generation from which it tells otherwise.
-    from: u32,
-    struck: Vec<Annal>,
+    id: TellingId,
+    name: String,
+    parent: Option<ReadingRef>,
+    from: Option<u32>,
+    latest: u32,
+    tip: HistoryPoint,
+    actions: usize,
 }
 
 #[derive(Serialize)]
@@ -3989,40 +4189,69 @@ mod tests {
     }
 
     #[test]
-    fn set_aside_histories_stay_visible_struck_through() {
-        let tellings = |w: &mut Bench| -> serde_json::Value {
-            let overview: serde_json::Value =
-                serde_json::from_str(&w.overview(w.latest()).unwrap()).unwrap();
-            overview["tellings"].clone()
-        };
-        let mut w = bench();
-        assert_eq!(tellings(&mut w), serde_json::json!([]));
-        // Undo the last run and the split: both are struck, not lost.
-        w.undo();
-        w.undo();
-        let struck = tellings(&mut w);
-        assert_eq!(struck[0]["why"], "undone");
-        assert_eq!(struck[0]["from"], 12);
-        let kinds: Vec<&str> = struck[0]["struck"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|a| a["kind"].as_str().unwrap())
-            .collect();
-        assert!(kinds.contains(&"settlement"));
-        // The struck entries come from the same telling, so restoring it
-        // brings them back as the present.
-        w.restore(0).unwrap();
-        assert_eq!(w.latest(), 22);
-        assert_eq!(tellings(&mut w), serde_json::json!([]));
-        // Writing on from an earlier year is another telling.
-        w.branch(5);
-        w.act(r#"{"kind":"shift","community":0,"toward":1}"#)
+    fn comparison_resolves_each_telling_and_never_pairs_post_divergence_ids() {
+        let mut w = Bench::new(5, "small").unwrap();
+        w.act(&found("Hill", "familiar")).unwrap();
+        let before = w.chronicle.end();
+        w.act(&found("Coast", "polynesian")).unwrap();
+        let original = w.chronicle.active();
+        let reading = serde_json::to_string(&ReadingRef {
+            telling: original,
+            point: before,
+        })
+        .unwrap();
+        w.act_at(&reading, w.mutation, &found("Different", "iranian"))
             .unwrap();
-        assert_eq!(tellings(&mut w)[0]["why"], "rewritten");
-        assert_eq!(tellings(&mut w)[0]["from"], 5);
-        let saved = Bench::load(&w.save().unwrap()).unwrap().save().unwrap();
-        assert_eq!(saved, w.save().unwrap(), "tellings survive saving");
+        let alternative = w.chronicle.active();
+        w.rename(alternative, "The inland account").unwrap();
+        let saved = w.save().unwrap();
+        let comparison: serde_json::Value =
+            serde_json::from_str(&w.compare(original, alternative, 0).unwrap()).unwrap();
+        assert_eq!(comparison["sharedPeoples"], serde_json::json!([0]));
+        assert_eq!(
+            comparison["left"]["communities"][1]["id"],
+            comparison["right"]["communities"][1]["id"]
+        );
+        assert_ne!(
+            comparison["left"]["communities"][1]["name"],
+            comparison["right"]["communities"][1]["name"]
+        );
+        assert_eq!(w.save().unwrap(), saved, "comparison is read-only");
+        assert!(
+            w.compare(original, alternative, 1).is_err(),
+            "comparison cannot invent future years"
+        );
+        let mut exact = w
+            .read(original, &serde_json::to_string(&before).unwrap())
+            .unwrap();
+        let shown: serde_json::Value = serde_json::from_str(&exact.overview(0).unwrap()).unwrap();
+        assert_eq!(shown["communities"].as_array().unwrap().len(), 1);
+        assert!(
+            exact.lexicon(0, 1).is_err(),
+            "word views must share the exact reading"
+        );
+        w.restore(original).unwrap();
+        assert_eq!(w.chronicle.tellings().len(), 2);
+        w.restore(alternative).unwrap();
+        assert_eq!(w.save().unwrap(), saved);
+        assert_eq!(Bench::load(&saved).unwrap().save().unwrap(), saved);
+        // An alternate action can stop replaying without disappearing from
+        // the document, its metadata, or the downloadable recipe.
+        let mut recipe = w.chronicle.recipe();
+        recipe
+            .tellings
+            .iter_mut()
+            .find(|t| t.id == original)
+            .unwrap()
+            .actions
+            .push(Action::Shift {
+                community: 99,
+                toward: 0,
+            });
+        let damaged = Bench::load(&serde_json::to_string(&recipe).unwrap()).unwrap();
+        assert_eq!(damaged.tellings().len(), 2);
+        assert!(damaged.read(original, "").is_err());
+        assert!(damaged.save().unwrap().contains("99"));
     }
 
     #[test]

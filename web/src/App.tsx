@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadCatalog, loadEngine, message } from "./engine";
-import type { Action, Catalog, Engine, SettlementChoice, SettlementPreview, WorldMap } from "./model";
+import type { Action, Catalog, Engine, HistoryPoint, Overview, SettlementChoice, SettlementPreview, WorldMap } from "./model";
 import type { Focus } from "./components/Pedia";
 import { YEARS } from "./model";
 import { ActionDialog, type DialogKind } from "./components/ActionDialog";
@@ -9,6 +9,7 @@ import { Designer, type Founding } from "./components/Designer";
 import { Modal } from "./components/Modal";
 import { Shelf } from "./components/Shelf";
 import { Stage } from "./components/Stage";
+import { TellingComparison } from "./components/TellingComparison";
 import { WorldSetup } from "./components/WorldSetup";
 import { sampleWorld } from "./sample";
 import { download } from "./takeout";
@@ -51,6 +52,9 @@ export default function App() {
   // so cards and language filters cannot silently point into another branch.
   const [tellingVersion, setTellingVersion] = useState(0);
   const [initialFocus, setInitialFocus] = useState<Focus | null>(null);
+  const [viewTelling, setViewTelling] = useState<number | null>(null);
+  const [viewPoint, setViewPoint] = useState<HistoryPoint | null>(null);
+  const [compareWith, setCompareWith] = useState<number | null>(null);
   const [viewing, setViewing] = useState<number | null>(null); // null = latest
   const [community, setCommunity] = useState(0);
   const [dialog, setDialog] = useState<DialogKind | null>(null);
@@ -97,6 +101,7 @@ export default function App() {
     engine.current?.dispose();
     engine.current = next;
     setWorldMap(next.map());
+    setViewTelling(null); setViewPoint(null); setCompareWith(null);
     setInitialFocus(null);
     setViewing(null);
     setCommunity(0);
@@ -156,25 +161,30 @@ export default function App() {
     setView({ kind: "shelf" });
   }, []);
 
-  const latest = engine.current?.latest() ?? 0;
-  const generation = viewing === null ? latest : Math.min(viewing, latest);
-  const overview = useMemo(
-    () => (view.kind === "book" && engine.current ? engine.current.overview(generation) : null),
-    // `version` changes whenever the history does.
-    [view.kind, generation, version],
-  );
+  const readingEngine = useMemo(() => {
+    const current = engine.current;
+    if (!current || view.kind !== "book") return null;
+    const telling = viewTelling ?? current.overview(current.latest()).telling;
+    return current.read(telling, viewPoint);
+  }, [bookId, view.kind, viewTelling, viewPoint, version]);
+  const latest = readingEngine?.latest() ?? 0;
+  const requestedGeneration = viewing === null ? latest : Math.min(viewing, latest);
+  const overview = useMemo(() => readingEngine?.overview(requestedGeneration) ?? null, [readingEngine, requestedGeneration]);
+  const generation = overview?.generation ?? requestedGeneration;
   const selected = overview ? Math.min(community, overview.communities.length - 1) : 0;
-  const scrub = useCallback((g: number) => setViewing(g >= (engine.current?.latest() ?? 0) ? null : g), []);
+  const scrub = useCallback((g: number) => { setViewPoint(null); setViewing(g >= latest ? null : g); }, [latest]);
 
   const run = useCallback(
-    (action: Action) => {
+    (action: Action, from: Overview | null = overview) => {
       const current = engine.current;
       if (!current) return;
       try {
-        const reading = current.overview(generation);
-        const branches = generation < current.latest();
-        current.actAt(reading.point, reading.mutation, action);
-        if (branches) { setInitialFocus(null); setTellingVersion((v) => v + 1); }
+        if (!from) return;
+        current.actAt({ telling: from.telling, point: from.point }, from.mutation, action);
+        if (!from.atTip || current.overview(current.latest()).telling !== overview?.telling) {
+          setInitialFocus(null); setCommunity(0); setTellingVersion((v) => v + 1);
+        }
+        setViewTelling(null); setViewPoint(null);
         setViewing(null);
         setVersion((v) => v + 1);
         setError(null);
@@ -183,56 +193,62 @@ export default function App() {
         setError(message(e));
       }
     },
-    [generation, persist],
+    [overview, persist],
   );
 
   // Acting while viewing the past begins another telling from there; the
   // later years are set aside, not lost.
   const perform = run;
 
-  const restore = useCallback(
-    (telling: number) => {
-      try {
-        engine.current?.restore(telling);
-        setInitialFocus(null);
-        setTellingVersion((v) => v + 1);
-        setViewing(null);
-        setVersion((v) => v + 1);
-        setError(null);
-        persist();
-      } catch (e) {
-        setError(message(e));
-      }
-    },
-    [persist],
-  );
+  const readTelling = useCallback((telling: number, at?: number, focus?: Focus) => {
+    try {
+      // Validate a saved telling before switching; an unreadable alternate
+      // stays listed and keeps its original recipe for recovery/export.
+      const reading = engine.current?.read(telling);
+      if (!reading) return;
+      const last = reading.latest();
+      setViewTelling(telling); setViewPoint(null);
+      setInitialFocus(focus ?? null); setTellingVersion((v) => v + 1);
+      setViewing(at === undefined || at >= last ? null : at);
+      setCompareWith(null); setError(null);
+    } catch (e) { setError(`This telling could not be read: ${message(e)}. Its saved account is still kept.`); }
+  }, []);
+  const renameTelling = (telling: number, name: string) => {
+    try { engine.current?.rename(telling, name); setVersion((v) => v + 1); persist(); }
+    catch (e) { setError(message(e)); }
+  };
 
   // One generation at the present, for play; saving waits until play stops.
   const tick = useCallback((): boolean => {
     const current = engine.current;
     if (!current) return false;
     try {
-      current.act({ kind: "run", generations: 1 });
-      setViewing(null);
+      if (!overview) return false;
+      current.actAt({ telling: overview.telling, point: overview.point }, overview.mutation, { kind: "run", generations: 1 });
+      if (!overview.atTip) { setInitialFocus(null); setTellingVersion((v) => v + 1); }
+      setViewTelling(null); setViewPoint(null); setViewing(null);
       setVersion((v) => v + 1);
       return true;
     } catch (e) {
       setError(message(e));
       return false;
     }
-  }, []);
+  }, [overview]);
 
   const nextEvent = useCallback(
     (limit: number) => {
       const current = engine.current;
       if (!current) return;
-      const ran = current.runUntilEvent(limit);
-      setViewing(null);
-      setVersion((v) => v + 1);
-      persist();
-      setInfo(ran >= limit ? `${limit * YEARS} years passed, and nothing of note befell.` : null);
+      if (!overview) return;
+      try {
+        const ran = current.untilAt({ telling: overview.telling, point: overview.point }, overview.mutation, limit);
+        if (!overview.atTip) { setInitialFocus(null); setTellingVersion((v) => v + 1); }
+        setViewTelling(null); setViewPoint(null); setViewing(null);
+        setVersion((v) => v + 1); persist();
+        setInfo(ran >= limit ? `${limit * YEARS} years passed, and nothing of note befell.` : null);
+      } catch (e) { setError(message(e)); }
     },
-    [persist],
+    [overview, persist],
   );
 
   const begin = useCallback((next: Engine) => adopt(newBookId(), next, true), [adopt]);
@@ -288,7 +304,7 @@ export default function App() {
     );
   }
 
-  if (view.kind === "shelf" || !overview || !engine.current) {
+  if (view.kind === "shelf" || !overview || !engine.current || !readingEngine) {
     return (
       <>
         <Shelf
@@ -336,24 +352,22 @@ export default function App() {
   );
 
   const strike = () => {
-    setInitialFocus(null);
-    engine.current?.undo();
-    setTellingVersion((v) => v + 1);
-    setViewing(null);
-    setVersion((v) => v + 1);
-    persist();
+    if (!engine.current) return;
+    const previous = engine.current.previous({ telling: overview.telling, point: overview.point });
+    setViewTelling(previous.telling); setViewPoint(previous.point);
+    setInitialFocus(null); setTellingVersion((v) => v + 1);
   };
 
   const settle = (choice: SettlementChoice, preview: SettlementPreview) => {
     const current = engine.current;
     if (!current) return;
     try {
-      current.actAt(preview.point, preview.mutation, { kind: "settle", ...choice });
+      current.actAt({ telling: preview.telling, point: preview.point }, preview.mutation, { kind: "settle", ...choice });
       const after = current.overview(current.latest());
       const event = after.annals.findLast((a) => a.kind === "settlement");
       setInitialFocus(event ? { kind: "event", annal: event } : { kind: "people", id: choice.community });
       setCommunity(event?.settlement?.daughter ?? choice.community);
-      setViewing(null);
+      setViewTelling(null); setViewPoint(null); setViewing(null);
       setTellingVersion((v) => v + 1);
       setVersion((v) => v + 1);
       setError(null);
@@ -364,7 +378,7 @@ export default function App() {
   const dialogs =
     dialog === "found" ? (
       <Modal open wide title="A new people arrives" onClose={() => setDialog(null)}>
-        {generation < latest ? <p className="telling-note">Writing in year {generation * YEARS} begins another telling. The years through {latest * YEARS} stay in the chronicle.</p> : null}
+        {!overview.atTip ? <p className="telling-note">Writing in year {generation * YEARS} begins another telling. The years through {latest * YEARS} stay in the chronicle.</p> : null}
         <Designer
           catalog={catalog}
           submit="Found them"
@@ -394,7 +408,7 @@ export default function App() {
       <div className="app">
         {notices}
         <Appendix
-          engine={engine.current}
+          engine={readingEngine}
           catalog={catalog}
           version={version}
           generation={generation}
@@ -413,7 +427,7 @@ export default function App() {
     <div className="app">
       <Stage
         key={`${view.id}:${tellingVersion}`}
-        engine={engine.current}
+        engine={readingEngine}
         catalog={catalog}
         map={worldMap}
         version={version}
@@ -423,12 +437,14 @@ export default function App() {
         notices={notices}
         initialFocus={initialFocus}
         onSettle={settle}
-        canUndo={overview.timeline.length > 1}
+        canUndo={overview.point.offset > 0 || overview.point.action > 1}
         selected={selected}
         onSelect={setCommunity}
         onShelf={toShelf}
         onExport={() => setPage("export")}
-        onRestore={restore}
+        onRestore={readTelling}
+        onRenameTelling={renameTelling}
+        onCompare={setCompareWith}
         onScrub={scrub}
         onTick={tick}
         onStop={persist}
@@ -437,6 +453,8 @@ export default function App() {
         onDialog={setDialog}
       />
       {dialogs}
+      {compareWith !== null ? <TellingComparison engine={engine.current} overview={overview} map={worldMap} other={compareWith}
+        onClose={() => setCompareWith(null)} onRead={readTelling} onContinue={(from) => { setCompareWith(null); run({ kind: "run", generations: 1 }, from); }} /> : null}
     </div>
   );
 }

@@ -47,7 +47,8 @@ pub mod world;
 
 pub use change::{Env, Matcher, Rewrite, SoundChange, apply_all};
 pub use chronicle::{
-    Action, Chronicle, ENGINE_REVISION, FORMAT, HistoryPoint, Recipe, SetAside, Telling,
+    Action, Chronicle, ENGINE_REVISION, FORMAT, HistoryPoint, ReadingRef, Recipe, Telling,
+    TellingId,
 };
 pub use climate::{Climate, ClimateCause, ClimateChange, RegionClimate, ZoneClimate};
 pub use concepts::{CONCEPTS, Class, Concept, FAMILIES, Field, Iconic, Relation, Tier};

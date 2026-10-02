@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { BookOpen, Feather, Gauge, Layers, Map as MapIcon, Pause, Play, ScrollText, Search, SkipForward, StepForward, X } from "lucide-react";
-import type { Annal, Catalog, Craft, Engine, EthosAxis, Overview, SettlementChoice, SettlementPreview, WorldMap } from "../model";
+import type { Annal, Catalog, Craft, ReadEngine, EthosAxis, Overview, SettlementChoice, SettlementPreview, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { ETHOS_AXES, ETHOS_POLES, EVENT_KIND, hue } from "../lore";
 import { PACES, year } from "../words";
@@ -59,6 +59,8 @@ export function Stage({
   onShelf,
   onExport,
   onRestore,
+  onRenameTelling,
+  onCompare,
   onScrub,
   onTick,
   onStop,
@@ -68,7 +70,7 @@ export function Stage({
   initialFocus,
   onSettle,
 }: {
-  engine: Engine;
+  engine: ReadEngine;
   catalog: Catalog;
   map: WorldMap;
   version: number;
@@ -84,6 +86,8 @@ export function Stage({
   onExport: () => void;
   /// Tell the history again as a telling set aside told it.
   onRestore: (telling: number) => void;
+  onRenameTelling: (telling: number, name: string) => void;
+  onCompare: (telling: number) => void;
   onScrub: (generation: number) => void;
   /// One generation at the present, while the years pass on their own.
   onTick: () => boolean;
@@ -96,7 +100,7 @@ export function Stage({
   onSettle: (choice: SettlementChoice, preview: SettlementPreview) => void;
 }) {
   const { latest } = overview;
-  const atPresent = generation === latest;
+  const atPresent = overview.atTip;
 
   // The encyclopedia's trail of cards; the last is the one open.
   const [trail, setTrail] = useState<Focus[]>([initialFocus ?? { kind: "world" }]);
@@ -323,7 +327,9 @@ export function Stage({
             Export
           </button>
         </nav>
-        <span className="stage-title">{title}</span>
+        <span className="stage-title">{title}<button type="button" className="link telling-badge" onClick={() => { setPlaying(false); go({ kind: "history" }); setLeaf("tellings"); }} title="Read and compare the tellings of this world">
+          {overview.tellings.find((t) => t.id === overview.telling)?.name}
+        </button></span>
         <button type="button" className="atlas-open" onClick={openIndex} title="Search the atlas (⌘K or /)" aria-label="Open the atlas index">
           <Search size={16} aria-hidden="true" /> <span>Atlas index</span><kbd>/</kbd>
         </button>
@@ -465,6 +471,8 @@ export function Stage({
         onScrub={scrub}
         onPlay={() => setPlaying(true)}
         onRestore={onRestore}
+        onRenameTelling={onRenameTelling}
+        onCompare={onCompare}
         leaf={leaf}
         onLeaf={showLeaf}
         folioHost={folioHost}
@@ -508,7 +516,7 @@ export function Stage({
             type="button"
             className="play primary"
             disabled={!atPresent}
-            title={atPresent ? (playing ? "Stop the years" : "Let the years pass") : "Turn to the present to go on"}
+            title={atPresent ? (playing ? "Stop the years" : "Let the years pass") : "Turn to this telling’s latest year to go on"}
             onClick={() => setPlaying(!playing)}
           >
             {playing ? <Pause size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}
@@ -517,14 +525,14 @@ export function Stage({
           <button
             type="button"
             className="icon"
-            disabled={!atPresent || playing}
+            disabled={playing}
             title="Until something happens"
             aria-label="Until something happens"
             onClick={onNextEvent}
           >
             <SkipForward size={18} />
           </button>
-          <button type="button" className="icon step-year" disabled={!atPresent || playing}
+          <button type="button" className="icon step-year" disabled={playing}
             title="Advance 25 years" aria-label="Advance 25 years" onClick={() => { onTick(); onStop(); }}>
             <StepForward size={18} aria-hidden="true" />
           </button>
@@ -561,7 +569,7 @@ export function Stage({
               <>
                 {" · "}
                 <button type="button" className="link" onClick={() => scrub(latest)}>
-                  to the present
+                  to this telling’s latest year
                 </button>
               </>
             )}
@@ -632,7 +640,7 @@ export function Stage({
                 Teach a craft
               </button>
               <button type="button" disabled={!canUndo} onClick={onUndo}>
-                Strike out what was last written
+                Return before the last action
               </button>
             </div>
           </details>

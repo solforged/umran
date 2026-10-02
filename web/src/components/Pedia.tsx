@@ -19,7 +19,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, Catalog, Community, Craft, CraftView, Engine, Ethos, HolyLand, Overview, PlaceExonym, ReligionView, RenderingRow, ShrineKind, StateView, Variety, WordMap, WorldMap } from "../model";
+import type { Annal, Catalog, Community, Craft, CraftView, ReadEngine, Ethos, HolyLand, Overview, PlaceExonym, ReligionView, RenderingRow, ShrineKind, StateView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, FAITH_HOW, FALL_NAME, howCame, howNamed, hue, LIVELIHOOD_NAME, RISE_NAME, SCHISM_CAUSE, STRESS_RULE, STRONG, temperament, TERMS, TERRAIN_NAME, type Term } from "../lore";
 import { filterHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
@@ -57,7 +57,7 @@ interface Context {
   onHistoryView: (view: HistoryView) => void;
   dictionaryViews: Record<number, DictionaryView>;
   onDictionaryView: (variety: number, view: DictionaryView) => void;
-  engine: Engine;
+  engine: ReadEngine;
   catalog: Catalog;
   version: number;
   generation: number;
@@ -72,6 +72,8 @@ interface Context {
   onReconsider: (annal: Annal) => void;
   /// Tell the history again as a telling set aside told it.
   onRestore: (telling: number) => void;
+  onRenameTelling: (telling: number, name: string) => void;
+  onCompare: (telling: number) => void;
   /// The folio page open over the map, by its section's id.
   leaf: string | null;
   onLeaf: (leaf: string | null) => void;
@@ -1026,11 +1028,11 @@ function HistoryCard({ context }: { context: Context }) {
   const missingLanguage = typeof view.sounds === "number" && !overview.varieties[view.sounds];
   return (
     <>
-      <CardHead icon={ScrollText} kind="The chronicle" title="A history, still unfolding" />
+      <CardHead icon={ScrollText} kind="The chronicle" title={overview.tellings.find((t) => t.id === overview.telling)?.name ?? "A history, still unfolding"} />
       <p className="muted">Follow the journeys of peoples, the fortunes of their realms, and the words they leave behind.</p>
       <Leaf id="history" title="Read the chronicle" summary={
         <p>{overview.annals.length.toLocaleString()} {overview.annals.length === 1 ? "moment" : "moments"} written through year {overview.generation * YEARS}.
-          {overview.tellings.length > 0 ? ` ${overview.tellings.length} other ${overview.tellings.length === 1 ? "telling" : "tellings"} kept.` : ""}</p>
+          {overview.tellings.length > 1 ? ` ${overview.tellings.length - 1} other ${overview.tellings.length === 2 ? "telling" : "tellings"} kept.` : ""}</p>
       }>
         <div className="chronicle-tools">
           <label className="chronicle-search">Search the chronicle
@@ -1075,14 +1077,20 @@ function HistoryCard({ context }: { context: Context }) {
           </section>)}
         </div>
         {lines.length > shown.length ? <button type="button" className="chronicle-load" onClick={() => update({ limit: view.limit + 100 })}>Read another {Math.min(100, lines.length - shown.length)} moments</button> : null}
-        {overview.tellings.length > 0 ? <section className="other-tellings">
-          <h3>Other tellings</h3><p className="muted small">Histories set aside are kept here. Taking one up keeps this telling in its place.</p>
-          {overview.tellings.map((telling) => <details key={telling.index}>
-            <summary>From year {telling.from * YEARS} · {telling.why === "undone" ? "struck out" : "told differently"} · {telling.struck.length} {telling.struck.length === 1 ? "moment" : "moments"}</summary>
-            <button type="button" onClick={() => context.onRestore(telling.index)}>Take up this telling</button>
-            <ol className="history">{telling.struck.map((annal, i) => <li key={i}><span>{annal.generation * YEARS}</span><del><Told text={annal.text} /></del></li>)}</ol>
-          </details>)}
-        </section> : null}
+      </Leaf>
+      <Leaf id="tellings" title="Tellings of this world" summary={<p>{overview.tellings.length} {overview.tellings.length === 1 ? "account" : "accounts"} kept. Name them, read them, or compare the same year.</p>}>
+        <section className="other-tellings">
+          <p className="muted small">Each account keeps its name, its choices, and its own future. Read freely; writing in the past begins a new telling.</p>
+          {overview.tellings.map((telling) => <article key={telling.id} className={`telling-entry${telling.id === overview.telling ? " current" : ""}`}>
+            <label>Name of this telling<input aria-label={`Name of ${telling.name}`} defaultValue={telling.name} key={telling.name}
+              onBlur={(e) => { if (e.target.value.trim() !== telling.name) context.onRenameTelling(telling.id, e.target.value); }}
+              onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} maxLength={120} /></label>
+            <p className="small">{telling.id === overview.telling ? "Reading this account · " : ""}Through year {telling.latest * YEARS}
+              {telling.parent ? ` · from ${overview.tellings.find((t) => t.id === telling.parent?.telling)?.name ?? "an earlier telling"}, year ${(telling.from ?? 0) * YEARS}` : " · the founding account"}</p>
+            <div className="row">{telling.id !== overview.telling ? <><button type="button" onClick={() => context.onRestore(telling.id)}>Read this telling</button>
+              <button type="button" onClick={() => context.onCompare(telling.id)}>Compare these tellings</button></> : null}</div>
+          </article>)}
+        </section>
       </Leaf>
     </>
   );

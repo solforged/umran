@@ -15,6 +15,8 @@ fn snapshot(bench: &mut Bench, generation: u32) -> Result<Value, String> {
     object.remove("timeline");
     object.remove("mutation");
     object.remove("point");
+    object.remove("atTip");
+    object.remove("tellings");
     let varieties = overview["varieties"]
         .as_array()
         .ok_or("Missing varieties")?;

@@ -11,10 +11,10 @@ use umran_sim::compare::{compare, compare_varieties, intelligibility};
 use umran_sim::grammar::{GrammarEntry, GrammarEvent, MarkerKind, MarkerOrigin};
 use umran_sim::prosody::moras;
 use umran_sim::{
-    Action, CATALOG, CONCEPTS, Chronicle, ContactKind, ENGINE_REVISION, Entry, Env, Event, FORMAT,
-    Form, LanguageDesign, Law, LexemeId, Lexicon, MapSize, Matcher, MinimalWord, Name, Naming,
-    Origin, Params, PhonemeId, Recipe, Revelation, Rewrite, Rise, Seg, Segment, SoundChange,
-    SoundProfile, StressRule, Syllable, Variety, World,
+    Action, CATALOG, CONCEPTS, Chronicle, ContactKind, Entry, Env, Event, Form, LanguageDesign,
+    Law, LexemeId, Lexicon, MapSize, Matcher, MinimalWord, Name, Naming, Origin, Params, PhonemeId,
+    Recipe, Revelation, Rewrite, Rise, Seg, Segment, SoundChange, SoundProfile, StressRule,
+    Syllable, Variety, World,
 };
 
 const SEEDS: u64 = 30;
@@ -838,15 +838,10 @@ fn recipe(seed: u64) -> Recipe {
         },
         Action::Religion { community: 0 },
     ]);
-    let mut recipe = Recipe {
-        format: FORMAT.into(),
-        revision: ENGINE_REVISION,
-        seed,
-        map: MapSize::Small,
-        actions,
-        tellings: Vec::new(),
-    };
-    let mut history = Chronicle::from_recipe(&recipe).unwrap();
+    let mut history = Chronicle::new(seed, MapSize::Small);
+    for action in actions {
+        history.act(action).unwrap();
+    }
     use umran_sim::settlement::{SettlementChoice, SettlementIntent};
     let destination = history
         .latest()
@@ -868,11 +863,12 @@ fn recipe(seed: u64) -> Recipe {
             },
         })
         .unwrap();
-    recipe = history.recipe();
-    recipe.actions.push(Action::Run {
-        generations: if seed == 0 { GENERATIONS } else { 80 },
-    });
-    recipe
+    history
+        .act(Action::Run {
+            generations: if seed == 0 { GENERATIONS } else { 80 },
+        })
+        .unwrap();
+    history.recipe()
 }
 
 #[test]
@@ -917,7 +913,14 @@ fn recipes_replay_identical_histories_in_fresh_worlds() {
         for generation in checkpoints {
             let warm = fresh.world_at(generation);
             let mut prefix = restored.clone();
-            *prefix.actions.last_mut().unwrap() = Action::Run {
+            *prefix
+                .tellings
+                .iter_mut()
+                .find(|t| t.id == prefix.active)
+                .unwrap()
+                .actions
+                .last_mut()
+                .unwrap() = Action::Run {
                 generations: generation,
             };
             let cold = Chronicle::from_recipe(&prefix).unwrap();

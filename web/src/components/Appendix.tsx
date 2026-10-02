@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { Catalog, Engine, Overview } from "../model";
+import type { Catalog, ReadEngine, Overview } from "../model";
 import { YEARS } from "../model";
 import { bookMarkdown, craftLines, download, fileName, givenNameLines, glossaryCsv, peopleLines, religionLines, renderingLines, stateLines } from "../takeout";
 import { Renderings } from "./Renderings";
@@ -17,7 +17,7 @@ export function Appendix({
   onBack,
   onShelf,
 }: {
-  engine: Engine;
+  engine: ReadEngine;
   catalog: Catalog;
   version: number;
   generation: number;

@@ -2,9 +2,8 @@
 //! generation is recovered by replaying those actions, which the engine's
 //! determinism makes exact; cached checkpoints keep scrubbing quick.
 //!
-//! Nothing written is thrown away. Undoing, or writing on from an earlier
-//! year, sets the abandoned actions aside as another telling, which the
-//! book shows struck through and can return to.
+//! Every telling has a permanent identity. Writing from an earlier reading
+//! creates a child; reading or activating another telling never replaces one.
 
 use crate::design::LanguageDesign;
 use crate::ethos::{Axis, FoundingEthos};
@@ -89,21 +88,22 @@ pub enum Action {
     },
 }
 
-/// Why a telling was set aside.
+/// Document-local identities, independent of simulation random streams.
+pub type TellingId = u32;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum SetAside {
-    /// Taken back with undo.
-    Undone,
-    /// Left when the history was written on from an earlier year, or when
-    /// another telling was taken up.
-    Rewritten,
+pub struct ReadingRef {
+    pub telling: TellingId,
+    pub point: HistoryPoint,
 }
 
-/// A history set aside: every action it had, from the founding on.
+/// A complete history and its provenance. Full logs keep replay self-contained;
+/// ancestry describes where the reader made another choice.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Telling {
-    pub why: SetAside,
+    pub id: TellingId,
+    pub name: String,
+    pub parent: Option<ReadingRef>,
     pub actions: Vec<Action>,
 }
 
@@ -117,9 +117,7 @@ pub struct Recipe {
     /// default size.
     #[serde(default)]
     pub map: MapSize,
-    pub actions: Vec<Action>,
-    /// Tellings set aside, oldest first. They never affect the replay.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub active: TellingId,
     pub tellings: Vec<Telling>,
 }
 
@@ -134,7 +132,7 @@ struct Cursor {
 /// An exact reading in a history. `action` actions have happened, followed
 /// by `offset` generations of the next run. Unlike a year this can distinguish
 /// two decisions made without advancing time.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct HistoryPoint {
     pub action: usize,
     pub offset: u32,
@@ -144,7 +142,7 @@ pub struct HistoryPoint {
 pub struct Chronicle {
     pub seed: u64,
     pub map: MapSize,
-    actions: Vec<Action>,
+    active: TellingId,
     tellings: Vec<Telling>,
     latest: World,
     checkpoints: BTreeMap<u32, (Cursor, World)>,
@@ -155,18 +153,59 @@ impl Chronicle {
         Self {
             seed,
             map,
-            actions: Vec::new(),
-            tellings: Vec::new(),
+            active: 0,
+            tellings: vec![Telling {
+                id: 0,
+                name: "The first telling".into(),
+                parent: None,
+                actions: Vec::new(),
+            }],
             latest: World::with_map(seed, Params::default(), map),
             checkpoints: BTreeMap::new(),
         }
     }
 
     pub fn actions(&self) -> &[Action] {
-        &self.actions
+        &self
+            .telling(self.active)
+            .expect("the active telling exists")
+            .actions
     }
 
-    /// Tellings set aside, oldest first.
+    fn actions_mut(&mut self) -> &mut Vec<Action> {
+        &mut self
+            .tellings
+            .iter_mut()
+            .find(|t| t.id == self.active)
+            .expect("the active telling exists")
+            .actions
+    }
+
+    pub fn active(&self) -> TellingId {
+        self.active
+    }
+
+    pub fn telling(&self, id: TellingId) -> Result<&Telling, String> {
+        self.tellings
+            .iter()
+            .find(|t| t.id == id)
+            .ok_or_else(|| format!("there is no telling {id}"))
+    }
+
+    pub fn rename(&mut self, id: TellingId, name: &str) -> Result<(), String> {
+        let name = name.trim();
+        if name.is_empty() || name.chars().count() > 120 {
+            return Err("Give the telling a name of 1 to 120 characters.".into());
+        }
+        self.tellings
+            .iter_mut()
+            .find(|t| t.id == id)
+            .ok_or_else(|| format!("there is no telling {id}"))?
+            .name = name.into();
+        Ok(())
+    }
+
+    /// Every telling, including the active one, in creation order.
     pub fn tellings(&self) -> &[Telling] {
         &self.tellings
     }
@@ -177,13 +216,13 @@ impl Chronicle {
     }
 
     pub fn end(&self) -> HistoryPoint {
-        match self.actions.last() {
+        match self.actions().last() {
             Some(Action::Run { generations }) => HistoryPoint {
-                action: self.actions.len() - 1,
+                action: self.actions().len() - 1,
                 offset: *generations,
             },
             _ => HistoryPoint {
-                action: self.actions.len(),
+                action: self.actions().len(),
                 offset: 0,
             },
         }
@@ -192,7 +231,7 @@ impl Chronicle {
     /// The reading after every authored decision in `generation`.
     pub fn point_at(&self, generation: u32) -> HistoryPoint {
         let mut at = 0;
-        for (index, action) in self.actions.iter().enumerate() {
+        for (index, action) in self.actions().iter().enumerate() {
             if let Action::Run { generations } = action {
                 if at + generations > generation {
                     return HistoryPoint {
@@ -207,12 +246,16 @@ impl Chronicle {
     }
 
     fn prefix(&self, point: HistoryPoint) -> Result<Vec<Action>, String> {
-        if point.action > self.actions.len() {
+        Self::prefix_of(self.actions(), point)
+    }
+
+    fn prefix_of(log: &[Action], point: HistoryPoint) -> Result<Vec<Action>, String> {
+        if point.action > log.len() {
             return Err("that reading is beyond the end of this telling".into());
         }
-        let mut actions = self.actions[..point.action].to_vec();
+        let mut actions = log[..point.action].to_vec();
         if point.offset > 0 {
-            match self.actions.get(point.action) {
+            match log.get(point.action) {
                 Some(Action::Run { generations }) if point.offset <= *generations => {
                     actions.push(Action::Run {
                         generations: point.offset,
@@ -222,6 +265,22 @@ impl Chronicle {
             }
         }
         Ok(actions)
+    }
+
+    /// An action boundary immediately after a run is also that run's full
+    /// offset. Use the latter when comparing prefixes: a descendant can extend
+    /// its final run, while the parent's next action remains at the boundary.
+    fn canonical_point(log: &[Action], point: HistoryPoint) -> HistoryPoint {
+        if point.offset == 0
+            && point.action > 0
+            && let Some(Action::Run { generations }) = log.get(point.action - 1)
+        {
+            return HistoryPoint {
+                action: point.action - 1,
+                offset: *generations,
+            };
+        }
+        point
     }
 
     /// Publish a new history only after both the rewind and action succeed.
@@ -241,15 +300,14 @@ impl Chronicle {
         if point == self.end() {
             return Ok(self.latest.clone());
         }
-        let mut reading = self.clone();
-        reading.branch_at_point(point)?;
-        Ok(reading.latest)
+        let actions = self.prefix(point)?;
+        Self::replay(self.seed, self.map, &actions)
     }
 
     /// Each action with the generation it happened at.
     pub fn timeline(&self) -> Vec<(u32, &Action)> {
         let mut generation = 0;
-        self.actions
+        self.actions()
             .iter()
             .map(|action| {
                 let at = generation;
@@ -266,15 +324,14 @@ impl Chronicle {
     /// run extends it, so playing generation by generation stays one action.
     pub fn act(&mut self, action: Action) -> Result<(), String> {
         apply(&mut self.latest, &action)?;
-        match (self.actions.last_mut(), &action) {
-            (Some(Action::Run { generations }), Action::Run { generations: more }) => {
+        match (self.actions_mut().last_mut(), &action) {
+            (Some(Action::Run { generations }), Action::Run { generations: more })
+                if *generations <= MAX_RUN - more =>
+            {
                 *generations += more;
             }
-            _ => self.actions.push(action),
+            _ => self.actions_mut().push(action),
         }
-        // A telling the history has caught up with is no longer set aside.
-        let actions = &self.actions;
-        self.tellings.retain(|t| !holds(actions, &t.actions));
         Ok(())
     }
 
@@ -291,17 +348,17 @@ impl Chronicle {
         ran
     }
 
-    /// Takes back the last action, keeping it in a telling set aside.
-    /// Undoing again extends that same telling rather than starting another.
-    pub fn undo(&mut self) -> Option<Action> {
-        let before = self.actions.clone();
-        let action = self.actions.pop()?;
-        self.set_aside(before, SetAside::Undone);
-        let len = self.actions.len();
-        self.checkpoints
-            .retain(|_, (cursor, _)| cursor.action < len);
-        self.latest = self.replay_to(u32::MAX);
-        Some(action)
+    /// Move a reading before its previous action, without changing any telling.
+    pub fn previous(&self, point: HistoryPoint) -> Result<HistoryPoint, String> {
+        self.prefix(point)?;
+        Ok(HistoryPoint {
+            action: if point.offset > 0 {
+                point.action
+            } else {
+                point.action.saturating_sub(1)
+            },
+            offset: 0,
+        })
     }
 
     /// Sets everything after `generation` aside, so new actions continue
@@ -313,56 +370,104 @@ impl Chronicle {
 
     pub fn branch_at_point(&mut self, point: HistoryPoint) -> Result<(), String> {
         let kept = self.prefix(point)?;
-        if kept == self.actions {
+        if kept == self.actions() {
             return Ok(());
         }
         let unchanged = self
-            .actions
+            .actions()
             .iter()
             .zip(&kept)
             .take_while(|(a, b)| a == b)
             .count();
-        let before = std::mem::replace(&mut self.actions, kept);
-        self.set_aside(before, SetAside::Rewritten);
+        let id = self
+            .tellings
+            .iter()
+            .map(|t| t.id)
+            .max()
+            .unwrap_or(0)
+            .checked_add(1)
+            .ok_or("Too many tellings in this world")?;
+        let parent = ReadingRef {
+            telling: self.active,
+            point,
+        };
+        self.tellings.push(Telling {
+            id,
+            name: format!("Telling {}", u64::from(id) + 1),
+            parent: Some(parent),
+            actions: kept,
+        });
+        self.active = id;
         self.checkpoints
             .retain(|_, (cursor, _)| cursor.action < unchanged);
         self.latest = self.replay_to(u32::MAX);
         Ok(())
     }
 
-    /// Takes up the telling at `index` again, setting the present one
-    /// aside in its place.
-    pub fn restore(&mut self, index: usize) -> Result<(), String> {
-        let telling = self
-            .tellings
-            .get(index)
-            .ok_or_else(|| format!("there is no telling {index}"))?;
-        let mut taken = Self::new(self.seed, self.map);
-        for (i, action) in telling.actions.iter().enumerate() {
-            taken
-                .act(action.clone())
-                .map_err(|e| format!("action {}: {e}", i + 1))?;
+    /// Activate a telling by identity. Its peers and metadata remain intact.
+    pub fn restore(&mut self, id: TellingId) -> Result<(), String> {
+        if self.active == id {
+            return Ok(());
         }
-        self.tellings.remove(index);
-        let before = std::mem::replace(&mut self.actions, taken.actions);
-        self.latest = taken.latest;
-        self.checkpoints = taken.checkpoints;
-        self.set_aside(before, SetAside::Rewritten);
+        let latest = Self::replay(self.seed, self.map, &self.telling(id)?.actions)?;
+        self.active = id;
+        self.latest = latest;
+        self.checkpoints.clear();
         Ok(())
     }
 
-    /// Keeps `actions` as a telling, unless the present history or another
-    /// telling already holds all of them. Tellings they contain are merged
-    /// into them.
-    fn set_aside(&mut self, actions: Vec<Action>, why: SetAside) {
-        if actions.is_empty()
-            || holds(&self.actions, &actions)
-            || self.tellings.iter().any(|t| holds(&t.actions, &actions))
-        {
-            return;
+    fn replay(seed: u64, map: MapSize, actions: &[Action]) -> Result<World, String> {
+        let mut world = World::with_map(seed, Params::default(), map);
+        for (i, action) in actions.iter().enumerate() {
+            apply(&mut world, action).map_err(|e| format!("action {}: {e}", i + 1))?;
         }
-        self.tellings.retain(|t| !holds(&actions, &t.actions));
-        self.tellings.push(Telling { why, actions });
+        Ok(world)
+    }
+
+    pub fn reading(&self, id: TellingId) -> Result<Self, String> {
+        let mut reading = self.clone();
+        reading.restore(id)?;
+        Ok(reading)
+    }
+
+    /// Last provably shared reading, before either history creates distinct
+    /// entities. Equal numeric IDs after this point do not imply identity.
+    pub fn common_reading(&self, a: TellingId, b: TellingId) -> Result<ReadingRef, String> {
+        let ancestors = |mut id| -> Result<BTreeMap<TellingId, HistoryPoint>, String> {
+            let mut path = BTreeMap::new();
+            let log = &self.telling(id)?.actions;
+            let mut through = match log.last() {
+                Some(Action::Run { generations }) => HistoryPoint {
+                    action: log.len() - 1,
+                    offset: *generations,
+                },
+                _ => HistoryPoint {
+                    action: log.len(),
+                    offset: 0,
+                },
+            };
+            loop {
+                path.insert(id, through);
+                match self.telling(id)?.parent {
+                    Some(parent) => {
+                        let cap = Self::canonical_point(
+                            &self.telling(parent.telling)?.actions,
+                            parent.point,
+                        );
+                        through = through.min(cap);
+                        id = parent.telling;
+                    }
+                    None => return Ok(path),
+                }
+            }
+        };
+        let (left, right) = (ancestors(a)?, ancestors(b)?);
+        let (telling, point) = left
+            .iter()
+            .rev()
+            .find_map(|(id, point)| right.get(id).map(|other| (*id, (*point).min(*other))))
+            .ok_or("These tellings have no shared founding")?;
+        Ok(ReadingRef { telling, point })
     }
 
     /// The world as it stood at `generation`, after any actions taken then.
@@ -383,10 +488,10 @@ impl Chronicle {
                 let fresh = World::with_map(self.seed, Params::default(), self.map);
                 (Cursor::default(), fresh)
             });
-        while cursor.action < self.actions.len() {
-            match &self.actions[cursor.action] {
+        while cursor.action < self.actions().len() {
+            match self.actions()[cursor.action].clone() {
                 Action::Run { generations } => {
-                    while cursor.done < *generations && world.generation < target {
+                    while cursor.done < generations && world.generation < target {
                         world.step();
                         cursor.done += 1;
                         if world.generation % CHECKPOINT_EVERY == 0 {
@@ -395,7 +500,7 @@ impl Chronicle {
                                 .or_insert_with(|| (cursor, world.clone()));
                         }
                     }
-                    if cursor.done < *generations {
+                    if cursor.done < generations {
                         return world;
                     }
                     cursor = Cursor {
@@ -404,7 +509,7 @@ impl Chronicle {
                     };
                 }
                 other => {
-                    apply(&mut world, other).expect("recorded actions were valid when taken");
+                    apply(&mut world, &other).expect("recorded actions were valid when taken");
                     cursor.action += 1;
                 }
             }
@@ -418,7 +523,7 @@ impl Chronicle {
             revision: ENGINE_REVISION,
             seed: self.seed,
             map: self.map,
-            actions: self.actions.clone(),
+            active: self.active,
             tellings: self.tellings.clone(),
         }
     }
@@ -430,12 +535,35 @@ impl Chronicle {
         if recipe.format != FORMAT {
             return Err(format!("not a {FORMAT} file"));
         }
-        let mut chronicle = Self::new(recipe.seed, recipe.map);
-        for (i, action) in recipe.actions.iter().enumerate() {
-            chronicle
-                .act(action.clone())
-                .map_err(|e| format!("action {}: {e}", i + 1))?;
+        let ids: std::collections::BTreeSet<_> = recipe.tellings.iter().map(|t| t.id).collect();
+        if ids.len() != recipe.tellings.len() {
+            return Err("Telling identities must be unique".into());
         }
+        let active = recipe
+            .tellings
+            .iter()
+            .find(|t| t.id == recipe.active)
+            .ok_or("The active telling is missing")?;
+        for telling in &recipe.tellings {
+            if let Some(parent) = telling.parent {
+                if parent.telling >= telling.id {
+                    return Err("Telling ancestry must point to an earlier telling".into());
+                }
+                let log = &recipe
+                    .tellings
+                    .iter()
+                    .find(|t| t.id == parent.telling)
+                    .ok_or("A parent telling is missing")?
+                    .actions;
+                let prefix = Self::prefix_of(log, parent.point)?;
+                if !holds(&telling.actions, &prefix) {
+                    return Err("A telling does not share its recorded parent's history".into());
+                }
+            }
+        }
+        let mut chronicle = Self::new(recipe.seed, recipe.map);
+        chronicle.latest = Self::replay(recipe.seed, recipe.map, &active.actions)?;
+        chronicle.active = recipe.active;
         chronicle.tellings = recipe.tellings.clone();
         Ok(chronicle)
     }
@@ -888,59 +1016,61 @@ mod tests {
     }
 
     #[test]
-    fn undone_actions_are_set_aside_and_can_return() {
+    fn named_tellings_survive_reading_restoration_and_equal_continuations() {
         let mut c = sample();
-        let full = c.actions().to_vec();
-        let end = c.latest().clone();
-        c.undo();
-        c.undo();
-        assert_eq!(c.tellings().len(), 1, "consecutive undos make one telling");
-        assert_eq!(c.tellings()[0].why, SetAside::Undone);
-        assert_eq!(c.tellings()[0].actions, full);
-
+        let original = c.recipe();
+        let before = c.previous(c.previous(c.end()).unwrap()).unwrap();
+        assert_eq!(c.recipe(), original, "undo only moves a reading");
+        c.act_at(before, Action::Run { generations: 1 }).unwrap();
+        let child = c.active();
+        c.rename(child, "The quieter coast").unwrap();
+        assert_eq!(c.tellings().len(), 2);
+        assert_eq!(c.tellings()[0], original.tellings[0]);
         c.restore(0).unwrap();
-        assert_eq!(c.actions(), &full[..]);
-        assert!(same(c.latest(), &end));
-        assert!(
-            c.tellings().is_empty(),
-            "the present held nothing the restored telling lacks"
-        );
-
-        c.branch_at(5);
-        c.act(settlement(c.latest(), 0.2)).unwrap();
-        assert_eq!(c.tellings().len(), 1);
-        assert_eq!(c.tellings()[0].why, SetAside::Rewritten);
-        let branched = c.actions().to_vec();
-        c.restore(0).unwrap();
-        assert_eq!(c.actions(), &full[..]);
+        assert_eq!(c.recipe().tellings.len(), 2);
+        c.act_at(before, Action::Run { generations: 1 }).unwrap();
+        assert_ne!(c.active(), child);
         assert_eq!(
-            c.tellings()[0].actions,
-            branched,
-            "the present is set aside"
+            c.tellings().len(),
+            3,
+            "equal actions do not erase identities"
         );
-
-        let json = serde_json::to_string(&c.recipe()).unwrap();
-        let back = Chronicle::from_recipe(&serde_json::from_str(&json).unwrap()).unwrap();
-        assert_eq!(back.tellings(), c.tellings());
+        assert_eq!(
+            c.common_reading(child, c.active()).unwrap().point,
+            Chronicle::canonical_point(&original.tellings[0].actions, before)
+        );
+        c.restore(child).unwrap();
+        assert_eq!(c.telling(child).unwrap().name, "The quieter coast");
+        let back = Chronicle::from_recipe(&c.recipe()).unwrap();
+        assert_eq!(back.recipe(), c.recipe());
     }
 
     #[test]
-    fn running_on_past_a_telling_takes_it_up() {
-        let mut c = sample();
-        c.undo();
-        assert_eq!(c.tellings().len(), 1);
-        c.act(Action::Run { generations: 30 }).unwrap();
-        assert!(
-            c.tellings().is_empty(),
-            "running on tells everything the undone run told"
-        );
+    fn shared_reading_caps_an_extended_run_at_its_parent_boundary() {
+        let mut c = Chronicle::new(7, MapSize::default());
+        c.act(found("X", "familiar")).unwrap();
+        c.act(Action::Run { generations: 3 }).unwrap();
+        let before = HistoryPoint {
+            action: 2,
+            offset: 0,
+        };
+        c.act(found("Y", "polynesian")).unwrap();
+        c.act_at(before, Action::Run { generations: 1 }).unwrap();
+        let shared = c.common_reading(0, c.active()).unwrap();
+        let parent = c.reading(shared.telling).unwrap();
+        let world = parent.world_at_point(shared.point).unwrap();
+        assert_eq!(world.generation, 3);
+        assert_eq!(world.communities.len(), 1);
+        assert_eq!(c.latest().generation, 4);
+        assert_eq!(c.reading(0).unwrap().latest().communities.len(), 2);
     }
 
     #[test]
     fn undo_and_invalid_actions() {
         let mut c = sample();
-        assert_eq!(c.undo(), Some(Action::Run { generations: 22 }));
-        assert_eq!(c.latest().generation, 15);
+        let previous = c.previous(c.end()).unwrap();
+        assert_eq!(c.world_at_point(previous).unwrap().generation, 15);
+        assert_eq!(c.latest().generation, 37);
         let before = c.actions().len();
         assert!(
             c.act(Action::Shift {
@@ -1097,7 +1227,7 @@ mod tests {
             .unwrap();
         assert_eq!(history.latest().generation, 0);
         assert_eq!(history.latest().communities.len(), 2);
-        assert_eq!(history.tellings()[0].actions, saved.actions);
+        assert_eq!(history.tellings()[0].actions, saved.tellings[0].actions);
         assert!(
             history
                 .world_at_point(HistoryPoint {

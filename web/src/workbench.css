@@ -262,3 +262,45 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
   .chronicle-year-group { grid-template-columns: 1fr; gap: .2rem; }
   .chronicle-year-group h3 { font-size: 1.2rem; }
 }
+
+/* Two accounts on one desk. Map cameras share a reading window. */
+.telling-entry { padding: .9rem 0; border-top: 1px solid var(--line); }
+.telling-entry.current { border-left: 2px solid var(--accent); padding-left: .8rem; }
+.telling-entry label { font-size: .78rem; color: var(--ink-soft); display: grid; gap: .25rem; }
+.telling-entry input { color: var(--ink); font-size: 1.1rem; max-width: 30rem; }
+.telling-entry .row { flex-wrap: wrap; gap: .5rem; }
+.telling-comparison { min-width: 0; }
+.modal:has(.telling-comparison) { width: min(78rem, calc(100vw - 2rem)); }
+.modal:has(.telling-comparison) .modal-body { max-height: 80vh; }
+.stage-title .telling-badge { display: block; margin: .1rem auto 0; font-size: .72rem; font-weight: 400; color: var(--ink-soft); }
+.comparison-tools { display: flex; gap: 1rem; align-items: end; flex-wrap: wrap; }
+.comparison-tools p { margin: 0; }
+.comparison-tools label, .comparison-investigation > label, .comparison-words > label { display: grid; gap: .35rem; color: var(--ink-soft); font-size: .86rem; }
+.comparison-year { flex: 1; min-width: 12rem; }
+.comparison-year input { width: 100%; accent-color: var(--accent); }
+.comparison-maps, .comparison-accounts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.2rem; }
+.comparison-maps h3 { margin-bottom: .5rem; }
+.comparison-map { position: relative; height: clamp(12rem, 30vh, 22rem); border: 1px solid var(--line); overflow: hidden; }
+.comparison-map > .mapview { height: 100%; }
+.comparison-map .mapview > svg:not(.chart-rose) { height: 100%; }
+.comparison-maps .row { display: flex; flex-wrap: wrap; gap: .4rem; }
+.comparison-investigation { border-top: 1px solid var(--line); margin-top: 1.4rem; padding-top: 1rem; }
+.comparison-accounts { margin-top: 1rem; }
+.comparison-accounts > article { min-width: 0; border-top: 1px solid var(--line); padding-top: .8rem; }
+.comparison-caption { color: var(--ink-soft); font-size: .78rem; margin: 0 0 .35rem; }
+.comparison-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .3rem .8rem; font-size: .88rem; }
+.comparison-facts dt { color: var(--ink-soft); }
+.comparison-facts dd { margin: 0; }
+.comparison-words { padding-top: 1rem; margin-top: 1rem; border-top: 1px solid var(--line); }
+.comparison-form { font-size: 1.6rem; }
+@media (max-width: 600px) {
+  .comparison-tools { align-items: stretch; }
+  .comparison-tools > * { width: 100%; }
+  .comparison-maps, .comparison-accounts { gap: .65rem; }
+  .comparison-maps { grid-template-columns: minmax(0, 1fr); }
+  .comparison-map { height: 14rem; }
+  .comparison-maps .row button { font-size: .76rem; }
+  .comparison-facts { grid-template-columns: 1fr; gap: .1rem; }
+  .comparison-facts dd { margin-bottom: .4rem; }
+  .comparison-accounts .specimen { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}

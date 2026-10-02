@@ -427,6 +427,8 @@ export interface HistoryPoint {
 }
 
 export interface Overview {
+  telling: number;
+  atTip: boolean;
   point: HistoryPoint;
   mutation: number;
   seed: number;
@@ -522,12 +524,24 @@ export interface Move {
 }
 
 /// A history set aside by undoing, or by writing on from an earlier year.
+export interface ReadingRef { telling: number; point: HistoryPoint }
 export interface TellingView {
-  index: number;
-  why: "undone" | "rewritten";
-  /// The generation from which it tells otherwise.
-  from: number;
-  struck: Annal[];
+  id: number;
+  name: string;
+  parent: ReadingRef | null;
+  from: number | null;
+  latest: number;
+  tip: HistoryPoint;
+  actions: number;
+}
+export interface Comparison {
+  generation: number;
+  common: ReadingRef;
+  diverged: number;
+  sharedPeoples: number[];
+  sharedLanguages: number[];
+  left: Overview;
+  right: Overview;
 }
 
 /// One chronicle entry; `variety` is set for a sound law.
@@ -655,27 +669,30 @@ export interface WordMap {
   }[];
 }
 
-export interface Engine {
+export interface ReadEngine {
   overviewAt(point: HistoryPoint): Overview;
   settlement(point: HistoryPoint, community: number, intent: SettlementIntent, share: number, destination: number | null): SettlementPreview;
-  actAt(point: HistoryPoint, mutation: number, action: Action): void;
-  act(action: Action): void;
-  undo(): boolean;
-  runUntilEvent(limit: number): number;
-  branch(generation: number): void;
-  /// Takes up a telling set aside, setting the present one aside.
-  restore(index: number): void;
   latest(): number;
   overview(generation: number): Overview;
   lexicon(generation: number, variety: number): LexiconRow[];
-  /// The share of core words `variety` shares with each other spoken
-  /// language, the closest first.
   kin(generation: number, variety: number): Kin[];
   word(generation: number, variety: number, concept: string): WordDetail;
   map(): WorldMap;
   wordMap(generation: number, concept: string): WordMap;
   save(): string;
+}
+export interface Engine extends ReadEngine {
   dispose(): void;
+  read(telling: number, point?: HistoryPoint | null): ReadEngine;
+  previous(reading: ReadingRef): ReadingRef;
+  compare(left: number, right: number, generation: number): Comparison;
+  rename(telling: number, name: string): void;
+  actAt(reading: ReadingRef, mutation: number, action: Action): void;
+  untilAt(reading: ReadingRef, mutation: number, limit: number): number;
+  act(action: Action): void;
+  runUntilEvent(limit: number): number;
+  branch(generation: number): void;
+  restore(telling: number): void;
 }
 
 /// Years per generation, for display only.
@@ -717,6 +734,7 @@ export interface SettlementPlan {
 }
 export interface SettlementRecord { plan: SettlementPlan; daughter: number | null }
 export interface SettlementPreview {
+  telling: number;
   point: HistoryPoint;
   mutation: number;
   options: { region: number; reason: string | null; effort: number | null }[];

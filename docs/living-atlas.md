@@ -40,6 +40,19 @@ for an easier implementation or an easier test.
   reload and restore. The full Rust workspace suite passes (244 tests), Clippy
   passes, and native/WASM parity matches the planner and all three choices plus
   saved replay (13 history checks). Production web build and five web checks pass.
-- Next: stable named tellings and reading-scoped views. Do not use array positions
-  as telling identities, discard equal histories, or join entities born after
-  divergence just because their numeric IDs match.
+- Delivered permanent named tellings, exact parent references and independent
+  reading views. Returning before an action is read-only; the first subsequent
+  intervention creates the new account. All peers survive switching and replay.
+- Comparison reads one year in both accounts, bounded by the shorter history,
+  with linked chart cameras, people, holdings, language families and word forms.
+  Links and continuation resolve against their panel's own telling. Subjects
+  born after divergence are not matched by coincident numeric IDs.
+- Verified comparing the founding and divergence years, following a panel's
+  word, continuing its future, and resetting cards between accounts. At 390px
+  the charts stack and the comparison scrolls without horizontal overflow.
+- Clickthroughs caught and fixed a Strict Mode view-ownership crash and a shared
+  reading error after a continued run merged across an action boundary. Native
+  history regressions and production build pass. The complete Rust suite and
+  native/WASM parity also passed before those focused fixes.
+- Next: connected subject histories and a notebook of discoveries, followed by
+  guided founding, geography and scale, and paired material motion.

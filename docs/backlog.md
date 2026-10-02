@@ -87,7 +87,7 @@ stale-preview rejection and atomic exact-point intervention. Desktop and phone
 clickthroughs cover applying, returning before the choice, making a different
 choice, reloading and restoring the preserved telling. Native/WASM parity covers
 the planner and all three resulting histories. Named, addressable tellings and
-side-by-side comparison remain the next piece.
+side-by-side comparison now complete the alternate-choice loop.
 
 Separate engine question: should a one-land people spontaneously send a
 splinter group? That changes histories and needs calibration, rather than a
@@ -133,10 +133,13 @@ The recipe and recovery model already keep alternate histories. Build on it.
 - Return to a prior telling without losing the one just explored.
 - Allow a few hypotheses or notes to travel with the saved world and exports.
 
-Entity IDs must be resolved against their own telling. Current alternate
-annals remain unlinked prose because an ID can describe a different entity
-in another branch. Branch-specific views belong in the facade before a
-comparison UI tries to join them.
+Delivered: permanent named telling records with exact parent readings,
+non-mutating return before an action, independent reading views, and same-year
+comparison with linked map cameras, populations, holdings, family trees and
+word forms. Each panel's links open its own account. Ancestry limits shared
+identity to subjects already present before divergence; later descendants stay
+within their own telling. Naming and switching accounts survive saved replay.
+Reader hypotheses and notes are the next piece.
 
 Acceptance: rewind before a conquest, avoid it, run forward, and compare the
 languages and sacred vocabulary in both histories without manually exporting

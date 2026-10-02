@@ -30,7 +30,7 @@ export function SettlementAccount({ plan, overview, map }: { plan: SettlementPla
   const territorial = plan.choice.intent === "partition";
   return <div className="settlement-account">
     <div className="settlement-census" aria-label="Population allocation">
-      <div><span>{migration ? "Old holdings" : "Remaining"}</span><strong>{migration ? plan.before.lands.length : count(Math.round(plan.before.population) - Math.round(plan.arriving.population))}</strong><small>{migration ? "lands relinquished" : `souls · ${plan.remaining.lands.length} lands`}</small></div>
+      <div><span>{migration ? "Old holdings" : "Remaining"}</span><strong>{migration ? plan.before.lands.length : count(plan.remaining.population)}</strong><small>{migration ? "lands relinquished" : `souls · ${plan.remaining.lands.length} lands`}</small></div>
       <ArrowRight size={18} aria-hidden="true" />
       <div><span>{territorial ? "New people" : "Arriving"}</span><strong>{count(plan.arriving.population)}</strong><small>souls · {plan.arriving.lands.length} {plan.arriving.lands.length === 1 ? "land" : "lands"}</small></div>
     </div>
@@ -65,7 +65,7 @@ export function SettlementDesk({ draft, preview, error, overview, map, catalog, 
   const people = overview.communities[draft.community];
   const plan = preview?.plan;
   const reason = error ?? preview?.reason;
-  const changedPast = JSON.stringify(draft.point) !== JSON.stringify(latest.point);
+  const changedPast = JSON.stringify(draft.point) !== JSON.stringify(latest.tellings.find((t) => t.id === latest.telling)?.tip);
   const options = (preview?.options ?? []).filter((o) => draft.intent !== "partition" || people.lands.includes(o.region)).toSorted((a, b) => Number(a.reason !== null) - Number(b.reason !== null) || a.region - b.region);
   const eligible = options.filter((o) => o.reason === null).length;
   useEffect(() => {

@@ -98,8 +98,8 @@ writes its own history.
   speakers' own vocabulary ("the people of the river"), and their names
   go through the same sound changes as everything else.
 
-You can stop time at any year, rewind, and try something different. Nothing
-is lost: abandoned histories stay readable, struck through.
+You can stop time at any year, rewind, and try something different. Every
+telling keeps its name and future, ready to read or continue again.
 
 ## A closer look
 
@@ -111,6 +111,14 @@ historical account; **Return before this choice** lets you try another way,
 keeping the first telling even when both decisions happened in the same year.
 
 ![A settlement account beside the chart, showing the people remaining and departing and the routes from their inhabited lands](docs/images/settlement.jpg)
+
+**Two tellings, one year** lays alternate histories side by side. Their charts
+pan and zoom together; follow a shared people to compare its holdings,
+population, language family and words. Each link opens the right account,
+and either can be continued from the year in view. Returning before an action
+only moves your reading: the first new choice starts another telling.
+
+![A named undivided history compared with a territorial division at year 4000, with linked charts and shared peoples](docs/images/tellings.jpg)
 
 The **atlas index** finds peoples, languages, lands, states, faiths, and crafts
 by name, older name, or meaning. Accents are optional when searching. Open it

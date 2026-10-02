@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import type { Engine, LexiconRow } from "../model";
+import type { ReadEngine, LexiconRow } from "../model";
 
 type OriginFilter = "all" | "inherited" | "derived" | "coined" | "borrowed" | "kept";
 export interface DictionaryView {
@@ -20,7 +20,7 @@ export function Dictionary({
   onView,
   onConcept,
 }: {
-  engine: Engine;
+  engine: ReadEngine;
   version: number;
   generation: number;
   variety: number;

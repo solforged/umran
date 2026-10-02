@@ -1,9 +1,12 @@
-import init, { Workbench } from "./wasm/umran_web";
+import init, { Workbench, ReadView } from "./wasm/umran_web";
 import type {
   Naming,
   Action,
   Catalog,
   Engine,
+  ReadEngine,
+  Comparison,
+  ReadingRef,
   Kin,
   LanguageDesign,
   LexiconRow,
@@ -28,56 +31,80 @@ async function ready(): Promise<void> {
   await initialized;
 }
 
-function wrap(bench: Workbench): Engine {
-  // Re-renders and saving often ask for the same view. Keep only that view;
-  // any history mutation also invalidates metadata on views of the past.
+function reader(bench: Workbench | ReadView, save: () => string) {
   let cached: { generation: number; view: Overview } | undefined;
-  return {
+  const clear = () => { cached = undefined; };
+  const engine: ReadEngine = {
     overviewAt: (point) => JSON.parse(bench.overviewAt(JSON.stringify(point))) as Overview,
     settlement: (point, community, intent, share, destination) =>
       JSON.parse(bench.settlement(JSON.stringify(point), community, intent, share, destination ?? -1)) as SettlementPreview,
-    actAt: (point, mutation, action) => {
-      bench.actAt(JSON.stringify(point), mutation, JSON.stringify(action));
-      cached = undefined;
-    },
-    act: (action: Action) => {
-      cached = undefined;
-      bench.act(JSON.stringify(action));
-    },
-    undo: () => {
-      cached = undefined;
-      return bench.undo();
-    },
-    runUntilEvent: (limit) => {
-      cached = undefined;
-      return bench.runUntilEvent(limit);
-    },
-    branch: (generation) => {
-      cached = undefined;
-      bench.branch(generation);
-    },
-    restore: (index) => {
-      cached = undefined;
-      bench.restore(index);
-    },
     latest: () => bench.latest(),
     overview: (generation) => {
-      if (cached?.generation !== generation) {
-        cached = { generation, view: JSON.parse(bench.overview(generation)) as Overview };
-      }
+      if (cached?.generation !== generation) cached = { generation, view: JSON.parse(bench.overview(generation)) as Overview };
       return cached.view;
     },
     lexicon: (generation, variety) => JSON.parse(bench.lexicon(generation, variety)) as LexiconRow[],
     kin: (generation, variety) => JSON.parse(bench.kin(generation, variety)) as Kin[],
-    word: (generation, variety, concept) =>
-      JSON.parse(bench.word(generation, variety, concept)) as WordDetail,
+    word: (generation, variety, concept) => JSON.parse(bench.word(generation, variety, concept)) as WordDetail,
     map: () => JSON.parse(bench.map()) as WorldMap,
     wordMap: (generation, concept) => JSON.parse(bench.wordMap(generation, concept)) as WordMap,
-    save: () => bench.save(),
-    dispose: () => {
-      cached = undefined;
-      bench.free();
+    save,
+  };
+  return { engine, clear, dispose: () => { clear(); bench.free(); } };
+}
+
+function wrap(bench: Workbench): Engine {
+  const root = reader(bench, () => bench.save());
+  // The document owns WASM views. Components hold lightweight reading
+  // capabilities, so rendering twice or leaving a card never frees a peer's
+  // world. Three cached scopes cover the active reading and a comparison.
+  const scopes = new Map<string, ReturnType<typeof reader>>();
+  let comparison: { key: string; value: Comparison } | undefined;
+  let disposed = false;
+  const clear = () => {
+    root.clear(); comparison = undefined;
+    scopes.forEach((scope) => scope.dispose()); scopes.clear();
+  };
+  const scope = (telling: number, point: string) => {
+    if (disposed) throw new Error("This world has been closed.");
+    const key = `${telling}:${point}`;
+    let entry = scopes.get(key);
+    if (!entry) {
+      entry = reader(bench.read(telling, point), () => bench.save());
+      if (scopes.size >= 3) {
+        const oldest = scopes.keys().next().value!;
+        scopes.get(oldest)!.dispose(); scopes.delete(oldest);
+      }
+    }
+    scopes.delete(key); scopes.set(key, entry);
+    return entry.engine;
+  };
+  return {
+    ...root.engine,
+    read: (telling, point) => {
+      const encoded = point ? JSON.stringify(point) : "";
+      const get = () => scope(telling, encoded);
+      return {
+        latest: () => get().latest(), overview: (g) => get().overview(g), overviewAt: (p) => get().overviewAt(p),
+        settlement: (p, c, intent, share, destination) => get().settlement(p, c, intent, share, destination),
+        lexicon: (g, v) => get().lexicon(g, v), kin: (g, v) => get().kin(g, v), word: (g, v, c) => get().word(g, v, c),
+        wordMap: (g, c) => get().wordMap(g, c), map: () => get().map(), save: () => bench.save(),
+      };
     },
+    previous: (reading) => JSON.parse(bench.previous(JSON.stringify(reading))) as ReadingRef,
+    compare: (left, right, generation) => {
+      const key = `${left}:${right}:${generation}`;
+      if (comparison?.key !== key) comparison = { key, value: JSON.parse(bench.compare(left, right, generation)) as Comparison };
+      return comparison.value;
+    },
+    rename: (telling, name) => { bench.rename(telling, name); clear(); },
+    actAt: (reading, mutation, action) => { bench.actAt(JSON.stringify(reading), mutation, JSON.stringify(action)); clear(); },
+    untilAt: (reading, mutation, limit) => { const ran = bench.untilAt(JSON.stringify(reading), mutation, limit); clear(); return ran; },
+    act: (action: Action) => { bench.act(JSON.stringify(action)); clear(); },
+    runUntilEvent: (limit) => { const ran = bench.runUntilEvent(limit); clear(); return ran; },
+    branch: (generation) => { bench.branch(generation); clear(); },
+    restore: (telling) => { bench.restore(telling); clear(); },
+    dispose: () => { if (!disposed) { clear(); root.dispose(); disposed = true; } },
   };
 }
 

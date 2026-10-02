@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { Engine } from "../model";
+import type { ReadEngine } from "../model";
 import { YEARS } from "../model";
 
 /// A marginal note on one word: its forms, how it came to be, and its kin
@@ -13,7 +13,7 @@ export function WordGloss({
   onScrub,
   onOpenVariety,
 }: {
-  engine: Engine;
+  engine: ReadEngine;
   version: number;
   generation: number;
   variety: number;

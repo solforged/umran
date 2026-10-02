@@ -143,6 +143,8 @@ function snapshot(bench: WasmWorkbench, generation: number): JsonObject {
   delete overview.timeline;
   delete overview.mutation;
   delete overview.point;
+  delete overview.atTip;
+  delete overview.tellings;
   const competitors: JsonObject[] = [];
   const lexicons = array(overview.varieties).map(value => {
     const variety = object(value);

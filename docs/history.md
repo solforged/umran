@@ -18,11 +18,10 @@ rule contact makes the more prestigious side rule the other's state.
 Religion raises a founder among a people, and a faith with him; craft has
 a people come upon a craft it lacks; temper nudges one leaning of a
 people's temper, which then drifts and answers events as before.
-Consecutive runs merge, so playing
-stays one action and undo removes the whole stretch. Any past generation
-is recovered by replaying, with checkpoints every 10 generations; the
-timeline needs no separate data. Play and "next event" work only at the
-present.
+Consecutive runs merge up to the per-action limit, so playback stays a compact
+account. Any past generation is recovered by replaying, with checkpoints every
+10 generations; the timeline needs no separate data. Play runs at the present;
+advance and "next event" can continue a past reading as a new telling.
 
 An exact `HistoryPoint` names an action position and an offset into a run, so
 two choices in the same year remain distinguishable. A run's endpoint uses its
@@ -41,19 +40,35 @@ capital loss before the choice is applied. Its chronicle card can return to
 the point immediately before the decision. Community ancestry is independent
 of later language shifts.
 
-Nothing written is thrown away. Undo, and acting while viewing the past,
-set the abandoned actions aside as a `Telling` (every action from the
-founding on, marked undone or rewritten); consecutive undos extend one
-telling, and a telling the present history already holds is dropped. The
-facade replays each telling once (cached) and lists what it told that the
-present does not, from the generation where the two diverge; the history
-card shows those entries struck through, and `restore` takes a telling up
-again, setting the present aside in its place. Tellings travel in the
-recipe but never affect its replay.
+Nothing written is thrown away. Each `Telling` has a permanent ID, editable
+name, complete action log and optional parent `ReadingRef` (a telling ID plus
+an exact `HistoryPoint`). The founding account is a telling too. Returning
+before an action only moves the reading; it neither edits history nor creates
+another account. The first successful action from that earlier reading creates
+a child telling, preserving the parent's whole future. Even equal continuations
+keep distinct identities. Reading a telling never activates or alters it;
+continuing at its tip extends that account, and continuing earlier forks it.
+
+The facade gives each reading its own read-only view of the world. Overview,
+lexicon, word history, family and map views all use that telling and exact point.
+The browser's world owns a small cache of these views; cards do not own or free
+the underlying WASM allocations. Failed reads leave the account listed and its
+recipe available for recovery.
+
+Comparison reads both tellings at one year, bounded by the shorter recorded
+history. It never silently advances either. Ancestry identifies the last proven
+shared reading, normalizing run endpoints before comparing prefixes. Only
+entities already present at that reading can be followed across both accounts;
+equal numeric IDs born after divergence do not establish identity. The two
+charts share a camera, while their populations, holdings, language families and
+word forms come from their own views. Following a link opens that telling;
+continuing either panel is an explicit intervention.
 
 Saves are recipes (`Recipe`: format, `ENGINE_REVISION`, seed, map size,
-actions), not resolved states; recipes from before maps had a size get
-the middling map. Bump `ENGINE_REVISION` whenever a change would make an
+active telling ID and all telling records), not resolved states.
+The import validates identities, parent references and shared action prefixes.
+An unreadable inactive telling stays retained; it does not prevent reading a
+valid active account. Bump `ENGINE_REVISION` whenever a change would make an
 existing recipe replay differently; loading a recipe from another revision
 still works but the UI warns that its words may differ. Resolved-state saves
 remain possible later work if exact preservation across versions matters.
@@ -63,7 +78,8 @@ world's history autosaves under localStorage key `langgen.book.<id>`, and
 `langgen.shelf.v1` lists them with their titles and the one last open.
 These keys, the look key `langgen.look`, and the recipe format
 `langgen-sim-recipe` keep the project's first name and the shelf's first
-metaphor, so saves made before Umran was renamed still open. The
+metaphor. The named-telling schema replaces the former active-log/set-aside-log
+shape; incompatible recipes open recovery with their original text intact. The
 single-world save `langgen.sim.v1` is copied onto the shelf once as "An
 earlier history" and left in place, as is the older `langgen.workbench.v2`.
 Worlds leave the shelf only when the reader removes one and confirms.

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type SetStateAction } from "react";
 import { LocateFixed, Maximize, Minus, Plus } from "lucide-react";
 import type { Community, Craft, EthosAxis, Overview, SettlementPreview, WordMap, WorldMap } from "../model";
 import type { ShelfPeople } from "../shelf";
@@ -42,7 +42,8 @@ function leaning(value: number): string {
 }
 
 /// The part of the map in view: left, top, width, height, in map units.
-type Box = [number, number, number, number];
+export type MapCamera = [number, number, number, number];
+type Box = MapCamera;
 
 /// Living peoples by every region they hold, not just their heart land.
 export function peoplesByRegion(overview: Overview): Map<number, Community[]> {
@@ -277,6 +278,8 @@ export function MapView({
   known = null,
   zoomable = false,
   settlement = null,
+  camera,
+  onCamera,
   onPeople,
   onLand,
   onContinent,
@@ -305,6 +308,8 @@ export function MapView({
   known?: Set<number> | null;
   zoomable?: boolean;
   settlement?: SettlementPreview | null;
+  camera?: MapCamera;
+  onCamera?: (camera: MapCamera) => void;
   onPeople: (community: number) => void;
   onLand: (region: number) => void;
   onContinent?: (landmass: number) => void;
@@ -313,7 +318,13 @@ export function MapView({
   onCraft?: (craft: Craft) => void;
 }) {
   const full: Box = useMemo(() => [0, 0, map.width, map.height], [map]);
-  const [box, setBox] = useState<Box>(full);
+  const [localBox, setLocalBox] = useState<Box>(full);
+  const box = camera ?? localBox;
+  const setBox = (next: SetStateAction<Box>) => {
+    const value = typeof next === "function" ? next(box) : next;
+    if (onCamera) onCamera(value); else setLocalBox(value);
+  };
+  const routeHead = useId();
   const svg = useRef<SVGSVGElement>(null);
   const drag = useRef<{ x: number; y: number; scale: number; box: Box; moved: boolean } | null>(null);
   const glide = useRef(0);
@@ -666,7 +677,7 @@ export function MapView({
       >
         <defs>
           <marker
-            id="route-head"
+            id={routeHead}
             viewBox="0 0 10 10"
             refX="6"
             refY="5"
@@ -754,7 +765,7 @@ export function MapView({
                   key={i}
                   className={`route${m.overseas ? " overseas" : ""}${mine ? " chosen" : ""}`}
                   d={m.path.map((r, step) => `${step ? "L" : "M"}${map.regions[r].site.join(",")}`).join(" ")}
-                  markerEnd="url(#route-head)"
+                  markerEnd={`url(#${routeHead})`}
                   style={{
                     stroke: hue(family(mover)),
                     strokeOpacity: mine ? 1 : 0.3 + 0.6 * Math.max(0, 1 - age / ROUTE_FADE),
@@ -771,7 +782,7 @@ export function MapView({
         {settlement?.plan ? <g className="settlement-journeys" aria-hidden="true">
           {settlement.plan.routes.map((r) => <polyline key={r.from} className={r.by_sea ? "sea-journey" : ""}
             points={r.path.map((region) => map.regions[region].site.join(",")).join(" ")}
-            markerEnd="url(#route-head)" />)}
+            markerEnd={`url(#${routeHead})`} />)}
         </g> : null}
         <g className="dealings">
           {dealings.map((k, i) => {
