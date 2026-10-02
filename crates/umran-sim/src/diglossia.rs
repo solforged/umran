@@ -95,7 +95,7 @@ impl World {
             else {
                 continue;
             };
-            let v = self.communities[state.rulers].variety;
+            let v = self.standard_variety(s);
             let Some(written) = self.varieties[v].written else {
                 continue;
             };
@@ -122,7 +122,7 @@ impl World {
     /// to have a tradition (`FALL_TRADITION`).
     pub(crate) fn fix_at_fall(&mut self, s: usize) {
         let state = &self.states[s];
-        let written = self.varieties[self.communities[state.rulers].variety].written;
+        let written = self.varieties[self.standard_variety(s)].written;
         if let (None, Some(standard), Some(written)) = (state.classical, state.standard, written)
             && self.generation >= written.max(standard) + FALL_TRADITION
         {
@@ -136,7 +136,7 @@ impl World {
     pub(crate) fn fix(&mut self, s: usize, how: Fixing) {
         self.refresh_places();
         let generation = self.generation;
-        let v = self.communities[self.states[s].rulers].variety;
+        let v = self.standard_variety(s);
         let mut classical = self.varieties[v].fork(v, generation);
         self.inherit_places(v, &mut classical);
         classical.name = self.varieties[v].name.clone();

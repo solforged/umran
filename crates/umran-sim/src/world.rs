@@ -261,6 +261,9 @@ pub struct Params {
     pub pilgrimage_rate: f32,
     /// Chance per generation that a language takes up a new given name.
     pub name_turnover: f32,
+    /// Fraction of the gap to a city's migrant makeup filled per generation.
+    /// Zero disables cities, including in an authored state.
+    pub city_rate: f32,
 }
 
 impl Default for Params {
@@ -312,6 +315,7 @@ impl Default for Params {
             schism_rate: 0.035,
             pilgrimage_rate: 0.2,
             name_turnover: 0.1,
+            city_rate: 0.25,
         }
     }
 }
@@ -343,6 +347,7 @@ impl Params {
             schism_rate: 0.0,
             pilgrimage_rate: 0.0,
             name_turnover: 0.0,
+            city_rate: 0.0,
             ..Self::default()
         }
     }
@@ -533,8 +538,16 @@ pub enum WorldEvent {
     Rose { state: usize },
     /// State `state` fell (`State::fell` says how).
     Fell { state: usize },
-    /// State `state` took its court speech as its standard.
+    /// State `state` selected a standard language.
     Standard { state: usize },
+    /// A state's capital passed the great-city threshold.
+    City { city: usize },
+    /// A city's mixed speech became a people and a variety of its own.
+    Koine {
+        city: usize,
+        community: usize,
+        variety: usize,
+    },
     /// `community` took up `craft`, taught by `from` or by itself.
     Learnt {
         community: usize,
@@ -638,6 +651,7 @@ pub struct World {
     pub continent_names: Vec<Option<ContinentName>>,
     /// Every state that has stood, in the order they arose.
     pub states: Vec<State>,
+    pub cities: Vec<crate::cities::City>,
     /// Every religion founded, in order.
     pub religions: Vec<Religion>,
     /// Eligible conquest comparisons whose hazard gained holy-land pressure.
@@ -686,6 +700,7 @@ impl World {
             params,
             events: Vec::new(),
             states: Vec::new(),
+            cities: Vec::new(),
             religions: Vec::new(),
             holy_war_checks: 0,
             laws: catalog(),
@@ -812,13 +827,16 @@ impl World {
         if !c.living() {
             return Vec::new();
         }
+        let residence = self.city_residence(community);
+        let urban = residence.map_or(0.0, |(_, n)| n);
         let fed: Vec<f32> = c
             .lands
             .iter()
             .map(|&r| self.feeds(r, c.livelihood))
             .collect();
         let total: f32 = fed.iter().sum();
-        c.lands
+        let mut out: Vec<_> = c
+            .lands
             .iter()
             .zip(fed)
             .map(|(&r, f)| {
@@ -827,9 +845,17 @@ impl World {
                 } else {
                     1.0 / c.lands.len() as f32
                 };
-                (r, c.size * share)
+                (r, (c.size - urban) * share)
             })
-            .collect()
+            .collect();
+        if let Some((region, n)) = residence {
+            if let Some((_, count)) = out.iter_mut().find(|(r, _)| *r == region) {
+                *count += n;
+            } else {
+                out.push((region, n));
+            }
+        }
+        out
     }
 
     /// Population living on each region.
@@ -1151,6 +1177,7 @@ impl World {
         self.make_contacts();
         self.hold_states();
         self.rise_states();
+        self.grow_cities();
         self.standardize();
         self.spread_crafts();
         self.found_religions();
@@ -2140,7 +2167,12 @@ impl World {
     /// `parent`, would say it: as its namers say it if `parent` descends
     /// from them, otherwise fitted to `variety`'s sounds. `None` if no one
     /// has named it yet.
-    fn heard_place(&self, region: usize, parent: usize, variety: &Variety) -> Option<Name> {
+    pub(crate) fn heard_place(
+        &self,
+        region: usize,
+        parent: usize,
+        variety: &Variety,
+    ) -> Option<Name> {
         if let Some((_, name)) = variety.exonyms.iter().find(|(r, _)| *r == region) {
             return Some(name.clone());
         }
@@ -2227,7 +2259,12 @@ impl World {
     /// if `naming` cannot be built. `base` is the name an epithet
     /// qualifies or the land a people is named for, with the variety that
     /// spells it.
-    fn coin(&self, variety: &Variety, naming: &Naming, base: Option<(&Name, &Variety)>) -> Name {
+    pub(crate) fn coin(
+        &self,
+        variety: &Variety,
+        naming: &Naming,
+        base: Option<(&Name, &Variety)>,
+    ) -> Name {
         let spelled = base.map(|(name, v)| (name, v.title(&name.form)));
         naming
             .coin(
@@ -2250,7 +2287,7 @@ impl World {
 
     /// A new language's name, as `language_name`, but formed another way
     /// when that name is already a spoken language's.
-    fn fresh_language_name(&self, variety: &Variety, people: &Name) -> Name {
+    pub(crate) fn fresh_language_name(&self, variety: &Variety, people: &Name) -> Name {
         let spoken = self.spoken();
         let taken = |name: &Name| {
             (0..self.varieties.len())
@@ -2341,7 +2378,7 @@ impl World {
                 let swamped = self.communities[c].size < MERGE_SHARE * self.communities[other].size
                     && self.share_land(c, other);
                 let factor = match contact.kind {
-                    ContactKind::Rule if self.under_standard(c, other) => 2.0 * STANDARD_SHIFT,
+                    _ if self.under_standard(c, other) => 2.0 * STANDARD_SHIFT,
                     ContactKind::Rule => 2.0,
                     ContactKind::Intermarriage => 1.5,
                     ContactKind::Neighbours if swamped => 1.0,
@@ -2767,7 +2804,7 @@ impl World {
     /// of its language, its peoples, the given names in fashion, and the
     /// lands they hold. Names of the dead (founders of states and faiths)
     /// are kept as they were said.
-    fn apply_law(&mut self, v: usize, law: &Law) {
+    pub(crate) fn apply_law(&mut self, v: usize, law: &Law) {
         let generation = self.generation;
         let variety = &mut self.varieties[v];
         let minimal = variety.minimal;
@@ -2868,6 +2905,7 @@ impl World {
                         * contact.kind.carries_sounds()
                         * contact.intensity
                         * near
+                        * self.city_wave_weight(me, other)
                         * prestige
                         * self.kinship(v, o.variety)
                         * if self.under_standard(me, other) {

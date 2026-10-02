@@ -40,6 +40,10 @@ pub struct Variety {
     pub waves: Vec<(u32, &'static str, usize)>,
     /// Where this variety split from, if it did.
     pub parent: Option<Fork>,
+    /// Contributors to this koiné at formation, largest first.
+    pub koine_of: Vec<(usize, f32)>,
+    /// Regular minority-to-majority sound mergers at its formation.
+    pub koine_mergers: Vec<(PhonemeId, PhonemeId)>,
     /// How its speakers build given names, and the names in fashion now.
     pub style: NameStyle,
     pub given: Vec<GivenName>,
@@ -115,6 +119,8 @@ impl Variety {
             stress_history: Vec::new(),
             waves: Vec::new(),
             parent: None,
+            koine_of: Vec::new(),
+            koine_mergers: Vec::new(),
             style,
             given: Vec::new(),
             written: None,
@@ -159,6 +165,8 @@ impl Variety {
                 generation,
                 inherited: self.lexicon.lexemes.len() as u32,
             }),
+            koine_of: Vec::new(),
+            koine_mergers: Vec::new(),
             ..self.clone()
         }
     }

@@ -416,6 +416,47 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
             WorldEvent::Rose { state } => state_annal(world, generation, state, "rose"),
             WorldEvent::Fell { state } => state_annal(world, generation, state, "fell"),
             WorldEvent::Standard { state } => state_annal(world, generation, state, "standard"),
+            WorldEvent::City { city } => {
+                let city = &world.cities[city];
+                let s = &world.states[city.state];
+                let realm = world.varieties[world.communities[s.rulers].variety].title(s.name.form_at(generation));
+                let mut annal = entry(
+                    generation,
+                    "city",
+                    format!("{}, where {realm} keeps its court, grew into a great city, drawing people from across the realm.", place(world, city.region, generation)),
+                    &[s.rulers],
+                    &[city.region],
+                );
+                annal.states.push(city.state);
+                annal
+            }
+            WorldEvent::Koine { city, community, variety } => {
+                let city = &world.cities[city];
+                let mut annal = entry(
+                    generation,
+                    "koine",
+                    format!(
+                        "In {} the speech of many peoples ran together, and its townsfolk, the {}, came to speak {} of their own.",
+                        place(world, city.region, generation),
+                        name(community),
+                        world.language_title_at(variety, generation),
+                    ),
+                    &[world.states[city.state].rulers, community],
+                    &[city.region],
+                );
+                annal.notes.push(format!(
+                    "A koiné of {}.",
+                    world.varieties[variety]
+                        .koine_of
+                        .iter()
+                        .map(|&(v, share)| format!("{} ({:.0}%)", language_label(world, v), share * 100.0))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+                annal.states.push(city.state);
+                annal.variety = Some(variety);
+                annal
+            }
             WorldEvent::Learnt {
                 community,
                 craft,
@@ -629,10 +670,7 @@ const FELL_COLLAPSED: &[&str] = &[
     "{n} came apart, and its peoples went their own ways.",
     "The court at {c} lost its hold, and {n} broke apart.",
 ];
-const STANDARD: &[&str] = &[
-    "Throughout {n}, the speech of the court at {c} became the measure of good speech.",
-    "In {n}, people learnt to speak as the court at {c} did; {l} became its standard.",
-];
+const STANDARD: &[&str] = &["In {n}, {l} became the standard."];
 
 /// A state rising, falling, or taking a standard, as `kind` says.
 fn state_annal(world: &World, generation: u32, state: usize, kind: &'static str) -> Annal {
@@ -643,7 +681,7 @@ fn state_annal(world: &World, generation: u32, state: usize, kind: &'static str)
     let court = world
         .place_at(s.capital, generation)
         .unwrap_or_else(|| "their heart land".into());
-    let tongue = world.language_title_at(variety, generation);
+    let tongue = world.language_title_at(world.standard_variety(state), generation);
     let mut notes = Vec::new();
     let mut peoples = vec![s.rulers];
     let options = match kind {

@@ -536,6 +536,7 @@ impl Bench {
                         meaning: v.name.meaning.clone(),
                         parent: v.parent.map(|f| f.variety),
                         forked_at: v.parent.map(|f| f.generation),
+                        koine_of: (!v.koine_of.is_empty()).then(|| makeup_views(&v.koine_of)),
                         family: world.family(id),
                         spoken: spoken[id],
                         born: born[id],
@@ -624,6 +625,24 @@ impl Bench {
                 })
                 .collect(),
             states: state_views(world),
+            cities: world
+                .cities
+                .iter()
+                .enumerate()
+                .map(|(id, city)| CityView {
+                    id,
+                    state: city.state,
+                    region: city.region,
+                    name: NameView::new(
+                        &world.varieties[world.standard_variety(city.state)],
+                        &world.city_name(id),
+                    ),
+                    size: world.city_size(id),
+                    since: city.since,
+                    townsfolk: city.townsfolk,
+                    makeup: makeup_views(&city.makeup),
+                })
+                .collect(),
             religions: religion_views(world),
             crafts: craft_views(world),
             continents: continent_views(world),
@@ -959,6 +978,12 @@ impl Bench {
                 }
                 WorldEvent::Standard { state } => {
                     format!("{} took a standard", latest.states[*state].name.meaning)
+                }
+                WorldEvent::City { city } => {
+                    format!("A city grew on land {}", latest.cities[*city].region)
+                }
+                WorldEvent::Koine { community, .. } => {
+                    format!("{} formed their own speech", name(*community))
                 }
                 WorldEvent::Learnt {
                     community,
@@ -1770,6 +1795,7 @@ struct Overview {
     contacts: Vec<ContactView>,
     /// Every state that has stood, in the order they arose.
     states: Vec<StateView>,
+    cities: Vec<CityView>,
     /// Every religion founded, in order.
     religions: Vec<ReligionView>,
     /// Each continent, as it was known in this generation.
@@ -1785,6 +1811,31 @@ struct Overview {
     annals: Vec<Annal>,
     /// Tellings set aside, with what they told that this one does not.
     tellings: Vec<TellingView>,
+}
+
+#[derive(Serialize)]
+struct CityView {
+    id: usize,
+    state: usize,
+    region: usize,
+    name: NameView,
+    size: f32,
+    since: u32,
+    townsfolk: Option<usize>,
+    makeup: Vec<MakeupView>,
+}
+
+#[derive(Serialize)]
+struct MakeupView {
+    variety: usize,
+    share: f32,
+}
+
+fn makeup_views(makeup: &[(usize, f32)]) -> Vec<MakeupView> {
+    makeup
+        .iter()
+        .map(|&(variety, share)| MakeupView { variety, share })
+        .collect()
 }
 
 #[derive(Serialize)]
@@ -1920,6 +1971,7 @@ struct VarietyView {
     meaning: String,
     parent: Option<usize>,
     forked_at: Option<u32>,
+    koine_of: Option<Vec<MakeupView>>,
     family: usize,
     spoken: bool,
     /// The generation it arose: founded, parted from its parent, or taken

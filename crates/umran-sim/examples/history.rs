@@ -151,8 +151,16 @@ fn main() {
                 )
             }
             WorldEvent::Standard { state } => println!(
-                "  gen {generation:>3}  {} takes its court speech as its standard",
+                "  gen {generation:>3}  {} takes a standard",
                 world.states[*state].name.meaning
+            ),
+            WorldEvent::City { city } => println!(
+                "  gen {generation:>3}  city {city} rises on land {}",
+                world.cities[*city].region
+            ),
+            WorldEvent::Koine { city, variety, .. } => println!(
+                "  gen {generation:>3}  city {city} forms {}",
+                world.language_title(*variety)
             ),
             WorldEvent::Learnt {
                 community,

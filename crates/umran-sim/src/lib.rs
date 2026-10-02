@@ -6,6 +6,7 @@
 pub mod adapt;
 pub mod change;
 pub mod chronicle;
+pub mod cities;
 pub mod compare;
 pub mod concepts;
 pub mod design;

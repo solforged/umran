@@ -28,7 +28,7 @@ const COURT: f32 = 0.1;
 /// Most of the rulers that live in the city, however great the tribute.
 const CITY_MOST: f32 = 0.5;
 /// Generations a state must stand, and the city it must have, before its
-/// court speech may become its standard, and the chance per generation
+/// city or court speech may become its standard, and the chance per generation
 /// that it then does.
 const STANDARD_AGE: u32 = 8;
 const STANDARD_CITY: f32 = 10000.0;
@@ -84,8 +84,10 @@ pub struct State {
     pub how: Rise,
     /// When and how it fell, if it has.
     pub fell: Option<(u32, Fall)>,
-    /// When its court speech became its standard, if it has.
+    /// When the state selected its standard, if it has.
     pub standard: Option<u32>,
+    /// The people whose speech was selected; absent before selection.
+    pub standard_speakers: Option<usize>,
     /// 0–1: how closely its standard is guarded against foreign words.
     pub purism: f32,
     /// Its standard frozen as a classical form, once fixed.
@@ -183,37 +185,60 @@ impl World {
         let mut out = vec![None; self.varieties.len()];
         for (i, s) in self.states.iter().enumerate() {
             if s.standing() && s.standard.is_some() {
-                out[self.communities[s.rulers].variety] = Some(i);
+                out[self.standard_variety(i)] = Some(i);
             }
         }
         out
     }
 
-    /// What ruling adds to what the rulers of a state are fed: their
-    /// court's share of their own lands, and their subjects' tribute.
-    /// Zero for a people that rules no state.
+    /// The food budget ruling supplies, shared between court and townsfolk:
+    /// stores on the rulers' lands and their subjects' tribute.
+    /// Zero for a people outside that allocation.
     pub(crate) fn tribute(&self, community: usize) -> f32 {
-        let Some(s) = self.rules(community) else {
-            return 0.0;
-        };
-        let k = &self.communities[community];
+        if let Some(s) = self.rules(community) {
+            let total = self.city_food(s);
+            return total - self.urban_food(s).map_or(0.0, |(_, n)| n.min(total));
+        }
+        self.states
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.standing())
+            .find_map(|(s, _)| {
+                self.urban_food(s)
+                    .filter(|(c, _)| *c == community)
+                    .map(|(_, n)| n.min(self.city_food(s)))
+            })
+            .unwrap_or(0.0)
+    }
+
+    fn city_food(&self, state: usize) -> f32 {
+        let s = &self.states[state];
+        let k = &self.communities[s.rulers];
         let own: f32 = k.lands.iter().map(|&r| self.feeds(r, k.livelihood)).sum();
-        let subjects: f32 = self.states[s]
+        let town = self.urban_food(state).map(|(c, _)| c);
+        let subjects: f32 = s
             .subjects()
+            .filter(|c| Some(*c) != town)
             .map(|m| self.communities[m].size)
             .sum();
         COURT * own + TRIBUTE * subjects
     }
 
-    /// How many live in a standing state's city: the rulers its tribute
-    /// feeds, gathered at the capital.
+    /// People in the capital city, or its court population before tracking.
     pub fn city(&self, state: usize) -> f32 {
+        self.cities
+            .iter()
+            .position(|c| c.state == state)
+            .map_or_else(|| self.city_capacity(state), |i| self.city_size(i))
+    }
+
+    pub(crate) fn city_capacity(&self, state: usize) -> f32 {
         let s = &self.states[state];
         if !s.standing() {
             return 0.0;
         }
         let rulers = self.communities[s.rulers].size;
-        self.tribute(s.rulers).min(rulers * CITY_MOST)
+        self.city_food(state).min(rulers * CITY_MOST)
     }
 
     /// Whether `subject` is ruled by `rulers`.
@@ -222,11 +247,12 @@ impl World {
             .is_some_and(|s| self.states[s].rulers == rulers)
     }
 
-    /// Whether `subject` is ruled by `rulers` and their speech is the
-    /// state's standard.
-    pub(crate) fn under_standard(&self, subject: usize, rulers: usize) -> bool {
-        self.ruled_by(subject)
-            .is_some_and(|s| self.states[s].rulers == rulers && self.states[s].standard.is_some())
+    /// Whether `speaker` speaks the standard of `subject`'s state.
+    pub(crate) fn under_standard(&self, subject: usize, speaker: usize) -> bool {
+        self.state_of(subject).is_some_and(|s| {
+            self.states[s].standard.is_some()
+                && self.standard_variety(s) == self.communities[speaker].variety
+        })
     }
 
     /// How fast variety `v` takes up sound laws and new words: slower if
@@ -250,8 +276,8 @@ impl World {
     }
 
     fn standard_state(&self, v: usize) -> Option<usize> {
-        self.states.iter().position(|s| {
-            s.standing() && s.standard.is_some() && self.communities[s.rulers].variety == v
+        self.states.iter().enumerate().position(|(i, s)| {
+            s.standing() && s.standard.is_some() && self.standard_variety(i) == v
         })
     }
 
@@ -312,6 +338,7 @@ impl World {
             how,
             fell: None,
             standard: None,
+            standard_speakers: None,
             purism,
             classical: None,
         });
@@ -556,7 +583,7 @@ impl World {
     }
 
     /// A state that has stood long enough, with a city large enough, may
-    /// take its court speech as its standard.
+    /// take its city or court speech as its standard.
     pub(crate) fn standardize(&mut self) {
         for s in 0..self.states.len() {
             let state = &self.states[s];
@@ -582,13 +609,21 @@ impl World {
         }
     }
 
-    /// State `s` takes its court speech as its standard. If its speakers
-    /// wrote a classical form, they now write their own speech.
+    /// State `s` chooses its townsfolk's speech if present, otherwise its
+    /// court's. Speakers who wrote a classical form now write their speech.
     pub(crate) fn adopt_standard(&mut self, s: usize) {
+        self.states[s].standard_speakers = Some(
+            self.cities
+                .iter()
+                .find(|city| city.state == s)
+                .and_then(|city| city.townsfolk)
+                .filter(|&c| self.communities[c].living())
+                .unwrap_or(self.states[s].rulers),
+        );
         self.states[s].standard = Some(self.generation);
         self.events
             .push((self.generation, WorldEvent::Standard { state: s }));
-        let v = self.communities[self.states[s].rulers].variety;
+        let v = self.standard_variety(s);
         self.write_vernacular(v, Vernacular::Standard { state: s });
     }
 }

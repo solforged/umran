@@ -261,22 +261,75 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   (`state_rate`): readily in answer to a challenge (bad times on its
   lands, being crowded off land, a stronger state beside it), a tenth as
   readily in comfort. This is Toynbee's challenge and response. Ruling
-  feeds the rulers more: a tenth of their own lands' yield and a tenth of
-  their subjects' number in tribute. Those the tribute feeds live in the
-  capital's city. A state falls when its rulers end or lose the capital,
-  or collapses (`collapse_rate`), three times as readily after bad times
-  on its rulers' lands; states last about 750 years. Rule holds half as
-  long after such bad times. A state with a city of 10,000 that has stood
-  200 years may take its court speech as its standard. A standard takes
-  up sound laws, waves, and new words at half the pace; its words carry
-  extra prestige; its sound changes and words reach the kindred speech of
-  its subjects three times as readily, even basic words (dialect
-  levelling); its subjects of other families shift to it twice as
-  readily; and rule under it holds half again as long. Each state draws
-  a purism at its rising, most near none: a purist standard borrows
+  provides a food budget: a tenth of the rulers' own lands' yield and a
+  tenth of their subjects' number in tribute. The court uses that budget
+  until townsfolk have their own community; their food then comes out of
+  the same budget, not a second addition, and townsfolk pay no circular
+  tribute to themselves. A state falls when its rulers end or lose the
+  capital, or collapses (`collapse_rate`), three times as readily after
+  bad times on its rulers' lands; states last about 750 years. Rule holds
+  half as long after such bad times. A state with a city of 10,000 that
+  has stood 200 years may take its townsfolk's speech as its standard,
+  or the court's if no koiné has formed. The selected people is recorded
+  separately from the rulers, so the standard's prestige, borrowing,
+  waves, shifts, spelling, and classical form all follow the selected
+  speech. A standard takes up sound laws, waves, and new words at half
+  the pace; its words carry extra prestige; its sound changes and words
+  reach the kindred speech of its subjects three times as readily, even
+  basic words (dialect levelling); its subjects of other families shift
+  to it twice as readily; and rule under it holds half again as long.
+  Each state draws a purism at its rising, most near none: a purist standard borrows
   less, its loans lose ground in use, and concepts held by loans gain
   native words. When a state falls the pull stops, and its dialects
   drift apart again.
+- Cities (`cities.rs`) first enter the record at 10,000 people, once per
+  state. Migrants come from rulers and subjects, weighted by their number
+  divided by one plus travel distance to the capital; `city_rate` closes
+  a quarter of the gap to that makeup per generation. Before townsfolk
+  become their own people, residents remain explicit subsets of their
+  source communities' census, capped at half of each source. `presence`
+  subtracts them from the source's ordinary lands and places them at the
+  capital: showing a city never adds a second population. These subsets
+  share their source people's births, deaths, and language shifts.
+  Four consecutive generations with two speech varieties each at 15%
+  make the townsfolk a normal community on the capital land. Formation
+  debits the reserved people once from their sources; later immigration
+  also debits its sources. The people names itself for the capital using
+  `Naming::Land`. Ordinary contacts, waves, borrowing, demographic change,
+  and shifts then work without a separate urban language engine.
+- A koiné descends from its largest contributor and records all its
+  formation shares (`Variety::koine_of`). For each core concept,
+  contributor share times word usage votes for a word, cognates voting
+  together; the strongest contributing form in the winning group wins.
+  Contributors' inventories determine regular minority-sound mergers:
+  sounds present among less than half merge into the nearest sound
+  present among at least half, within consonants or vowels. If no such
+  target exists the segment stays; vowel and minimal-word guards still
+  apply. Every living word and name undergoes the same `koine-levelling`
+  law, recorded with before-forms and the variety's exact merger pairs.
+  This makeup-dependent law is not a portable catalog wave; subsequent
+  ordinary laws are. The parent's morphology stays, except optional
+  derivational affixes/patterns used by fewer than three living words
+  and supported by less than half the contributors are dropped.
+  Basic patterns, name builders, and renewal remain available.
+- Urban diffusion keeps rural contact weights unchanged and multiplies
+  waves involving townsfolk by `1 + min(3, (A/10000)(B/10000)/(1+d)²)`,
+  where A and B are the two populations and d is travel effort.
+  Great cities also open direct trade contacts with a bounded gravity
+  probability, so a wave can jump between cities without passing through
+  every intervening rural variety. Routes use a purpose-keyed `city`
+  stream; koiné levelling itself has no random draws. When a state falls,
+  its food budget ends. A city's remaining townsfolk disperse a fifth of
+  their excess above 2,500 each generation into surviving former members
+  of the state, conserving population; ordinary land capacity and
+  hardships still determine survival. If no receiving people remains,
+  ordinary demography alone governs the town. A community that has left
+  the capital is no longer counted as that city's residents.
+  `Params::static_society()` disables city formation and migration.
+  In the 40-seed, 4,000-year band (`cities -- --band 40 160`, the audit's
+  three 1,000-person founders with default rates), 8/40 worlds formed a
+  koiné (20%); the median was zero koinés per world, with ten overall.
+  Two of those ten became standards (20%), in two worlds.
 - People have given names (`names.rs`). Each language keeps a stock of
   eight in fashion, built from its own words in its own style: one word
   ("Wolf") or two joined ("Wulf-stan", as Germanic, Slavic, and Greek
@@ -420,6 +473,8 @@ cargo run --release -p umran-sim --example length -- [seeds] [generations]
 cargo run --release -p umran-sim --example audit -- [seeds] [generations]
 cargo run --release -p umran-sim --example faiths -- [seeds] [years] [first-seed] [seeded|natural|sample|sample-unseeded]
 cargo run --release -p umran-sim --example stress -- [seed] [generations]
+cargo run --release -p umran-sim --example cities -- [seed] [generations]
+cargo run --release -p umran-sim --example cities -- --band 40 160
 ```
 
 The faith report's `seeded` setup begins with three peoples sharing one
@@ -442,8 +497,7 @@ of a large subject people in an old state, not a higher schism threshold.
 
 Rivers, climates, travel in kilometres, sea crossings that
 gate trade and conquest (migration, colonies, and pilgrimage need seafaring), a
-map larger than a regional theatre, cities with speech of their own (a city's speech is
-its court's; no koiné), purism within a classical form, compounding and
+map larger than a regional theatre, purism within a classical form, compounding and
 derivation after founding beyond renewal and new meanings, inflection,
 tone, vowel harmony, prenasalized stops, syntax and alignment, doctrinal
 detail beyond the causes of a schism.

@@ -914,6 +914,14 @@ pub fn catalog() -> Vec<Law> {
             "Stress moves to the penult",
             StressRule::Penult,
         ),
+        law(
+            "koine-levelling",
+            "Minority sounds merge into majority sounds",
+            0.0,
+            // Its exact rules depend on the city's makeup, not a portable
+            // catalog change. The resulting variety's later laws can spread.
+            Vec::new(),
+        ),
     ]
 }
 
