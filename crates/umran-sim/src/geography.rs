@@ -141,18 +141,6 @@ pub enum Terrain {
 }
 
 impl Terrain {
-    /// How many the land feeds, as a share of what an open plain feeds.
-    pub fn fertility(self) -> f32 {
-        match self {
-            Terrain::Sea => 0.0,
-            Terrain::Plains => 1.0,
-            Terrain::Forest => 0.6,
-            Terrain::Steppe | Terrain::Hills => 0.5,
-            Terrain::Mountains => 0.15,
-            Terrain::Desert => 0.1,
-        }
-    }
-
     /// Effort of crossing it, relative to open plain. Open steppe is
     /// easiest, which is why languages spread so far across it; mountains
     /// are hardest, which is why they shelter so many.

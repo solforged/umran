@@ -726,7 +726,8 @@ not at a fraction of the map. Vast therefore has more catchments and rivers,
 not smaller cells or a river in every cell.
 
 Every river has a stable id, an ordered main course, an ultimate sea mouth,
-and its upstream catchment. The strongest branch continues the main course;
+and its upstream catchment, the land supplying its water. The strongest
+branch continues the main course;
 other branches keep their own ids and join it. Shared downstream reaches are
 stored once. Tributary and main-river catchments may overlap because water
 from the tributary supplies both. Short tributaries remain short, and great

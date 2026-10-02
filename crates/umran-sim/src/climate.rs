@@ -308,6 +308,7 @@ impl World {
                 .is_some_and(|s| self.states[s].subjects().any(exposed))
     }
 
+    /// Returns whether changed valley routes need contact reconciliation.
     pub(crate) fn advance_climate(&mut self) -> bool {
         if !self.params.climate_enabled {
             return false;
