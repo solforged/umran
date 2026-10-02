@@ -50,6 +50,8 @@ export function concerns(annal: Annal, subject: Subject, overview: Overview, map
     case "craft": return annal.crafts.includes(subject.id);
     case "land": return annal.lands.includes(subject.region);
     case "continent": return annal.lands.some((r) => map.regions[r]?.landmass === subject.landmass);
+    case "river": return annal.rivers.includes(subject.id);
+    case "zone": return annal.zones.includes(subject.id);
     case "law": return annal.laws.includes(subject.id);
     case "event": return annal.id === subject.id;
     case "world": case "history": return true;
@@ -72,6 +74,8 @@ export function relatedMoments(event: Annal, annals: Annal[]): { annal: Annal; e
       if (overlap(source.languages, annal.languages)) reasons.add("same language");
       if (overlap(source.states, annal.states)) reasons.add("same state");
       if (overlap(source.religions, annal.religions)) reasons.add("same faith");
+      if (overlap(source.rivers, annal.rivers)) reasons.add("same river");
+      if (overlap(source.zones, annal.zones)) reasons.add("same weather zone");
     }
     return reasons.size ? [{ annal, evidence: [...reasons].join(" · ") }] : [];
   }).sort((a, b) => Math.abs(a.annal.generation - event.generation) - Math.abs(b.annal.generation - event.generation));

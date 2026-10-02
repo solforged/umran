@@ -830,6 +830,17 @@ The facade exposes static river topology and zone ids in `map()`,
 historical conditions and literal feeding capacities in `climate(generation)`,
 and name histories with local alternatives in `river(generation, id)`.
 
+The workbench reads those views within the active telling and year. Rivers
+are inked above terrain, with three catchment-width tiers and dashed failed
+flows. Tributaries meet their parent course; main rivers meet the shared
+coast of their sea mouth. The read-only `joinAt` field names the exact
+confluence region; a tributary can border several reaches of its parent.
+Close zoom adds attested names in the selected
+people's speech, falling back to the mouth's speakers. River cards retain
+name records, exonyms, and flow annals. Weather colouring uses zone departures,
+and climate annals lead to zone cards. Far, middle, and close chart views
+disclose progressively finer detail; a kilometre scale follows the camera.
+
 ## Studying one mechanism
 
 Each example prints a readable report; profiles are preset ids

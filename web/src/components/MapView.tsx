@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type RefObject, type SetStateAction } from "react";
 import { LocateFixed, Maximize, Minus, Plus } from "lucide-react";
-import type { Community, Craft, EthosAxis, Overview, SettlementPreview, WordMap, WorldMap } from "../model";
+import type { ClimateView, Community, Craft, EthosAxis, Overview, River, RiverNamesView, SettlementPreview, WordMap, WorldMap } from "../model";
 import type { ShelfPeople } from "../shelf";
 import { reducedMotion } from "../motion";
 import { YEARS } from "../model";
@@ -37,7 +37,8 @@ export type Tint =
   | { kind: "change"; had: ReadonlySet<number> }
   | { kind: "faiths" }
   | { kind: "crafts"; craft: Craft }
-  | { kind: "temper"; axis: EthosAxis };
+  | { kind: "temper"; axis: EthosAxis }
+  | { kind: "weather" };
 
 /// A leaning from -1 to 1 as a colour: the isogloss view's blue toward the
 /// low end, its orange toward the high, grey between. Peoples seldom lean
@@ -50,6 +51,61 @@ function leaning(value: number): string {
 /// The part of the map in view: left, top, width, height, in map units.
 export type MapCamera = [number, number, number, number];
 type Box = MapCamera;
+
+/// A tributary stops at its confluence; only the main course reaches the coast.
+export function riverPoints(map: WorldMap, river: River): [number, number][] {
+  const points = river.course.map((id) => map.regions[id].site);
+  const end = map.regions[river.course.at(-1)!];
+  if (river.joinAt !== null) {
+    points.push(map.regions[river.joinAt].site);
+  } else {
+    const coast = end.outline.filter(([x, y]) => map.regions[river.mouth].outline.some(([u, v]) =>
+      Math.abs(x - u) < SAME_POINT && Math.abs(y - v) < SAME_POINT));
+    if (coast.length >= 2) points.push([(coast[0][0] + coast[1][0]) / 2, (coast[0][1] + coast[1][1]) / 2]);
+  }
+  return points;
+}
+
+export function riverLength(map: WorldMap, river: River): number {
+  const points = riverPoints(map, river);
+  return points.slice(1).reduce((km, point, i) =>
+    km + Math.hypot(point[0] - points[i][0], point[1] - points[i][1]) * map.kmPerUnit, 0);
+}
+
+/// Use a real attested form in the selected speech, then the mouth's speech.
+export function riverName(view: RiverNamesView, variety: number | undefined) {
+  if (variety === undefined) return null;
+  return [...view.names].reverse().find((name) => name.variety === variety)
+    ?? view.exonyms.find((name) => name.variety === variety) ?? null;
+}
+
+function riverDress(map: WorldMap) {
+  const curve = (points: [number, number][]) => {
+    let d = `M${points[0].join(",")}`;
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = points[Math.max(0, i - 1)], b = points[i], c = points[i + 1], e = points[Math.min(points.length - 1, i + 2)];
+      d += `C${b[0] + (c[0] - a[0]) / 6},${b[1] + (c[1] - a[1]) / 6} ${c[0] - (e[0] - b[0]) / 6},${c[1] - (e[1] - b[1]) / 6} ${c.join(",")}`;
+    }
+    return d;
+  };
+  const largest = Math.max(1, ...map.rivers.map((river) => river.catchment.length));
+  return map.rivers.map((river) => {
+    const points = riverPoints(map, river);
+    let longest = 0, start = points[0], end = points.at(-1)!;
+    // Retain the longest run whose intermediate points stay near its chord.
+    for (let i = 0; i < points.length - 1; i++) {
+      for (let j = i + 1; j < points.length; j++) {
+        const a = points[i], b = points[j], dx = b[0] - a[0], dy = b[1] - a[1], length = Math.hypot(dx, dy);
+        if (length <= longest || !length) continue;
+        if (points.slice(i + 1, j).some((p) => Math.abs(dx * (p[1] - a[1]) - dy * (p[0] - a[0])) / length > 0.18)) continue;
+        longest = length; start = a; end = b;
+      }
+    }
+    if (end[0] < start[0]) [start, end] = [end, start];
+    return { river, d: curve(points), label: `M${start.join(",")}L${end.join(",")}`,
+      tier: river.catchment.length >= largest * 2 / 3 ? 3 : river.catchment.length >= largest / 3 ? 2 : 1 };
+  });
+}
 
 /// Living peoples by every region they hold, not just their heart land.
 export function peoplesByRegion(overview: Overview): Map<number, Community[]> {
@@ -110,7 +166,13 @@ function inside(outline: [number, number][], [x, y]: [number, number]): boolean 
 /// so it is built once per map.
 function chartDress(map: WorldMap) {
   const land = map.regions.filter((r) => r.terrain !== "sea");
-  const coast = land.map((r) => `M${r.outline.map(([x, y]) => `${x},${y}`).join("L")}Z`).join("");
+  const same = ([x, y]: [number, number], [u, v]: [number, number]) => Math.abs(x - u) < SAME_POINT && Math.abs(y - v) < SAME_POINT;
+  const coast = land.flatMap((r) => r.outline.flatMap((a, i) => {
+    const b = r.outline[(i + 1) % r.outline.length];
+    return r.neighbours.some((n) => map.regions[n].terrain !== "sea" &&
+      map.regions[n].outline.some((p) => same(a, p)) && map.regions[n].outline.some((p) => same(b, p)))
+      ? [] : [`M${a.join(",")}L${b.join(",")}`];
+  })).join("");
   const reach = Math.hypot(map.width, map.height);
   const rhumbs = ["", "", ""];
   for (const [sx, sy] of ROSES) {
@@ -120,9 +182,10 @@ function chartDress(map: WorldMap) {
       rhumbs[i % 4 === 0 ? 0 : i % 2 === 0 ? 1 : 2] += `M${cx},${cy}L${cx + Math.cos(a) * reach},${cy + Math.sin(a) * reach}`;
     }
   }
-  // Marks by kind; each kind is one path, so the chart stays light.
-  const marks = { peak: "", shade: "", hill: "", tree: "", sand: "", grass: "", field: "" };
+  // Keep marks by land so a large chart can cull what lies beyond the view.
+  const marked: { id: number; paths: Record<string, string> }[] = [];
   for (const r of land) {
+    const marks = { peak: "", shade: "", hill: "", tree: "", sand: "", grass: "", field: "" };
     const next = scatter(r.id);
     const [cx, cy] = r.site;
     const spots = (count: number, place: (x: number, y: number) => void) => {
@@ -161,6 +224,7 @@ function chartDress(map: WorldMap) {
         spots(3, (x, y) => (marks.field += `M${x - 0.06},${y}h.12`));
         break;
     }
+    marked.push({ id: r.id, paths: marks });
   }
   return {
     under: (
@@ -183,7 +247,9 @@ function chartDress(map: WorldMap) {
     ),
     over: (
       <g className="chart-dress chart-marks" aria-hidden="true">
-        {Object.entries(marks).map(([kind, d]) => (d ? <path key={kind} className={`mark-${kind}`} d={d} /> : null))}
+        {marked.map(({ id, paths }) => <g key={id} data-chart-region={id}>
+          {Object.entries(paths).map(([kind, d]) => d ? <path key={kind} className={`mark-${kind}`} d={d} /> : null)}
+        </g>)}
       </g>
     ),
   };
@@ -273,6 +339,9 @@ export function MapView({
   overview,
   generation,
   tint,
+  climate,
+  riverNames = [],
+  selectedVariety,
   names = true,
   routes = true,
   contacts = true,
@@ -293,11 +362,15 @@ export function MapView({
   onState,
   onReligion,
   onCraft,
+  onRiver,
 }: {
   map: WorldMap;
   overview: Overview;
   generation: number;
   tint: Tint;
+  climate?: ClimateView;
+  riverNames?: RiverNamesView[];
+  selectedVariety?: number;
   names?: boolean;
   routes?: boolean;
   contacts?: boolean;
@@ -323,14 +396,77 @@ export function MapView({
   onState?: (state: number) => void;
   onReligion?: (religion: number) => void;
   onCraft?: (craft: Craft) => void;
+  onRiver?: (id: number) => void;
 }) {
   const full: Box = useMemo(() => [0, 0, map.width, map.height], [map]);
-  const [localBox, setLocalBox] = useState<Box>(full);
-  const box = camera ?? localBox;
-  const setBox = (next: SetStateAction<Box>) => {
-    const value = typeof next === "function" ? next(box) : next;
-    if (onCamera) onCamera(value); else setLocalBox(value);
+  const view = useRef<Box>(camera ?? full);
+  const drawnMap = useRef(map);
+  if (drawnMap.current !== map) { drawnMap.current = map; view.current = camera ?? full; }
+  let box = view.current;
+  const root = useRef<HTMLDivElement>(null);
+  const scaleText = useRef<HTMLSpanElement>(null);
+  const scaleRule = useRef<HTMLSpanElement>(null);
+  const labelLayers = useRef<SVGElement[]>([]);
+  const frame = useRef(0);
+  const [labelWidth, setLabelWidth] = useState(() => window.innerWidth);
+  const bounds = useMemo(() => map.regions.map((region) => {
+    const xs = region.outline.map((p) => p[0]), ys = region.outline.map((p) => p[1]);
+    return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+  }), [map]);
+  const culled = useRef<{ node: SVGElement; bounds: number[]; hidden: boolean }[]>([]);
+  const drawCamera = () => {
+    const element = svg.current, chart = root.current;
+    if (!element || !chart) return;
+    const value = view.current, ratio = value[2] / map.width;
+    element.setAttribute("viewBox", value.join(" "));
+    const pixelsPerUnit = element.getScreenCTM()?.a ?? 1;
+    for (const layer of labelLayers.current) {
+      layer.style.setProperty("--label", String(Math.sqrt(ratio)));
+      if (layer.classList.contains("peoples")) layer.style.setProperty("--people-label-min",
+        zoomable && window.innerWidth <= 700 ? `${12 / pixelsPerUnit}px` : "0px");
+    }
+    const level = ratio > 0.6 ? "zoom-far" : ratio < 0.25 ? "zoom-close" : "zoom-mid";
+    if (!chart.classList.contains(level)) {
+      chart.classList.remove("zoom-far", "zoom-mid", "zoom-close");
+      chart.classList.add(level);
+    }
+    if (map.regions.length > 500) {
+      const [x, y, w, h] = value;
+      for (const item of culled.current) {
+        const [left, top, right, bottom] = item.bounds;
+        const hidden = ratio <= 0.6 && (right < x - 0.2 || left > x + w + 0.2 || bottom < y - 0.2 || top > y + h + 0.2);
+        if (hidden !== item.hidden) { item.node.style.display = hidden ? "none" : ""; item.hidden = hidden; }
+      }
+    }
+    const km = [50, 100, 200, 500, 1000].filter((length) => length <= value[2] * map.kmPerUnit * 0.15).at(-1) ?? 50;
+    scaleRule.current?.style.setProperty("--scale-width", `${km / map.kmPerUnit * pixelsPerUnit}px`);
+    const caption = `${km.toLocaleString()} km`;
+    if (scaleText.current && scaleText.current.textContent !== caption) scaleText.current.textContent = caption;
+    const closer = chart.querySelector<HTMLButtonElement>('[aria-label="Zoom in"]');
+    const farther = chart.querySelector<HTMLButtonElement>('[aria-label="Zoom out"]');
+    if (closer) closer.disabled = ratio <= CLOSEST + 0.0001;
+    if (farther) farther.disabled = ratio >= 0.9999;
   };
+  const setBox = (next: SetStateAction<Box>) => {
+    box = typeof next === "function" ? next(view.current) : next;
+    view.current = box;
+    if (onCamera) onCamera(box);
+    cancelAnimationFrame(frame.current);
+    frame.current = requestAnimationFrame(drawCamera);
+  };
+  useLayoutEffect(() => {
+    if (camera) view.current = camera;
+    culled.current = [...(root.current?.querySelectorAll<SVGElement>("[data-chart-region]") ?? [])].map((node) => ({
+      node, bounds: bounds[Number(node.dataset.chartRegion)], hidden: node.style.display === "none",
+    }));
+    labelLayers.current = [...(root.current?.querySelectorAll<SVGElement>(".peoples, .place-names, .river-names, .state-capitals, .founding-markers") ?? [])];
+    drawCamera();
+  });
+  useEffect(() => {
+    const observer = new ResizeObserver(() => { setLabelWidth(window.innerWidth); drawCamera(); });
+    if (root.current) observer.observe(root.current);
+    return () => { observer.disconnect(); cancelAnimationFrame(frame.current); };
+  }, [map]);
   const routeHead = useId();
   const svg = useRef<SVGSVGElement>(null);
   const localMotion = useRef<MapMotionReading | null>(null);
@@ -350,7 +486,7 @@ export function MapView({
   const glideTo = (target: Box) => {
     cancelAnimationFrame(glide.current);
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { setBox(target); return; }
-    const from = box;
+    const from = view.current;
     const start = performance.now();
     const step = (now: number) => {
       const t = Math.min(1, (now - start) / GLIDE);
@@ -365,7 +501,7 @@ export function MapView({
   const [fx, fy] = focus ?? [NaN, NaN];
   useEffect(() => {
     if (!zoomable || Number.isNaN(fx)) return;
-    const [x, y, w, h] = box;
+    const [x, y, w, h] = view.current;
     const inside = fx > x + w * 0.2 && fx < x + w * 0.8 && fy > y + h * 0.2 && fy < y + h * 0.8;
     if (!inside) glideTo(clamp([fx - w / 2, fy - h / 2, w, h]));
     // Only a new focus moves the view, never the view itself.
@@ -469,11 +605,18 @@ export function MapView({
 
   const byRegion = useMemo(() => peoplesByRegion(overview), [overview]);
   const dress = useMemo(() => chartDress(map), [map]);
-  // Seas first, so the chart can ink the coast between them and the lands.
-  const [seas, grounds] = useMemo(
-    () => [map.regions.filter((r) => r.terrain === "sea"), map.regions.filter((r) => r.terrain !== "sea")],
-    [map],
-  );
+  const riverPaths = useMemo(() => riverDress(map), [map]);
+  const namesByRiver = useMemo(() => new Map(riverNames.map((view) => [view.river, view])), [riverNames]);
+  const namedRiver = (river: River) => {
+    const view = namesByRiver.get(river.id);
+    if (!view) return null;
+    let main = river;
+    while (main.joins !== null) main = map.rivers[main.joins];
+    const atMouth = byRegion.get(main.course.at(-1)!);
+    const mouthVariety = atMouth?.reduce((a, b) => a.size >= b.size ? a : b).variety;
+    return riverName(view, selectedVariety) ?? riverName(view, mouthVariety);
+  };
+  const grounds = useMemo(() => map.regions.filter((r) => r.terrain !== "sea"), [map]);
   const hearts = useMemo(
     () => new Map([...byRegion].map(([region, here]) => [region, here.filter((c) => c.region === region)])),
     [byRegion],
@@ -543,6 +686,14 @@ export function MapView({
     return here ? here.reduce((a, b) => (b.size > a.size ? b : a)) : null;
   };
   const colourOf = (region: number): string | null => {
+    if (tint.kind === "weather") {
+      const zone = climate?.zones.find((z) => z.id === map.regions[region].climateZone);
+      if (!zone) return null;
+      const strength = Math.max(Math.abs(zone.wetness), Math.abs(zone.warmth));
+      if (strength < 0.04) return null;
+      const ink = zone.wetness < -0.04 ? "#b28a43" : zone.wetness > 0.04 ? "#658174" : zone.warmth < -0.04 ? "#667f96" : "#b28a43";
+      return `color-mix(in srgb, ${ink} ${Math.min(85, 30 + strength * 80)}%, var(--paper))`;
+    }
     const largest = largestOn(region);
     if (!largest) return null;
     switch (tint.kind) {
@@ -595,7 +746,8 @@ export function MapView({
       .map((p) => ({ religion, p })))
     : [];
   // Labels grow more slowly than the land as the view closes in.
-  const label = Math.sqrt(box[2] / map.width);
+  const label = Math.max(Math.sqrt(box[2] / map.width),
+    zoomable && labelWidth <= 700 ? 12 * box[2] / (labelWidth * 0.24) : 0);
   // Land a veiling language does not know.
   function hidden(region: number): boolean {
     return known !== null && !known.has(region);
@@ -642,14 +794,14 @@ export function MapView({
     const colour = veiled ? null : colourOf(r.id);
     const points = r.outline.map(([x, y]) => `${x},${y}`).join(" ");
     return (
-      <g key={r.id} onClick={sea ? undefined : () => dragged() || onLand(r.id)}>
+      <g key={r.id} data-chart-region={r.id} onClick={sea ? undefined : () => dragged() || onLand(r.id)}>
         <title>{sea ? "Sea" : veiled ? "Unknown land" : (nameOf(r.id) ?? `Unnamed ${TERRAIN_NAME[r.terrain].toLowerCase()}`)}</title>
         <polygon
           data-region={r.id}
           className={`land terrain-${r.terrain}${sea ? "" : " open"}${lands.has(r.id) ? " shown" : ""}`}
           points={points}
         />
-        {colour ? <polygon className="claim" data-region={r.id} points={points} style={{ fill: colour }} /> : null}
+        {colour ? <polygon className={tint.kind === "weather" ? "weather-wash" : "claim"} data-region={r.id} points={points} style={{ fill: colour }} /> : null}
         {!sea && settlement ? <polygon points={points} className={`settlement-land${possible.has(r.id) ? " possible" : ""}${remains.has(r.id) ? " remaining" : ""}${arrives.has(r.id) ? " arriving" : ""}`} /> : null}
       </g>
     );
@@ -718,7 +870,7 @@ export function MapView({
   }, [overview, animateChanges, motionMemory]);
 
   return (
-    <div className={zoomable ? "mapview zoomable" : "mapview"}>
+    <div ref={root} className={`mapview${zoomable ? " zoomable" : ""} ${box[2] / map.width > 0.6 ? "zoom-far" : box[2] / map.width < 0.25 ? "zoom-close" : "zoom-mid"}`}>
       <svg
         ref={svg}
         viewBox={box.join(" ")}
@@ -760,11 +912,31 @@ export function MapView({
           </marker>
         </defs>
         <g className="lands">
-          {seas.map(shape)}
+          <rect className="terrain-sea" width={map.width} height={map.height} />
           {dress.under}
           {grounds.map(shape)}
         </g>
         {dress.over}
+        <g className="chart-rivers">
+          {riverPaths.map(({ river, d, tier }) => {
+            if (river.course.every(hidden)) return null;
+            const name = namedRiver(river);
+            const failed = climate?.rivers.find((flow) => flow.id === river.id)?.flowing === false;
+            return <g key={river.id} className={`chart-river river-tier-${tier}${failed ? " failed" : ""}`}
+              role={onRiver ? "button" : undefined} tabIndex={onRiver ? 0 : undefined}
+              aria-label={name?.spelled ?? "Unnamed river"}
+              onClick={() => dragged() || onRiver?.(river.id)}
+              onKeyDown={(e) => { if (onRiver && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onRiver(river.id); } }}>
+              <title>{`${name?.spelled ?? "Unnamed river"}${failed ? ", flow has failed" : ""}`}</title>
+              <path className="river-ink" d={d} />
+              <path className="river-hit" d={d} />
+            </g>;
+          })}
+        </g>
+        {tint.kind === "weather" ? <g className="zone-borders" aria-hidden="true">
+          {borders.filter(({ a, b }) => map.regions[a].climateZone !== map.regions[b].climateZone).map(({ a, b, ends }) =>
+            <path key={`${a}-${b}`} d={`M${ends[0].join(",")}L${ends[1].join(",")}`} />)}
+        </g> : null}
         {known ? (
           <g className="veil" aria-hidden="true">
             {grounds.filter((r) => hidden(r.id)).map((r) => (
@@ -824,6 +996,19 @@ export function MapView({
             })}
           </g>
         ) : null}
+        {names ? <g className="river-names" aria-hidden="true">
+          {riverPaths.map(({ river, label: line }) => {
+            const name = namedRiver(river);
+            if (!name || river.course.every(hidden)) return null;
+            const id = `${routeHead}-river-${river.id}`;
+            return <g key={river.id}>
+              <defs><path id={id} d={line} /></defs>
+              <text className={`hand-${overview.varieties[name.variety].family % 5}`} dy={-0.06}>
+                <textPath href={`#${id}`} startOffset="50%" textAnchor="middle">{name.spelled}</textPath>
+              </text>
+            </g>;
+          })}
+        </g> : null}
         {routes ? (
           <g className="routes">
             {overview.moves.map((m, i) => {
@@ -912,19 +1097,12 @@ export function MapView({
                     ? `${c.name}: ${word.spelled} /${word.ipa}/`
                     : `${c.name}, ${Math.round(c.size).toLocaleString()} souls`}
                 </title>
-                {crowded.has(c.id) ? (
-                  <circle className="people-dot" cx={x} cy={y} r={0.06 * label}
-                    style={{ fill: tint.kind === "words" && word ? hue(word.group) : hue(family(c)) }} />
-                ) : (
-                  <text
-                    x={x}
-                    y={y}
-                    className={`hand-${family(c) % 5}`}
-                    style={{ fill: tint.kind === "words" && word ? hue(word.group) : hue(family(c)) }}
-                  >
-                    {text}
-                  </text>
-                )}
+                {crowded.has(c.id) ? <circle className="people-dot" cx={x} cy={y} r={0.06 * label}
+                  style={{ fill: tint.kind === "words" && word ? hue(word.group) : hue(family(c)) }} /> : null}
+                <text x={x} y={y} className={`hand-${family(c) % 5}${crowded.has(c.id) ? " crowded-name" : ""}`}
+                  style={{ fill: tint.kind === "words" && word ? hue(word.group) : hue(family(c)) }}>
+                  {text}
+                </text>
               </g>
             );
           })}
@@ -1047,6 +1225,10 @@ export function MapView({
           </button>
         </div>
       ) : null}
+      {zoomable ? <div className="chart-scale">
+        <span ref={scaleRule} className="scale-rule"><span ref={scaleText} /></span>
+        <span className="chart-help">Scroll to zoom · drag to explore</span>
+      </div> : null}
       {ROSE}
     </div>
   );

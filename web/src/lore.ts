@@ -36,7 +36,7 @@ import {
   WholeWord,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Overview, PlaceName, ReligionView, Rendering, SchismCause, StateView, StressRule, Terrain } from "./model";
+import type { Annal, ClimateView, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Overview, PlaceName, ReligionView, Rendering, SchismCause, StateView, StressRule, Terrain } from "./model";
 import { YEARS } from "./model";
 
 export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string }> = {
@@ -221,6 +221,17 @@ export function howNamed(name: PlaceName, before: PlaceName | undefined, overvie
     case "kept":
       return `kept when its people took up ${name.language}`;
   }
+}
+
+/// The engine's departure from usual weather, without implying casualties.
+export function weatherDeparture(zone: ClimateView["zones"][number]): string {
+  const changes = [
+    zone.wetness < -0.04 ? "drier" : zone.wetness > 0.04 ? "wetter" : "",
+    zone.warmth < -0.04 ? "colder" : zone.warmth > 0.04 ? "warmer" : "",
+  ].filter(Boolean);
+  if (!changes.length) return "near usual";
+  const degree = zone.severity >= 3 ? "much " : zone.severity === 0 ? "slightly " : "";
+  return `${degree}${changes.join(" and ")} than usual`;
 }
 
 /// The linguist's terms the encyclopedia uses, each in a sentence or two.

@@ -44,6 +44,10 @@ export function TellingComparison({ open, engine, overview, map, other, onClose,
     const c = side.communities[selected];
     return c && readings ? readings[index].lexicon(generation, c.variety) : [];
   }), [comparison, selected, readings, generation]);
+  const geography = useMemo(() => sides.map((_, index) => ({
+    climate: readings[index].climate(generation),
+    names: map.rivers.map((river) => readings[index].river(generation, river.id)),
+  })), [comparison, readings, generation, map]);
   const concepts = [...new Map(lexicons.flat().map((w) => [w.concept, w.gloss])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
   const read = (side: Overview, focus?: Focus) => onRead(side.telling, generation, focus);
   const title = (side: Overview) => side.tellings.find((t) => t.id === side.telling)!.name;
@@ -61,13 +65,16 @@ export function TellingComparison({ open, engine, overview, map, other, onClose,
       {result.error ? <p className="notice error" role="alert">{result.error} Both saved tellings are still kept.</p> : null}
       {comparison ? <>
         <div className="comparison-maps">
-          {sides.map((side) => <section key={side.telling} aria-label={`${title(side)} map`}>
+          {sides.map((side, index) => <section key={side.telling} aria-label={`${title(side)} map`}>
             <h3>{title(side)}</h3>
             <div className="comparison-map"><MapView map={map} overview={side} generation={generation} tint={{ kind: "peoples" }}
+              climate={geography[index].climate} riverNames={geography[index].names}
+              selectedVariety={side.communities[selected]?.variety}
               names routes={false} contacts={false} states zoomable camera={camera} onCamera={setCamera}
               chosen={new Set(selected === undefined ? [] : [selected])} lands={new Set(side.communities[selected]?.lands ?? [])}
               onPeople={(id) => { if (shared.includes(id)) setPerson(id); else read(side, { kind: "people", id }); }}
-              onLand={(region) => read(side, { kind: "land", region })} /></div>
+              onLand={(region) => read(side, { kind: "land", region })}
+              onRiver={(id) => read(side, { kind: "river", id })} /></div>
             <p className="small">{side.communities.filter((c) => c.ended === null).length} peoples · {side.varieties.filter((v) => v.spoken).length} spoken languages</p>
             <div className="row"><button type="button" onClick={() => read(side)}>Read this telling</button>
               <button type="button" onClick={() => onContinue(side)}>Continue 25 years from here</button></div>

@@ -534,6 +534,7 @@ export type Subject =
   | { kind: "language"; variety: number }
   | { kind: "word"; variety: number; concept: string }
   | { kind: "law"; id: string } | { kind: "land"; region: number }
+  | { kind: "river"; id: number } | { kind: "zone"; id: number }
   | { kind: "continent"; landmass: number } | { kind: "event"; id: string };
 export interface Destination { reading: ReadingRef; subject: Subject }
 export interface NotebookNote {
@@ -675,6 +676,11 @@ export type Terrain = "sea" | "plains" | "forest" | "steppe" | "hills" | "mounta
 export interface Region {
   id: number;
   terrain: Terrain;
+  areaKm2: number;
+  elevation: number;
+  moisture: number;
+  warmth: number;
+  climateZone: number | null;
   /// The point the region was drawn around, in map units.
   site: [number, number];
   outline: [number, number][];
@@ -702,8 +708,53 @@ export interface WorldMap {
   size: MapSize;
   width: number;
   height: number;
+  kmPerUnit: number;
   regions: Region[];
   landmasses: Landmass[];
+  rivers: River[];
+  climateZones: { id: number; regions: number[] }[];
+}
+
+export interface River {
+  id: number;
+  course: number[];
+  mouth: number;
+  catchment: number[];
+  joins: number | null;
+  /// Exact downstream region at the confluence; null for a sea outlet.
+  joinAt: number | null;
+}
+
+export interface ClimateView {
+  generation: number;
+  zones: {
+    id: number;
+    epoch: number;
+    remaining: number;
+    wetness: number;
+    warmth: number;
+    targetWetness: number;
+    targetWarmth: number;
+    cause: ClimateCause;
+    severity: number;
+  }[];
+  regions: {
+    id: number;
+    zone: number | null;
+    wetness: number;
+    warmth: number;
+    vegetation: Terrain;
+    riverFlow: number;
+    feeding: Record<Livelihood, number>;
+    severe: boolean;
+  }[];
+  rivers: { id: number; flow: number; flowing: boolean }[];
+}
+
+export interface RiverNamesView {
+  river: number;
+  names: PlaceName[];
+  exonyms: PlaceExonym[];
 }
 
 /// Every people's word for one meaning, as a dialect atlas shows it.
@@ -747,6 +798,8 @@ export interface ReadEngine {
   kin(generation: number, variety: number): Kin[];
   word(generation: number, variety: number, concept: string): WordDetail;
   story(generation: number, subject: Subject): Story;
+  climate(generation: number): ClimateView;
+  river(generation: number, id: number): RiverNamesView;
   map(): WorldMap;
   wordMap(generation: number, concept: string): WordMap;
   save(): string;

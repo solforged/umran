@@ -21,7 +21,7 @@ Later visits resume the world left open. The top-left astrolabe and name
 return to the shelf from setup, the world, or Export; leaving for the shelf
 also makes it the next launch destination.
 
-![The workbench after 4,000 years: a chart of peoples and realms beside the world's encyclopedia card, with the atlas index above and the chronicle and time controls below](docs/images/stage.jpg)
+![The workbench: rivers and Weather colouring on the chart beside a climate-zone card, with the chronicle and time controls below](docs/images/stage.jpg)
 
 ## What happens in a world
 
@@ -132,6 +132,12 @@ also keep their search and selected word when returning from a word's history.
 On a small screen, turn between **Chart** and **Reading** for a full page of each;
 the [atlas index](docs/images/atlas-mobile.jpg) stays within reach in either view.
 
+The **chart** shows rivers in the ink of the coast. Failed flows fade to a
+dashed line. Close in to read local land and river names, or open a river's
+card for its length, peoples, and names across languages. **Weather** colours
+lands by their zone's departure from usual conditions. Climate annals lead
+to the zone's card and history. A kilometre scale follows the zoom.
+
 Sheets settle onto the desk and lift away without delaying the next click.
 Only one is open at a time: closing a dialog returns to the folio and reading
 it temporarily covered. Keyboard links focus the next card's heading; pointer
@@ -240,7 +246,7 @@ AGENTS.md          architecture notes and the rules every change keeps
 ## Status
 
 Umran is a work in progress. Not yet modelled: tone, vowel harmony,
-inflection, syntax, rivers, and climates, among others. The full
+inflection and syntax, among others. The full
 list is at the end of
 [`docs/engine.md`](docs/engine.md#not-yet-modelled).
 

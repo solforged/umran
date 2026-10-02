@@ -273,6 +273,12 @@ impl ReadView {
             .story(generation, subject)
             .map_err(fail)
     }
+    pub fn climate(&mut self, generation: u32) -> Result<String, JsValue> {
+        self.bench.borrow_mut().climate(generation).map_err(fail)
+    }
+    pub fn river(&mut self, generation: u32, id: usize) -> Result<String, JsValue> {
+        self.bench.borrow_mut().river(generation, id).map_err(fail)
+    }
     pub fn map(&self) -> Result<String, JsValue> {
         self.bench.borrow().map().map_err(fail)
     }
@@ -396,6 +402,8 @@ impl Bench {
             }
             Subject::Land { region } => world.map.regions.get(*region).is_some(),
             Subject::Continent { landmass } => world.map.landmasses.get(*landmass).is_some(),
+            Subject::River { id } => world.map.rivers.get(*id).is_some(),
+            Subject::Zone { id } => world.map.climate_zones.get(*id).is_some(),
             Subject::Law { id } => world
                 .varieties
                 .iter()
@@ -1467,6 +1475,9 @@ impl Bench {
                     mouth: river.mouth,
                     catchment: &river.catchment,
                     joins: river.joins,
+                    join_at: river
+                        .joins
+                        .and_then(|_| river.course.last().and_then(|&region| map.drainage[region])),
                 })
                 .collect(),
             climate_zones: map
@@ -3879,12 +3890,14 @@ struct LandmassView {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct RiverView<'a> {
     id: usize,
     course: &'a [usize],
     mouth: usize,
     catchment: &'a [usize],
     joins: Option<usize>,
+    join_at: Option<usize>,
 }
 
 #[derive(Serialize)]

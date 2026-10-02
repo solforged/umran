@@ -16,6 +16,8 @@ pub(crate) enum Subject {
     Law { id: String },
     Land { region: usize },
     Continent { landmass: usize },
+    River { id: usize },
+    Zone { id: usize },
     Event { id: String },
 }
 

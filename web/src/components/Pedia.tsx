@@ -18,19 +18,21 @@ import {
   ChevronRight,
   Users,
   WholeWord,
+  Waves,
+  CloudSunRain,
   X,
   type LucideIcon,
 } from "lucide-react";
 import type { Annal, Catalog, Community, Craft, CraftView, ReadEngine, Ethos, HolyLand, LoanCause, Overview, PlaceExonym, ReligionView, RenderingRow, ShrineKind, StateView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, FAITH_HOW, FALL_NAME, howCame, howNamed, hue, LIVELIHOOD_NAME, RISE_NAME, SCHISM_CAUSE, STRESS_RULE, STRONG, temperament, TERMS, TERRAIN_NAME, type Term } from "../lore";
+import { CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, FAITH_HOW, FALL_NAME, howCame, howNamed, hue, LIVELIHOOD_NAME, RISE_NAME, SCHISM_CAUSE, STRESS_RULE, STRONG, temperament, TERMS, TERRAIN_NAME, weatherDeparture, type Term } from "../lore";
 import { filterHistory, findAnnal, individualAnnals, relatedMoments, subjectHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
 import { bond } from "../words";
 import type { InterventionKind } from "./ActionDialog";
 import { SettlementAccount } from "./SettlementDesk";
 import { Told } from "./Told";
 import { Dictionary, INITIAL_DICTIONARY, type DictionaryView } from "./Dictionary";
-import { peoplesByRegion } from "./MapView";
+import { peoplesByRegion, riverLength } from "./MapView";
 import { Specimen } from "./Specimen";
 import { DescentChart, FamilyTree, type Lineage } from "./FamilyTree";
 import { WordGloss } from "./WordGloss";
@@ -323,6 +325,10 @@ function focusLabel(focus: Focus, context: Context): string {
       return landName(focus.region, context);
     case "continent":
       return continentName(focus.landmass, context);
+    case "river":
+      return context.engine.river(context.generation, focus.id).names.at(-1)?.spelled ?? "Unnamed river";
+    case "zone":
+      return zoneName(focus.id, context);
     case "event":
       return `Year ${(findAnnal(overview.annals, focus.id)?.generation ?? context.generation) * YEARS}`;
     case "history":
@@ -372,6 +378,10 @@ function Card({ focus, context }: { focus: Focus; context: Context }) {
       return <LandCard region={focus.region} context={context} />;
     case "continent":
       return <ContinentCard landmass={focus.landmass} context={context} />;
+    case "river":
+      return <RiverCard id={focus.id} context={context} />;
+    case "zone":
+      return <ZoneCard id={focus.id} context={context} />;
     case "event": {
       const annal = findAnnal(overview.annals, focus.id);
       return annal ? <EventCard annal={annal} context={context} />
@@ -526,6 +536,8 @@ function AnnalLinks({ annal, context }: { annal: Annal; context: Context }) {
     ...annal.states.filter((id) => overview.states[id]).map((id) => <StateLink key={`state-${id}`} state={overview.states[id]} context={context} />),
     ...annal.religions.filter((id) => overview.religions[id]).map((id) => <ReligionLink key={`religion-${id}`} religion={overview.religions[id]} context={context} />),
     ...annal.crafts.map((id) => <CraftLink key={id} craft={id} context={context} />),
+    ...annal.rivers.map((id) => <RiverLink key={`river-${id}`} id={id} context={context} />),
+    ...annal.zones.map((id) => <ZoneLink key={`zone-${id}`} id={id} context={context} />),
   ];
   if (links.length === 0) return null;
   return <span className="annal-states"><Joined items={links} link={(link) => link} /></span>;
@@ -662,7 +674,7 @@ function ContinentCard({ landmass, context }: { landmass: number; context: Conte
       />
       <Facts
         rows={[
-          ["Lands", `${mass.regions.length}, about ${(mass.regions.length * 9000).toLocaleString()} km²`],
+          ["Lands", `${mass.regions.length}, ${Math.round(mass.regions.reduce((area, id) => area + map.regions[id].areaKm2, 0)).toLocaleString()} km²`],
           ["Named by", name ? (
             <><PeopleLink c={overview.communities[name.people]} context={context} />, in{" "}
               <LanguageLink variety={name.variety} context={context} />, year <Year generation={name.since} context={context} /></>
@@ -694,6 +706,82 @@ function ContinentCard({ landmass, context }: { landmass: number; context: Conte
       </p>
     </>
   );
+}
+
+function RiverLink({ id, context }: { id: number; context: Context }) {
+  const view = context.engine.river(context.generation, id);
+  return <button type="button" className="link word" onClick={() => context.go({ kind: "river", id })}>
+    {view.names.at(-1)?.spelled ?? "Unnamed river"}
+  </button>;
+}
+
+function ZoneLink({ id, context }: { id: number; context: Context }) {
+  return <button type="button" className="link" onClick={() => context.go({ kind: "zone", id })}>{zoneName(id, context)}</button>;
+}
+
+/// A weather zone has no name of its own; call it after its first named
+/// land, as a traveller would ("the weather around Īnif").
+function zoneName(id: number, context: Context): string {
+  const regions = context.map.climateZones[id]?.regions ?? [];
+  const named = regions.find((r) => context.overview.places.some((p) => p.region === r && p.names.length > 0));
+  return named === undefined ? "The weather of unnamed lands" : `The weather around ${landName(named, context)}`;
+}
+
+function RiverCard({ id, context }: { id: number; context: Context }) {
+  const { engine, generation, version, map, overview } = context;
+  const view = useMemo(() => engine.river(generation, id), [engine, generation, version, id]);
+  const climate = useMemo(() => engine.climate(generation), [engine, generation, version]);
+  const river = map.rivers[id];
+  const now = view.names.at(-1);
+  const living = overview.communities.filter((c) => c.ended === null && c.lands.some((land) => river.course.includes(land)));
+  const flow = climate.rivers.find((flow) => flow.id === id);
+  return <>
+    <CardHead icon={Waves} kind="A river" title={now?.spelled ?? "Unnamed river"}
+      sub={now ? <span className="ipa">/{now.ipa}/</span> : null} />
+    <Facts rows={[
+      ["Length", `${Math.round(riverLength(map, river)).toLocaleString()} km`],
+      ["Lands", <Joined items={river.course} link={(region) => <LandLink region={region} context={context} />} />],
+      ["Home of", living.length ? <Joined items={living} link={(c) => <PeopleLink c={c} context={context} />} /> : "no one now"],
+      ["Flow", flow?.flowing ? "flowing now" : "flow has failed"],
+      ["Joins", river.joins === null ? "the sea" : <RiverLink id={river.joins} context={context} />],
+    ]} />
+    {view.names.length || view.exonyms.length ? <Leaf id="names" title="Names"
+      summary={<p>{view.names.length ? <>First recorded in year <Year generation={view.names[0].since} context={context} />.</> : "Known in other languages."}</p>}>
+      <ol className="history">
+        {view.names.map((name, i) => <li key={i}>
+          <Year generation={name.since} context={context} />
+          <span><span className="word">{name.spelled}</span> <span className="ipa">/{name.ipa}/</span>{" "}
+            in <LanguageLink variety={name.variety} context={context} />.
+            <span className="muted"> {howNamed(name, view.names[i - 1], overview)}{name.once ? `; once ${name.once}` : ""}.</span>
+          </span>
+        </li>)}
+      </ol>
+      {view.exonyms.length ? <>
+        <h3>What others call it</h3>
+        <ul className="roster">{view.exonyms.map((name, i) => <li key={i}>
+          <span className="word">{name.spelled}</span> <span className="ipa">/{name.ipa}/</span>{" "}
+          in <LanguageLink variety={name.variety} context={context} />, heard in year <Year generation={name.heard} context={context} />
+          {name.once ? `; once ${name.once}` : ""}.
+        </li>)}</ul>
+      </> : null}
+    </Leaf> : <p className="muted">No name has been recorded for this river yet.</p>}
+    <StoryLeaf title="The history of this river" annals={subjectHistory({ kind: "river", id }, overview, map)} context={context} />
+  </>;
+}
+
+function ZoneCard({ id, context }: { id: number; context: Context }) {
+  const { engine, generation, version, map, overview } = context;
+  const climate = useMemo(() => engine.climate(generation), [engine, generation, version]);
+  const zone = climate.zones.find((zone) => zone.id === id)!;
+  const lands = map.climateZones[id].regions;
+  return <>
+    <CardHead icon={CloudSunRain} kind="A weather zone" title={zoneName(id, context)} />
+    <Facts rows={[
+      ["Weather", weatherDeparture(zone)],
+      ["Lands", <Joined items={lands} link={(region) => <LandLink region={region} context={context} />} />],
+    ]} />
+    <StoryLeaf title="The weather of these lands" annals={subjectHistory({ kind: "zone", id }, overview, map)} context={context} />
+  </>;
 }
 
 /// What a land is like, in a few words: "coastal forest, an island".
@@ -2127,6 +2215,11 @@ function LandCard({ region, context }: { region: number; context: Context }) {
       <Facts
         rows={[
           ["Land", terrain(region, context)],
+          ["Area", `${Math.round(context.map.regions[region].areaKm2).toLocaleString()} km²`],
+          ["Rivers", context.map.rivers.filter((river) => river.course.includes(region)).length ? <Joined
+            items={context.map.rivers.filter((river) => river.course.includes(region))}
+            link={(river) => <RiverLink id={river.id} context={context} />} /> : null],
+          ["Weather", context.map.regions[region].climateZone === null ? null : <ZoneLink id={context.map.regions[region].climateZone!} context={context} />],
           ["On", <LandmassOf region={region} context={context} />],
           [
             "Home of",
@@ -2341,6 +2434,14 @@ function EventCard({ annal, context }: { annal: Annal; context: Context }) {
           <p><Joined items={annal.crafts} link={(id) => <CraftLink craft={id} context={context} />} /></p>
         </>
       ) : null}
+      {annal.rivers.length > 0 ? <>
+        <h3>Rivers</h3>
+        <p><Joined items={annal.rivers} link={(id) => <RiverLink id={id} context={context} />} /></p>
+      </> : null}
+      {annal.zones.length > 0 ? <>
+        <h3>Weather</h3>
+        <p><Joined items={annal.zones} link={(id) => <ZoneLink id={id} context={context} />} /></p>
+      </> : null}
       {annal.lands.length > 0 ? (
         <>
           <h3>Where</h3>

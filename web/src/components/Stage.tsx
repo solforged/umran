@@ -243,7 +243,7 @@ export function Stage({
 
   // What the map draws beside the lands and peoples.
   const [layers, setLayers] = useState({ names: true, routes: true, contacts: true, states: true });
-  const [landLayer, setLandLayer] = useState<"peoples" | "faiths" | "crafts" | "temper">("peoples");
+  const [landLayer, setLandLayer] = useState<"peoples" | "faiths" | "crafts" | "temper" | "weather">("peoples");
   const [craft, setCraft] = useState<Craft>("metalworking");
   const [axis, setAxis] = useState<EthosAxis>("martial");
 
@@ -345,6 +345,9 @@ export function Stage({
     // `version` changes whenever the history does.
     [engine, generation, concept, version],
   );
+  const chartGeneration = settlement ? settlementReading.generation : generation;
+  const climate = useMemo(() => engine.climate(chartGeneration), [engine, chartGeneration, version]);
+  const riverNames = useMemo(() => map.rivers.map((river) => engine.river(chartGeneration, river.id)), [engine, map, chartGeneration, version]);
   const tint: Tint = useMemo(() => {
     if (words) return { kind: "words", words };
     if (law) {
@@ -356,6 +359,7 @@ export function Stage({
     if (landLayer === "faiths") return { kind: "faiths" };
     if (landLayer === "crafts") return { kind: "crafts", craft };
     if (landLayer === "temper") return { kind: "temper", axis };
+    if (landLayer === "weather") return { kind: "weather" };
     return { kind: "peoples" };
   }, [words, law, overview, focus, landLayer, craft, axis]);
 
@@ -389,6 +393,15 @@ export function Stage({
         const here = overview.communities.filter((c) => c.ended === null && c.lands.includes(focus.region)).map((c) => c.id);
         return { chosen: here, lands: [focus.region], point: site(focus.region) };
       }
+      case "river": {
+        const lands = map.rivers[focus.id]?.course ?? [];
+        const chosen = overview.communities.filter((c) => c.ended === null && c.lands.some((id) => lands.includes(id))).map((c) => c.id);
+        return { chosen, lands, point: site(lands.at(-1)) };
+      }
+      case "zone": {
+        const lands = map.climateZones[focus.id]?.regions ?? [];
+        return { chosen: [], lands, point: site(lands[Math.floor(lands.length / 2)]) };
+      }
       case "language":
       case "word": {
         const here = overview.communities.filter((c) => c.ended === null && c.variety === focus.variety);
@@ -414,6 +427,7 @@ export function Stage({
   const layerName = tint.kind === "peoples" ? "Language families"
     : tint.kind === "faiths" ? "Faiths" : tint.kind === "crafts" ? catalog.crafts.find((c) => c.id === tint.craft)?.name
     : tint.kind === "temper" ? `${ETHOS_POLES[tint.axis][0]} — ${ETHOS_POLES[tint.axis][1]}`
+    : tint.kind === "weather" ? "Weather"
     : tint.kind === "words" ? `Words for “${concept?.replaceAll("_", " ")}”` : "Sound change";
 
   return (
@@ -451,6 +465,9 @@ export function Stage({
           tint={settlement ? { kind: "peoples" } : tint}
           animateChanges={!playing && !desk}
           motionMemory={mapMotion}
+          climate={climate}
+          riverNames={riverNames}
+          selectedVariety={overview.communities[selected]?.variety}
           names={layers.names}
           routes={!settlement && layers.routes}
           contacts={!settlement && layers.contacts}
@@ -467,6 +484,7 @@ export function Stage({
           onState={(id) => go({ kind: "state", id })}
           onReligion={(id) => go({ kind: "religion", id })}
           onCraft={(id) => go({ kind: "craft", id })}
+          onRiver={settlement ? undefined : (id) => go({ kind: "river", id })}
         />
         <details className="map-layers">
           <summary title="What the map shows">
@@ -483,6 +501,7 @@ export function Stage({
               <option value="faiths">Faiths</option>
               <option value="crafts">Crafts</option>
               <option value="temper">Temper</option>
+              <option value="weather">Weather</option>
               {tint.kind === "words" ? <option value="words" disabled>Word roots</option> : null}
               {tint.kind === "change" ? <option value="change" disabled>Sound change</option> : null}
             </select>
@@ -527,6 +546,13 @@ export function Stage({
             <p className="muted small">
               Orange lands lean {ETHOS_POLES[tint.axis][1]}, blue lands {ETHOS_POLES[tint.axis][0]}; the deeper the colour, the stronger the leaning.
             </p>
+          ) : tint.kind === "weather" ? (
+            <ul className="atlas-legend weather-legend">
+              <li><span className="swatch weather-dry" /> Drier</li>
+              <li><span className="swatch weather-wet" /> Wetter</li>
+              <li><span className="swatch weather-cold" /> Colder</li>
+              <li><span className="swatch weather-usual" /> Near usual</li>
+            </ul>
           ) : null}
           {(
             [
@@ -550,7 +576,6 @@ export function Stage({
           Known to {overview.varieties[knownBy!]?.name}
           <button type="button" className="icon" aria-label="Show the whole known and unknown world" onClick={() => setVeiled(false)}><X size={14} /></button>
         </div> : null}
-        <p className="chart-help">Scroll to zoom · drag to explore</p>
       </section>
       <div className="folio-host" ref={setFolioHost} />
 

@@ -7,6 +7,8 @@ import type {
   FoundingPreview,
   ReadEngine,
   Comparison,
+  ClimateView,
+  RiverNamesView,
   ReadingRef,
   NotebookNote,
   Destination,
@@ -37,7 +39,10 @@ async function ready(): Promise<void> {
 
 function reader(bench: Workbench | ReadView, save: () => string) {
   let cached: { generation: number; view: Overview } | undefined;
-  const clear = () => { cached = undefined; };
+  let weather: ClimateView | undefined;
+  let riverYear = -1;
+  const rivers = new Map<number, RiverNamesView>();
+  const clear = () => { cached = undefined; weather = undefined; riverYear = -1; rivers.clear(); };
   const engine: ReadEngine = {
     overviewAt: (point) => JSON.parse(bench.overviewAt(JSON.stringify(point))) as Overview,
     settlement: (point, community, intent, share, destination) =>
@@ -51,6 +56,16 @@ function reader(bench: Workbench | ReadView, save: () => string) {
     kin: (generation, variety) => JSON.parse(bench.kin(generation, variety)) as Kin[],
     word: (generation, variety, concept) => JSON.parse(bench.word(generation, variety, concept)) as WordDetail,
     story: (generation, subject) => JSON.parse(bench.story(generation, JSON.stringify(subject))) as Story,
+    climate: (generation) => {
+      if (weather?.generation !== generation) weather = JSON.parse(bench.climate(generation)) as ClimateView;
+      return weather;
+    },
+    river: (generation, id) => {
+      if (riverYear !== generation) { rivers.clear(); riverYear = generation; }
+      let view = rivers.get(id);
+      if (!view) { view = JSON.parse(bench.river(generation, id)) as RiverNamesView; rivers.set(id, view); }
+      return view;
+    },
     map: () => JSON.parse(bench.map()) as WorldMap,
     wordMap: (generation, concept) => JSON.parse(bench.wordMap(generation, concept)) as WordMap,
     save,
@@ -98,6 +113,7 @@ function wrap(bench: Workbench): Engine {
         settlement: (p, c, intent, share, destination) => get().settlement(p, c, intent, share, destination),
         lexicon: (g, v) => get().lexicon(g, v), kin: (g, v) => get().kin(g, v), word: (g, v, c) => get().word(g, v, c),
         story: (g, subject) => get().story(g, subject),
+        climate: (g) => get().climate(g), river: (g, id) => get().river(g, id),
         wordMap: (g, c) => get().wordMap(g, c), map: () => get().map(), save: () => bench.save(),
       };
     },
