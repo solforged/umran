@@ -22,8 +22,10 @@ import {
   newBookId,
   rawShelf,
   readBook,
+  readPlace,
   removeBook,
   saveBook,
+  savePlace,
   setLast,
   type Shelf as ShelfIndex,
 } from "./shelf";
@@ -116,8 +118,21 @@ export default function App() {
     setNotebook(next.notebook()); setNotebookDraft(undefined);
     setWorldMap(next.map());
     setViewTelling(null); setViewPoint(null); setCompareWith(null);
-    setInitialFocus(null);
+    setInitialFocus(null); setFocus({ kind: "world" });
     setViewing(null);
+    // Reopen where the reader left off, if that reading still exists.
+    const place = fresh ? null : readPlace(id);
+    if (place) {
+      try {
+        const reading = next.read(place.telling ?? next.overview(next.latest()).telling, place.point);
+        reading.overview(place.viewing === null ? reading.latest() : Math.min(place.viewing, reading.latest()));
+        setViewTelling(place.telling); setViewPoint(place.point); setViewing(place.viewing);
+        setInitialFocus(place.focus); setFocus(place.focus);
+      } catch {
+        // A place from another engine revision or a removed telling: start at the latest year.
+      }
+    }
+    setTellingVersion((v) => v + 1);
     setCommunity(0);
     setDialog(null);
     setPage("stage");
@@ -127,6 +142,11 @@ export default function App() {
     setView({ kind: "book", id });
     if (fresh) setUnsaved(true);
   }, []);
+
+  const [focus, setFocus] = useState<Focus>({ kind: "world" });
+  useEffect(() => {
+    if (view.kind === "book") savePlace(view.id, { telling: viewTelling, point: viewPoint, viewing, focus });
+  }, [view, viewTelling, viewPoint, viewing, focus]);
 
   const openBook = useCallback(
     (id: string) => {
@@ -477,6 +497,7 @@ export default function App() {
         title={title}
         notices={notices}
         initialFocus={initialFocus}
+        onFocus={setFocus}
         onSettle={settle}
         comparisonReturn={comparisonReturn}
         sheetReturn={sheetReturn}

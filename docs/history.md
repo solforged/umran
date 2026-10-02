@@ -83,6 +83,10 @@ remain possible later work if exact preservation across versions matters.
 The browser keeps a shelf of saved worlds (`web/src/shelf.ts`): each
 world's history autosaves under localStorage key `langgen.book.<id>`, and
 `langgen.shelf.v1` lists them with their titles and the one last open.
+`langgen.place.<id>` keeps where the reader was in that world: the
+telling, exact reading, year, and open card. Reopening the world returns
+there; a place that no longer resolves (another engine revision, a
+removed telling) is ignored and the world opens at its latest year.
 These keys, the look key `langgen.look`, and the recipe format
 `langgen-sim-recipe` keep the project's first name and the shelf's first
 metaphor. The named-telling schema replaces the former active-log/set-aside-log

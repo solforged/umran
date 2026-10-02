@@ -2,7 +2,7 @@
 // key, plus an index of titles. The older single-world save is copied onto
 // the shelf once and otherwise left untouched.
 
-import type { MapSize, Overview } from "./model";
+import type { HistoryPoint, MapSize, Overview, Subject as Focus } from "./model";
 import { YEARS } from "./model";
 
 export interface BookEntry {
@@ -119,7 +119,34 @@ export function removeBook(shelf: Shelf, id: string): Shelf {
   const next = { books: shelf.books.filter((b) => b.id !== id), last: shelf.last === id ? null : shelf.last };
   localStorage.setItem(INDEX, JSON.stringify(next));
   localStorage.removeItem(bookKey(id));
+  localStorage.removeItem(placeKey(id));
   return next;
+}
+
+/// Where the reader was in a book: the telling and exact reading, the
+/// year, and the open card. Only a convenience; a bad place is ignored.
+export interface ReadingPlace {
+  telling: number | null;
+  point: HistoryPoint | null;
+  viewing: number | null;
+  focus: Focus;
+}
+const placeKey = (id: string) => `langgen.place.${id}`;
+
+export function readPlace(id: string): ReadingPlace | null {
+  try {
+    return JSON.parse(get(placeKey(id)) ?? "null") as ReadingPlace | null;
+  } catch {
+    return null;
+  }
+}
+
+export function savePlace(id: string, place: ReadingPlace) {
+  try {
+    localStorage.setItem(placeKey(id), JSON.stringify(place));
+  } catch {
+    // Losing the place only means reopening at the latest year.
+  }
 }
 
 export function newBookId(): string {

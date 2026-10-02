@@ -69,6 +69,7 @@ export function Stage({
   onUndo,
   onDialog,
   initialFocus,
+  onFocus,
   onSettle,
   onNotebook,
   onKeep,
@@ -104,6 +105,8 @@ export function Stage({
   onUndo: () => void;
   onDialog: (kind: DialogKind) => void;
   initialFocus: Focus | null;
+  /// The open card changed; the app keeps it as the reader's place.
+  onFocus: (focus: Focus) => void;
   onSettle: (choice: SettlementChoice, preview: SettlementPreview) => void;
   onNotebook: () => void;
   onKeep: (subject: Focus, label: string) => void;
@@ -118,6 +121,8 @@ export function Stage({
   // The encyclopedia's trail of cards; the last is the one open.
   const [trail, setTrail] = useState<Destination[]>([{ subject: initialFocus ?? { kind: "world" }, reading: { telling: overview.telling, point: overview.point } }]);
   const focus = trail.at(-1)!.subject;
+  const focusKey = JSON.stringify(focus);
+  useEffect(() => { onFocus(focus); }, [focusKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const destination = (subject: Focus): Destination => ({ subject, reading: { telling: overview.telling, point: overview.point } });
   // The folio page open over the map, by its section's id.
   const [leaf, setLeaf] = useState<string | null>(null);
