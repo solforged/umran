@@ -376,14 +376,14 @@ impl World {
             return;
         }
         let mut learnt = Vec::new();
+        let contacts = self.contact_index();
         for c in self.living().collect::<Vec<_>>() {
             let mut rng = self.community_rng(c, "craft");
             for craft in Craft::ALL {
                 if self.communities[c].crafts.contains(&craft) {
                     continue;
                 }
-                let teachers: Vec<(usize, f32)> = self
-                    .partners(c)
+                let teachers: Vec<(usize, f32)> = contacts.partners(c)
                     .filter(|&(o, _, _)| self.communities[o].crafts.contains(&craft))
                     .map(|(o, intensity, kind)| {
                         (o, self.params.idea_rate * intensity * craft.carried(kind))
@@ -989,10 +989,10 @@ impl World {
             return;
         }
         let mut converted = Vec::new();
+        let contacts = self.contact_index();
         for c in self.living().collect::<Vec<_>>() {
             let k = &self.communities[c];
-            let teachers: Vec<(usize, usize, f32)> = self
-                .partners(c)
+            let teachers: Vec<(usize, usize, f32)> = contacts.partners(c)
                 .filter_map(|(o, intensity, kind)| {
                     let other = &self.communities[o];
                     let r = other.faith?;
@@ -1044,18 +1044,16 @@ impl World {
     /// A shrine is reached directly, not through its holder's other lands.
     pub(crate) fn make_pilgrimages(&mut self) {
         if self.params.pilgrimage_rate <= 0.0 { return; }
+        let spatial = self.spatial();
+        let mut contacts = self.contact_index();
         for community in self.living().collect::<Vec<_>>() {
             let Some(faith) = self.communities[community].faith else { continue };
             let shrine = self.religions[faith].shrine.region;
             if self.journey_to_within(community, shrine, self.params.pilgrimage_reach).is_none() {
                 continue;
             }
-            let holders: Vec<_> = self.living().filter(|&c| c != community)
-                .filter(|&c| !self.contacts.iter().any(|k| {
-                    (k.a, k.b) == (community, c) || (k.a, k.b) == (c, community)
-                }))
-                .filter_map(|c| self.presence(c).into_iter()
-                    .find(|&(r, n)| r == shrine && n > 0.0).map(|(_, n)| (c, n)))
+            let holders: Vec<_> = spatial.dwellers[shrine].iter().copied()
+                .filter(|&(c, n)| c != community && n > 0.0 && !contacts.contains(community, c))
                 .collect();
             if holders.is_empty() { continue; }
             let mut rng = self.community_rng(community, "pilgrimage");
@@ -1063,6 +1061,7 @@ impl World {
             let holder = holders[weighted_index(&mut rng, holders.iter().map(|(_, n)| *n))].0;
             self.connect(community, holder, 0.3, ContactKind::Religion)
                 .expect("the pilgrim reaches land held by the shrine holder");
+            contacts.insert(*self.contacts.last().unwrap());
         }
     }
 

@@ -7,6 +7,7 @@
 //! mask. Generation uses only arithmetic and square roots, never `exp` or
 //! `sin`, whose last bits can differ between native code and WASM.
 
+use crate::livelihood::Livelihood;
 use crate::rng::{index, key, stream};
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
@@ -321,6 +322,7 @@ impl Map {
         // Draw once: fallback geometries use the same offsets, not new worlds.
         let offsets: Vec<[f64; 2]> = (0..n)
             .map(|_| [rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)])
+    feeding: Vec<[f32; 3]>,
             .collect();
         let broad = Noise::new(&mut rng, width, height, 3.0);
         let fine = Noise::new(&mut rng, width, height, 1.5);
@@ -496,6 +498,7 @@ impl Map {
             return f32::INFINITY;
         }
         self.route_pair(a, b, RouteMode::Walking)
+            feeding: feeding_factors(&regions),
     }
 
     /// Exact coast-to-coast voyage effort-km, with sea-only interiors.
@@ -506,6 +509,10 @@ impl Map {
         }
         self.route_pair(a, b, RouteMode::Voyage)
     }
+    pub(crate) fn feeding_factor(&self, region: usize, livelihood: Livelihood) -> f32 {
+        self.feeding[region][livelihood as usize]
+    }
+
 
     /// ID-sorted reachable land within an inclusive effort-km radius.
     /// Infinity requests the full exact row, not the cached neighbourhood.
@@ -531,11 +538,21 @@ impl Map {
             return effort;
         }
         let mut scratch = RouteScratch::new(self.regions.len());
+    /// Full cached walking neighbourhood. Hot callers filter their own radius.
+    pub(crate) fn walking_cached(&self, source: usize) -> &[(u32, f32)] {
+        self.walking.row(source)
+    }
+
         self.search_routes(source, f32::INFINITY, mode, Some(destination), &mut scratch);
         scratch.distance[destination] as f32
     }
 
     fn route_row(&self, source: usize, reach: f32, mode: RouteMode) -> Cow<'_, [(u32, f32)]> {
+    /// Full cached voyage neighbourhood. Hot callers filter their own radius.
+    pub(crate) fn voyage_cached(&self, source: usize) -> &[(u32, f32)] {
+        self.voyages.row(source)
+    }
+
         let eligible = match mode {
             RouteMode::Walking => self.regions[source].terrain.is_land(),
             RouteMode::Voyage => self.coastal(source),
@@ -675,6 +692,12 @@ fn layouts(g: &Geography, k: usize) -> Vec<Vec<Option<usize>>> {
             .collect()
     };
     let mut out = Vec::new();
+fn feeding_factors(regions: &[Region]) -> Vec<[f32; 3]> {
+    regions.iter().map(|r| Livelihood::ALL.map(|l| {
+        l.feeds(r.terrain) * r.area_km2 / REFERENCE_AREA_KM2
+    })).collect()
+}
+
     if k == 1 {
         out.push(membership(&|_, _| Some(0)));
     } else if k == 2 {
@@ -1868,3 +1891,4 @@ mod tests {
             / 2.0
     }
 }
+            feeding: feeding_factors(&regions),
