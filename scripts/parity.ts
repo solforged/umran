@@ -99,6 +99,9 @@ const FLOAT_FIELDS: Record<string, true | undefined> = {
   size: true, prestige: true, power: true, openness: true, intensity: true,
   purism: true, city: true, keptFromHigh: true, share: true,
   width: true, height: true, site: true, outline: true,
+  elevation: true, moisture: true, warmth: true, wetness: true,
+  targetWetness: true, targetWarmth: true, riverFlow: true, flow: true,
+  feeding: true, areaKm2: true, kmPerUnit: true,
 };
 function tiers(state: Json): { discrete: Json; floats: JsonObject } {
   const floats: JsonObject = {};
@@ -153,7 +156,11 @@ function snapshot(bench: WasmWorkbench, generation: number): JsonObject {
     }
     return { variety: id, rows };
   });
-  return { overview, map: json(JSON.parse(bench.map())), lexicons, competitors };
+  const map = object(json(JSON.parse(bench.map())));
+  const climate = json(JSON.parse(bench.climate(generation)));
+  const rivers = array(map.rivers).map(value =>
+    json(JSON.parse(bench.river(generation, number(object(value).id)))));
+  return { overview, map, climate, rivers, lexicons, competitors };
 }
 function summary(state: Json): string {
   const o = object(object(state).overview);

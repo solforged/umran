@@ -231,8 +231,10 @@ impl World {
                 warmth: current.warmth, lands, peoples,
             }));
         }
-        for c in self.living().collect::<Vec<_>>() {
-            if self.communities[c].lands.iter().any(|&r| self.climate.regions[r].severe) {
+        for c in 0..self.communities.len() {
+            if self.communities[c].living()
+                && self.communities[c].lands.iter().any(|&r| self.climate.regions[r].severe)
+            {
                 self.climate.exposure[c] = Some(self.generation);
                 self.communities[c].ethos_challenged = self.generation;
             }

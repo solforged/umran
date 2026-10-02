@@ -1511,6 +1511,9 @@ impl World {
         };
         self.communities.push(new);
         let index = self.communities.len() - 1;
+        let exposure = self.climate.exposure.get(community).copied().flatten();
+        self.climate.exposure.resize(self.communities.len(), None);
+        self.climate.exposure[index] = exposure;
         if intensity > 0.0 {
             if !by_sea && self.nearness(community, index) > 0.0 {
                 self.link(community, index, intensity, ContactKind::Neighbours);

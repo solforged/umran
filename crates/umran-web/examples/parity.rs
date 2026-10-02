@@ -39,11 +39,21 @@ fn snapshot(bench: &mut Bench, generation: u32) -> Result<Value, String> {
         lexicons.push(json!({ "variety": id, "rows": rows }));
     }
     let map: Value = serde_json::from_str(&bench.map()?).map_err(|error| error.to_string())?;
+    let climate: Value = serde_json::from_str(&bench.climate(generation)?)
+        .map_err(|error| error.to_string())?;
+    let rivers = map["rivers"].as_array().ok_or("Missing rivers")?
+        .iter().map(|river| {
+            let id = river["id"].as_u64().ok_or("Missing river id")? as usize;
+            serde_json::from_str::<Value>(&bench.river(generation, id)?)
+                .map_err(|error| error.to_string())
+        }).collect::<Result<Vec<_>, String>>()?;
     Ok(json!({
         "overview": overview,
         "map": map,
         "lexicons": lexicons,
         "competitors": competitors,
+        "climate": climate,
+        "rivers": rivers,
     }))
 }
 
