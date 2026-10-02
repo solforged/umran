@@ -558,11 +558,20 @@ mod tests {
                 );
             }
             let newcomer = dry.found_seeded(
-                &Naming::People, &SoundProfile::base(), seed + 100,
-                0.5, 0.5, Some(home), None, None,
+                &Naming::People,
+                &SoundProfile::base(),
+                seed + 100,
+                0.5,
+                0.5,
+                Some(home),
+                None,
+                None,
             );
-            assert_eq!(dry.communities[newcomer].livelihood, Livelihood::Herding,
-                "a late founder must use the dry land's current food");
+            assert_eq!(
+                dry.communities[newcomer].livelihood,
+                Livelihood::Herding,
+                "a late founder must use the dry land's current food"
+            );
         }
         assert!(cohort >= 20, "only {cohort} boundary refuges");
         assert!(
@@ -574,15 +583,35 @@ mod tests {
 
     #[test]
     fn drying_a_valley_ends_inaccessible_trade_before_words_are_borrowed() {
-        let mut world = World::new(0, Params {
-            climate_enabled: true, sound_change_rate: 0.0, innovation_rate: 0.0,
-            loan_rate: 0.0, ..Params::static_society()
-        });
-        let course = &world.map.rivers.iter().find(|r| r.course.len() >= 2).unwrap().course;
+        let mut world = World::new(
+            0,
+            Params {
+                climate_enabled: true,
+                sound_change_rate: 0.0,
+                innovation_rate: 0.0,
+                loan_rate: 0.0,
+                ..Params::static_society()
+            },
+        );
+        let course = &world
+            .map
+            .rivers
+            .iter()
+            .find(|r| r.course.len() >= 2)
+            .unwrap()
+            .course;
         let (a, b) = (course[0], course[1]);
         for (seed, region) in [(10, a), (20, b)] {
-            world.found_seeded(&Naming::People, &SoundProfile::base(), seed,
-                0.5, 1.0, Some(region), Some(Livelihood::Farming), None);
+            world.found_seeded(
+                &Naming::People,
+                &SoundProfile::base(),
+                seed,
+                0.5,
+                1.0,
+                Some(region),
+                Some(Livelihood::Farming),
+                None,
+            );
         }
         world.params.trade_reach = world.map.distance(a, b) * 1.001;
         world.connect(0, 1, 1.0, crate::ContactKind::Trade).unwrap();
@@ -592,9 +621,11 @@ mod tests {
             zone.cause = ClimateCause::Drought;
         }
         let borrowed = |world: &World| {
-            world.varieties.iter().any(|v| v.lexicon.lexemes.iter().any(|l| {
-                l.born == world.generation && matches!(l.origin, crate::Origin::Borrowed { .. })
-            }))
+            world.varieties.iter().any(|v| {
+                v.lexicon.lexemes.iter().any(|l| {
+                    l.born == world.generation && matches!(l.origin, crate::Origin::Borrowed { .. })
+                })
+            })
         };
         for _ in 0..20 {
             let mut preview = world.clone();
@@ -604,11 +635,17 @@ mod tests {
                 quiet.params.climate_enabled = false;
                 quiet.params.loan_rate = 100.0;
                 quiet.step();
-                assert!(borrowed(&quiet), "reachable trade must carry a loan in this fixture");
+                assert!(
+                    borrowed(&quiet),
+                    "reachable trade must carry a loan in this fixture"
+                );
                 world.params.loan_rate = 100.0;
                 world.step();
                 assert!(world.contacts.is_empty());
-                assert!(!borrowed(&world), "a dried route cannot carry loans during its closing generation");
+                assert!(
+                    !borrowed(&world),
+                    "a dried route cannot carry loans during its closing generation"
+                );
                 return;
             }
             world = preview;

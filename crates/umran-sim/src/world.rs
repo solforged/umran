@@ -5732,7 +5732,20 @@ mod tests {
             let (mut length, mut homophony) = (0.0, 0.0);
             for seed in 0..12 {
                 let profile = SoundProfile::by_id(preset).unwrap();
-                let mut world = World::solo(seed, &profile, Params::static_society());
+                // Keep vocabulary tiers fixed, rather than drawing a different
+                // livelihood from each seed's river and climate suitability.
+                let mut world = World::new(seed, Params::static_society());
+                let variety_seed = stream(seed, &[key("found"), 0]).next_u64();
+                world.found_seeded(
+                    &Naming::People,
+                    &profile,
+                    variety_seed,
+                    0.5,
+                    0.5,
+                    None,
+                    Some(Livelihood::Foraging),
+                    None,
+                );
                 world.run(160);
                 let (l, h) = shape(&world);
                 length += l / 12.0;

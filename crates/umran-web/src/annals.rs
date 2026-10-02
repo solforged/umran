@@ -1758,6 +1758,10 @@ fn grammar_changes(world: &World) -> Vec<Annal> {
                 crafts: Vec::new(),
                 temper: None,
                 grammar: Some(GrammarAnnal { category, event }),
+                zones: Vec::new(),
+                rivers: Vec::new(),
+                climate: None,
+                river_flow: None,
             });
         }
     }

@@ -743,8 +743,9 @@ Drainage-connected, usable river reaches multiply the canonical walking
 border effort by 0.65. Adjacent unrelated rivers receive no discount.
 The same costs feed distance, border closeness, migration, cohesion, trade,
 and sound waves. Flow crossing about 17,321 wet km² changes usability;
-only such crossings rebuild sparse walking rows. Sea journeys retain their
-own costs and permissions. No river grants ships or seafaring.
+only such crossings rebuild sparse walking rows. Newly inaccessible contacts
+end before the generation's loans or sound waves can use them. Sea journeys
+retain their own costs and permissions. No river grants ships or seafaring.
 
 `climate.rs` gives connected land zones, usually 6–20 regions, a shared
 seeded history. Islands and narrow leftover pieces can be smaller.
