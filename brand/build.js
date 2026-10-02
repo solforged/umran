@@ -93,29 +93,84 @@ ${RETE.map(pts => `<polygon fill="none" stroke-width="20" points="${pts}"/>`).jo
 </g></svg>
 `;
 
-// Lettering with tracking, as path data; returns the data and its width.
-function setText(face, text, size, tracking, x, y) {
-  let d = "", cx = x;
-  const glyphs = face.stringToGlyphs(text);
-  glyphs.forEach((g, i) => {
-    d += g.getPath(cx, y, size).toPathData(2);
-    cx += g.advanceWidth * size / face.unitsPerEm + (i < glyphs.length - 1 ? tracking * size : 0);
-  });
-  return { d, width: cx - x };
+// Fell's accented glyph uses a different outline and puts the macron far
+// above the small capitals. Keep the plain small-cap a and lower the
+// original macron to a gap of one tenth of the letter's height.
+function correctMacron(caps) {
+  const a = caps.charToGlyph("a");
+  const accented = caps.charToGlyph("ā");
+  const bounds = a.getBoundingBox();
+  const accent = [];
+  let inAccent = false;
+  for (const command of accented.path.commands) {
+    if (command.type === "M") inAccent = command.y > bounds.y2;
+    if (inAccent) accent.push({ ...command });
+  }
+  const bottom = Math.min(...accent.flatMap(c =>
+    ["y", "y1", "y2"].filter(key => key in c).map(key => c[key])));
+  const shift = bottom - bounds.y2 - (bounds.y2 - bounds.y1) * 0.1;
+  for (const command of accent) {
+    for (const key of ["y", "y1", "y2"]) {
+      if (key in command) command[key] -= shift;
+    }
+  }
+  accented.path.commands = [...a.path.commands.map(c => ({ ...c })), ...accent];
+  accented.advanceWidth = a.advanceWidth;
 }
 
-// Fell SC has no ʿ (U+02BF); its opening quote is the same shape, set a
-// little smaller and higher so it sits as a mark rather than a letter.
+// Lettering with tracking, outlined once for both the logo and the UI.
+function setText(face, text, size, tracking, x, y) {
+  const path = new opentype.Path();
+  let cx = x;
+  const glyphs = face.stringToGlyphs(text);
+  glyphs.forEach((g, i) => {
+    path.extend(g.getPath(cx, y, size).commands);
+    cx += g.advanceWidth * size / face.unitsPerEm + (i < glyphs.length - 1 ? tracking * size : 0);
+  });
+  return { d: path.toPathData(2), width: cx - x, bounds: path.getBoundingBox() };
+}
+
+// Fell SC has no ʿ (U+02BF); use its half-ring-shaped opening quote.
+function wordmark(caps, x = 0) {
+  const ayn = setText(caps, "\u2018", 70, 0, x, 80);
+  const letterX = x + ayn.width + 6;
+  const name = setText(caps, "Umr\u0101n", 92, 0.16, letterX, 92);
+  return {
+    d: ayn.d + name.d,
+    letterX,
+    width: ayn.width + 6 + name.width,
+    bounds: {
+      y1: Math.min(ayn.bounds.y1, name.bounds.y1),
+      y2: Math.max(ayn.bounds.y2, name.bounds.y2),
+    },
+  };
+}
+
+function wordmarkMask(caps) {
+  const name = wordmark(caps);
+  const height = name.bounds.y2 - name.bounds.y1;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${f(name.width)}" height="${f(height)}" viewBox="0 ${f(name.bounds.y1)} ${f(name.width)} ${f(height)}">
+<path d="${name.d}"/>
+</svg>
+`;
+}
+
 function logo(p, caps, italic) {
   const markH = 150, tx = markH * 392 / 472 + 34;
-  const ayn = setText(caps, "\u2018", 70, 0, tx, 80);
-  const name = setText(caps, "Umr\u0101n", 92, 0.16, tx + ayn.width + 6, 92);
-  const tag = setText(italic, "A chronicle of peoples and their tongues", 30, 0.01, tx + 2, 140);
-  const W = Math.ceil(tx + Math.max(ayn.width + 6 + name.width, tag.width + 2) + 8);
+  const name = wordmark(caps, tx);
+  const tagline = "A chronicle of peoples and their tongues";
+  const measure = setText(italic, tagline, 30, 0.01, 0, 0);
+  const tag = setText(italic, tagline, 30, 0.01, name.letterX,
+    name.bounds.y2 + 16 - measure.bounds.y1);
+  const W = Math.ceil(Math.max(tx + name.width, name.letterX + tag.width) + 8);
+  const blockHeight = tag.bounds.y2 - name.bounds.y1;
+  const textY = (170 - blockHeight) / 2 - name.bounds.y1;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="170" viewBox="0 0 ${W} 170">
 <g transform="translate(0 10) scale(${f(markH / 472)}) translate(-60 -20)">${mark(p)}</g>
-<path d="${ayn.d}${name.d}" fill="${p.ink}"/>
+<g transform="translate(0 ${f(textY)})">
+<path d="${name.d}" fill="${p.ink}"/>
 <path d="${tag.d}" fill="${p.tag}"/>
+</g>
 </svg>
 `;
 }
@@ -123,6 +178,7 @@ function logo(p, caps, italic) {
 const png = (svg, size) => new Resvg(svg, { fitTo: { mode: "width", value: size } }).render().asPng();
 
 const [caps, italic] = await Promise.all([font("IMFeENsc28P.ttf"), font("EBGaramond-Italic.ttf")]);
+correctMacron(caps);
 const appIcon = icon(LIGHT, false, 0.86);
 const outputs = {
   "web/public/icon.svg": icon(LIGHT, true, 0.9),
@@ -130,6 +186,7 @@ const outputs = {
   "web/public/icon-192.png": png(appIcon, 192),
   "web/public/apple-touch-icon.png": png(appIcon, 180),
   "web/src/assets/mark-mask.svg": maskMark(),
+  "web/src/assets/wordmark-mask.svg": wordmarkMask(caps),
   "docs/images/mark.svg": bare(LIGHT),
   "docs/images/logo.svg": logo(LIGHT, caps, italic),
   "docs/images/logo-dark.svg": logo(DARK, caps, italic),

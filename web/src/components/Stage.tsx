@@ -222,7 +222,7 @@ export function Stage({
       <header className="stage-head">
         <nav>
           <button type="button" className="link brand" onClick={onShelf} title="Back to the shelf">
-            ‘Umrān
+            <span className="brand-name"><span>ʿUmrān</span></span>
           </button>
           <button type="button" className="link" onClick={onExport}>
             Export

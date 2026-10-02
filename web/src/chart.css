@@ -409,8 +409,10 @@
   background: var(--desk);
 }
 :root .brand {
-  font-family: var(--caps);
-  letter-spacing: 0.3em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  vertical-align: middle;
   color: var(--desk-ink);
   text-decoration: none;
 }
@@ -420,10 +422,27 @@
   display: inline-block;
   width: 0.95em;
   height: 1.15em;
-  margin-right: 0.45em;
-  vertical-align: -0.2em;
+  flex: none;
   background: var(--gold);
   mask: url("./assets/mark-mask.svg") center / contain no-repeat;
+}
+/* Both the UI and README use the same corrected, outlined small capitals. */
+:root .brand-name {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 4.53em;
+  height: 0.8em;
+  background: currentColor;
+  mask: url("/src/assets/wordmark-mask.svg") center / contain no-repeat;
+}
+:root .brand-name > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 :root .setup .stage-map {
   margin: 0 0 0 0.9rem;
