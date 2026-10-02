@@ -292,8 +292,7 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   Each faith reveres one place (`Religion::shrine`), chosen from lands its
   founders knew: their home (weight 3), a mountain (3), an island (2), or
   a shore on another continent (2), its name frozen in the sacred
-  language. Converts learn the shrine's name. Pilgrimage to it is not yet
-  modelled.
+  language. Converts learn every shrine's name.
   Most faiths seek converts and spread along contacts
   (`conversion_rate`); a third translate their words, the rest keep the
   sacred language and lend from it, so converts gain learned doublets
@@ -304,8 +303,48 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   priest into a sorcerer (pejoration, as Greek *daimōn* and Persian
   *magus*), and a founder's reform may do so to his own people, leaving
   god and demon as cognates across languages (Sanskrit *deva* "god",
-  Avestan *daēva* "demon"). Rival doctrines and iconoclasm are not yet
-  modelled.
+  Avestan *daēva* "demon"). Iconoclasm is not yet modelled.
+  Faiths divide (`schisms.rs`, `schism_rate`): across landmasses or states
+  separated for sixteen generations (`Distance`), when rulers take a
+  church centred in another state (`Rule`), when core-vocabulary sharing
+  with the sacred language falls below 0.55 (`Reform`, the same
+  chance-corrected phonetic measure as `keptFromHigh`), or in the first
+  six generations after a founder (`Succession`). Succession has 0.12
+  of the usual opportunity; it cannot recur among a branch's followers.
+  A branch is a faith with a parent and a split generation, inheriting
+  the founder, sacred speech, shrines, and doctrine. Reform translates;
+  distance gives a 70% chance of revering another known place on the
+  schismatics' own lands, chosen with the founding shrine weights.
+  Branch names are coined in their own speech, after a given name, a
+  homeland, or an old/new epithet on the parent's name. Rule takes every
+  follower of the parent in the rulers' state; others join with a chance
+  proportional to contact intensity and linguistic kinship, capped at
+  0.85. A faith family rests twelve generations between splits, and can
+  have at most six descendants; each existing descendant reduces the
+  per-faith hazard by a divisor of `1 + 0.4 × descendants`. Related
+  branches remain rivals, but conversion is twice as likely between
+  them as between unrelated founded faiths.
+  Pilgrim roads begin with probability `pilgrimage_rate` (0.2) per
+  generation for every follower and shrine within eighteen travel units.
+  They follow the cheapest permitted route, using the precomputed travel
+  distances; sea requires seafaring, and non-seafarers take a land-only
+  detour if the cheapest unrestricted route crosses water. Roads persist
+  while the community lives there and follows the faith. Pilgrims create
+  religion contacts with the largest people living at the shrine, or
+  strengthen existing dealings to intensity 0.25–0.4 without replacing
+  their kind or resetting their age. Ordinary contact turnover still
+  applies, so roads no longer travelled leave contacts that fade.
+  Borrowing and waves use those contacts without a separate mechanism.
+  Each faith records its first overseas pilgrims from each landmass.
+  A holy land's holder is its largest local population (lowest community
+  id breaks ties), not its namers or political overlord. Changes between
+  holders of the shrine's exact faith and other holders, including no
+  holder, are recorded in both directions. The conquest comparison in
+  `make_contacts` has twice its usual hazard, capped at 1, against an
+  unfaithful holder of an attacker's shrine or an ancestral faith's shrine;
+  co-faithful targets never receive this bonus. This scales the existing
+  comparison without adding draws. Schisms and pilgrimages use independent
+  purpose-keyed streams. `static_society` disables both and holy-land events.
 - Diglossia (`diglossia.rs`): a state's written standard is fixed as a
   classical form, a frozen copy pushed as a variety of its own, either by
   grammarians once it has been written twelve generations (a tenth
@@ -341,14 +380,31 @@ cargo run --release -p umran-sim --example history -- <seed> <generations>
 cargo run --release -p umran-sim --example calibrate -- <seeds> <generations> [profile]
 cargo run --release -p umran-sim --example length -- [seeds] [generations]
 cargo run --release -p umran-sim --example audit -- [seeds] [generations]
+cargo run --release -p umran-sim --example faiths -- [seeds] [years] [first-seed] [seeded|natural|sample|sample-unseeded]
 ```
+
+The faith report's `seeded` setup begins with three peoples sharing one
+authored faith; everything thereafter uses default parameters. Over seeds
+0–39 for 4,000 years it gives 69 schisms (median 2, maximum 4 per world
+and per faith family), none by succession, and holy-land changes in 32
+worlds (80%). The 2× holy-war bonus applies to 824 eligible conquest
+comparisons. `natural` leaves that starting faith out. `sample` replays
+the workbench's sample recipe, including its authored faith at year
+3,250, varying only the world seed: the same 40-seed band has 9 schisms
+(median 0, maximum 1), six unseeded faiths in six worlds, holy-land
+changes in 19 worlds (47.5%), and 46 holy-war comparisons.
+`sample-unseeded` omits only that authored founding: eight faiths arise
+in eight worlds, with two schisms (median 0, maximum 1), holy-land changes
+in five worlds (12.5%), and five holy-war comparisons. All sample recipes
+complete. The sparse unseeded result reflects the existing prerequisite
+of a large subject people in an old state, not a higher schism threshold.
 
 ## Not yet modelled
 
-Rivers, climates, pilgrimage, travel in kilometres, sea crossings that
-gate trade and conquest (only migration and colonies need seafaring), a
+Rivers, climates, travel in kilometres, sea crossings that
+gate trade and conquest (migration, colonies, and pilgrimage need seafaring), a
 map larger than a regional theatre, cities with speech of their own (a city's speech is
 its court's; no koiné), purism within a classical form, compounding and
 derivation after founding beyond renewal and new meanings, inflection,
 stress, tone, vowel harmony, consonant length, prenasalized stops, syntax
-and alignment, rival doctrines within a faith.
+and alignment, doctrinal detail beyond the causes of a schism.

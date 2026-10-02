@@ -19,6 +19,7 @@ use crate::polity::{
 use crate::profile::SoundProfile;
 use crate::rng::{index, key, stream, weighted_index};
 use crate::root::mint_one;
+use crate::schisms::SchismCause;
 use crate::variety::Variety;
 use rand::{Rng, RngCore};
 use rand_chacha::ChaCha8Rng;
@@ -254,6 +255,10 @@ pub struct Params {
     /// Scales the chance per generation that a people takes up the faith
     /// of one it deals with, by the contact's intensity and kind.
     pub conversion_rate: f32,
+    /// Chance per generation that an eligible faith divides.
+    pub schism_rate: f32,
+    /// Chance per generation that a reachable pilgrim road begins.
+    pub pilgrimage_rate: f32,
     /// Chance per generation that a language takes up a new given name.
     pub name_turnover: f32,
 }
@@ -304,6 +309,8 @@ impl Default for Params {
             idea_rate: 0.02,
             religion_rate: 0.02,
             conversion_rate: 0.05,
+            schism_rate: 0.035,
+            pilgrimage_rate: 0.2,
             name_turnover: 0.1,
         }
     }
@@ -333,6 +340,8 @@ impl Params {
             idea_rate: 0.0,
             religion_rate: 0.0,
             conversion_rate: 0.0,
+            schism_rate: 0.0,
+            pilgrimage_rate: 0.0,
             name_turnover: 0.0,
             ..Self::default()
         }
@@ -534,6 +543,29 @@ pub enum WorldEvent {
     },
     /// Religion `religion` was founded (`Religion::how` says how).
     Revealed { religion: usize },
+    /// A branch broke from `parent` among `community`.
+    Schism {
+        religion: usize,
+        parent: usize,
+        community: usize,
+        cause: SchismCause,
+    },
+    /// First pilgrims of this faith from `landmass`, once per landmass.
+    Pilgrimage {
+        religion: usize,
+        community: usize,
+        landmass: usize,
+        from: usize,
+        to: usize,
+    },
+    /// A shrine passed between faithful and other holders.
+    HolyLand {
+        religion: usize,
+        region: usize,
+        was_held_by: Option<usize>,
+        held_by: Option<usize>,
+        faithful: bool,
+    },
     /// `community` took up `religion`, taught by `from` or by an author.
     Converted {
         community: usize,
@@ -608,6 +640,8 @@ pub struct World {
     pub states: Vec<State>,
     /// Every religion founded, in order.
     pub religions: Vec<Religion>,
+    /// Eligible conquest comparisons whose hazard gained holy-land pressure.
+    pub holy_war_checks: u32,
     laws: Vec<Law>,
 }
 
@@ -653,6 +687,7 @@ impl World {
             events: Vec::new(),
             states: Vec::new(),
             religions: Vec::new(),
+            holy_war_checks: 0,
             laws: catalog(),
         }
     }
@@ -1120,6 +1155,9 @@ impl World {
         self.spread_crafts();
         self.found_religions();
         self.spread_faiths();
+        self.divide_faiths();
+        self.send_pilgrims();
+        self.observe_holy_lands();
         self.learn_words();
         self.reform_spelling();
         self.fix_classics();
@@ -2434,6 +2472,7 @@ impl World {
                 continue;
             }
             let me = self.communities[c].prestige;
+            let mut holy_war_checks = 0;
             let ruled: Vec<usize> = self
                 .contacts
                 .iter()
@@ -2442,11 +2481,17 @@ impl World {
                 .filter_map(|(i, k)| {
                     let other = if k.a == c { k.b } else { k.a };
                     let gap = me - self.communities[other].prestige - CONQUEST_MIN_GAP;
-                    let hazard = self.params.conquest_rate * gap;
-                    (gap > 0.0 && self.ruled_by(other).is_none() && rng.r#gen::<f32>() < hazard)
-                        .then_some(i)
+                    let eligible = gap > 0.0 && self.ruled_by(other).is_none();
+                    let holy = eligible && self.holy_war_target(c, other);
+                    if holy {
+                        holy_war_checks += 1;
+                    }
+                    let factor = if holy { 2.0 } else { 1.0 };
+                    let hazard = (self.params.conquest_rate * gap * factor).min(1.0);
+                    (eligible && rng.r#gen::<f32>() < hazard).then_some(i)
                 })
                 .collect();
+            self.holy_war_checks += holy_war_checks;
             if let Some(&i) = ruled.first() {
                 let contact = self.contacts[i];
                 let ruled = if contact.a == c { contact.b } else { contact.a };
@@ -2890,7 +2935,7 @@ impl World {
     /// changes: 1 for dialects that have just parted, half that once they
     /// have been apart `KIN_SPAN` generations, falling on toward
     /// `KIN_STRANGERS`, which is all unrelated languages get.
-    fn kinship(&self, a: usize, b: usize) -> f32 {
+    pub(crate) fn kinship(&self, a: usize, b: usize) -> f32 {
         // Each variety's line back to its root, with the generation each
         // step of it left its parent.
         let line = |mut at: usize| {

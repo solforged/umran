@@ -25,7 +25,7 @@ pub(crate) struct Annal {
     /// "neighbours", "conquest", "spread", "displaced", "hardship",
     /// "livelihood", "ended", "rose", "fell", "standard", "classical",
     /// "vernacular", "craft", "faith", "conversion", "meaning",
-    /// "respelling", or "law".
+    /// "respelling", "schism", "pilgrimage", "holy-land", or "law".
     pub kind: &'static str,
     /// The annalist's words. Words of the language are marked `*thus*`.
     pub text: String,
@@ -451,13 +451,54 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 annal
             }
             WorldEvent::Revealed { religion } => faith_annal(world, generation, religion),
+            WorldEvent::Schism { religion, parent, community, cause } => {
+                let r = &world.religions[religion];
+                let (people, branch, elder) = (name(community), world.faith_name(religion), world.faith_name(parent));
+                use umran_sim::schisms::SchismCause;
+                let text = match cause {
+                    SchismCause::Distance => format!("Far from the first faithful, the {people} came to keep {elder} their own way, and called it {branch}."),
+                    SchismCause::Rule => format!("The {people} would answer to no church beyond their own realm, and {branch} broke from {elder}."),
+                    SchismCause::Reform => format!("Among the {people}, who no longer understood the sacred speech of {elder}, reformers began {branch} and taught in their own tongue."),
+                    SchismCause::Succession => format!("Over who should follow the founder, {branch} broke from {elder} among the {people}."),
+                };
+                let mut annal = entry(generation, "schism", text, &[community], &[r.land]);
+                annal.religions = vec![religion, parent];
+                annal.notes = vec![format!("{branch} means “{}”.", r.name.meaning)];
+                annal
+            }
+            WorldEvent::Pilgrimage { religion, community, from, to, .. } => {
+                let mut annal = entry(
+                    generation, "pilgrimage",
+                    format!("Pilgrims of {} first came from the lands of the {} to {}.", world.faith_name(religion), name(community), place(world, to, generation)),
+                    &[community], &[from, to],
+                );
+                annal.religions = vec![religion];
+                annal.notes.push("They crossed the sea to reach it.".into());
+                annal
+            }
+            WorldEvent::HolyLand { religion, region, was_held_by, held_by, faithful } => {
+                let mut peoples: Vec<_> = was_held_by.into_iter().chain(held_by).collect();
+                peoples.sort_unstable();
+                peoples.dedup();
+                let mut annal = entry(
+                    generation, "holy-land",
+                    if faithful {
+                        format!("{} returned to the keeping of the faithful of {}.", place(world, region, generation), world.faith_name(religion))
+                    } else {
+                        format!("{} passed out of the keeping of the faithful of {}.", place(world, region, generation), world.faith_name(religion))
+                    },
+                    &peoples, &[region],
+                );
+                annal.religions = vec![religion];
+                annal.notes.push("A land keeps the faith of the largest people living there.".into());
+                annal
+            }
             WorldEvent::Converted {
                 community,
                 religion,
                 from,
             } => {
-                let r = &world.religions[religion];
-                let faith = world.varieties[r.sacred].title(&r.name.form);
+                let faith = world.faith_name(religion);
                 let teacher = from.map(name).unwrap_or_default();
                 let mut annal = entry(
                     generation,
@@ -724,8 +765,7 @@ fn vernacular_annal(world: &World, generation: u32, variety: usize, by: Vernacul
             )
         }
         Vernacular::Scripture { religion } => {
-            let r = &world.religions[religion];
-            let faith = world.varieties[r.sacred].title(&r.name.form);
+            let faith = world.faith_name(religion);
             (
                 VERNACULAR_SCRIPTURE,
                 Vec::new(),
@@ -822,7 +862,7 @@ const RESPELLED: &[&str] = &[
 fn faith_annal(world: &World, generation: u32, religion: usize) -> Annal {
     let r = &world.religions[religion];
     let sacred = &world.varieties[r.sacred];
-    let faith = sacred.title(&r.name.form);
+    let faith = world.faith_name(religion);
     let founder = sacred.title(&r.founder.form);
     let people = world.community_name_at(r.people, generation);
     let options = match r.how {

@@ -29,6 +29,7 @@ use crate::names::{GivenName, MAX_PEOPLE_NAME, Name, clipped, given_name};
 use crate::phonotactics::Phonotactics;
 use crate::rng::{index, key, stream, weighted_index};
 use crate::root::mint_one;
+use crate::schisms::{BranchNaming, HolyLand, Pilgrimage, SchismCause};
 use crate::world::{ContactKind, World, WorldEvent};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -243,6 +244,8 @@ pub struct SacredPlace {
     pub region: usize,
     pub kind: SacredKind,
     pub name: Name,
+    /// Speech in which this fixed name was coined.
+    pub variety: usize,
 }
 
 /// A founded religion.
@@ -251,6 +254,8 @@ pub struct Religion {
     /// Coined in its founder's language: "the followers of Zarat", or a
     /// word such as "the law" or "the way".
     pub name: Name,
+    /// Speech in which the faith's fixed name was coined.
+    pub name_variety: usize,
     /// As said when he lived.
     pub founder: Name,
     /// The people the founder came from, and its heart land then.
@@ -262,6 +267,17 @@ pub struct Religion {
     pub sacred: usize,
     /// Its revered site, distinct from founder-home provenance in `land`.
     pub shrine: SacredPlace,
+    /// Additional holy places inherited or revered by a branch.
+    pub extra_shrines: Vec<SacredPlace>,
+    pub parent: Option<usize>,
+    pub split: Option<u32>,
+    pub cause: Option<SchismCause>,
+    pub named: Option<BranchNaming>,
+    pub pilgrims: Vec<Pilgrimage>,
+    /// Landmasses whose first pilgrims have already been recorded.
+    pub(crate) pilgrim_landmasses: Vec<usize>,
+    /// Last observed allegiance at each shrine, for transition events.
+    pub(crate) holy_land: Vec<HolyLand>,
     /// Whether it seeks converts.
     pub converts: bool,
     /// Whether converts render its words in their own speech, rather than
@@ -269,6 +285,12 @@ pub struct Religion {
     pub translates: bool,
     /// Whether its founder's people wrote, so that its teaching is written.
     pub scripture: bool,
+}
+
+impl Religion {
+    pub fn shrines(&self) -> impl Iterator<Item = &SacredPlace> {
+        std::iter::once(&self.shrine).chain(self.extra_shrines.iter())
+    }
 }
 
 /// How a religion was founded.
@@ -729,9 +751,11 @@ impl World {
                 ..self.communities[community].name.clone()
             });
         let old_faith = self.communities[community].faith;
-        let shrine = self.sacred_place(community, index);
+        let mut shrine_rng = stream(self.seed, &[key("sacred place"), index as u64]);
+        let shrine = self.sacred_place(community, false, &mut shrine_rng);
         self.religions.push(Religion {
             name: Name::default(),
+            name_variety: v,
             founder: founder.clone(),
             people: community,
             land: self.communities[community].home(),
@@ -739,6 +763,14 @@ impl World {
             how,
             sacred: v,
             shrine,
+            extra_shrines: Vec::new(),
+            parent: None,
+            split: None,
+            cause: None,
+            named: None,
+            pilgrims: Vec::new(),
+            pilgrim_landmasses: Vec::new(),
+            holy_land: Vec::new(),
             converts,
             translates,
             scripture: self.holds(community, Need::Craft(Craft::Writing)),
@@ -771,7 +803,9 @@ impl World {
         sacred.name = self.varieties[v].name.clone();
         self.varieties.push(sacred);
         self.religions[index].sacred = self.varieties.len() - 1;
-        self.religions[index].name = self.faith_name(community, &founder, &mut rng);
+        self.religions[index].name_variety = self.religions[index].sacred;
+        self.religions[index].shrine.variety = self.religions[index].sacred;
+        self.religions[index].name = self.coin_faith_name(community, &founder, &mut rng);
         self.events
             .push((generation, WorldEvent::Revealed { religion: index }));
         // He teaches in his own speech, as the Buddha did in a vernacular
@@ -779,13 +813,23 @@ impl World {
         if self.religions[index].scripture {
             self.write_vernacular(v, Vernacular::Scripture { religion: index });
         }
+        self.religions[index].holy_land = self.holy_lands(index);
         index
     }
 
-    fn sacred_place(&self, community: usize, religion: usize) -> SacredPlace {
+    pub(crate) fn sacred_place(
+        &self,
+        community: usize,
+        local: bool,
+        rng: &mut impl Rng,
+    ) -> SacredPlace {
         let people = &self.communities[community];
         let home = people.home();
-        let knowledge = self.known_lands(people.variety);
+        let knowledge: Vec<_> = self
+            .known_lands(people.variety)
+            .into_iter()
+            .filter(|r| !local || people.lands.contains(r))
+            .collect();
         let categories = [
             (SacredKind::Home, vec![home], 3.0),
             (
@@ -826,12 +870,12 @@ impl World {
             .iter()
             .filter(|(_, regions, _)| !regions.is_empty())
             .collect();
-        let mut rng = stream(self.seed, &[key("sacred place"), religion as u64]);
-        let (kind, regions, _) = eligible[weighted_index(&mut rng, eligible.iter().map(|c| c.2))];
-        let region = regions[index(&mut rng, regions.len())];
+        let (kind, regions, _) = eligible[weighted_index(rng, eligible.iter().map(|c| c.2))];
+        let region = regions[index(rng, regions.len())];
         SacredPlace {
             region,
             kind: *kind,
+            variety: people.variety,
             name: self
                 .known_place(people.variety, region)
                 .expect("a founder's held and known lands have names")
@@ -842,7 +886,7 @@ impl World {
     /// A faith's name in its founder's speech: his followers' ("the
     /// followers of Zarat", as Christians and Buddhists are named), or a
     /// word for what it teaches ("the law", "the way", as Dharma and Dao).
-    fn faith_name(&self, community: usize, founder: &Name, rng: &mut impl Rng) -> Name {
+    fn coin_faith_name(&self, community: usize, founder: &Name, rng: &mut impl Rng) -> Name {
         let variety = &self.varieties[self.communities[community].variety];
         let teachings: Vec<(&str, &Form)> = [
             ("law", "the law"),
@@ -951,7 +995,11 @@ impl World {
                     } else {
                         CLOSED
                     };
-                    let rival = if k.faith.is_some() { RIVAL } else { 1.0 };
+                    let rival = match k.faith {
+                        Some(f) if self.faith_root(f) == self.faith_root(r) => RIVAL * 2.0,
+                        Some(_) => RIVAL,
+                        None => 1.0,
+                    };
                     let pull = (self.params.prestige_pull * (other.prestige - k.prestige)).exp();
                     let w = self.params.conversion_rate * intensity * carried * open * rival * pull;
                     Some((o, r, w))
@@ -977,6 +1025,17 @@ impl World {
     /// learn to write with its scripture; a scripture translated into
     /// their speech has them write their own speech.
     pub fn convert(&mut self, community: usize, religion: usize, from: Option<usize>) {
+        let mut rng = self.community_rng(community, "conversion");
+        self.convert_with_rng(community, religion, from, &mut rng);
+    }
+
+    pub(crate) fn convert_with_rng(
+        &mut self,
+        community: usize,
+        religion: usize,
+        from: Option<usize>,
+        mut rng: &mut impl Rng,
+    ) {
         let old = self.communities[community].faith;
         if old == Some(religion) {
             return;
@@ -990,10 +1049,10 @@ impl World {
                 from,
             },
         ));
-        let mut rng = self.community_rng(community, "conversion");
-        let r = self.religions[religion].clone();
+        let r = &self.religions[religion];
+        let (sacred, translates, scripture) = (r.sacred, r.translates, r.scripture);
         let v = self.communities[community].variety;
-        if !r.translates && old.is_none() {
+        if !translates && old.is_none() {
             for (from_meaning, to_meaning) in [("god", "demon"), ("priest", "sorcerer")] {
                 if rng.r#gen::<f32>() >= PEJORATION {
                     continue;
@@ -1001,13 +1060,13 @@ impl World {
                 let Some(concept) = by_id(from_meaning) else {
                     continue;
                 };
-                if let Some(new) = self.loan(v, r.sacred, concept, &mut rng) {
+                if let Some(new) = self.loan(v, sacred, concept, &mut rng) {
                     self.pejorate(community, from_meaning, to_meaning, new);
                 }
             }
         }
-        let mut names: Vec<Name> = vec![r.founder.clone()];
-        let stock = &self.varieties[r.sacred].given;
+        let mut names: Vec<Name> = vec![self.religions[religion].founder.clone()];
+        let stock = &self.varieties[sacred].given;
         if !stock.is_empty() {
             names.push(stock[index(&mut rng, stock.len())].name.clone());
         }
@@ -1021,28 +1080,44 @@ impl World {
                     log: Vec::new(),
                     ..name
                 },
-                from: Some(r.sacred),
+                from: Some(sacred),
             };
             self.give_name(v, given, &mut rng);
         }
-        if r.scripture && rng.r#gen::<f32>() < SCRIPTURE {
+        if scripture && rng.r#gen::<f32>() < SCRIPTURE {
             self.learn(community, Craft::Writing, from);
         }
-        if r.scripture && r.translates {
+        if scripture && translates {
             self.write_vernacular(v, Vernacular::Scripture { religion });
         }
-        if self.known_place(v, r.shrine.region).is_none() {
-            let mut rng = stream(
-                self.seed,
-                &[key("sacred place hearing"), religion as u64, v as u64],
-            );
-            let name = Name {
-                form: self.ear(v).adapt(&r.shrine.name.form, 0.0, &mut rng),
-                meaning: r.shrine.name.meaning.clone(),
-                coined: self.generation,
-                log: Vec::new(),
-            };
-            self.varieties[v].exonyms.push((r.shrine.region, name));
+        let r = &self.religions[religion];
+        for shrine in r.shrines() {
+            if self.known_place(v, shrine.region).is_none() {
+                let mut hearing = if r.parent.is_none() {
+                    stream(
+                        self.seed,
+                        &[key("sacred place hearing"), religion as u64, v as u64],
+                    )
+                } else {
+                    stream(
+                        self.seed,
+                        &[
+                            key("schism"),
+                            key("hearing"),
+                            religion as u64,
+                            v as u64,
+                            shrine.region as u64,
+                        ],
+                    )
+                };
+                let name = Name {
+                    form: self.ear(v).adapt(&shrine.name.form, 0.0, &mut hearing),
+                    meaning: shrine.name.meaning.clone(),
+                    coined: self.generation,
+                    log: Vec::new(),
+                };
+                self.varieties[v].exonyms.push((shrine.region, name));
+            }
         }
         self.refresh_places();
     }

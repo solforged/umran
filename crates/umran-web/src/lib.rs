@@ -13,6 +13,7 @@ use umran_sim::ideas::{NEEDS, Need, SacredKind};
 use umran_sim::morphology::Slot;
 use umran_sim::names::{Name, PlaceOrigin};
 use umran_sim::phoneme::{Backness, Manner, Secondary};
+use umran_sim::schisms::{BranchNaming, HolyLand, Pilgrimage, SchismCause};
 use umran_sim::{
     Action, CATALOG, CONCEPTS, Challenge, Chronicle, Craft, ENGINE_REVISION, Event, FORMAT, Fall,
     Flavor, Form, Lexeme, LexemeId, Livelihood, MapSize, NameStyle, Origin, PhonemeId, Recipe,
@@ -961,6 +962,15 @@ impl Bench {
                         r.name.meaning
                     )
                 }
+                WorldEvent::Schism {
+                    religion, parent, ..
+                } => {
+                    format!(
+                        "{} broke from {}",
+                        latest.faith_name(*religion),
+                        latest.faith_name(*parent)
+                    )
+                }
                 WorldEvent::Fixed { state } => {
                     format!("{} fixed in writing", latest.states[*state].name.meaning)
                 }
@@ -971,6 +981,8 @@ impl Bench {
                 | WorldEvent::Converted { .. }
                 | WorldEvent::Pejorated { .. }
                 | WorldEvent::Respelled { .. }
+                | WorldEvent::Pilgrimage { .. }
+                | WorldEvent::HolyLand { .. }
                 | WorldEvent::Vernacular { .. } => continue,
             };
             out.push(Marker {
@@ -2022,7 +2034,7 @@ struct GivenView {
 #[serde(rename_all = "camelCase")]
 struct ReligionView {
     id: usize,
-    /// Its name, spelled in its sacred language.
+    /// Its fixed name, in the speech of its founders or schismatics.
     name: String,
     meaning: String,
     ipa: String,
@@ -2044,6 +2056,14 @@ struct ReligionView {
     /// language says them.
     words: Vec<RenderingRow>,
     shrine: ShrineView,
+    parent: Option<usize>,
+    split: Option<u32>,
+    cause: Option<SchismCause>,
+    named: Option<BranchNaming>,
+    branches: Vec<usize>,
+    shrines: Vec<ShrineView>,
+    holy_land: Vec<HolyLand>,
+    pilgrims: Vec<Pilgrimage>,
 }
 
 #[derive(Serialize)]
@@ -2285,7 +2305,7 @@ fn religion_views(world: &World) -> Vec<ReligionView> {
             }
             ReligionView {
                 id,
-                name: sacred.title(&r.name.form),
+                name: world.faith_name(id),
                 meaning: r.name.meaning.clone(),
                 ipa: r.name.form.ipa(),
                 founder: NameView::new(sacred, &r.founder),
@@ -2306,8 +2326,28 @@ fn religion_views(world: &World) -> Vec<ReligionView> {
                 shrine: ShrineView {
                     region: r.shrine.region,
                     kind: r.shrine.kind,
-                    name: NameView::new(sacred, &r.shrine.name),
+                    name: NameView::new(&world.varieties[r.shrine.variety], &r.shrine.name),
                 },
+                parent: r.parent,
+                split: r.split,
+                cause: r.cause,
+                named: r.named,
+                branches: world
+                    .religions
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(child, f)| (f.parent == Some(id)).then_some(child))
+                    .collect(),
+                shrines: r
+                    .shrines()
+                    .map(|s| ShrineView {
+                        region: s.region,
+                        kind: s.kind,
+                        name: NameView::new(&world.varieties[s.variety], &s.name),
+                    })
+                    .collect(),
+                holy_land: world.holy_lands(id),
+                pilgrims: r.pilgrims.clone(),
             }
         })
         .collect()

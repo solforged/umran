@@ -176,6 +176,31 @@ fn main() {
                     r.translates
                 )
             }
+            WorldEvent::Schism {
+                religion,
+                parent,
+                cause,
+                ..
+            } => println!(
+                "  gen {generation:>3}  {} breaks from {} ({cause:?})",
+                world.faith_name(*religion),
+                world.faith_name(*parent),
+            ),
+            WorldEvent::Pilgrimage {
+                religion, from, to, ..
+            } => println!(
+                "  gen {generation:>3}  first overseas pilgrims of {} from {from} to {to}",
+                world.faith_name(*religion),
+            ),
+            WorldEvent::HolyLand {
+                religion,
+                region,
+                faithful,
+                ..
+            } => println!(
+                "  gen {generation:>3}  holy land {region} of {}: faithful {faithful}",
+                world.faith_name(*religion),
+            ),
             WorldEvent::Converted {
                 community,
                 religion,

@@ -28,6 +28,7 @@ pub mod profile;
 pub mod prosody;
 pub mod rng;
 pub mod root;
+pub mod schisms;
 mod spelling;
 pub mod typology;
 pub mod variety;
