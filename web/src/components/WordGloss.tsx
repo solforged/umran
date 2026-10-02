@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import type { ReadEngine } from "../model";
+import { useMemo, type ReactNode } from "react";
+import type { LoanCause, ReadEngine } from "../model";
 import { YEARS } from "../model";
 
 /// A marginal note on one word: its forms, how it came to be, and its kin
@@ -12,6 +12,7 @@ export function WordGloss({
   concept,
   onScrub,
   onOpenVariety,
+  renderCause,
 }: {
   engine: ReadEngine;
   version: number;
@@ -20,6 +21,8 @@ export function WordGloss({
   concept: string | null;
   onScrub: (generation: number) => void;
   onOpenVariety: (variety: number) => void;
+  /// How the loan on this line came, drawn by the card that knows the world.
+  renderCause?: (cause: LoanCause, generation: number) => ReactNode;
 }) {
   const detail = useMemo(
     () => (concept ? engine.word(generation, variety, concept) : null),
@@ -61,7 +64,13 @@ export function WordGloss({
                 >
                   {line.generation * YEARS}
                 </button>
-                {line.text}
+                <span>
+                  {line.text}
+                  {/* A loan's later adaptation lines repeat its cause; tell it once. */}
+                  {line.cause && renderCause && !v.history.slice(0, j).some((l) => l.cause)
+                    ? renderCause(line.cause, line.generation)
+                    : null}
+                </span>
               </li>
             ))}
           </ol>

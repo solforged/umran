@@ -21,7 +21,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, Catalog, Community, Craft, CraftView, ReadEngine, Ethos, HolyLand, Overview, PlaceExonym, ReligionView, RenderingRow, ShrineKind, StateView, Variety, WordMap, WorldMap } from "../model";
+import type { Annal, Catalog, Community, Craft, CraftView, ReadEngine, Ethos, HolyLand, LoanCause, Overview, PlaceExonym, ReligionView, RenderingRow, ShrineKind, StateView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, FAITH_HOW, FALL_NAME, howCame, howNamed, hue, LIVELIHOOD_NAME, RISE_NAME, SCHISM_CAUSE, STRESS_RULE, STRONG, temperament, TERMS, TERRAIN_NAME, type Term } from "../lore";
 import { filterHistory, findAnnal, individualAnnals, relatedMoments, subjectHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
@@ -1863,6 +1863,14 @@ function WordCard({ variety, concept, context }: { variety: number; concept: str
     return [...seen.entries()].map(([group, forms]) => ({ group, forms: [...new Set(forms)] }));
   }, [words]);
   const v = overview.varieties[variety];
+  const wordStory = useMemo(() => {
+    try {
+      const { annals } = engine.story(generation, { kind: "word", variety, concept });
+      return annals.map((id) => findAnnal(overview.annals, id)).filter((a): a is Annal => a !== undefined);
+    } catch {
+      return [];
+    }
+  }, [engine, version, generation, variety, concept, overview]);
   if (!v) return <p className="muted">This language has not yet arisen in this year.</p>;
   return (
     <>
@@ -1893,6 +1901,7 @@ function WordCard({ variety, concept, context }: { variety: number; concept: str
           context.onVisit({ kind: "word", variety: then, concept }, at);
         }}
         onOpenVariety={(other) => context.go({ kind: "word", variety: other, concept })}
+        renderCause={(cause, at) => <LoanCauseNote cause={cause} generation={at} context={context} />}
       />
       {groups.length > 1 ? (
         <>
@@ -1911,7 +1920,58 @@ function WordCard({ variety, concept, context }: { variety: number; concept: str
           </ul>
         </>
       ) : null}
+      <StoryLeaf title="The history of this word" annals={wordStory} context={context} />
     </>
+  );
+}
+
+/// How a loan reached this language, as the engine recorded it: the
+/// channel, who gave and who took, and a way to the account and to where
+/// the takers lived that year. Nothing is inferred from nearby events.
+function LoanCauseNote({ cause, generation, context }: { cause: LoanCause; generation: number; context: Context }) {
+  const { overview } = context;
+  if (cause.kind === "unrecorded") return null;
+  const people = (id: number | null) => {
+    const c = id === null ? undefined : overview.communities[id];
+    return c ? <PeopleLink c={c} context={context} /> : <>a people now forgotten</>;
+  };
+  const takers = cause.kind === "rule" ? cause.ruled : cause.kind === "shift" || cause.kind === "city" ? cause.community
+    : cause.kind === "coinage" ? cause.peoples[0] ?? null : cause.recipient;
+  let how: ReactNode;
+  switch (cause.kind) {
+    case "contact":
+      how = <>Through {CONTACT_NAME[cause.contact].toLowerCase()} between the {people(cause.donor)} and the {people(cause.recipient)}, dealing since year {cause.since * YEARS}.</>;
+      break;
+    case "rule":
+      how = <>Under the rule of the {people(cause.ruler)} over the {people(cause.ruled)}{cause.state !== null && overview.states[cause.state] ? <>, in <StateLink state={overview.states[cause.state]} context={context} /></> : null}.</>;
+      break;
+    case "faith":
+      how = <>With the faith of {overview.religions[cause.religion] ? <ReligionLink religion={overview.religions[cause.religion]} context={context} /> : "a forgotten faith"}{cause.teacher !== null ? <>, as the {people(cause.teacher)} taught it</> : null}.</>;
+      break;
+    case "shift":
+      how = <>Kept from their old speech when the {people(cause.community)} took up another tongue.</>;
+      break;
+    case "city":
+      how = <>Heard in a great city where the {people(cause.community)} lived among others.</>;
+      break;
+    case "coinage":
+      how = <>Taken up for a new idea among {cause.peoples.map((id, i) => <span key={id}>{i ? ", " : ""}the {people(id)}</span>)}.</>;
+      break;
+    case "classical":
+      how = <>Learned from {overview.varieties[cause.classical] ? <LanguageLink variety={cause.classical} context={context} /> : "a classical tongue"} by the {people(cause.recipient)}.</>;
+      break;
+  }
+  return (
+    <span className="loan-cause">
+      {" "}{how}{" "}
+      {cause.event ? <button type="button" className="link" onClick={() => context.go({ kind: "event", id: cause.event! })}>Read the account</button> : null}
+      {cause.event && takers !== null ? " · " : null}
+      {takers !== null && overview.communities[takers] ? (
+        <button type="button" className="link" onClick={() => context.onVisit({ kind: "people", id: takers }, generation)}>
+          Where they lived in year {generation * YEARS}
+        </button>
+      ) : null}
+    </span>
   );
 }
 
