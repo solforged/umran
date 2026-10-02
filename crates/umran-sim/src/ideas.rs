@@ -22,7 +22,7 @@ use crate::adapt::Adapter;
 use crate::concepts::{CONCEPTS, Concept, Relation, by_id, related};
 use crate::diglossia::Vernacular;
 use crate::form::Form;
-use crate::geography::Terrain;
+use crate::geography::{LandmassKind, Terrain};
 use crate::lexicon::{Entry, Event, LexemeId, Origin};
 use crate::livelihood::Livelihood;
 use crate::names::{GivenName, MAX_PEOPLE_NAME, Name, clipped, given_name};
@@ -227,6 +227,24 @@ const SACRED_BORROW: f32 = 4.0;
 const RESPELL_LAWS: usize = 6;
 const RESPELL: f32 = 0.05;
 
+/// Why a known land was revered as a religion's sacred place.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SacredKind {
+    Home,
+    Mountain,
+    Island,
+    FarShore,
+}
+
+/// A site and its name, frozen in the faith's sacred language.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SacredPlace {
+    pub region: usize,
+    pub kind: SacredKind,
+    pub name: Name,
+}
+
 /// A founded religion.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Religion {
@@ -242,6 +260,8 @@ pub struct Religion {
     pub how: Revelation,
     /// The variety holding the founder's speech as it stood, frozen.
     pub sacred: usize,
+    /// Its revered site, distinct from founder-home provenance in `land`.
+    pub shrine: SacredPlace,
     /// Whether it seeks converts.
     pub converts: bool,
     /// Whether converts render its words in their own speech, rather than
@@ -694,6 +714,7 @@ impl World {
     /// demons by his reform; then their speech, frozen as it stands,
     /// becomes the faith's sacred language.
     pub fn found_religion(&mut self, community: usize, how: Revelation) -> usize {
+        self.refresh_places();
         let index = self.religions.len();
         let generation = self.generation;
         let mut rng = stream(self.seed, &[key("religion"), index as u64]);
@@ -708,6 +729,7 @@ impl World {
                 ..self.communities[community].name.clone()
             });
         let old_faith = self.communities[community].faith;
+        let shrine = self.sacred_place(community, index);
         self.religions.push(Religion {
             name: Name::default(),
             founder: founder.clone(),
@@ -716,6 +738,7 @@ impl World {
             founded: generation,
             how,
             sacred: v,
+            shrine,
             converts,
             translates,
             scripture: self.holds(community, Need::Craft(Craft::Writing)),
@@ -744,6 +767,7 @@ impl World {
             }
         }
         let mut sacred = self.varieties[v].fork(v, generation);
+        self.inherit_places(v, &mut sacred);
         sacred.name = self.varieties[v].name.clone();
         self.varieties.push(sacred);
         self.religions[index].sacred = self.varieties.len() - 1;
@@ -756,6 +780,63 @@ impl World {
             self.write_vernacular(v, Vernacular::Scripture { religion: index });
         }
         index
+    }
+
+    fn sacred_place(&self, community: usize, religion: usize) -> SacredPlace {
+        let people = &self.communities[community];
+        let home = people.home();
+        let knowledge = self.known_lands(people.variety);
+        let categories = [
+            (SacredKind::Home, vec![home], 3.0),
+            (
+                SacredKind::Mountain,
+                knowledge
+                    .iter()
+                    .copied()
+                    .filter(|&r| self.map.regions[r].terrain == Terrain::Mountains)
+                    .collect(),
+                3.0,
+            ),
+            (
+                SacredKind::Island,
+                knowledge
+                    .iter()
+                    .copied()
+                    .filter(|&r| self.map.island(r))
+                    .collect(),
+                2.0,
+            ),
+            (
+                SacredKind::FarShore,
+                knowledge
+                    .iter()
+                    .copied()
+                    .filter(|&r| {
+                        self.map.coastal(r)
+                            && self.map.regions[r].landmass != self.map.regions[home].landmass
+                            && self.map.regions[r].landmass.is_some_and(|id| {
+                                self.map.landmasses[id].kind == LandmassKind::Continent
+                            })
+                    })
+                    .collect(),
+                2.0,
+            ),
+        ];
+        let eligible: Vec<_> = categories
+            .iter()
+            .filter(|(_, regions, _)| !regions.is_empty())
+            .collect();
+        let mut rng = stream(self.seed, &[key("sacred place"), religion as u64]);
+        let (kind, regions, _) = eligible[weighted_index(&mut rng, eligible.iter().map(|c| c.2))];
+        let region = regions[index(&mut rng, regions.len())];
+        SacredPlace {
+            region,
+            kind: *kind,
+            name: self
+                .known_place(people.variety, region)
+                .expect("a founder's held and known lands have names")
+                .clone(),
+        }
     }
 
     /// A faith's name in its founder's speech: his followers' ("the
@@ -950,6 +1031,20 @@ impl World {
         if r.scripture && r.translates {
             self.write_vernacular(v, Vernacular::Scripture { religion });
         }
+        if self.known_place(v, r.shrine.region).is_none() {
+            let mut rng = stream(
+                self.seed,
+                &[key("sacred place hearing"), religion as u64, v as u64],
+            );
+            let name = Name {
+                form: self.ear(v).adapt(&r.shrine.name.form, 0.0, &mut rng),
+                meaning: r.shrine.name.meaning.clone(),
+                coined: self.generation,
+                log: Vec::new(),
+            };
+            self.varieties[v].exonyms.push((r.shrine.region, name));
+        }
+        self.refresh_places();
     }
 
     /// A standing state whose written standard has drifted far from its
@@ -1260,5 +1355,211 @@ mod tests {
         for (_, from, to) in LIVING_RELATED {
             assert!(by_id(from).is_some() && by_id(to).is_some(), "{from}/{to}");
         }
+    }
+
+    fn cultural_faith_world(seed: u64) -> (World, usize) {
+        let mut world = World::with_map(
+            seed,
+            Params::static_society(),
+            crate::geography::MapSize::Large,
+        );
+        let home = world
+            .map
+            .landmasses
+            .iter()
+            .find(|m| m.kind == LandmassKind::Continent)
+            .unwrap()
+            .anchor;
+        let founder = world.found_seeded(
+            &Naming::People,
+            &SoundProfile::base(),
+            seed,
+            0.5,
+            0.5,
+            Some(home),
+            Some(Livelihood::Farming),
+        );
+        (world, founder)
+    }
+
+    fn cultural_teach_chart(world: &mut World, community: usize) {
+        let variety = world.communities[community].variety;
+        let home = world.communities[community].home();
+        let name = world.known_place(variety, home).unwrap().clone();
+        for region in 0..world.map.regions.len() {
+            if world.map.regions[region].terrain.is_land()
+                && world.known_place(variety, region).is_none()
+            {
+                let mut remembered = name.clone();
+                remembered.meaning = format!("the remembered shore {region}");
+                world.varieties[variety].exonyms.push((region, remembered));
+            }
+        }
+    }
+
+    #[test]
+    fn cultural_shrines_use_founder_knowledge_and_available_category_weights() {
+        let mut kinds = [0; 4];
+        for seed in 0..128 {
+            let (mut world, founder) = cultural_faith_world(seed);
+            cultural_teach_chart(&mut world, founder);
+            let home = world.communities[founder].home();
+            let variety = world.communities[founder].variety;
+            let known = world.known_lands(variety);
+            assert!(known.iter().any(|&r| world.map.island(r)));
+            assert!(
+                known
+                    .iter()
+                    .any(|&r| world.map.regions[r].terrain == Terrain::Mountains)
+            );
+            assert!(known.iter().any(|&r| world.map.coastal(r)
+                && world.map.regions[r].landmass != world.map.regions[home].landmass
+                && world.map.landmasses[world.map.regions[r].landmass.unwrap()].kind
+                    == LandmassKind::Continent));
+            let religion = world.found_religion(founder, Revelation::Proclaimed);
+            let shrine = &world.religions[religion].shrine;
+            assert!(known.contains(&shrine.region));
+            assert_eq!(
+                world.known_place(variety, shrine.region),
+                Some(&shrine.name)
+            );
+            assert_eq!(
+                world.known_place(world.religions[religion].sacred, shrine.region),
+                Some(&shrine.name)
+            );
+            let bucket = match shrine.kind {
+                SacredKind::Home => {
+                    assert_eq!(shrine.region, home);
+                    0
+                }
+                SacredKind::Mountain => {
+                    assert_eq!(world.map.regions[shrine.region].terrain, Terrain::Mountains);
+                    1
+                }
+                SacredKind::Island => {
+                    assert!(world.map.island(shrine.region));
+                    2
+                }
+                SacredKind::FarShore => {
+                    assert!(world.map.coastal(shrine.region));
+                    assert_ne!(
+                        world.map.regions[shrine.region].landmass,
+                        world.map.regions[home].landmass
+                    );
+                    assert_eq!(
+                        world.map.landmasses[world.map.regions[shrine.region].landmass.unwrap()]
+                            .kind,
+                        LandmassKind::Continent
+                    );
+                    3
+                }
+            };
+            kinds[bucket] += 1;
+        }
+        for (i, count) in kinds.into_iter().enumerate() {
+            let band = if i < 2 { 25..=52 } else { 12..=39 };
+            assert!(band.contains(&count), "category {i}: {count} of 128");
+        }
+    }
+
+    #[test]
+    fn cultural_sacred_place_draws_do_not_disturb_doctrine_or_religion_names() {
+        for seed in 0..12 {
+            let (mut local, founder) = cultural_faith_world(seed);
+            let mut informed = local.clone();
+            cultural_teach_chart(&mut informed, founder);
+            let a = local.found_religion(founder, Revelation::Proclaimed);
+            let b = informed.found_religion(founder, Revelation::Proclaimed);
+            let (a, b) = (&local.religions[a], &informed.religions[b]);
+            assert_eq!(
+                (a.converts, a.translates, a.scripture),
+                (b.converts, b.translates, b.scripture)
+            );
+            assert_eq!(
+                (a.founder.clone(), a.name.clone()),
+                (b.founder.clone(), b.name.clone())
+            );
+            assert_eq!(
+                local.varieties[a.sacred].lexicon,
+                informed.varieties[b.sacred].lexicon
+            );
+        }
+    }
+
+    #[test]
+    fn cultural_conversion_teaches_a_frozen_shrine_without_granting_land() {
+        let (mut world, founder) = cultural_faith_world(30);
+        let religion = world.found_religion(founder, Revelation::Proclaimed);
+        let shrine = world.religions[religion].shrine.clone();
+        let sacred = world.religions[religion].sacred;
+        let home = (0..world.map.regions.len())
+            .find(|&r| {
+                world.map.regions[r].terrain.is_land()
+                    && r != shrine.region
+                    && !world.map.regions[r].neighbours.contains(&shrine.region)
+            })
+            .unwrap();
+        let convert = world.found_seeded(
+            &Naming::People,
+            &SoundProfile::by_id("iranian").unwrap(),
+            31,
+            0.5,
+            0.5,
+            Some(home),
+            Some(Livelihood::Farming),
+        );
+        let variety = world.communities[convert].variety;
+        assert!(world.known_place(variety, shrine.region).is_none());
+        world.convert(convert, religion, Some(founder));
+        assert_eq!(
+            world.known_place(variety, shrine.region).unwrap().meaning,
+            shrine.name.meaning
+        );
+        assert_eq!(world.communities[convert].lands, vec![home]);
+        assert!(
+            !world.places[shrine.region]
+                .iter()
+                .any(|p| p.variety == variety)
+        );
+        world.convert(convert, religion, Some(founder));
+        assert_eq!(
+            world.varieties[variety]
+                .exonyms
+                .iter()
+                .filter(|(r, _)| *r == shrine.region)
+                .count(),
+            1
+        );
+        let frozen_known: Vec<_> = world
+            .known_lands(sacred)
+            .into_iter()
+            .map(|r| (r, world.known_place(sacred, r).unwrap().clone()))
+            .collect();
+        world.run(80);
+        assert_eq!(world.religions[religion].shrine, shrine);
+        for (r, name) in frozen_known {
+            assert_eq!(world.known_place(sacred, r), Some(&name));
+        }
+    }
+
+    #[test]
+    fn cultural_sacred_forks_snapshot_local_names_not_later_discoveries() {
+        let (mut world, founder) = cultural_faith_world(32);
+        let variety = world.communities[founder].variety;
+        let before = world.known_lands(variety);
+        let religion = world.found_religion(founder, Revelation::Proclaimed);
+        let sacred = world.religions[religion].sacred;
+        assert_eq!(world.known_lands(sacred), before);
+        let unknown = (0..world.map.regions.len())
+            .find(|&r| {
+                world.map.regions[r].terrain.is_land() && world.known_place(variety, r).is_none()
+            })
+            .unwrap();
+        let remembered = world
+            .known_place(variety, world.communities[founder].home())
+            .unwrap()
+            .clone();
+        world.varieties[variety].exonyms.push((unknown, remembered));
+        assert!(world.known_place(sacred, unknown).is_none());
     }
 }

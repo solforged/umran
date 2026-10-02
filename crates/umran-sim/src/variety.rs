@@ -44,10 +44,9 @@ pub struct Variety {
     /// The generation it was first written, or last respelled: words are
     /// spelled as they sounded then, however they have changed since.
     pub written: Option<u32>,
-    /// What its speakers call lands others hold, by region: each heard
-    /// once, when they first lived on or beside it, and changed since by
-    /// this language's own sound laws, as German Mailand came from
-    /// Mediolanum.
+    /// Remembered regional names: inherited local names, surveys, and
+    /// first-heard foreign names. They evolve through this language's own
+    /// sound laws, as German Mailand came from Mediolanum.
     pub exonyms: Vec<(usize, Name)>,
     /// The classical form its speakers write, or wrote before writing
     /// their own speech (`diglossia.rs`).

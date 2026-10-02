@@ -134,9 +134,11 @@ impl World {
     /// speakers and the speakers of every language descended from it write
     /// from now on in place of their own speech.
     pub(crate) fn fix(&mut self, s: usize, how: Fixing) {
+        self.refresh_places();
         let generation = self.generation;
         let v = self.communities[self.states[s].rulers].variety;
         let mut classical = self.varieties[v].fork(v, generation);
+        self.inherit_places(v, &mut classical);
         classical.name = self.varieties[v].name.clone();
         let high = self.varieties.len();
         self.varieties.push(classical);
@@ -343,5 +345,25 @@ mod tests {
         world.religions[r].scripture = true;
         world.convert(rulers, r, None);
         assert!(!world.diglossic(world.communities[rulers].variety));
+    }
+
+    #[test]
+    fn cultural_classical_forks_snapshot_local_names_not_later_discoveries() {
+        let (mut world, state, rulers, _) = realm(13, false);
+        let parent = world.communities[rulers].variety;
+        let home = world.communities[rulers].home();
+        let local = world.known_place(parent, home).unwrap().clone();
+        world.fix(state, Fixing::Age);
+        let high = world.states[state].classical.unwrap().variety;
+        assert_eq!(world.known_place(high, home), Some(&local));
+        let unknown = (0..world.map.regions.len())
+            .find(|&r| {
+                world.map.regions[r].terrain.is_land()
+                    && world.known_place(parent, r).is_none()
+                    && world.known_place(high, r).is_none()
+            })
+            .unwrap();
+        world.varieties[parent].exonyms.push((unknown, local));
+        assert!(world.known_place(high, unknown).is_none());
     }
 }

@@ -2,20 +2,22 @@ use crate::adapt::Adapter;
 use crate::concepts::{CONCEPTS, Concept, Field, related};
 use crate::diglossia::{CLASSICAL_PRESTIGE, Vernacular};
 use crate::form::Form;
-use crate::geography::{Map, MapSize, Terrain};
+use crate::geography::{LandmassKind, Map, MapSize, Terrain};
 use crate::ideas::{Craft, Religion, SACRED_INTENSITY, SACRED_PRESTIGE, living_related};
 use crate::laws::{Law, catalog};
 use crate::lexicon::{Entry, Event, LexemeId, Lexicon, Origin};
 use crate::livelihood::Livelihood;
 use crate::morphology::Morphology;
-use crate::names::{Landscape, Name, Naming, PlaceName, PlaceOrigin, place_name};
+use crate::names::{
+    ContinentName, Landscape, Name, Naming, PlaceName, PlaceOrigin, continent_name, place_name,
+};
 use crate::phoneme::PhonemeId;
 use crate::phonotactics::Phonotactics;
 use crate::polity::{
     LEVEL_FLOOR, LEVELLING, PURIST_COST, PURIST_PRESSURE, STANDARD_PRESTIGE, STANDARD_SHIFT, State,
 };
 use crate::profile::SoundProfile;
-use crate::rng::{key, stream, weighted_index};
+use crate::rng::{index, key, stream, weighted_index};
 use crate::root::mint_one;
 use crate::variety::Variety;
 use rand::{Rng, RngCore};
@@ -600,6 +602,8 @@ pub struct World {
     /// oldest first; the last is its name now. Empty for land no one has
     /// held, and for the sea.
     pub places: Vec<Vec<PlaceName>>,
+    /// Fixed chart headings, indexed by landmass; islands remain unnamed.
+    pub continent_names: Vec<Option<ContinentName>>,
     /// Every state that has stood, in the order they arose.
     pub states: Vec<State>,
     /// Every religion founded, in order.
@@ -640,6 +644,7 @@ impl World {
             seed,
             generation: 0,
             places: vec![Vec::new(); map.regions.len()],
+            continent_names: vec![None; map.landmasses.len()],
             map: Arc::new(map),
             communities: Vec::new(),
             varieties: Vec::new(),
@@ -716,7 +721,7 @@ impl World {
         });
         self.events
             .push((self.generation, WorldEvent::Found { community: index }));
-        self.hold_places();
+        self.refresh_places();
         index
     }
 
@@ -725,17 +730,23 @@ impl World {
         (0..self.communities.len()).filter(|&c| self.communities[c].living())
     }
 
-    /// Where newly founded community `community` settles: unpeopled land,
-    /// likelier the more it feeds and the further it lies from other
-    /// peoples, or the roomiest land when none is unpeopled.
+    /// Where newly founded community `community` settles: unpeopled land on
+    /// a continent, likelier the more it feeds and the further it lies from
+    /// other peoples; unpeopled island land once the continents are full;
+    /// or the roomiest land when none is unpeopled. Islands are left for
+    /// seafarers to find, rather than stranding a founding people on one.
     fn homeland(&self, community: usize) -> usize {
         let peopled: HashSet<usize> = self
             .living()
             .flat_map(|c| self.communities[c].lands.iter().copied())
             .collect();
-        let open: Vec<usize> = (0..self.map.regions.len())
-            .filter(|&r| self.map.regions[r].terrain.is_land() && !peopled.contains(&r))
+        let unpeopled = |r: &usize| self.map.regions[*r].terrain.is_land() && !peopled.contains(r);
+        let mut open: Vec<usize> = (0..self.map.regions.len())
+            .filter(|r| unpeopled(r) && !self.map.island(*r))
             .collect();
+        if open.is_empty() {
+            open = (0..self.map.regions.len()).filter(unpeopled).collect();
+        }
         if open.is_empty() {
             let all: Vec<usize> = (0..self.map.regions.len()).collect();
             return self
@@ -847,8 +858,10 @@ impl World {
     /// The new community names itself as `naming` says, or chooses a name
     /// itself if `None`; its speech is named after it.
     pub fn split(&mut self, community: usize, naming: Option<&Naming>, intensity: f32) -> usize {
+        self.refresh_places();
         let parent = self.communities[community].variety;
         let mut daughter = self.varieties[parent].fork(parent, self.generation);
+        self.inherit_places(parent, &mut daughter);
         let home = self.communities[community].home();
         let (region, leaving, share) = self.leavers(community);
         // The land they settle, as they say it, which they may be named for.
@@ -917,17 +930,25 @@ impl World {
                     .ok()
                 })
                 .collect();
-            let longest = wholes.iter().map(|w| w.form.vowel_count()).max();
-            let free = (crate::names::MAX_PEOPLE_NAME..=longest.unwrap_or(0)).find_map(|max| {
-                wholes
-                    .iter()
-                    .filter(|w| w.form.vowel_count() >= max)
-                    .map(|w| Name {
-                        form: crate::names::clipped(w.form.clone(), max),
-                        ..w.clone()
-                    })
-                    .find(|n| !taken(n))
-            });
+            // Short names first, then a syllable longer where every short
+            // one is taken; never longer than that.
+            let longest = wholes
+                .iter()
+                .map(|w| w.form.vowel_count())
+                .max()
+                .unwrap_or(0);
+            let free = (crate::names::MAX_PEOPLE_NAME
+                ..=longest.min(crate::names::MAX_PEOPLE_NAME + 1))
+                .find_map(|max| {
+                    wholes
+                        .iter()
+                        .filter(|w| w.form.vowel_count() >= max)
+                        .map(|w| Name {
+                            form: crate::names::clipped(w.form.clone(), max),
+                            ..w.clone()
+                        })
+                        .find(|n| !taken(n))
+                });
             name = match free {
                 Some(free) => free,
                 None => {
@@ -991,7 +1012,7 @@ impl World {
                 to: region,
             },
         ));
-        self.hold_places();
+        self.refresh_places();
         index
     }
 
@@ -1064,6 +1085,7 @@ impl World {
     }
 
     pub fn step(&mut self) {
+        self.preserve_places();
         self.generation += 1;
         let spoken = self.spoken();
         let areal = self.areal_targets();
@@ -1103,6 +1125,7 @@ impl World {
         self.fix_classics();
         self.hold_places();
         self.hear_places();
+        self.name_continents();
     }
 
     /// Which varieties some community still speaks. Unspoken varieties are
@@ -1592,6 +1615,149 @@ impl World {
         }
     }
 
+    /// Named lands remembered by this language, whether held, surveyed, or heard.
+    pub fn known_lands(&self, variety: usize) -> Vec<usize> {
+        let mut lands: Vec<usize> = self.varieties[variety]
+            .exonyms
+            .iter()
+            .map(|(region, _)| *region)
+            .chain(
+                self.places
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, names)| names.iter().any(|p| p.variety == variety))
+                    .map(|(region, _)| region),
+            )
+            .collect();
+        lands.sort_unstable();
+        lands.dedup();
+        lands
+    }
+
+    /// This language's first-heard memory, or its latest own local name.
+    /// Never substitutes the present holder's unrelated words.
+    pub fn known_place(&self, variety: usize, region: usize) -> Option<&Name> {
+        self.varieties[variety]
+            .exonyms
+            .iter()
+            .find(|(r, _)| *r == region)
+            .map(|(_, name)| name)
+            .or_else(|| {
+                self.places[region]
+                    .iter()
+                    .rev()
+                    .find(|p| p.variety == variety)
+                    .map(|p| &p.name)
+            })
+    }
+
+    /// Snapshots the parent's local names into a fork's evolving memories.
+    /// Existing exonyms have already cloned and win any regional conflicts.
+    pub fn inherit_places(&self, parent: usize, daughter: &mut Variety) {
+        for (region, names) in self.places.iter().enumerate() {
+            if !daughter.exonyms.iter().any(|(r, _)| *r == region)
+                && let Some(place) = names.iter().rev().find(|p| p.variety == parent)
+            {
+                daughter.exonyms.push((region, place.name.clone()));
+            }
+        }
+    }
+
+    /// Keeps the last local name before its language loses a land or its
+    /// naming record is superseded. The historical local record stays frozen.
+    fn remember_place(&mut self, region: usize) {
+        if let Some(place) = self.places[region].last()
+            && !self.varieties[place.variety]
+                .exonyms
+                .iter()
+                .any(|(r, _)| *r == region)
+        {
+            self.varieties[place.variety]
+                .exonyms
+                .push((region, place.name.clone()));
+        }
+    }
+
+    fn preserve_places(&mut self) {
+        for region in 0..self.places.len() {
+            if let Some(place) = self.places[region].last()
+                && !self.living().any(|c| {
+                    let people = &self.communities[c];
+                    people.variety == place.variety && people.lands.contains(&region)
+                })
+            {
+                self.remember_place(region);
+            }
+        }
+    }
+
+    /// Local discovery at API boundaries never spends an indirect report.
+    pub(crate) fn refresh_places(&mut self) {
+        self.hold_places();
+        self.hear_places_phase(false);
+        self.name_continents();
+    }
+
+    fn name_continents(&mut self) {
+        for landmass in 0..self.map.landmasses.len() {
+            if self.map.landmasses[landmass].kind != LandmassKind::Continent
+                || self.continent_names[landmass].is_some()
+            {
+                continue;
+            }
+            let witness = self.living().find_map(|people| {
+                let community = &self.communities[people];
+                let variety = community.variety;
+                let held = community
+                    .lands
+                    .iter()
+                    .copied()
+                    .filter(|&r| self.map.regions[r].landmass == Some(landmass))
+                    .filter(|&r| self.known_place(variety, r).is_some())
+                    .min();
+                let known = || {
+                    self.map.landmasses[landmass]
+                        .regions
+                        .iter()
+                        .copied()
+                        .filter_map(|r| self.known_place(variety, r).map(|name| (r, name.coined)))
+                        .min_by_key(|&(r, since)| (since, r))
+                        .map(|(r, _)| r)
+                };
+                held.or_else(known).map(|region| (people, variety, region))
+            });
+            let Some((people, variety, region)) = witness else {
+                continue;
+            };
+            let speech = &self.varieties[variety];
+            let mut rng = stream(
+                self.seed,
+                &[key("continent name"), landmass as u64, variety as u64],
+            );
+            let foreign =
+                self.map.regions[self.communities[people].home()].landmass != Some(landmass);
+            let Some(name) = continent_name(
+                speech,
+                self.known_place(variety, region).unwrap(),
+                &self.communities[people].name,
+                foreign,
+                &mut rng,
+                self.generation,
+            ) else {
+                continue;
+            };
+            self.continent_names[landmass] = Some(ContinentName {
+                spelled: speech.title(&name.form),
+                ipa: name.form.ipa(),
+                meaning: name.meaning,
+                variety,
+                people,
+                witness: region,
+                since: self.generation,
+            });
+        }
+    }
+
     /// Each land is called what the people holding it calls it: the
     /// largest people living there, once it outnumbers the land's namers
     /// `PLACE_HOLD` times over. A people whose language descends from the
@@ -1599,6 +1765,7 @@ impl World {
     /// own sounds, or coin their own. Land no one lives on keeps its last
     /// name unchanged.
     fn hold_places(&mut self) {
+        self.preserve_places();
         let generation = self.generation;
         // Who lives on each land, and how many of them.
         let mut dwellers: HashMap<usize, Vec<(usize, f32)>> = HashMap::new();
@@ -1661,7 +1828,9 @@ impl World {
             };
             let speech = &self.varieties[variety];
             let name = match (origin, before) {
-                (Some(PlaceOrigin::Inherited), Some(p)) => p.name.clone(),
+                (Some(PlaceOrigin::Inherited), Some(p)) => {
+                    self.known_place(variety, r).unwrap_or(&p.name).clone()
+                }
                 (Some(PlaceOrigin::Borrowed), Some(p)) => {
                     let adapter = Adapter::new(
                         speech.lexicon.living().map(|l| &l.form),
@@ -1688,6 +1857,7 @@ impl World {
                 }
             };
             let origin = origin.unwrap_or(PlaceOrigin::Coined { community: holder });
+            self.remember_place(r);
             self.places[r].push(PlaceName {
                 variety,
                 since: generation,
@@ -1709,16 +1879,39 @@ impl World {
         false
     }
 
-    /// Peoples name the lands they live on or beside that speakers of
-    /// another language hold, as they hear the holders say them: the
-    /// holders' own name if their language descends from the namers',
-    /// otherwise fitted to their sounds. Each language hears a land once;
-    /// the name is then its own word and changes with it.
+    /// Once-per-generation hearing: local observations and partner lands,
+    /// plus one indirect phase-start report per contact in each direction.
     fn hear_places(&mut self) {
-        let generation = self.generation;
-        let mut heard: Vec<(usize, usize, Name)> = Vec::new();
-        let mut ears: HashMap<usize, Adapter> = HashMap::new();
-        for c in self.living().collect::<Vec<_>>() {
+        self.hear_places_phase(true);
+    }
+
+    fn place_heard(
+        &self,
+        receiver: usize,
+        source: usize,
+        name: &Name,
+        rng: &mut impl Rng,
+        ears: &mut HashMap<usize, Adapter>,
+    ) -> Name {
+        let form = if receiver == source || self.descends(receiver, source) {
+            name.form.clone()
+        } else {
+            ears.entry(receiver)
+                .or_insert_with(|| self.ear(receiver))
+                .adapt(&name.form, 0.0, rng)
+        };
+        Name {
+            form,
+            meaning: name.meaning.clone(),
+            coined: self.generation,
+            log: Vec::new(),
+        }
+    }
+
+    fn hear_places_phase(&mut self, reports: bool) {
+        let mut heard: BTreeMap<(usize, usize), Name> = BTreeMap::new();
+        let mut ears = HashMap::new();
+        for c in self.living() {
             let v = self.communities[c].variety;
             let mut near: Vec<usize> = self.communities[c]
                 .lands
@@ -1726,37 +1919,113 @@ impl World {
                 .flat_map(|&r| {
                     std::iter::once(r).chain(self.map.regions[r].neighbours.iter().copied())
                 })
+                .filter(|&r| self.map.regions[r].terrain.is_land())
                 .collect();
             near.sort_unstable();
             near.dedup();
             for r in near {
-                let Some(place) = self.places[r].last() else {
-                    continue;
-                };
-                let known = |(x, _): &(usize, Name)| *x == r;
-                if place.variety == v
-                    || self.varieties[v].exonyms.iter().any(known)
-                    || heard.iter().any(|&(hv, hr, _)| (hv, hr) == (v, r))
-                {
+                if self.known_place(v, r).is_some() || heard.contains_key(&(v, r)) {
                     continue;
                 }
-                let form = if self.descends(v, place.variety) {
-                    place.name.form.clone()
-                } else {
+                let name = if let Some(place) = self.places[r].last() {
                     let mut rng = stream(self.seed, &[key("place exonym"), r as u64, v as u64]);
-                    let ear = ears.entry(v).or_insert_with(|| self.ear(v));
-                    ear.adapt(&place.name.form, 0.0, &mut rng)
+                    self.place_heard(v, place.variety, &place.name, &mut rng, &mut ears)
+                } else {
+                    let mut rng = stream(self.seed, &[key("place survey"), r as u64, v as u64]);
+                    let speech = &self.varieties[v];
+                    let people = &self.communities[c].name;
+                    let Some(name) = place_name(
+                        speech,
+                        Landscape {
+                            terrain: self.map.regions[r].terrain,
+                            coastal: self.map.coastal(r),
+                            island: self.map.island(r),
+                        },
+                        (people, &speech.title(&people.form)),
+                        &mut rng,
+                        self.generation,
+                    ) else {
+                        continue;
+                    };
+                    name
                 };
-                let name = Name {
-                    form,
-                    meaning: place.name.meaning.clone(),
-                    coined: generation,
-                    log: Vec::new(),
-                };
-                heard.push((v, r, name));
+                heard.insert((v, r), name);
             }
         }
-        for (v, r, name) in heard {
+        let mut contacts: Vec<(usize, usize)> = self
+            .contacts
+            .iter()
+            .filter(|k| self.communities[k.a].living() && self.communities[k.b].living())
+            .map(|k| (k.a.min(k.b), k.a.max(k.b)))
+            .collect();
+        contacts.sort_unstable();
+        contacts.dedup();
+        // Held-land hearing takes precedence over indirect reports, regardless
+        // of which contact would otherwise have been visited first.
+        for &(a, b) in &contacts {
+            for (speaker, listener) in [(a, b), (b, a)] {
+                let (source, receiver) = (
+                    self.communities[speaker].variety,
+                    self.communities[listener].variety,
+                );
+                for &r in &self.communities[speaker].lands {
+                    if self.known_place(receiver, r).is_some() || heard.contains_key(&(receiver, r))
+                    {
+                        continue;
+                    }
+                    let Some(name) = self.known_place(source, r) else {
+                        continue;
+                    };
+                    let mut rng =
+                        stream(self.seed, &[key("place exonym"), r as u64, receiver as u64]);
+                    heard.insert(
+                        (receiver, r),
+                        self.place_heard(receiver, source, name, &mut rng, &mut ears),
+                    );
+                }
+            }
+        }
+        if reports {
+            let mut knowledge = HashMap::new();
+            for &(a, b) in &contacts {
+                for (direction, (speaker, listener)) in [(a, b), (b, a)].into_iter().enumerate() {
+                    let (source, receiver) = (
+                        self.communities[speaker].variety,
+                        self.communities[listener].variety,
+                    );
+                    let candidates: Vec<usize> = knowledge
+                        .entry(source)
+                        .or_insert_with(|| self.known_lands(source))
+                        .iter()
+                        .copied()
+                        .filter(|&r| {
+                            self.known_place(receiver, r).is_none()
+                                && !heard.contains_key(&(receiver, r))
+                        })
+                        .collect();
+                    if candidates.is_empty() {
+                        continue;
+                    }
+                    let mut rng = stream(
+                        self.seed,
+                        &[
+                            key("place report"),
+                            u64::from(self.generation),
+                            a as u64,
+                            b as u64,
+                            direction as u64,
+                        ],
+                    );
+                    let r = candidates[index(&mut rng, candidates.len())];
+                    let name = self.known_place(source, r).unwrap();
+                    heard.insert(
+                        (receiver, r),
+                        self.place_heard(receiver, source, name, &mut rng, &mut ears),
+                    );
+                }
+            }
+        }
+        for ((v, r), name) in heard {
             self.varieties[v].exonyms.push((r, name));
         }
     }
@@ -1834,6 +2103,12 @@ impl World {
     /// from them, otherwise fitted to `variety`'s sounds. `None` if no one
     /// has named it yet.
     fn heard_place(&self, region: usize, parent: usize, variety: &Variety) -> Option<Name> {
+        if let Some((_, name)) = variety.exonyms.iter().find(|(r, _)| *r == region) {
+            return Some(name.clone());
+        }
+        if let Some(name) = self.known_place(parent, region) {
+            return Some(name.clone());
+        }
         let place = self.places[region].last()?;
         if place.variety == parent || self.descends(parent, place.variety) {
             return Some(place.name.clone());
@@ -2189,11 +2464,13 @@ impl World {
     /// world. Returns the new variety's index. The old variety goes extinct
     /// if no one else speaks it.
     pub fn shift(&mut self, community: usize, target: usize) -> usize {
+        self.refresh_places();
         let generation = self.generation;
         let old = self.communities[community].variety;
         let source = self.communities[target].variety;
         let old_sounds = self.varieties[old].established();
         let mut new = self.varieties[source].fork(source, generation);
+        self.inherit_places(source, &mut new);
         new.profile = self.varieties[old].profile.clone();
         let mut rng = self.community_rng(community, "substrate");
 
@@ -2275,6 +2552,37 @@ impl World {
             });
             new.lexicon.slots[i].introduce(id, self.params.loan_share);
         }
+        let mut memory_rng = stream(
+            self.seed,
+            &[
+                key("place memory shift"),
+                u64::from(generation),
+                community as u64,
+                new_index as u64,
+            ],
+        );
+        let mut ear = None;
+        for region in self.known_lands(old) {
+            if new.exonyms.iter().any(|(r, _)| *r == region) {
+                continue;
+            }
+            let name = self.known_place(old, region).unwrap();
+            let adapter = ear.get_or_insert_with(|| {
+                Adapter::new(
+                    new.lexicon.living().map(|l| &l.form),
+                    &new.profile.inventory,
+                )
+            });
+            new.exonyms.push((
+                region,
+                Name {
+                    form: adapter.adapt(&name.form, 0.0, &mut memory_rng),
+                    meaning: name.meaning.clone(),
+                    coined: generation,
+                    log: Vec::new(),
+                },
+            ));
+        }
         // The people keeps its own name and names its new speech after
         // itself, the new language's way: Bulgars gave Slavic speech theirs.
         new.name = self.fresh_language_name(&new, &self.communities[community].name);
@@ -2289,6 +2597,7 @@ impl World {
                     name: p.name.clone(),
                     origin: PlaceOrigin::Kept,
                 };
+                self.remember_place(region);
                 self.places[region].push(kept);
             }
         }
@@ -2301,7 +2610,7 @@ impl World {
                 variety: new_index,
             },
         ));
-        self.hold_places();
+        self.refresh_places();
         new_index
     }
 
@@ -4224,6 +4533,382 @@ mod tests {
         assert!(
             kin >= 10 && kin >= 2 * strangers,
             "{kin} changes reached the dialect, {strangers} the strangers"
+        );
+    }
+
+    fn cultural_world(seed: u64) -> World {
+        World::with_map(seed, Params::static_society(), MapSize::Large)
+    }
+
+    fn cultural_found(world: &mut World, seed: u64, region: usize) -> usize {
+        world.found_seeded(
+            &Naming::People,
+            &SoundProfile::base(),
+            seed,
+            0.5,
+            0.5,
+            Some(region),
+            Some(Livelihood::Farming),
+        )
+    }
+
+    fn cultural_memory(world: &mut World, variety: usize, region: usize, meaning: &str) {
+        let speech = &world.varieties[variety];
+        let mut name = Naming::Place {
+            place: "river".into(),
+        }
+        .coin(speech, None, world.generation)
+        .unwrap();
+        name.meaning = meaning.into();
+        world.varieties[variety].exonyms.push((region, name));
+    }
+
+    #[test]
+    fn cultural_owned_and_surveyed_names_survive_departure_and_evolve() {
+        let mut evolved = 0;
+        for seed in 0..8 {
+            let mut world = cultural_world(seed);
+            let home = world
+                .map
+                .landmasses
+                .iter()
+                .find(|m| m.kind == LandmassKind::Continent)
+                .unwrap()
+                .anchor;
+            let c = cultural_found(&mut world, seed, home);
+            let v = world.communities[c].variety;
+            let surveyed = world.map.regions[home]
+                .neighbours
+                .iter()
+                .copied()
+                .find(|&r| world.map.regions[r].terrain.is_land())
+                .unwrap();
+            assert!(world.places[surveyed].is_empty());
+            let survey = world.known_place(v, surveyed).unwrap().clone();
+            let local = world.known_place(v, home).unwrap().clone();
+            let elsewhere = (0..world.map.regions.len())
+                .find(|&r| {
+                    world.map.regions[r].terrain.is_land() && !world.known_lands(v).contains(&r)
+                })
+                .unwrap();
+            world.communities[c].lands = vec![elsewhere];
+            world.refresh_places();
+            assert_eq!(world.known_place(v, home), Some(&local));
+            assert_eq!(world.known_place(v, surveyed), Some(&survey));
+            world.run(100);
+            assert_eq!(
+                world.places[home][0].name, local,
+                "the abandoned local record freezes"
+            );
+            let remembered = world.known_place(v, home).unwrap();
+            assert_eq!(remembered.meaning, local.meaning);
+            for entry in &remembered.log {
+                if entry.generation > local.log.last().map_or(0, |e| e.generation) {
+                    let Event::SoundLaw { law, .. } = entry.event else {
+                        panic!("only sound laws");
+                    };
+                    assert!(
+                        world.varieties[v]
+                            .laws
+                            .iter()
+                            .any(|&(g, l)| g == entry.generation && l == law)
+                    );
+                }
+            }
+            evolved += usize::from(remembered.form != local.form);
+            let lands = world.known_lands(v);
+            assert!(lands.windows(2).all(|pair| pair[0] < pair[1]));
+            assert_eq!(
+                world.varieties[v]
+                    .exonyms
+                    .iter()
+                    .filter(|(r, _)| *r == home)
+                    .count(),
+                1
+            );
+            assert!(world.places[surveyed].is_empty());
+        }
+        assert!(
+            evolved >= 4,
+            "{evolved} of 8 abandoned names evolved in memory"
+        );
+    }
+
+    #[test]
+    fn cultural_contacts_teach_partner_lands_without_ownership_or_contact_retention() {
+        let mut world = cultural_world(9);
+        let regions: Vec<_> = world.map.landmasses.iter().map(|m| m.anchor).collect();
+        let a = cultural_found(&mut world, 9, regions[0]);
+        let b = cultural_found(&mut world, 10, *regions.last().unwrap());
+        let (av, bv) = (world.communities[a].variety, world.communities[b].variety);
+        let (ah, bh) = (world.communities[a].home(), world.communities[b].home());
+        assert!(world.known_place(av, bh).is_none());
+        assert!(world.known_place(bv, ah).is_none());
+        world.connect(a, b, 0.5, ContactKind::Trade);
+        world.refresh_places();
+        let remembered = world.known_place(av, bh).unwrap().clone();
+        assert!(world.known_place(bv, ah).is_some());
+        assert_eq!(world.communities[a].lands, vec![ah]);
+        world.contacts.clear();
+        world.refresh_places();
+        assert_eq!(world.known_place(av, bh), Some(&remembered));
+    }
+
+    #[test]
+    fn cultural_reports_are_batched_one_per_direction_and_first_hearing_wins() {
+        let mut world = cultural_world(11);
+        let home = world.map.landmasses[0].anchor;
+        let a = cultural_found(&mut world, 11, home);
+        let b = cultural_found(&mut world, 12, home);
+        let c = cultural_found(&mut world, 13, home);
+        let (av, bv, cv) = (
+            world.communities[a].variety,
+            world.communities[b].variety,
+            world.communities[c].variety,
+        );
+        let remote: Vec<_> = (0..world.map.regions.len())
+            .filter(|&r| {
+                world.map.regions[r].terrain.is_land()
+                    && [av, bv, cv]
+                        .iter()
+                        .all(|&v| world.known_place(v, r).is_none())
+            })
+            .take(6)
+            .collect();
+        assert_eq!(remote.len(), 6);
+        for &r in &remote[..3] {
+            cultural_memory(&mut world, av, r, "A's remembered shore");
+        }
+        for &r in &remote[3..] {
+            cultural_memory(&mut world, bv, r, "B's remembered shore");
+        }
+        // The chart's present local record is not what these speakers remember.
+        let outsider = world.varieties.len();
+        world.varieties.push(Variety::found(
+            17,
+            &SoundProfile::base(),
+            Livelihood::Farming,
+        ));
+        let mut current = Naming::People
+            .coin(&world.varieties[outsider], None, 0)
+            .unwrap();
+        current.meaning = "the present holder's unrelated name".into();
+        for &r in &remote {
+            world.places[r].push(PlaceName {
+                variety: outsider,
+                since: 0,
+                name: current.clone(),
+                origin: PlaceOrigin::Borrowed,
+            });
+        }
+        world.connect(b, c, 0.5, ContactKind::Trade);
+        world.connect(a, b, 0.5, ContactKind::Trade);
+        for _ in 0..3 {
+            world.refresh_places();
+        }
+        assert!(
+            remote.iter().all(|&r| world.known_place(cv, r).is_none()),
+            "local refresh spends no report"
+        );
+        world.hear_places();
+        assert_eq!(
+            remote[..3]
+                .iter()
+                .filter(|&&r| world.known_place(bv, r).is_some())
+                .count(),
+            1
+        );
+        assert_eq!(
+            remote[3..]
+                .iter()
+                .filter(|&&r| world.known_place(av, r).is_some())
+                .count(),
+            1
+        );
+        assert_eq!(
+            remote[3..]
+                .iter()
+                .filter(|&&r| world.known_place(cv, r).is_some())
+                .count(),
+            1
+        );
+        assert!(
+            remote[..3]
+                .iter()
+                .all(|&r| world.known_place(cv, r).is_none()),
+            "no same-phase cascade"
+        );
+        let heard = remote[..3]
+            .iter()
+            .copied()
+            .find(|&r| world.known_place(bv, r).is_some())
+            .unwrap();
+        let first = world.known_place(bv, heard).unwrap().clone();
+        assert_eq!(
+            first.meaning, "A's remembered shore",
+            "reports use the reporter's memory"
+        );
+        world.varieties[av]
+            .exonyms
+            .iter_mut()
+            .find(|(r, _)| *r == heard)
+            .unwrap()
+            .1
+            .meaning = "later political name".into();
+        world.generation += 1;
+        world.hear_places();
+        assert_eq!(world.known_place(bv, heard), Some(&first));
+        assert_eq!(
+            world.varieties[bv]
+                .exonyms
+                .iter()
+                .filter(|(r, _)| *r == heard)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn cultural_forks_snapshot_own_names_without_later_parental_discoveries() {
+        let mut world = cultural_world(12);
+        let home = world.map.landmasses[0].anchor;
+        let c = cultural_found(&mut world, 12, home);
+        let parent = world.communities[c].variety;
+        let local = world.known_place(parent, home).unwrap().clone();
+        let d = world.split(c, None, 0.0);
+        let daughter = world.communities[d].variety;
+        assert_eq!(world.known_place(daughter, home), Some(&local));
+        let remote = (0..world.map.regions.len())
+            .find(|&r| {
+                world.map.regions[r].terrain.is_land()
+                    && world.known_place(parent, r).is_none()
+                    && world.known_place(daughter, r).is_none()
+            })
+            .unwrap();
+        cultural_memory(&mut world, parent, remote, "a discovery after separation");
+        assert!(world.known_place(daughter, remote).is_none());
+        assert!(world.known_place(parent, remote).is_some());
+    }
+
+    #[test]
+    fn cultural_shift_unites_memories_and_target_memories_win_conflicts() {
+        let mut world = cultural_world(14);
+        let home = world.map.landmasses[0].anchor;
+        let a = cultural_found(&mut world, 14, home);
+        let b = cultural_found(&mut world, 15, home);
+        let (old, target) = (world.communities[a].variety, world.communities[b].variety);
+        let remote: Vec<_> = (0..world.map.regions.len())
+            .filter(|&r| {
+                world.map.regions[r].terrain.is_land()
+                    && world.known_place(old, r).is_none()
+                    && world.known_place(target, r).is_none()
+            })
+            .take(3)
+            .collect();
+        cultural_memory(&mut world, old, remote[0], "old speakers' shore");
+        cultural_memory(&mut world, target, remote[1], "target speakers' shore");
+        cultural_memory(&mut world, old, remote[2], "old conflict");
+        cultural_memory(&mut world, target, remote[2], "target conflict");
+        let old_known = world.known_lands(old);
+        let target_known = world.known_lands(target);
+        let shifted = world.shift(a, b);
+        for r in old_known.into_iter().chain(target_known) {
+            assert!(world.known_place(shifted, r).is_some());
+        }
+        assert_eq!(
+            world.known_place(shifted, remote[0]).unwrap().meaning,
+            "old speakers' shore"
+        );
+        assert_eq!(
+            world.known_place(shifted, remote[2]).unwrap().meaning,
+            "target conflict"
+        );
+        let known = world.known_lands(shifted);
+        assert_eq!(world.varieties[shifted].exonyms.len(), known.len());
+    }
+
+    #[test]
+    fn cultural_continent_attestations_have_true_witnesses_and_stay_fixed() {
+        let mut world = cultural_world(15);
+        assert!(world.continent_names.iter().all(Option::is_none));
+        let before = world.clone();
+        let landmass = world
+            .map
+            .landmasses
+            .iter()
+            .position(|m| m.kind == LandmassKind::Continent)
+            .unwrap();
+        let home = world.map.landmasses[landmass].anchor;
+        let c = cultural_found(&mut world, 15, home);
+        let name = world.continent_names[landmass].clone().unwrap();
+        assert_eq!(
+            (name.people, name.variety, name.witness, name.since),
+            (c, world.communities[c].variety, home, 0)
+        );
+        assert!(world.known_place(name.variety, name.witness).is_some());
+        assert_eq!(world.map.regions[name.witness].landmass, Some(landmass));
+        assert!(
+            before.continent_names.iter().all(Option::is_none),
+            "historical snapshot excludes later attestations"
+        );
+        world.run(80);
+        let conqueror = cultural_found(&mut world, 16, home);
+        world.communities[conqueror].size = world.communities[c].size * 3.0;
+        world.refresh_places();
+        assert_eq!(world.continent_names[landmass], Some(name));
+        for (id, mass) in world.map.landmasses.iter().enumerate() {
+            if mass.kind == LandmassKind::Island {
+                assert!(world.continent_names[id].is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn cultural_continent_naming_prefers_first_knower_and_earliest_foreign_witness() {
+        let mut world = cultural_world(42);
+        let continents: Vec<_> = world
+            .map
+            .landmasses
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| m.kind == LandmassKind::Continent)
+            .map(|(id, m)| (id, m.anchor))
+            .collect();
+        let a = cultural_found(&mut world, 42, continents[0].1);
+        let b = cultural_found(&mut world, 43, continents[0].1);
+        let (av, bv) = (world.communities[a].variety, world.communities[b].variety);
+        let target = continents[1].0;
+        assert!(world.continent_names[target].is_none());
+        let later = world.map.landmasses[target].regions[0];
+        let earlier = world.map.landmasses[target].regions[1];
+        cultural_memory(&mut world, av, later, "heard later");
+        cultural_memory(&mut world, av, earlier, "heard earlier");
+        world.varieties[av]
+            .exonyms
+            .iter_mut()
+            .find(|(r, _)| *r == later)
+            .unwrap()
+            .1
+            .coined = 15;
+        world.varieties[av]
+            .exonyms
+            .iter_mut()
+            .find(|(r, _)| *r == earlier)
+            .unwrap()
+            .1
+            .coined = 2;
+        cultural_memory(
+            &mut world,
+            bv,
+            later,
+            "another people's still earlier report",
+        );
+        world.generation = 20;
+        world.refresh_places();
+        let name = world.continent_names[target].as_ref().unwrap();
+        assert_eq!(
+            (name.people, name.variety, name.witness, name.since),
+            (a, av, earlier, 20)
         );
     }
 }

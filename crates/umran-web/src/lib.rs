@@ -8,9 +8,10 @@ use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use umran_sim::compare::intelligibility;
 use umran_sim::concepts::{Concept, by_id, related};
-use umran_sim::ideas::{NEEDS, Need};
+use umran_sim::geography::LandmassKind;
+use umran_sim::ideas::{NEEDS, Need, SacredKind};
 use umran_sim::morphology::Slot;
-use umran_sim::names::PlaceOrigin;
+use umran_sim::names::{Name, PlaceOrigin};
 use umran_sim::phoneme::{Backness, Manner, Secondary};
 use umran_sim::{
     Action, CATALOG, CONCEPTS, Challenge, Chronicle, Craft, ENGINE_REVISION, Event, FORMAT, Fall,
@@ -595,12 +596,25 @@ impl Bench {
                                 &v.lexicon,
                             )
                         }),
+                        known_lands: world
+                            .known_lands(id)
+                            .into_iter()
+                            .filter_map(|region| {
+                                let name = world.known_place(id, region)?;
+                                Some(KnownLandView {
+                                    region,
+                                    spelled: v.title(&name.form),
+                                    ipa: name.form.ipa(),
+                                })
+                            })
+                            .collect(),
                     }
                 })
                 .collect(),
             states: state_views(world),
             religions: religion_views(world),
             crafts: craft_views(world),
+            continents: continent_views(world),
             contacts: world
                 .contacts
                 .iter()
@@ -754,7 +768,19 @@ impl Bench {
                     outline: r.outline.clone(),
                     coastal: map.coastal(id),
                     island: map.island(id),
+                    landmass: r.landmass,
                     neighbours: r.neighbours.clone(),
+                })
+                .collect(),
+            landmasses: map
+                .landmasses
+                .iter()
+                .enumerate()
+                .map(|(id, landmass)| LandmassView {
+                    id,
+                    kind: landmass.kind,
+                    regions: landmass.regions.clone(),
+                    anchor: landmass.anchor,
                 })
                 .collect(),
         })
@@ -1102,6 +1128,48 @@ fn builders(v: &Variety) -> Vec<Builder> {
         shape: affix(&v.morphology.renewing),
     });
     out
+}
+
+fn continent_views(world: &World) -> Vec<ContinentView> {
+    world
+        .map
+        .landmasses
+        .iter()
+        .enumerate()
+        .filter(|(_, landmass)| landmass.kind == LandmassKind::Continent)
+        .map(|(landmass, _)| ContinentView {
+            landmass,
+            name: world.continent_names[landmass]
+                .as_ref()
+                .map(|name| ContinentNameView {
+                    name: NameView {
+                        name: name.spelled.clone(),
+                        ipa: name.ipa.clone(),
+                        meaning: name.meaning.clone(),
+                    },
+                    variety: name.variety,
+                    people: name.people,
+                    witness: name.witness,
+                    since: name.since,
+                }),
+            peoples: world
+                .living()
+                .filter(|&c| {
+                    world.communities[c]
+                        .lands
+                        .iter()
+                        .any(|&r| world.map.regions[r].landmass == Some(landmass))
+                })
+                .collect(),
+            religions: world
+                .religions
+                .iter()
+                .enumerate()
+                .filter(|(_, r)| world.map.regions[r.shrine.region].landmass == Some(landmass))
+                .map(|(id, _)| id)
+                .collect(),
+        })
+        .collect()
 }
 
 /// Every land that has been held, with all its names.
@@ -1476,6 +1544,16 @@ struct NameView {
     meaning: String,
 }
 
+impl NameView {
+    fn new(variety: &Variety, name: &Name) -> Self {
+        Self {
+            name: variety.title(&name.form),
+            ipa: name.form.ipa(),
+            meaning: name.meaning.clone(),
+        }
+    }
+}
+
 #[derive(Serialize)]
 struct Exonym {
     /// The community that uses it.
@@ -1650,6 +1728,8 @@ struct Overview {
     states: Vec<StateView>,
     /// Every religion founded, in order.
     religions: Vec<ReligionView>,
+    /// Each continent, as it was known in this generation.
+    continents: Vec<ContinentView>,
     /// The crafts, where each began, and who holds it now.
     crafts: Vec<CraftView>,
     /// What each land that has been held is called, through history.
@@ -1661,6 +1741,24 @@ struct Overview {
     annals: Vec<Annal>,
     /// Tellings set aside, with what they told that this one does not.
     tellings: Vec<TellingView>,
+}
+
+#[derive(Serialize)]
+struct ContinentView {
+    landmass: usize,
+    name: Option<ContinentNameView>,
+    peoples: Vec<usize>,
+    religions: Vec<usize>,
+}
+
+#[derive(Serialize)]
+struct ContinentNameView {
+    #[serde(flatten)]
+    name: NameView,
+    variety: usize,
+    people: usize,
+    witness: usize,
+    since: u32,
 }
 
 #[derive(Serialize)]
@@ -1821,6 +1919,15 @@ struct VarietyView {
     /// 0–1: how much of the core vocabulary its speech still shares with
     /// `high`, while it is spoken.
     kept_from_high: Option<f32>,
+    /// Named lands remembered by this language, ordered by region.
+    known_lands: Vec<KnownLandView>,
+}
+
+#[derive(Serialize)]
+struct KnownLandView {
+    region: usize,
+    spelled: String,
+    ipa: String,
 }
 
 #[derive(Serialize)]
@@ -1936,6 +2043,14 @@ struct ReligionView {
     /// Its meanings, and how the sacred language and each followers'
     /// language says them.
     words: Vec<RenderingRow>,
+    shrine: ShrineView,
+}
+
+#[derive(Serialize)]
+struct ShrineView {
+    region: usize,
+    kind: SacredKind,
+    name: NameView,
 }
 
 #[derive(Serialize)]
@@ -2046,11 +2161,7 @@ fn state_views(world: &World) -> Vec<StateView> {
                     Fall::Conquered { .. } => "conquered",
                     Fall::Collapsed => "collapsed",
                 }),
-                founder: NameView {
-                    name: variety.title(&s.founder.form),
-                    ipa: s.founder.form.ipa(),
-                    meaning: s.founder.meaning.clone(),
-                },
+                founder: NameView::new(variety, &s.founder),
                 fallen_to: match s.fell {
                     Some((_, Fall::Conquered { by })) => Some(by),
                     _ => None,
@@ -2177,11 +2288,7 @@ fn religion_views(world: &World) -> Vec<ReligionView> {
                 name: sacred.title(&r.name.form),
                 meaning: r.name.meaning.clone(),
                 ipa: r.name.form.ipa(),
-                founder: NameView {
-                    name: sacred.title(&r.founder.form),
-                    ipa: r.founder.form.ipa(),
-                    meaning: r.founder.meaning.clone(),
-                },
+                founder: NameView::new(sacred, &r.founder),
                 people: r.people,
                 land: r.land,
                 founded: r.founded,
@@ -2196,6 +2303,11 @@ fn religion_views(world: &World) -> Vec<ReligionView> {
                 scripture: r.scripture,
                 followers,
                 words: renderings(world, Need::Faith, &varieties),
+                shrine: ShrineView {
+                    region: r.shrine.region,
+                    kind: r.shrine.kind,
+                    name: NameView::new(sacred, &r.shrine.name),
+                },
             }
         })
         .collect()
@@ -2344,6 +2456,15 @@ struct MapView {
     width: f32,
     height: f32,
     regions: Vec<RegionView>,
+    landmasses: Vec<LandmassView>,
+}
+
+#[derive(Serialize)]
+struct LandmassView {
+    id: usize,
+    kind: LandmassKind,
+    regions: Vec<usize>,
+    anchor: usize,
 }
 
 #[derive(Serialize)]
@@ -2353,8 +2474,9 @@ struct RegionView {
     site: [f32; 2],
     outline: Vec<[f32; 2]>,
     coastal: bool,
-    /// Land on a body of land of at most two regions.
+    /// Land on an island rather than a continent.
     island: bool,
+    landmass: Option<usize>,
     /// Regions sharing a border with it.
     neighbours: Vec<usize>,
 }
@@ -2403,6 +2525,169 @@ mod tests {
             .unwrap();
         w.act(r#"{"kind":"run","generations":10}"#).unwrap();
         w
+    }
+
+    #[test]
+    fn landmasses_partition_land_and_identify_islands() {
+        let w = Bench::new(5, "large").unwrap();
+        let map: serde_json::Value = serde_json::from_str(&w.map().unwrap()).unwrap();
+        let regions = map["regions"].as_array().unwrap();
+        let landmasses = map["landmasses"].as_array().unwrap();
+        for (id, landmass) in landmasses.iter().enumerate() {
+            assert_eq!(landmass["id"], id);
+            let members = landmass["regions"].as_array().unwrap();
+            assert!(members.contains(&landmass["anchor"]));
+            assert!(
+                members
+                    .windows(2)
+                    .all(|pair| pair[0].as_u64() < pair[1].as_u64())
+            );
+            for member in members {
+                let region = &regions[member.as_u64().unwrap() as usize];
+                assert_eq!(region["landmass"], id);
+                assert_ne!(region["terrain"], "sea");
+                assert_eq!(region["island"], landmass["kind"] == "island");
+            }
+        }
+        for region in regions {
+            if region["terrain"] == "sea" {
+                assert!(region["landmass"].is_null());
+                assert_eq!(region["island"], false);
+            } else {
+                let landmass = &landmasses[region["landmass"].as_u64().unwrap() as usize];
+                assert!(
+                    landmass["regions"]
+                        .as_array()
+                        .unwrap()
+                        .contains(&region["id"])
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn continent_names_and_memberships_belong_to_the_requested_generation() {
+        let mut w = Bench::new(5, "large").unwrap();
+        let map: serde_json::Value = serde_json::from_str(&w.map().unwrap()).unwrap();
+        let continents: Vec<_> = map["landmasses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|landmass| landmass["kind"] == "continent")
+            .collect();
+        let mut action: serde_json::Value =
+            serde_json::from_str(&found("Hill", "familiar")).unwrap();
+        action["region"] = continents[0]["anchor"].clone();
+        w.act(&action.to_string()).unwrap();
+        let founded: serde_json::Value = serde_json::from_str(&w.overview(0).unwrap()).unwrap();
+        let first = &founded["continents"][0];
+        assert_eq!(first["landmass"], continents[0]["id"]);
+        assert_eq!(first["peoples"], serde_json::json!([0]));
+        assert_eq!(first["name"]["people"], 0);
+        assert_eq!(first["name"]["variety"], 0);
+        assert_eq!(first["name"]["since"], 0);
+        assert_eq!(first["name"]["witness"], action["region"]);
+        assert!(
+            continents[0]["regions"]
+                .as_array()
+                .unwrap()
+                .contains(&first["name"]["witness"])
+        );
+        assert!(founded["continents"][1]["name"].is_null());
+
+        w.act(r#"{"kind":"run","generations":1}"#).unwrap();
+        action["region"] = continents[1]["anchor"].clone();
+        w.act(&action.to_string()).unwrap();
+        w.act(r#"{"kind":"religion","community":1}"#).unwrap();
+        let later: serde_json::Value = serde_json::from_str(&w.overview(1).unwrap()).unwrap();
+        assert_eq!(later["continents"][0]["name"], first["name"]);
+        assert_eq!(later["continents"][1]["name"]["people"], 1);
+        assert_eq!(later["continents"][1]["name"]["since"], 1);
+        assert!(
+            later["continents"][1]["peoples"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!(1))
+        );
+        let shrine = &later["religions"][0]["shrine"];
+        let shrine_landmass =
+            &map["regions"][shrine["region"].as_u64().unwrap() as usize]["landmass"];
+        let sacred_continent = later["continents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|continent| continent["landmass"] == *shrine_landmass)
+            .unwrap();
+        assert_eq!(sacred_continent["religions"], serde_json::json!([0]));
+
+        let early: serde_json::Value = serde_json::from_str(&w.overview(0).unwrap()).unwrap();
+        assert_eq!(early["continents"], founded["continents"]);
+    }
+
+    #[test]
+    fn known_lands_keep_the_languages_names_after_it_falls_silent() {
+        let mut w = Bench::new(5, "small").unwrap();
+        w.act(&found("Hill", "familiar")).unwrap();
+        w.act(&found("Coast", "polynesian")).unwrap();
+        let before: serde_json::Value = serde_json::from_str(&w.overview(0).unwrap()).unwrap();
+        let known = before["varieties"][0]["knownLands"].as_array().unwrap();
+        let held = before["communities"][0]["lands"].as_array().unwrap();
+        assert!(
+            held.iter()
+                .all(|region| known.iter().any(|land| land["region"] == *region))
+        );
+        assert!(
+            known
+                .windows(2)
+                .all(|pair| pair[0]["region"].as_u64() < pair[1]["region"].as_u64())
+        );
+        let home = &before["communities"][0]["region"];
+        let local = before["places"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|place| place["region"] == *home)
+            .unwrap()["names"]
+            .as_array()
+            .unwrap()
+            .last()
+            .unwrap();
+        let remembered = known.iter().find(|land| land["region"] == *home).unwrap();
+        assert_eq!(remembered["spelled"], local["spelled"]);
+        assert_eq!(remembered["ipa"], local["ipa"]);
+
+        w.act(r#"{"kind":"shift","community":0,"toward":1}"#)
+            .unwrap();
+        let after: serde_json::Value = serde_json::from_str(&w.overview(0).unwrap()).unwrap();
+        assert_eq!(after["varieties"][0]["spoken"], false);
+        assert_eq!(
+            after["varieties"][0]["knownLands"],
+            before["varieties"][0]["knownLands"]
+        );
+    }
+
+    #[test]
+    fn shrines_retain_their_sacred_names_when_followers_change_speech() {
+        let mut w = Bench::new(5, "small").unwrap();
+        w.act(&found("Hill", "familiar")).unwrap();
+        w.act(r#"{"kind":"religion","community":0}"#).unwrap();
+        let before: serde_json::Value = serde_json::from_str(&w.overview(0).unwrap()).unwrap();
+        let shrine = &before["religions"][0]["shrine"];
+        let sacred = before["religions"][0]["sacred"].as_u64().unwrap() as usize;
+        let known = before["varieties"][sacred]["knownLands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|land| land["region"] == shrine["region"])
+            .unwrap();
+        assert_eq!(shrine["name"]["name"], known["spelled"]);
+        assert_eq!(shrine["name"]["ipa"], known["ipa"]);
+        w.act(&found("Coast", "polynesian")).unwrap();
+        w.act(r#"{"kind":"shift","community":0,"toward":1}"#)
+            .unwrap();
+        w.act(r#"{"kind":"run","generations":30}"#).unwrap();
+        let after: serde_json::Value = serde_json::from_str(&w.overview(30).unwrap()).unwrap();
+        assert_eq!(after["religions"][0]["shrine"], *shrine);
     }
 
     #[test]

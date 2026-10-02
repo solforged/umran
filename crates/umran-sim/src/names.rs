@@ -102,6 +102,19 @@ impl Name {
     }
 }
 
+/// A fixed chart attestation, not a living name subject to sound laws.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ContinentName {
+    pub spelled: String,
+    pub ipa: String,
+    pub meaning: String,
+    pub variety: usize,
+    pub people: usize,
+    /// A region on this continent known to the naming language.
+    pub witness: usize,
+    pub since: u32,
+}
+
 impl Naming {
     /// Why this naming is not one the engine offers, if it is not.
     pub fn validate(&self) -> Result<(), String> {
@@ -412,6 +425,46 @@ pub fn place_name(
     })
 }
 
+/// A continent heading in a witness language's own words. Local headings
+/// may name a place or people; foreign headings may call the land far or new.
+pub fn continent_name(
+    variety: &Variety,
+    place: &Name,
+    people: &Name,
+    foreign: bool,
+    rng: &mut impl Rng,
+    generation: u32,
+) -> Option<Name> {
+    let word = |id| variety.lexicon.word_for(by_id(id)?).map(|l| &l.form);
+    let head = word("land").or_else(|| word("soil"))?;
+    let qualities: &[&str] = if foreign {
+        &["wide", "big", "far", "new"]
+    } else {
+        &["wide", "big"]
+    };
+    let mut modifiers: Vec<(&Form, String)> = qualities
+        .iter()
+        .filter_map(|&id| word(id).map(|form| (form, format!("the {id} land"))))
+        .collect();
+    modifiers.push((
+        &place.form,
+        format!("the land of {}", variety.title(&place.form)),
+    ));
+    if !foreign {
+        modifiers.push((
+            &people.form,
+            format!("the land of the {}", variety.title(&people.form)),
+        ));
+    }
+    let (modifier, meaning) = modifiers.swap_remove(index(rng, modifiers.len()));
+    Some(Name {
+        form: clipped(variety.morphology.compound(modifier, head), MAX_PLACE_NAME),
+        meaning,
+        coined: generation,
+        log: Vec::new(),
+    })
+}
+
 /// How a land came by one of its names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlaceOrigin {
@@ -698,5 +751,44 @@ mod tests {
         assert_eq!(title("ɛwe"), "Ɛwe");
         assert_eq!(title("āna"), "Āna");
         assert_eq!(title(""), "");
+    }
+
+    #[test]
+    fn cultural_continent_headings_use_own_compounds_and_foreign_qualities() {
+        for seed in 0..40 {
+            let speech = variety("familiar", seed);
+            let people = Naming::People.coin(&speech, None, 0).unwrap();
+            let place = Naming::Place {
+                place: "river".into(),
+            }
+            .coin(&speech, None, 0)
+            .unwrap();
+            let head = &speech
+                .lexicon
+                .word_for(by_id("soil").unwrap())
+                .unwrap()
+                .form;
+            for foreign in [false, true] {
+                let mut rng = crate::rng::stream(seed, &[crate::rng::key("continent name")]);
+                let name = continent_name(&speech, &place, &people, foreign, &mut rng, 0).unwrap();
+                let mut modifiers: Vec<&Form> = ["wide", "big", "far", "new"]
+                    .into_iter()
+                    .filter(|id| foreign || !["far", "new"].contains(id))
+                    .filter_map(|id| speech.lexicon.word_for(by_id(id).unwrap()).map(|l| &l.form))
+                    .collect();
+                modifiers.push(&place.form);
+                if !foreign {
+                    modifiers.push(&people.form);
+                }
+                assert!(modifiers.into_iter().any(|modifier| clipped(
+                    speech.morphology.compound(modifier, head),
+                    MAX_PLACE_NAME
+                ) == name.form));
+                assert!(name.form.vowel_count() <= MAX_PLACE_NAME);
+                if !foreign {
+                    assert!(!["the far land", "the new land"].contains(&name.meaning.as_str()));
+                }
+            }
+        }
     }
 }
