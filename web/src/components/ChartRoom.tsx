@@ -45,6 +45,7 @@ export function ChartRoom({ revision, books, onOpen, onBegin, onSample, onImport
       <button type="button" className="room-world-open" onClick={() => onOpen(book.id)} aria-label={`${lead ? "Continue" : "Open"} ${book.title}`}>
         <span className="room-world-title">
           <strong>{book.title}</strong>
+          {book.author ? <span className="room-world-author">by {book.author}</span> : null}
           <small>year {book.generation * YEARS}</small>
           <span className="room-last-line"><Told text={book.subtitle} /></span>
           {lead ? <span className="room-continue">Continue <ArrowRight size={17} aria-hidden="true" /></span> : null}

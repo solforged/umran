@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Annal, Catalog, Community, ContactKind, Craft, EthosAxis, NotebookNote, Overview, ReadEngine, SettlementIntent, Subject, WorldMap } from "../model";
+import type { Annal, Catalog, Community, DecisionView, NotebookNote, Overview, ReadEngine, Subject, WorldMap } from "../model";
 import { YEARS } from "../model";
 import * as lore from "../lore";
 import { CONTACT_NAME, LIVELIHOOD_NAME, TERRAIN_NAME, temperament, weatherDeparture } from "../lore";
@@ -24,16 +24,6 @@ const CONTENTS = [
   ["elsewhere", "Take it elsewhere"],
 ] as const;
 
-type SavedAction =
-  | { kind: "found" }
-  | { kind: "settle"; choice: { community: number; intent: SettlementIntent; destination: number; share: number } }
-  | { kind: "connect"; a: number; b: number; contact: ContactKind }
-  | { kind: "shift"; community: number; toward: number }
-  | { kind: "state" | "religion"; community: number }
-  | { kind: "craft"; community: number; craft: Craft }
-  | { kind: "temper"; community: number; axis: EthosAxis; amount: number }
-  | { kind: "run"; generations: number };
-interface SavedTelling { id: number; actions: SavedAction[] }
 
 /// Sections whose full form runs to hundreds of rows per language. In the
 /// book they open on request, so thirty languages do not render thirty
@@ -48,37 +38,6 @@ function Folded({ summary, children }: { summary: ReactNode; children: () => Rea
   </details>;
 }
 
-/** The recipe is the true authorship record; a facade decisions() will replace
- * this parser. Annal.before currently identifies authored settlements only.
- * Never infer authorship by matching an annal's prose or kind. */
-function recipeDecisions(save: string, telling: number, throughAction: number, generation: number) {
-  const saved = JSON.parse(save) as { tellings: SavedTelling[] };
-  const decisions: { generation: number; index: number; action: SavedAction }[] = [];
-  let at = 0;
-  const actions = saved.tellings.find((t) => t.id === telling)?.actions ?? [];
-  for (let index = 0; index < Math.min(actions.length, throughAction); index++) {
-    const action = actions[index];
-    if (action.kind === "run") at += action.generations;
-    else if (at <= generation) decisions.push({ generation: at, index, action });
-  }
-  return { saved, decisions };
-}
-
-/** Labels describe the recorded constraint, not an inferred effect on speech. */
-function decisionLabel(action: SavedAction, overview: Overview): string {
-  const people = (id: number) => overview.communities[id]?.name ?? `people ${id + 1}`;
-  switch (action.kind) {
-    case "found": return "Found a people";
-    case "settle": return `${action.choice.intent}: ${people(action.choice.community)} to land ${action.choice.destination + 1}, ${Math.round(action.choice.share * 100)}% of the people`;
-    case "connect": return `${CONTACT_NAME[action.contact]} between ${people(action.a)} and ${people(action.b)}`;
-    case "shift": return `${people(action.community)} take up the tongue of ${people(action.toward)}`;
-    case "state": return `${people(action.community)} found a state`;
-    case "religion": return `${people(action.community)} found a faith`;
-    case "craft": return `Teach ${action.craft} to ${people(action.community)}`;
-    case "temper": return `Turn the ${action.axis} leaning of ${people(action.community)} by ${action.amount}`;
-    case "run": return `Run ${action.generations * YEARS} years`;
-  }
-}
 
 function subjectId(subject: Subject, overview: Overview): string {
   switch (subject.kind) {
@@ -112,11 +71,13 @@ function CausePhrase({ annal, overview }: { annal: Annal; overview: Overview }) 
   return <span className="book-cause"> After <a href={`#event-${trigger.id}`} title={trigger.text}>{lore.EVENT_KIND[trigger.kind].name.toLowerCase()} in year {trigger.generation * YEARS}</a>{cause ? ` · ${names?.[cause.mechanism] ?? cause.mechanism}` : ""}.</span>;
 }
 
-function ChronicleEntry({ annal, overview, anchor = false }: { annal: Annal; overview: Overview; anchor?: boolean }) {
+/// `marked` names the author's decision on the entry itself; the whole
+/// chronicle passes false, since the decision's own row precedes it there.
+function ChronicleEntry({ annal, overview, anchor = false, marked = true }: { annal: Annal; overview: Overview; anchor?: boolean; marked?: boolean }) {
   return <li id={anchor ? `event-${annal.id}` : undefined} className="book-annal">
     <span className="gen">{annal.generation * YEARS}</span>
     <div><Told text={annal.text} /><CausePhrase annal={annal} overview={overview} />
-      {annal.before ? <small className="book-decision">The author’s decision</small> : null}
+      {marked && annal.decision !== undefined ? <small className="book-decision">The author’s decision</small> : null}
       {annal.specimen.length ? <Specimen words={annal.specimen} changes={annal.laws.length > 0} /> : null}
       {annal.notes.length ? <ul className="apparatus">{annal.notes.map((note, i) => <li key={i}><Told text={note} /></li>)}</ul> : null}
     </div>
@@ -150,9 +111,10 @@ export function PeopleChapter({ community: c, ctx }: { community: Community; ctx
   </article>;
 }
 
-export function Book({ engine, catalog, version, generation, overview, map, title, notes, onBack }: {
+export function Book({ engine, catalog, version, generation, overview, map, title, author, decisionsFor, notes, onBack }: {
   engine: ReadEngine; catalog: Catalog; version: number; generation: number;
-  overview: Overview; map: WorldMap; title: string; notes: NotebookNote[]; onBack: () => void;
+  overview: Overview; map: WorldMap; title: string; author: string | null;
+  decisionsFor: (telling: number) => DecisionView[]; notes: NotebookNote[]; onBack: () => void;
 }) {
   const [copied, setCopied] = useState<string | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
@@ -182,14 +144,16 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
     wordAnchor: (variety, concept) => `word-${variety}-${concept}`,
   };
   const annals = useMemo(() => individualAnnals(overview.annals).sort((a, b) => a.generation - b.generation), [overview]);
-  const { saved, decisions } = useMemo(
-    () => recipeDecisions(engine.save(), overview.telling, overview.point.action, generation),
-    [engine, version, overview.telling, overview.point.action, generation],
-  );
+  const decisions = useMemo(() => engine.decisions().filter((decision) => decision.generation <= generation), [engine, version, generation]);
+  const annalOrder = new Map(annals.map((annal, index) => [annal.id, index]));
   const chronicle = [
-    ...annals.map((annal) => ({ generation: annal.generation, annal, decision: null })),
-    ...decisions.map((decision) => ({ generation: decision.generation, annal: null, decision })),
-  ].sort((a, b) => a.generation - b.generation || Number(a.annal === null) - Number(b.annal === null));
+    ...annals.map((annal, order) => ({ generation: annal.generation, order, annal, decision: null })),
+    ...decisions.map((decision) => ({
+      generation: decision.generation,
+      order: Math.min(...decision.annals.map((id) => annalOrder.get(id) ?? Infinity)),
+      annal: null, decision,
+    })),
+  ].sort((a, b) => a.generation - b.generation || a.order - b.order || Number(a.annal !== null) - Number(b.annal !== null));
   const peoples = [...overview.communities].sort((a, b) => a.coined - b.coined || a.id - b.id);
   const families = [...new Set(overview.varieties.map((v) => v.family))];
   const climate = useMemo(() => engine.climate(generation), [engine, generation, version]);
@@ -223,6 +187,7 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
       <section className="book-chapter book-frontispiece" id="book-frontispiece" data-book-chapter="frontispiece">
         {head(0)}
         <p className="book-kicker">The book of a world</p><h1>{title}</h1>
+        {author ? <p className="book-author">by {author}</p> : null}
         <figure>
           <Miniature map={map} peoples={overview.communities.filter((c) => c.ended === null).sort((a, b) => b.size - a.size).map((c) => ({
             name: c.name, family: overview.varieties[c.variety].family, region: c.region, lands: c.lands,
@@ -349,23 +314,23 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
         {head(5)}<h2>The chronicle</h2>
         <p className="muted">Every recorded entry, in year order. Challenges are named only where the engine recorded a cause.</p>
         <ol className="book-chronicle">{chronicle.map(({ annal, decision }) => annal
-          ? <ChronicleEntry key={annal.id} annal={annal} overview={overview} anchor />
+          ? <ChronicleEntry key={annal.id} annal={annal} overview={overview} anchor marked={false} />
           : <li className="book-decision-row" key={`decision-${decision!.index}`}>
               <span className="gen">{decision!.generation * YEARS}</span>
-              <div>{decisionLabel(decision!.action, overview)}<small className="book-decision">The author’s decision</small></div>
+              <div><Told text={decision!.text} /><small className="book-decision">The author’s decision</small></div>
             </li>
         )}</ol>
       </section>
       <section className="book-chapter" id="book-notes" data-book-chapter="notes">
         {head(6)}<h2>Notes</h2>
-        {notes.length ? notes.map((note) => (
+        {notes.length ? [...notes].sort((a, b) => a.generation - b.generation).map((note) => (
           <article className="book-subject book-note" key={note.id}>
             <h3>{note.title}</h3>
             <p className="muted">Year {note.generation * YEARS}{note.archived ? " · archived" : ""}
               {note.target ? ` · ${overview.tellings.find((t) => t.id === note.target!.reading.telling)?.name ?? "An unavailable telling"}` : ""}
             </p>
-            {note.target ? <p>Subject: {note.target.reading.telling === overview.telling ? ctx.link(note.target.subject, note.label) : note.label}.</p> : null}
-            <p>{note.body}</p>
+            {note.target ? <p>Subject: {ctx.link(note.target.subject, note.label)}.</p> : null}
+            {note.body.split(/\n\s*\n/).filter((paragraph) => paragraph.trim()).map((paragraph, index) => <p key={index}>{paragraph}</p>)}
           </article>
         )) : <p className="muted">No notes written yet.</p>}
       </section>
@@ -374,12 +339,12 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
         {overview.tellings.filter((t) => t.id !== overview.telling).length ? <ul className="roster">
           {overview.tellings.filter((t) => t.id !== overview.telling).map((t) => {
             const diverging = t.parent
-              ? saved.tellings.find((savedTelling) => savedTelling.id === t.id)?.actions.slice(t.parent.point.action).find((action) => action.kind !== "run")
+              ? decisionsFor(t.id).find((decision) => decision.index === t.parent!.point.action)
               : undefined;
             return <li key={t.id}>
               <h3>{t.name}</h3>
               <p>{t.parent ? `Diverged in year ${(t.from ?? 0) * YEARS}, at decision ${t.parent.point.action}` : "The first telling"}; latest year {t.latest * YEARS}.</p>
-              {diverging ? <p>The diverging decision: {decisionLabel(diverging, overview)}.</p> : null}
+              {diverging ? <p>The diverging decision: <Told text={diverging.text} /></p> : null}
             </li>;
           })}
         </ul> : <p className="muted">This is the only telling.</p>}

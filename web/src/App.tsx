@@ -10,7 +10,6 @@ import { Modal } from "./components/Modal";
 import { ChartRoom } from "./components/ChartRoom";
 import { Stage } from "./components/Stage";
 import { TellingComparison } from "./components/TellingComparison";
-import { Notebook, makeNote } from "./components/Notebook";
 import type { MapMotionReading } from "./components/MapView";
 import { Founding } from "./components/Founding";
 import { sampleWorld } from "./sample";
@@ -27,6 +26,7 @@ import {
   saveBook,
   savePlace,
   setLast,
+  worldName,
   type Shelf as ShelfIndex,
 } from "./shelf";
 
@@ -62,16 +62,17 @@ export default function App() {
   const [viewPoint, setViewPoint] = useState<HistoryPoint | null>(null);
   const [compareWith, setCompareWith] = useState<number | null>(null);
   const [notebook, setNotebook] = useState<NotebookNote[]>([]);
-  const [notebookDraft, setNotebookDraft] = useState<NotebookNote | null | undefined>(undefined);
   const [viewing, setViewing] = useState<number | null>(null); // null = latest
   const [community, setCommunity] = useState(0);
   const [dialog, setDialog] = useState<DialogKind | null>(null);
   const [page, setPage] = useState<Page>("stage");
+  const [bookChapter, setBookChapter] = useState<string | null>(null);
+  useEffect(() => {
+    if (page === "book" && bookChapter) document.getElementById(`book-${bookChapter}`)?.scrollIntoView({ block: "start" });
+  }, [page, bookChapter]);
   const [comparisonReturn, setComparisonReturn] = useState(0);
   const [sheetReturn, setSheetReturn] = useState(0);
   const liftedDialog = useLiftedValue(dialog, () => setSheetReturn((n) => n + 1));
-  const notebookPage = useMemo(() => notebookDraft === undefined ? null : { initial: notebookDraft }, [notebookDraft]);
-  const liftedNotebook = useLiftedValue(notebookPage, () => setSheetReturn((n) => n + 1));
   const liftedComparison = useLiftedValue(compareWith, () => setComparisonReturn((n) => n + 1));
   const [worldMap, setWorldMap] = useState<WorldMap | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -79,14 +80,10 @@ export default function App() {
   const [info, setInfo] = useState<string | null>(null);
   const bookId = view.kind === "book" ? view.id : null;
 
-  // The author's name for the world, given at founding; kept on every save.
-  const authored = useRef<string | null>(null);
   const persist = useCallback(() => {
     if (!engine.current || bookId === null) return true;
     try {
-      const prior = shelf.books.find((b) => b.id === bookId);
-      const title = authored.current ?? (prior?.named ? prior.title : null);
-      const entry = describe(bookId, engine.current.overview(engine.current.latest()), title);
+      const entry = describe(bookId, engine.current);
       setShelf(saveBook(shelf, entry, engine.current.save()));
       setSaveError(null);
       return true;
@@ -115,12 +112,11 @@ export default function App() {
     }
   }, [unsaved, bookId, persist]);
 
-  const adopt = useCallback((id: string, next: Engine, fresh: boolean, title: string | null = null) => {
+  const adopt = useCallback((id: string, next: Engine, fresh: boolean) => {
     engine.current?.dispose();
     engine.current = next;
-    authored.current = title;
     mapMotion.current = null;
-    setNotebook(next.notebook()); setNotebookDraft(undefined);
+    setNotebook(next.notebook());
     setWorldMap(next.map());
     setViewTelling(null); setViewPoint(null); setCompareWith(null);
     setInitialFocus(null); setFocus({ kind: "world" });
@@ -271,13 +267,20 @@ export default function App() {
       return persist() ? null : "The entry is kept in this open world, but browser storage failed. Export a save file before closing.";
     } catch (e) { return message(e); }
   };
+  const removeNote = (id: string): string | null => {
+    try {
+      engine.current?.removeNote(id);
+      setNotebook(engine.current?.notebook() ?? []);
+      return persist() ? null : "The note was removed in this open world, but browser storage failed. Export a save file before closing.";
+    } catch (e) { return message(e); }
+  };
   const openNote = (note: NotebookNote): string | null => {
     try {
       const destination = engine.current?.resolveNote(note.id);
       if (!destination) return "This note has no fixed year.";
       setViewTelling(destination.reading.telling); setViewPoint(destination.reading.point);
       setInitialFocus(destination.subject); setTellingVersion((v) => v + 1);
-      setViewing(null); setNotebookDraft(undefined); setError(null);
+      setViewing(null); setError(null);
       return null;
     } catch (e) { return message(e); }
   };
@@ -317,7 +320,13 @@ export default function App() {
     [overview, persist],
   );
 
-  const begin = useCallback((next: Engine, title: string | null = null) => adopt(newBookId(), next, true, title), [adopt]);
+  const begin = useCallback((next: Engine, title: string | null, author: string | null) => {
+    next.setTitle(title ?? "");
+    next.setAuthor(author ?? "");
+    try { localStorage.setItem("umran.author", author ?? ""); }
+    catch { /* The author is still kept in the world save. */ }
+    adopt(newBookId(), next, true);
+  }, [adopt]);
 
   const sample = async () => {
     try {
@@ -393,7 +402,7 @@ export default function App() {
     );
   }
 
-  const title = shelf.books.find((b) => b.id === view.id)?.title ?? "A new world";
+  const title = engine.current?.title() ?? worldName(overview) ?? "A new world";
 
   const notices = (
     <>
@@ -476,6 +485,8 @@ export default function App() {
         {notices}
         <Book
           engine={readingEngine}
+          author={engine.current!.author()}
+          decisionsFor={(telling) => engine.current!.read(telling).decisions()}
           notes={notebook}
           catalog={catalog}
           version={version}
@@ -505,6 +516,8 @@ export default function App() {
         sheet={page === "book" ? (
           <Book
             engine={readingEngine}
+            author={engine.current!.author()}
+            decisionsFor={(telling) => engine.current!.read(telling).decisions()}
             notes={notebook}
             catalog={catalog}
             version={version}
@@ -521,14 +534,16 @@ export default function App() {
         comparisonReturn={comparisonReturn}
         sheetReturn={sheetReturn}
         mapMotion={mapMotion}
-        onNotebook={() => setNotebookDraft(null)}
-        onKeep={(subject, label) => setNotebookDraft(makeNote(overview, subject, label))}
+        notes={notebook}
+        onSaveNote={saveNote}
+        onRemoveNote={removeNote}
+        onReadNote={openNote}
         onReadPoint={(point) => { setViewTelling(overview.telling); setViewPoint(point); setViewing(null); }}
         canUndo={overview.point.offset > 0 || overview.point.action > 1}
         selected={selected}
         onSelect={setCommunity}
         onShelf={toShelf}
-        onBook={() => setPage("book")}
+        onBook={(chapter) => { setBookChapter(chapter ?? null); setPage("book"); }}
         onRestore={readTelling}
         onRenameTelling={renameTelling}
         onCompare={setCompareWith}
@@ -542,8 +557,6 @@ export default function App() {
         onDialog={setDialog}
       />
       {dialogs}
-      {liftedNotebook.value ? <Notebook open={notebookDraft !== undefined} notes={notebook} overview={overview} initial={liftedNotebook.value.initial}
-        onClose={() => setNotebookDraft(undefined)} onSave={saveNote} onRead={openNote} /> : null}
       {liftedComparison.value !== null ? <TellingComparison open={compareWith !== null} engine={engine.current} overview={overview} map={worldMap} other={liftedComparison.value}
         onClose={() => setCompareWith(null)} onRead={readTelling} onContinue={(from) => { setCompareWith(null); run({ kind: "run", generations: 1 }, from); }} /> : null}
     </div>

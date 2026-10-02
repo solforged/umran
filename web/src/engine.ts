@@ -23,6 +23,7 @@ import type {
   WorldMap,
   SettlementPreview,
   Story,
+  DecisionView,
 } from "./model";
 
 // One WASM module; the Workbench owns the history and React only holds view
@@ -44,6 +45,7 @@ function reader(bench: Workbench | ReadView, save: () => string) {
   const rivers = new Map<number, RiverNamesView>();
   const clear = () => { cached = undefined; weather = undefined; riverYear = -1; rivers.clear(); };
   const engine: ReadEngine = {
+    decisions: () => JSON.parse(bench.decisions()) as DecisionView[],
     overviewAt: (point) => JSON.parse(bench.overviewAt(JSON.stringify(point))) as Overview,
     settlement: (point, community, intent, share, destination) =>
       JSON.parse(bench.settlement(JSON.stringify(point), community, intent, share, destination ?? -1)) as SettlementPreview,
@@ -105,10 +107,16 @@ function wrap(bench: Workbench): Engine {
     notebook: () => JSON.parse(bench.notebook()) as NotebookNote[],
     saveNote: (note) => { bench.saveNote(JSON.stringify(note)); },
     resolveNote: (id) => JSON.parse(bench.resolveNote(id)) as Destination | null,
+    removeNote: (id) => { bench.removeNote(id); },
+    title: () => bench.title() ?? null,
+    author: () => bench.author() ?? null,
+    setTitle: (title) => { bench.setTitle(title); },
+    setAuthor: (author) => { bench.setAuthor(author); },
     read: (telling, point) => {
       const encoded = point ? JSON.stringify(point) : "";
       const get = () => scope(telling, encoded);
       return {
+        decisions: () => get().decisions(),
         latest: () => get().latest(), overview: (g) => get().overview(g), overviewAt: (p) => get().overviewAt(p),
         settlement: (p, c, intent, share, destination) => get().settlement(p, c, intent, share, destination),
         lexicon: (g, v) => get().lexicon(g, v), kin: (g, v) => get().kin(g, v), word: (g, v, c) => get().word(g, v, c),

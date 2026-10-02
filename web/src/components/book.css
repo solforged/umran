@@ -26,6 +26,7 @@
 .book-frontispiece { text-align: center; }
 .book-kicker { margin-top: 2rem; color: var(--ink-soft); font-family: var(--display); letter-spacing: .15em; text-transform: uppercase; font-size: .8rem; }
 .book-frontispiece h1 { font-family: var(--display); font-size: clamp(2.2rem, 4vw, 3.8rem); font-weight: 500; margin: .5rem 0; }
+.book-author { font-family: var(--display); font-style: italic; color: var(--ink-soft); margin: .5rem 0 1rem; }
 .book-frontispiece figure { margin: 2rem 0 1.5rem; }
 .book-frontispiece .miniature { aspect-ratio: 2.2; width: 100%; max-height: 24rem; overflow: hidden; border: 1px solid var(--line); }
 .book-frontispiece .miniature svg { width: 100%; height: 100%; }

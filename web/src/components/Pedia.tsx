@@ -2,8 +2,8 @@ import { createContext, Fragment, useCallback, useContext, useEffect, useId, use
 import { createPortal } from "react-dom";
 import {
   ArrowLeft,
-  Bookmark,
   Eye,
+  Feather,
   AudioLines,
   Earth,
   Globe,
@@ -23,7 +23,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, Catalog, CityView, Community, Craft, CraftView, ReadEngine, Ethos, HolyLand, Overview, PlaceExonym, ReligionView, RenderingRow, ShrineKind, StateView, Variety, WordMap, WorldMap } from "../model";
+import type { Annal, Catalog, CityView, Community, Craft, CraftView, ReadEngine, Ethos, HistoryPoint, HolyLand, NotebookNote, Overview, PlaceExonym, ReligionView, RenderingRow, ShrineKind, StateView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, FAITH_HOW, FALL_NAME, howCame, howNamed, hue, LIVELIHOOD_NAME, MECHANISM_NAME, RISE_NAME, SCHISM_CAUSE, STRONG, temperament, TERMS, TERRAIN_NAME, weatherDeparture, type Term } from "../lore";
 import { filterHistory, findAnnal, individualAnnals, relatedMoments, subjectHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
@@ -40,6 +40,7 @@ import { Renderings } from "./Renderings";
 import { closeClosingDialogs, emphasizeInk, reducedMotion, useLiftedValue } from "../motion";
 import { Popover } from "./Popover";
 import { CHAPTER, ChapterSummary, LawEvidence, LoanCauseText, WordOrigin, type ChapterContext } from "./LanguageChapter";
+import { Margin } from "./Margin";
 
 /// What the encyclopedia is open at.
 export type Focus = import("../model").Subject;
@@ -50,7 +51,11 @@ const KIN_FLOOR = 0.05;
 interface Context {
   storyView: HistoryView;
   onStoryView: (view: HistoryView) => void;
-  onKeep: (subject: Focus, label: string) => void;
+  notes: NotebookNote[];
+  onSaveNote: (note: NotebookNote) => string | null;
+  onRemoveNote: (id: string) => string | null;
+  onReadNote: (note: NotebookNote) => string | null;
+  onStartNote: () => void;
   onFollow: (subject: Focus, label: string) => void;
   historyView: HistoryView;
   onHistoryView: (view: HistoryView) => void;
@@ -74,6 +79,7 @@ interface Context {
   onUndo: () => void;
   onDialog: (kind: InterventionKind, community: number) => void;
   onReconsider: (annal: Annal) => void;
+  onReturnBefore: (point: HistoryPoint) => void;
   /// Tell the history again as a telling set aside told it.
   onRestore: (telling: number) => void;
   onRenameTelling: (telling: number, name: string) => void;
@@ -258,11 +264,13 @@ export function Pedia({
           </ol>
       <FolioContext.Provider value={folio}>
         <article className="card" key={cardKey}>
-          <div className="card-reading-tools">
-            <button type="button" className="link" onClick={() => context.onKeep(focus, `${focusLabel(focus, context)}${focus.kind === "word" ? ` in ${context.overview.varieties[focus.variety]?.name ?? "its language"}` : ""}`)}><Bookmark size={14} aria-hidden="true" /> Note this</button>
-            {!["world", "history", "event", "word"].includes(focus.kind) ? <button type="button" className="link" onClick={() => context.onFollow(focus, focusLabel(focus, context))}><Eye size={14} aria-hidden="true" /> Follow</button> : null}
-          </div>
+          {!["world", "history", "event", "word"].includes(focus.kind) ? <div className="card-reading-tools">
+            <button type="button" className="link" onClick={() => context.onFollow(focus, focusLabel(focus, context))}><Eye size={14} aria-hidden="true" /> Follow</button>
+          </div> : null}
           <Card focus={focus} context={context} />
+          <Margin notes={context.notes} overview={context.overview} subject={focus}
+            label={`${focusLabel(focus, context)}${focus.kind === "word" ? ` in ${context.overview.varieties[focus.variety]?.name ?? "its language"}` : ""}`}
+            onSave={context.onSaveNote} onRemove={context.onRemoveNote} onRead={context.onReadNote} onStart={context.onStartNote} />
         </article>
       </FolioContext.Provider>
       {folioHost && visible && !hidden
@@ -1165,7 +1173,7 @@ function HistoryCard({ context }: { context: Context }) {
               return <li key={i}>
                 <kind.icon size={17} aria-hidden="true" />
                 <div><span className="event-kind">{kind.name}</span>
-                  <button type="button" className="moment" onClick={() => context.go({ kind: "event", id: annal.id })}><Told text={annal.text} /></button>
+                  <button type="button" className="moment" onClick={() => context.go({ kind: "event", id: annal.id })}>{annal.decision !== undefined ? <span className="pen" title="The author's decision"><Feather size={12} aria-hidden="true" /></span> : null}<Told text={annal.text} /></button>
                   <EntryAnnotations annal={annal} context={context} />
                   <AnnalLinks annal={annal} context={context} />
                 </div>
@@ -2074,14 +2082,15 @@ function EventCard({ annal, context }: { annal: Annal; context: Context }) {
   return (
     <>
       <CardHead icon={kind.icon} kind={`${kind.name} · year ${annal.generation * YEARS}`} title={title} sub={sub} />
+      {annal.decision !== undefined ? <p className="book-decision">The author's decision, year {annal.generation * YEARS}</p> : null}
       <p className="event-text">
         <Told text={annal.text} />
         <EntryAnnotations annal={annal} context={context} />
       </p>
       {annal.settlement ? <>
         <SettlementAccount plan={annal.settlement.plan} overview={overview} map={context.map} />
-        {annal.before ? <button type="button" className="reconsider" onClick={() => context.onReconsider(annal)}>Return before this decision</button> : null}
       </> : null}
+      {annal.before ? <button type="button" className="reconsider" onClick={() => annal.settlement ? context.onReconsider(annal) : context.onReturnBefore(annal.before!)}>Return before this decision</button> : null}
       {annal.variety !== null && annal.specimen.length > 0 ? (
         <Specimen
           words={annal.specimen}

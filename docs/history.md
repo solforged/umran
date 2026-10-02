@@ -32,6 +32,29 @@ success; an invalid choice cannot set aside the current future. The facade
 adds a session mutation counter to every preview. Even another same-year
 action invalidates a pending preview.
 
+Every world-event annal names its author's `decision` by action index when
+one produced it, and carries `before`, the exact `HistoryPoint` immediately
+before that action in its telling. Simulation events carry neither. Grouped
+annals take the first member's decision; each member keeps its own attribution.
+Settlement evidence remains separate from authorship. The facade's
+`decisions()` lists every non-run action through the current reading in index
+order, with its generation, kind, sentence, people, resulting language for
+founding/settlement/shift, and original annal IDs (including grouped members).
+A decision with no emitted events stays in the list with an empty `annals`.
+
+The book and cards mark authorship from that engine record, not by matching
+entry text or parsing the save. Each decision has a row before the entries
+it produced, including decisions that produced no entries. Event cards can
+return to `before` for any decision; settlements reopen their account,
+while other decisions return the reading to that exact point.
+
+The world's title and author are metadata in the engine save, independent
+of its tellings. Founding sets both; the frontispiece names the author and
+the chart room keeps that byline with the title. Exporting and importing a
+save preserves both. The browser also remembers the last author name in
+`umran.author` as a convenience for the next founding, not as the save's
+source of authorship.
+
 Settlement previews use the Rust census, food budgets and physical travel
 graph. A territorial boundary propagates through held lands only, with each
 side connected to its own heart. Journeys require routes from every inhabited
@@ -65,13 +88,22 @@ charts share a camera, while their populations, holdings, language families and
 word forms come from their own views. Following a link opens that telling;
 continuing either panel is an explicit intervention.
 
-The workbench shows one overlaid sheet at a time. Opening Find, the notes,
-or a decision lifts the current wide card before the dialog settles, then
+The workbench shows one overlaid sheet at a time. Opening Find or a
+decision lifts the current wide card before the dialog settles, then
 restores its section when the dialog closes. Comparison returns to the
 chronicle card's "Other tellings" section, or the matching tab on a phone.
 Escape dismisses only the top sheet. A wide card's filters and reading
 position survive the temporary cover, as they do a visit to a word's
 history.
+
+The author's notes are written and edited in the margin of each card,
+dated at the year being read and tied to its exact telling, point, and
+subject. The world card can also name a year. The chronicle card collects
+every note in year order, with links back to those exact cards; the book's
+Notes chapter collects their text with links to its subject sections.
+Keeping, editing, or removing a note saves it with the world without
+changing the simulation or invalidating a settlement preview. Notes from
+older saves keep their kind and archived flag and remain visible.
 
 Saves are recipes (`Recipe`: format, `ENGINE_REVISION`, seed, map size,
 active telling ID and all telling records), not resolved states.
@@ -81,6 +113,12 @@ valid active account. Bump `ENGINE_REVISION` whenever a change would make an
 existing recipe replay differently; loading a recipe from another revision
 still works but the UI warns that its words may differ. Resolved-state saves
 remain possible later work if exact preservation across versions matters.
+
+The save document flattens that recipe alongside the notebook and optional
+`title` and `author` strings. Old saves without these fields load with neither
+set. `title()` and `author()` read this document metadata; `setTitle` and
+`setAuthor` update it, with an empty string clearing the field. Export and
+import preserve both without changing actions, simulation state, or revision.
 
 The browser keeps a shelf of saved worlds (`web/src/shelf.ts`): each
 world's history autosaves under localStorage key `langgen.book.<id>`, and

@@ -576,7 +576,10 @@ export interface Annal {
   members: Annal[];
   languages: number[];
   settlement?: SettlementRecord;
+  /// Set on every entry a decision produced: the point just before it.
   before?: HistoryPoint;
+  /// The index of the decision that produced this entry, if one did.
+  decision?: number;
   generation: number;
   kind: "found" | "split" | "settlement" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "climate" | "river-flow" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper" | "grammar";
   /// The annalist's words; words of the language are marked *thus*.
@@ -804,12 +807,20 @@ export interface ReadEngine {
   map(): WorldMap;
   wordMap(generation: number, concept: string): WordMap;
   save(): string;
+  /// The author's decisions in this reading's telling, up to its point.
+  decisions(): DecisionView[];
 }
 export interface Engine extends ReadEngine {
   foundingPreview(): FoundingPreview;
   notebook(): NotebookNote[];
   saveNote(note: NotebookNote): void;
   resolveNote(id: string): Destination | null;
+  removeNote(id: string): void;
+  /// The author's title and name, kept in the save; empty clears.
+  title(): string | null;
+  author(): string | null;
+  setTitle(title: string): void;
+  setAuthor(author: string): void;
   dispose(): void;
   read(telling: number, point?: HistoryPoint | null): ReadEngine;
   previous(reading: ReadingRef): ReadingRef;
@@ -888,4 +899,19 @@ export interface Cause {
   /// The annal that triggered this one.
   event: number;
   mechanism: Mechanism;
+}
+
+/// An author's decision in the current telling, as the engine recorded it.
+export interface DecisionView {
+  /// The action's index in its telling.
+  index: number;
+  generation: number;
+  kind: "settle" | "found" | "connect" | "shift" | "state" | "religion" | "craft" | "temper";
+  /// One sentence in the chronicle's voice.
+  text: string;
+  people: number[];
+  /// The resulting language for founding, settlement, or shift.
+  variety: number | null;
+  /// Original annal ids, including members of grouped entries.
+  annals: string[];
 }

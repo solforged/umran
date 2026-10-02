@@ -181,6 +181,9 @@
   outline: 1px solid var(--accent);
   outline-offset: 3px;
 }
+.founding-by { display: flex; align-items: baseline; justify-content: center; gap: .35rem; color: var(--ink-soft); font-family: var(--display); font-style: italic; }
+:root .founding .founding-author { width: 9rem; min-width: 0; padding: .1rem 0; border: 0; border-bottom: 1px dashed var(--line); border-radius: 0; background: transparent; color: var(--ink); font: inherit; }
+.founding-author:focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; }
 
 .founding .map-scale-note {
   margin: 0.3rem 0;

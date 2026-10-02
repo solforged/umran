@@ -52,13 +52,17 @@ Read further when the task touches it:
   over a quiet density of sound changes; the cards in `Pedia`, the
   frontispiece as the home card, each subject card opening in
   derivation order with a `Decide…` menu, a card's long sections
-  (`Leaf`) opening wide over the map; `LanguageChapter` holds the
-  language sections the card and the book share); and the book (`Book`:
-  the world read in chapter order, laid over the map like a wide card).
-  Every menu is a `Popover`: one open at a time, closed by an outside
-  click or Escape. Annals carry the peoples, lands, and laws they tell
-  of, so every entry can link to their cards, and an optional `cause`
-  naming the entry that triggered them where the engine recorded it.
+  (`Leaf`) opening wide over the map, and the author's notes written in
+  its margin (`Margin`); `LanguageChapter` holds the language sections
+  the card and the book share); and the book (`Book`: the world read in
+  chapter order, laid over the map like a wide card, with the author
+  named on the frontispiece). Every menu is a `Popover`: one open at a
+  time, closed by an outside click or Escape. Annals carry the peoples,
+  lands, and laws they tell of, so every entry can link to their cards;
+  an optional `cause` naming the entry that triggered them where the
+  engine recorded it; and the `decision` that produced them, recorded by
+  the engine as the action runs, never inferred from prose. The save
+  carries the world's title and author beside its tellings and notes.
   Every language view carries a specimen, a few basic words chosen by
   `SPECIMEN` in the facade (`Specimen.tsx` shows them), and sound-change
   annals carry it with each word's form before.

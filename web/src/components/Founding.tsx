@@ -57,7 +57,7 @@ function drawFounder(catalog: Catalog, key: number): Founder {
 /// Found for real behind the chart, then hand that same engine to the workshop.
 export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
   catalog: Catalog;
-  onBegin: (engine: Engine, title: string | null) => void;
+  onBegin: (engine: Engine, title: string | null, author: string | null) => void;
   onChartRoom: () => void;
   onSample: () => Promise<void>;
 }) {
@@ -67,6 +67,10 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
   const [founders, setFounders] = useState<Founder[]>(() => Array.from({ length: FIRST_PEOPLES }, (_, key) => drawFounder(catalog, key)));
   const [selected, setSelected] = useState<number | null>(0);
   const [title, setTitle] = useState<string | null>(null);
+  const [author, setAuthor] = useState(() => {
+    try { return localStorage.getItem("umran.author") ?? ""; }
+    catch { return ""; }
+  });
   const [camera, setCamera] = useState<MapCamera | undefined>();
   const [adjusting, setAdjusting] = useState(false);
   const [built, setBuilt] = useState<Built | null>(null);
@@ -161,6 +165,8 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
           <div className="cartouche-kicker">A chart of</div>
           <input className="founding-title" aria-label="World name" value={title ?? defaultTitle ?? ""}
             placeholder="An unnamed world" onChange={(event) => setTitle(event.target.value)} />
+          <label className="founding-by">by <input className="founding-author" aria-label="Author"
+            placeholder="Your name" value={author} onChange={(event) => setAuthor(event.target.value)} /></label>
           <p className="cartouche-note">{lands} lands, as the first travellers drew them · seed {worldSeed}</p>
           <p className="map-scale-note">{catalog.mapSizes.find((choice) => choice.id === size)?.description}</p>
           <div className="cartouche-tools">
@@ -257,7 +263,7 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
           if (!engine.current || !currentBuild) return;
           try {
             handedOver.current = true;
-            onBegin(engine.current, title?.trim() && title.trim() !== defaultTitle ? title.trim() : null);
+            onBegin(engine.current, title?.trim() && title.trim() !== defaultTitle ? title.trim() : null, author.trim() || null);
           } catch (failure) { handedOver.current = false; setError(message(failure)); }
         }}><Feather size={18} aria-hidden="true" /> Begin</button>
       </footer>

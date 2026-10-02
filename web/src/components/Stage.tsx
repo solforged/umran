@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { flushSync } from "react-dom";
-import { BookOpen, ChevronDown, Layers, Map as MapIcon, Pause, Play, ScrollText, Search, SkipForward, Square, StepForward, Undo2, X } from "lucide-react";
-import type { Annal, Catalog, Craft, Destination, HistoryPoint, ReadEngine, EthosAxis, Overview, SettlementChoice, SettlementPreview, WorldMap } from "../model";
+import { BookOpen, ChevronDown, Feather, Layers, Map as MapIcon, Pause, Play, ScrollText, Search, SkipForward, Square, StepForward, Undo2, X } from "lucide-react";
+import type { Annal, Catalog, Craft, Destination, HistoryPoint, NotebookNote, ReadEngine, EthosAxis, Overview, SettlementChoice, SettlementPreview, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { ETHOS_AXES, ETHOS_POLES, EVENT_KIND, hue } from "../lore";
 import { PACES } from "../words";
@@ -97,8 +97,10 @@ export function Stage({
   initialFocus,
   onFocus,
   onSettle,
-  onNotebook,
-  onKeep,
+  notes,
+  onSaveNote,
+  onRemoveNote,
+  onReadNote,
   onReadPoint,
   comparisonReturn,
   sheetReturn,
@@ -119,7 +121,7 @@ export function Stage({
   onSelect: (community: number) => void;
   onShelf: () => void;
   /// Open the book of this world.
-  onBook: () => void;
+  onBook: (chapter?: string) => void;
   /// Tell the history again as a telling set aside told it.
   onRestore: (telling: number) => void;
   onRenameTelling: (telling: number, name: string) => void;
@@ -139,8 +141,10 @@ export function Stage({
   /// The open card changed; the app keeps it as the reader's place.
   onFocus: (focus: Focus) => void;
   onSettle: (choice: SettlementChoice, preview: SettlementPreview) => void;
-  onNotebook: () => void;
-  onKeep: (subject: Focus, label: string) => void;
+  notes: NotebookNote[];
+  onSaveNote: (note: NotebookNote) => string | null;
+  onRemoveNote: (id: string) => string | null;
+  onReadNote: (note: NotebookNote) => string | null;
   onReadPoint: (point: HistoryPoint) => void;
   comparisonReturn: number;
   sheetReturn: number;
@@ -589,7 +593,7 @@ export function Stage({
             )}>
             {(close) => (<>
               <button type="button" onClick={() => { close(); halt(); go({ kind: "history" }); setLeaf("tellings"); }}>Other tellings</button>
-              <button type="button" onClick={() => { close(); halt(); liftThen(onNotebook, document.querySelector<HTMLElement>(".cartouche-open")); }}>Notes</button>
+              <button type="button" onClick={() => { close(); halt(); onBook("notes"); }}>Notes</button>
               <button type="button" onClick={() => { close(); halt(); onBook(); }}>The book</button>
               <hr />
               <LightChoice />
@@ -701,6 +705,7 @@ export function Stage({
               <LastIcon size={14} aria-hidden="true" />
               <span className="chronicle-year">{last.generation * YEARS}</span>
               <span className="chronicle-text">
+                {last.decision !== undefined ? <span className="pen" title="The author's decision"><Feather size={12} aria-hidden="true" /></span> : null}
                 <Told text={last.text} />
               </span>
             </button>
@@ -737,7 +742,11 @@ export function Stage({
         onHistoryView={setHistoryView}
         storyView={storyViews[JSON.stringify(focus)] ?? INITIAL_HISTORY}
         onStoryView={(next) => setStoryViews((views) => ({ ...views, [JSON.stringify(focus)]: next }))}
-        onKeep={(subject, label) => { halt(); liftThen(() => onKeep(subject, label), document.activeElement instanceof HTMLElement ? document.activeElement : null); }}
+        notes={notes}
+        onSaveNote={onSaveNote}
+        onRemoveNote={onRemoveNote}
+        onReadNote={onReadNote}
+        onStartNote={halt}
         onFollow={(subject, label) => { halt(); setFollowed({ subject, label }); }}
         dictionaryViews={dictionaryViews}
         onDictionaryView={(variety, view) => setDictionaryViews((views) => ({ ...views, [variety]: view }))}
@@ -772,6 +781,7 @@ export function Stage({
           openDialog(kind, community);
         }}
         onReconsider={reconsider}
+        onReturnBefore={(point) => { halt(); onReadPoint(point); }}
       />
 
       <footer className="timebar stage-bar">
