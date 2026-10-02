@@ -11,6 +11,7 @@ export interface HistoryView {
 }
 export const INITIAL_HISTORY: HistoryView = { query: "", group: "All events", order: "newest", sounds: "all", limit: 100 };
 const GROUP: Record<Annal["kind"], HistoryGroup> = {
+  settlement: "Peoples & journeys",
   found: "Peoples & journeys", split: "Peoples & journeys", migration: "Peoples & journeys", shift: "Languages & words",
   contact: "Peoples & journeys", parted: "Peoples & journeys", neighbours: "Peoples & journeys", conquest: "Rule & cities",
   law: "Languages & words", spread: "Peoples & journeys", displaced: "Peoples & journeys", hardship: "Land & livelihood",

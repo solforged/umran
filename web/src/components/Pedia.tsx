@@ -24,7 +24,8 @@ import { YEARS } from "../model";
 import { CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, FAITH_HOW, FALL_NAME, howCame, howNamed, hue, LIVELIHOOD_NAME, RISE_NAME, SCHISM_CAUSE, STRESS_RULE, STRONG, temperament, TERMS, TERRAIN_NAME, type Term } from "../lore";
 import { filterHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
 import { bond } from "../words";
-import type { DialogKind } from "./ActionDialog";
+import type { InterventionKind } from "./ActionDialog";
+import { SettlementAccount } from "./SettlementDesk";
 import { Told } from "./Told";
 import { Dictionary, INITIAL_DICTIONARY, type DictionaryView } from "./Dictionary";
 import { peoplesByRegion } from "./MapView";
@@ -67,7 +68,8 @@ interface Context {
   go: (focus: Focus) => void;
   onScrub: (generation: number) => void;
   onPlay: () => void;
-  onDialog: (kind: DialogKind, community: number) => void;
+  onDialog: (kind: InterventionKind, community: number) => void;
+  onReconsider: (annal: Annal) => void;
   /// Tell the history again as a telling set aside told it.
   onRestore: (telling: number) => void;
   /// The folio page open over the map, by its section's id.
@@ -1188,6 +1190,8 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
             <Explained term="temper">{temperament(c.ethos).join(", ") || "even-tempered"}</Explained>,
           ],
           ["Speak", <LanguageLink variety={c.variety} context={context} />],
+          ["Came from", c.parents.length > 0 ? <Joined items={c.parents} link={(id) => <PeopleLink c={name(id)} context={context} />} /> : null],
+          ["Peoples descended", overview.communities.some((p) => p.parents.includes(c.id)) ? <Joined items={overview.communities.filter((p) => p.parents.includes(c.id))} link={(p) => <PeopleLink c={p} context={context} />} /> : null],
           [realm?.rulers === c.id ? "Rule" : "Subject of", realm ? <StateLink state={realm} context={context} /> : null],
           ["Faith", c.faith === null ? "its own gods" : <ReligionLink religion={overview.religions[c.faith]} context={context} />],
           ["Crafts", c.crafts.length === 0 ? "none yet" : <Joined items={c.crafts} link={(craft) => <CraftLink craft={craft} context={context} />} />],
@@ -1295,8 +1299,8 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
         <>
           <h3>Shape their history</h3>
           <div className="card-actions">
-            <button type="button" onClick={() => context.onDialog("split", c.id)}>
-              Some go their own way
+            <button type="button" onClick={() => context.onDialog("settlement", c.id)}>
+              Settle, divide, or move
             </button>
             <button type="button" onClick={() => context.onDialog("connect", c.id)}>
               They meet another people
@@ -2084,6 +2088,10 @@ function EventCard({ annal, context }: { annal: Annal; context: Context }) {
       <p className="event-text">
         <Told text={annal.text} />
       </p>
+      {annal.settlement ? <>
+        <SettlementAccount plan={annal.settlement.plan} overview={overview} map={context.map} />
+        {annal.before ? <button type="button" className="reconsider" onClick={() => context.onReconsider(annal)}>Return before this choice</button> : null}
+      </> : null}
       {annal.variety !== null && annal.specimen.length > 0 ? (
         <Specimen
           words={annal.specimen}

@@ -293,6 +293,22 @@ and integer squares use explicit multiplication.
   again as well from those they deal with (`adoption_rate`); farmers on
   drying land may turn to herding. Foragers and herders on suitable plains
   or river valleys rarely begin to farm of their own accord.
+- Authored settlement (`settlement.rs`) has three explicit intents. A
+  territorial partition grows two fronts from the old and chosen hearts
+  through the graph of held lands, assigning each land by travel effort.
+  Both resulting territories stay connected to their heart; a disconnected
+  component without either heart cannot silently change hands. People remain
+  where they live, including residents of cities. Sending settlers takes a
+  chosen share from every inhabited land into one reachable destination;
+  moving whole retains the people's identity and language. Every source
+  needs an actual walking route or a voyage their own seafaring permits.
+  Destinations account for the people already living there, including the
+  parent's residents who will stay. Preview is read-only; application repeats
+  the same validation and records the census, routes, affected capitals and
+  daughter identity. Shared division logic conserves city residents, updates
+  their speech composition without advancing time, and records community
+  ancestry independently of language descent. This authored planner is
+  distinct from the automatic `leavers` behavior described above.
 - Peoples suffer and end. Famine or plague strikes a peopled land now and
   then (`hardship_rate`), killing a share of everyone there, so a people on
   one land suffers worst. Drought instead lowers food until recovery; it

@@ -664,6 +664,15 @@ impl Map {
         changed
     }
 
+    /// Effort across one shared border, for a traversal restricted to held land.
+    pub(crate) fn border_effort(&self, a: usize, b: usize) -> Option<f32> {
+        self.edges
+            .row(a)
+            .iter()
+            .find(|(r, _)| *r as usize == b)
+            .map(|(_, effort)| *effort)
+    }
+
     /// Exact least land-only walking effort-km; sea endpoints are unreachable.
     pub fn distance(&self, a: usize, b: usize) -> f32 {
         if !self.regions[a].terrain.is_land()
@@ -722,6 +731,11 @@ impl Map {
         }
         path.reverse();
         Some(path)
+    }
+
+    pub fn journey_path(&self, source: usize, target: usize, by_sea: bool) -> Vec<usize> {
+        self.route_path(source, target, by_sea, f32::INFINITY)
+            .unwrap_or_default()
     }
 
     /// ID-sorted reachable land within an inclusive effort-km radius.

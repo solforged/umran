@@ -84,6 +84,67 @@ impl World {
             })
     }
 
+    /// A territorial division keeps each city's actual residents on its land.
+    /// Settlers are drawn proportionally instead, so the parent's reservation
+    /// fraction already describes the smaller population remaining there.
+    pub(crate) fn divide_city_residents(
+        &mut self,
+        parent: usize,
+        daughter: usize,
+        before: f32,
+        territorial: bool,
+    ) {
+        if !territorial {
+            self.refresh_city_makeup();
+            return;
+        }
+        for city in &mut self.cities {
+            let goes = self.communities[daughter].lands.contains(&city.region);
+            if city.townsfolk == Some(parent) && goes {
+                city.townsfolk = Some(daughter);
+            }
+            for (community, share) in &mut city.residents {
+                if *community == parent {
+                    let residents = before * *share;
+                    if goes {
+                        *community = daughter;
+                    }
+                    *share = residents / self.communities[*community].size;
+                }
+            }
+        }
+        self.refresh_city_makeup();
+    }
+
+    pub(crate) fn leave_city_residence(&mut self, community: usize) {
+        for city in &mut self.cities {
+            city.residents.retain(|(c, _)| *c != community);
+        }
+        self.refresh_city_makeup();
+    }
+
+    pub(crate) fn refresh_city_makeup(&mut self) {
+        for city in &mut self.cities {
+            if let Some(c) = city.townsfolk {
+                let people = &self.communities[c];
+                city.makeup = if people.living() && people.lands.contains(&city.region) {
+                    vec![(people.variety, 1.0)]
+                } else {
+                    Vec::new()
+                };
+            } else {
+                let mut counts = BTreeMap::new();
+                for &(c, share) in &city.residents {
+                    let people = &self.communities[c];
+                    if people.living() {
+                        *counts.entry(people.variety).or_default() += people.size * share;
+                    }
+                }
+                city.makeup = shares(counts);
+            }
+        }
+    }
+
     /// Tribute is moved from the court's food budget to its townsfolk,
     /// never added twice. Townsfolk themselves pay no circular tribute.
     pub(crate) fn urban_food(&self, state: usize) -> Option<(usize, f32)> {
@@ -304,6 +365,11 @@ impl World {
         let town = self.communities.len();
         let source = &self.communities[source];
         self.communities.push(Community {
+            parents: self.cities[city]
+                .residents
+                .iter()
+                .map(|(c, _)| *c)
+                .collect(),
             name,
             variety: v,
             size,
@@ -566,6 +632,147 @@ fn levelling_law(mergers: &[(PhonemeId, PhonemeId)]) -> Law {
 mod tests {
     use super::*;
     use crate::{Fall, Form, Livelihood, Params, SoundProfile};
+
+    #[test]
+    fn settlement_census_includes_cities_and_preserves_each_regions_residents() {
+        use crate::settlement::{SettlementChoice, SettlementIntent};
+        let mut base = World::new(7, Params::static_society());
+        base.found(&SoundProfile::base(), 0.5, 0.5);
+        let home = base.communities[0].home();
+        let next = base.map.regions[home]
+            .neighbours
+            .iter()
+            .copied()
+            .filter(|&r| base.map.regions[r].terrain.is_land())
+            .max_by(|&a, &b| {
+                base.feeds(a, base.communities[0].livelihood)
+                    .total_cmp(&base.feeds(b, base.communities[0].livelihood))
+            })
+            .unwrap();
+        base.communities[0].lands.push(next);
+        base.communities[0].size = 5_000.0;
+        base.raise_state(0, Some(home), crate::Rise::Proclaimed);
+        for city_region in [home, next] {
+            let mut world = base.clone();
+            // The same resident transfer must work on either side of the new boundary.
+            world.cities.push(City {
+                state: 0,
+                region: city_region,
+                since: 0,
+                townsfolk: None,
+                makeup: vec![(0, 1.0)],
+                residents: vec![(0, 0.3)],
+                mixed: 0,
+            });
+            let choice = SettlementChoice {
+                community: 0,
+                intent: SettlementIntent::Partition,
+                destination: next,
+                share: 0.5,
+                naming: None,
+                intensity: 0.5,
+            };
+            let plan = world.plan_settlement(&choice).unwrap();
+            let city_before = world.city_size(0);
+            let daughter = world.settle(&choice).unwrap().unwrap();
+            for (c, allocation) in [(0, &plan.remaining), (daughter, &plan.arriving)] {
+                assert!((world.communities[c].size - allocation.population).abs() < 0.01);
+                for (region, n) in world.presence(c) {
+                    let expected = allocation
+                        .presence
+                        .iter()
+                        .find(|(r, _)| *r == region)
+                        .unwrap()
+                        .1;
+                    assert!(
+                        (n - expected).abs() < 0.01,
+                        "resident allocation changed at land {region}"
+                    );
+                }
+            }
+            assert!((world.city_size(0) - city_before).abs() < 0.01);
+            let speakers = if city_region == home { 0 } else { daughter };
+            assert_eq!(
+                world.cities[0].makeup,
+                vec![(world.communities[speakers].variety, 1.0)]
+            );
+        }
+        let mut world = base;
+        world.cities.push(City {
+            state: 0,
+            region: home,
+            since: 0,
+            townsfolk: None,
+            makeup: vec![(0, 1.0)],
+            residents: vec![(0, 0.3)],
+            mixed: 0,
+        });
+        let destination = world
+            .settlement_options(0, SettlementIntent::Migration, 1.0)
+            .unwrap()
+            .into_iter()
+            .find(|o| o.reason.is_none())
+            .unwrap()
+            .region;
+        let choice = SettlementChoice {
+            community: 0,
+            intent: SettlementIntent::Migration,
+            destination,
+            share: 1.0,
+            naming: None,
+            intensity: 0.5,
+        };
+        let plan = world.plan_settlement(&choice).unwrap();
+        assert_eq!(plan.falling_states, vec![0]);
+        let language = world.communities[0].variety;
+        world.settle(&choice).unwrap();
+        assert_eq!(world.communities[0].variety, language);
+        assert_eq!(world.presence(0), plan.arriving.presence);
+        assert!(world.states[0].fell.is_some());
+        assert_eq!(world.city_size(0), 0.0);
+        assert!(world.cities[0].makeup.is_empty());
+    }
+
+    #[test]
+    fn settlers_count_parent_residents_remaining_in_an_external_city() {
+        use crate::settlement::{SettlementChoice, SettlementIntent};
+        let mut world = World::new(7, Params::static_society());
+        world.found(&SoundProfile::base(), 0.5, 0.5);
+        world.found(&SoundProfile::base(), 0.7, 0.5);
+        let home = world.communities[0].home();
+        let city = world.map.regions[home]
+            .neighbours
+            .iter()
+            .copied()
+            .find(|&r| world.map.regions[r].terrain.is_land())
+            .unwrap();
+        world.communities[1].lands = vec![city];
+        world.raise_state(1, Some(city), crate::Rise::Proclaimed);
+        world.cities.push(City {
+            state: 0,
+            region: city,
+            since: 0,
+            townsfolk: None,
+            makeup: vec![(0, 0.75), (1, 0.25)],
+            residents: vec![(0, 0.3), (1, 0.1)],
+            mixed: 0,
+        });
+        let choice = SettlementChoice {
+            community: 0,
+            intent: SettlementIntent::Settlers,
+            destination: city,
+            share: 0.5,
+            naming: None,
+            intensity: 0.5,
+        };
+        let plan = world.plan_settlement(&choice).unwrap();
+        assert!(plan.inhabitants.contains(&(0, 150.0)));
+        assert!((plan.room - (world.free_room(0, city, &world.spatial()) - 150.0)).abs() < 0.01);
+        let daughter = world.settle(&choice).unwrap().unwrap();
+        assert_eq!(world.city_residence(0), Some((city, 150.0)));
+        assert_eq!(world.presence(daughter), plan.arriving.presence);
+        assert_eq!(world.cities[0].makeup, vec![(0, 0.6), (1, 0.4)]);
+    }
 
     fn realm() -> World {
         let mut world = World::new(

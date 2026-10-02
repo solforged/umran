@@ -837,23 +837,42 @@ fn recipe(seed: u64) -> Recipe {
             contact: ContactKind::Rule,
         },
         Action::Religion { community: 0 },
-        Action::Split {
-            community: 0,
-            naming: None,
-            intensity: 0.5,
-        },
-        Action::Run {
-            generations: if seed == 0 { GENERATIONS } else { 80 },
-        },
     ]);
-    Recipe {
+    let mut recipe = Recipe {
         format: FORMAT.into(),
         revision: ENGINE_REVISION,
         seed,
         map: MapSize::Small,
         actions,
         tellings: Vec::new(),
-    }
+    };
+    let mut history = Chronicle::from_recipe(&recipe).unwrap();
+    use umran_sim::settlement::{SettlementChoice, SettlementIntent};
+    let destination = history
+        .latest()
+        .settlement_options(0, SettlementIntent::Settlers, 0.5)
+        .unwrap()
+        .into_iter()
+        .find(|o| o.reason.is_none())
+        .expect("a founder has nearby land")
+        .region;
+    history
+        .act(Action::Settle {
+            choice: SettlementChoice {
+                community: 0,
+                destination,
+                intent: SettlementIntent::Settlers,
+                share: 0.5,
+                naming: None,
+                intensity: 0.5,
+            },
+        })
+        .unwrap();
+    recipe = history.recipe();
+    recipe.actions.push(Action::Run {
+        generations: if seed == 0 { GENERATIONS } else { 80 },
+    });
+    recipe
 }
 
 #[test]

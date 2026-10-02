@@ -20,8 +20,8 @@ use umran_sim::phoneme::{Backness, Manner, Secondary};
 use umran_sim::schisms::{BranchNaming, HolyLand, Pilgrimage, SchismCause};
 use umran_sim::{
     Action, CATALOG, CONCEPTS, Challenge, Chronicle, Craft, ENGINE_REVISION, Event, FORMAT, Fall,
-    Flavor, Form, Lexeme, LexemeId, Livelihood, MapSize, NameStyle, Origin, PhonemeId, Recipe,
-    Revelation, Rise, SetAside, StressRule, Terrain, World, WorldEvent, catalog,
+    Flavor, Form, HistoryPoint, Lexeme, LexemeId, Livelihood, MapSize, NameStyle, Origin,
+    PhonemeId, Recipe, Revelation, Rise, SetAside, StressRule, Terrain, World, WorldEvent, catalog,
 };
 use umran_sim::{LanguageDesign, MorphologyKind, Naming, Segment, Variety};
 use wasm_bindgen::prelude::*;
@@ -78,6 +78,11 @@ impl Workbench {
         self.bench.act(action).map_err(fail)
     }
 
+    #[wasm_bindgen(js_name = actAt)]
+    pub fn act_at(&mut self, point: &str, mutation: u32, action: &str) -> Result<(), JsValue> {
+        self.bench.act_at(point, mutation, action).map_err(fail)
+    }
+
     pub fn undo(&mut self) -> bool {
         self.bench.undo()
     }
@@ -102,6 +107,24 @@ impl Workbench {
 
     pub fn overview(&mut self, generation: u32) -> Result<String, JsValue> {
         self.bench.overview(generation).map_err(fail)
+    }
+
+    #[wasm_bindgen(js_name = overviewAt)]
+    pub fn overview_at(&mut self, point: &str) -> Result<String, JsValue> {
+        self.bench.overview_at(point).map_err(fail)
+    }
+
+    pub fn settlement(
+        &self,
+        point: &str,
+        community: usize,
+        intent: &str,
+        share: f32,
+        destination: i32,
+    ) -> Result<String, JsValue> {
+        self.bench
+            .settlement(point, community, intent, share, destination)
+            .map_err(fail)
     }
 
     pub fn lexicon(&mut self, generation: u32, variety: usize) -> Result<String, JsValue> {
@@ -145,6 +168,8 @@ impl Workbench {
 
 pub struct Bench {
     chronicle: Chronicle,
+    /// Invalidates previews even when two decisions happen in the same year.
+    mutation: u32,
     /// The last world requested, so repeated views of one generation do not
     /// replay it again.
     cached: Option<World>,
@@ -161,6 +186,7 @@ impl Bench {
             .map_err(|_| format!("Unknown world size: {size}."))?;
         Ok(Bench {
             chronicle: Chronicle::new(u64::from(seed), map),
+            mutation: 0,
             cached: None,
             saved_revision: None,
             told: Vec::new(),
@@ -174,6 +200,7 @@ impl Bench {
         let chronicle = Chronicle::from_recipe(&recipe)?;
         Ok(Bench {
             chronicle,
+            mutation: 0,
             cached: None,
             saved_revision: (recipe.revision != ENGINE_REVISION).then_some(recipe.revision),
             told: Vec::new(),
@@ -364,29 +391,50 @@ impl Bench {
         let action: Action =
             serde_json::from_str(action).map_err(|e| format!("Malformed action: {e}"))?;
         self.chronicle.act(action)?;
+        self.mutation = self.mutation.wrapping_add(1);
+        self.cached = None;
+        Ok(())
+    }
+
+    pub fn act_at(&mut self, point: &str, mutation: u32, action: &str) -> Result<(), String> {
+        if mutation != self.mutation {
+            return Err(
+                "The history has changed since this preview. Read it again before deciding.".into(),
+            );
+        }
+        let point: HistoryPoint = serde_json::from_str(point).map_err(|e| e.to_string())?;
+        let action: Action =
+            serde_json::from_str(action).map_err(|e| format!("Malformed action: {e}"))?;
+        self.chronicle.act_at(point, action)?;
+        self.mutation = self.mutation.wrapping_add(1);
         self.cached = None;
         Ok(())
     }
 
     pub fn undo(&mut self) -> bool {
+        self.mutation = self.mutation.wrapping_add(1);
         self.cached = None;
         self.chronicle.undo().is_some()
     }
 
     pub fn run_until_event(&mut self, limit: u32) -> u32 {
+        self.mutation = self.mutation.wrapping_add(1);
         self.cached = None;
         self.chronicle.run_until_event(limit)
     }
 
     /// Sets everything after `generation` aside as another telling.
     pub fn branch(&mut self, generation: u32) {
+        self.mutation = self.mutation.wrapping_add(1);
         self.cached = None;
         self.chronicle.branch_at(generation);
     }
 
     pub fn restore(&mut self, index: usize) -> Result<(), String> {
+        self.chronicle.restore(index)?;
+        self.mutation = self.mutation.wrapping_add(1);
         self.cached = None;
-        self.chronicle.restore(index)
+        Ok(())
     }
 
     /// Each telling set aside, with what it told that the present history
@@ -446,15 +494,112 @@ impl Bench {
         self.chronicle.latest().generation
     }
 
+    pub fn settlement(
+        &self,
+        point: &str,
+        community: usize,
+        intent: &str,
+        share: f32,
+        destination: i32,
+    ) -> Result<String, String> {
+        use umran_sim::settlement::{
+            SettlementChoice, SettlementIntent, SettlementOption, SettlementPlan,
+        };
+        #[derive(Serialize)]
+        struct Preview {
+            point: HistoryPoint,
+            mutation: u32,
+            options: Vec<SettlementOption>,
+            plan: Option<SettlementPlan>,
+            reason: Option<String>,
+        }
+        let point: HistoryPoint = serde_json::from_str(point).map_err(|e| e.to_string())?;
+        let intent: SettlementIntent =
+            serde_json::from_value(serde_json::Value::String(intent.into()))
+                .map_err(|e| e.to_string())?;
+        let world = self.chronicle.world_at_point(point)?;
+        let options = world.settlement_options(community, intent, share)?;
+        let (plan, reason) = if destination < 0 {
+            (None, None)
+        } else {
+            match world.plan_settlement(&SettlementChoice {
+                community,
+                intent,
+                destination: destination as usize,
+                share,
+                naming: None,
+                intensity: 0.5,
+            }) {
+                Ok(plan) => (Some(plan), None),
+                Err(reason) => (None, Some(reason)),
+            }
+        };
+        to_json(&Preview {
+            point,
+            mutation: self.mutation,
+            options,
+            plan,
+            reason,
+        })
+    }
+
     /// Communities, varieties, contacts, and the timeline at `generation`.
     pub fn overview(&mut self, generation: u32) -> Result<String, String> {
+        self.overview_reading(generation, None)
+    }
+
+    pub fn overview_at(&mut self, point: &str) -> Result<String, String> {
+        let point: HistoryPoint = serde_json::from_str(point).map_err(|e| e.to_string())?;
+        let world = self.chronicle.world_at_point(point)?;
+        self.overview_reading(world.generation, Some((point, world)))
+    }
+
+    fn overview_reading(
+        &mut self,
+        generation: u32,
+        exact: Option<(HistoryPoint, World)>,
+    ) -> Result<String, String> {
         let latest = self.latest();
+        let point = exact
+            .as_ref()
+            .map_or_else(|| self.chronicle.point_at(generation), |(p, _)| *p);
+        let decisions: Vec<_> = self
+            .chronicle
+            .timeline()
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, (at, action))| match action {
+                Action::Settle { choice } => Some((index, at, choice.clone())),
+                _ => None,
+            })
+            .collect();
+        let mutation = self.mutation;
         let timeline = self.timeline();
         let seed = self.chronicle.seed;
         let saved_revision = self.saved_revision;
         let tellings = self.tellings(generation);
-        let world = self.world(generation);
-        let annals = annals(world);
+        let world = match &exact {
+            Some((_, world)) => world,
+            None => self.world(generation),
+        };
+        let mut annals = annals(world);
+        for (index, at, choice) in decisions {
+            if let Some(annal) = annals.iter_mut().find(|a| {
+                a.before.is_none()
+                    && a.generation == at
+                    && a.settlement
+                        .as_ref()
+                        .is_some_and(|s| s.plan.choice == choice)
+            }) {
+                annal.before = Some(HistoryPoint {
+                    action: index,
+                    offset: 0,
+                });
+            }
+        }
+        // Authored decisions happen after the year's simulation. Keep their
+        // exact order so the chronicle's latest moment is the choice just made.
+        annals.sort_by_key(|a| (a.generation, a.before.map(|p| p.action)));
         let spoken = world.spoken();
         // When each language arose: a daughter when it parted, a founding
         // language when its people was founded. A people's first language
@@ -500,6 +645,8 @@ impl Bench {
         let standards = world.standards();
         let view = Overview {
             seed,
+            point,
+            mutation,
             generation: world.generation,
             latest,
             revision: ENGINE_REVISION,
@@ -511,6 +658,7 @@ impl Bench {
                 .enumerate()
                 .map(|(id, c)| CommunityView {
                     id,
+                    parents: c.parents.clone(),
                     name: world.community_name(id),
                     meaning: c.name.meaning.clone(),
                     ipa: c.name.form.ipa_stressed(
@@ -1054,8 +1202,8 @@ impl Bench {
                 Action::Run { generations } => format!("Ran {generations} generations"),
                 // Everything else appears as world events below.
                 Action::Found { .. }
+                | Action::Settle { .. }
                 | Action::Connect { .. }
-                | Action::Split { .. }
                 | Action::Shift { .. }
                 | Action::State { .. }
                 | Action::Religion { .. }
@@ -1074,6 +1222,15 @@ impl Bench {
         }
         for (generation, event) in &latest.events {
             let label = match event {
+                WorldEvent::Settlement(record) => format!(
+                    "{}: {}",
+                    name(record.plan.choice.community),
+                    match record.plan.choice.intent {
+                        umran_sim::settlement::SettlementIntent::Partition => "lands divided",
+                        umran_sim::settlement::SettlementIntent::Settlers => "settlers departed",
+                        umran_sim::settlement::SettlementIntent::Migration => "people relocated",
+                    }
+                ),
                 WorldEvent::Found { community } => {
                     out.push(Marker {
                         generation: *generation,
@@ -1486,7 +1643,28 @@ fn move_views(world: &World) -> Vec<MoveView> {
     world
         .events
         .iter()
-        .filter_map(|&(generation, ref event)| {
+        .flat_map(|&(generation, ref event)| {
+            if let WorldEvent::Settlement(record) = event {
+                return record
+                    .plan
+                    .routes
+                    .iter()
+                    .filter(|r| r.from != r.to)
+                    .map(|r| MoveView {
+                        generation,
+                        community: record.daughter.unwrap_or(record.plan.choice.community),
+                        from: r.from,
+                        to: r.to,
+                        kind: if record.daughter.is_some() {
+                            "split"
+                        } else {
+                            "migration"
+                        },
+                        by_sea: r.by_sea,
+                        path: r.path.clone(),
+                    })
+                    .collect::<Vec<_>>();
+            }
             let (community, from, to, kind, by_sea) = match *event {
                 WorldEvent::Migrated {
                     community,
@@ -1499,18 +1677,20 @@ fn move_views(world: &World) -> Vec<MoveView> {
                     from,
                     to,
                     by_sea,
+                    travelled: true,
                     ..
                 } if from != to => (daughter, from, to, "split", by_sea),
-                _ => return None,
+                _ => return Vec::new(),
             };
-            Some(MoveView {
+            vec![MoveView {
                 generation,
                 community,
                 from,
                 to,
                 kind,
                 by_sea,
-            })
+                path: world.map.journey_path(from, to, by_sea),
+            }]
         })
         .collect()
 }
@@ -2006,6 +2186,8 @@ fn sound_view(id: PhonemeId, seg: Segment) -> SoundView {
 #[serde(rename_all = "camelCase")]
 struct Overview {
     seed: u64,
+    point: HistoryPoint,
+    mutation: u32,
     generation: u32,
     latest: u32,
     revision: u32,
@@ -2137,6 +2319,7 @@ struct PlaceNameView {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct MoveView {
+    path: Vec<usize>,
     generation: u32,
     community: usize,
     from: usize,
@@ -2157,6 +2340,7 @@ struct Marker {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CommunityView {
+    parents: Vec<usize>,
     id: usize,
     /// What it calls itself, spelled in its language.
     name: String,
@@ -3376,10 +3560,76 @@ mod tests {
         w.act(r#"{"kind":"connect","a":0,"b":1,"intensity":0.6,"contact":"trade"}"#)
             .unwrap();
         w.act(r#"{"kind":"run","generations":12}"#).unwrap();
-        w.act(r#"{"kind":"split","community":0,"intensity":0.3}"#)
-            .unwrap();
+        settle(&mut w, 0.3);
         w.act(r#"{"kind":"run","generations":10}"#).unwrap();
         w
+    }
+
+    fn settle(w: &mut Bench, intensity: f32) {
+        use umran_sim::settlement::{SettlementChoice, SettlementIntent};
+        for intent in [SettlementIntent::Partition, SettlementIntent::Settlers] {
+            let options = w
+                .chronicle
+                .latest()
+                .settlement_options(0, intent, 0.5)
+                .unwrap();
+            if let Some(option) = options.into_iter().find(|o| o.reason.is_none()) {
+                w.act(
+                    &serde_json::to_string(&Action::Settle {
+                        choice: SettlementChoice {
+                            community: 0,
+                            destination: option.region,
+                            intent,
+                            share: 0.5,
+                            naming: None,
+                            intensity,
+                        },
+                    })
+                    .unwrap(),
+                )
+                .unwrap();
+                return;
+            }
+        }
+        panic!("this fixture needs somewhere to settle");
+    }
+
+    #[test]
+    fn a_same_year_change_invalidates_a_settlement_preview_without_mutation() {
+        let mut w = Bench::new(5, "medium").unwrap();
+        w.act(&found("Hill", "familiar")).unwrap();
+        let point = serde_json::to_string(&w.chronicle.end()).unwrap();
+        let preview: serde_json::Value =
+            serde_json::from_str(&w.settlement(&point, 0, "settlers", 0.5, -1).unwrap()).unwrap();
+        let destination = preview["options"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|o| o["reason"].is_null())
+            .unwrap()["region"]
+            .as_i64()
+            .unwrap();
+        let choice: serde_json::Value = serde_json::from_str(
+            &w.settlement(&point, 0, "settlers", 0.5, destination as i32)
+                .unwrap(),
+        )
+        .unwrap();
+        let mut action = choice["plan"]["choice"].clone();
+        action["kind"] = "settle".into();
+        w.act(r#"{"kind":"craft","community":0,"craft":"writing"}"#)
+            .unwrap();
+        let before = w.save().unwrap();
+        let view = w.overview(0).unwrap();
+        assert!(
+            w.act_at(
+                &point,
+                choice["mutation"].as_u64().unwrap() as u32,
+                &action.to_string()
+            )
+            .is_err()
+        );
+        assert_eq!(w.save().unwrap(), before);
+        assert_eq!(w.overview(0).unwrap(), view);
     }
 
     #[test]
@@ -3759,7 +4009,7 @@ mod tests {
             .iter()
             .map(|a| a["kind"].as_str().unwrap())
             .collect();
-        assert!(kinds.contains(&"split"));
+        assert!(kinds.contains(&"settlement"));
         // The struck entries come from the same telling, so restoring it
         // brings them back as the present.
         w.restore(0).unwrap();
@@ -3875,8 +4125,7 @@ mod tests {
             );
         }
         // The refusal does not prevent a later physically valid action.
-        w.act(r#"{"kind":"split","community":0,"intensity":0}"#)
-            .unwrap();
+        settle(&mut w, 0.0);
         w.act(r#"{"kind":"connect","a":0,"b":2,"intensity":0.6,"contact":"trade"}"#)
             .unwrap();
         assert_eq!(
@@ -3887,6 +4136,13 @@ mod tests {
 
     #[test]
     fn vast_recipes_replay_and_branch_on_the_same_physical_map() {
+        let view = |bench: &mut Bench, generation| {
+            let mut view: serde_json::Value =
+                serde_json::from_str(&bench.overview(generation).unwrap()).unwrap();
+            // Preview tokens belong to this open session, not to the saved world.
+            view.as_object_mut().unwrap().remove("mutation");
+            view
+        };
         let mut w = Bench::new(7, "vast").unwrap();
         let map = w.map().unwrap();
         assert_eq!(w.chronicle.latest().map.regions.len(), 3600);
@@ -3895,7 +4151,7 @@ mod tests {
         w.act(r#"{"kind":"run","generations":2}"#).unwrap();
         let mut loaded = Bench::load(&w.save().unwrap()).unwrap();
         assert_eq!(loaded.map().unwrap(), map);
-        assert_eq!(loaded.overview(2).unwrap(), w.overview(2).unwrap());
+        assert_eq!(view(&mut loaded, 2), view(&mut w, 2));
         loaded.branch(1);
         loaded
             .act(r#"{"kind":"craft","community":0,"craft":"writing"}"#)
@@ -3906,7 +4162,7 @@ mod tests {
         assert_eq!(loaded.latest(), 3);
         let mut replayed = Bench::load(&loaded.save().unwrap()).unwrap();
         assert_eq!(replayed.map().unwrap(), map);
-        assert_eq!(replayed.overview(3).unwrap(), loaded.overview(3).unwrap());
+        assert_eq!(view(&mut replayed, 3), view(&mut loaded, 3));
     }
 
     #[test]
@@ -3923,7 +4179,7 @@ mod tests {
         assert!(Bench::load("{}").is_err());
         let mut w = bench();
         assert!(
-            w.act(r#"{"kind":"split","community":9,"intensity":0}"#)
+            w.act(r#"{"kind":"settle","community":999,"intent":"migration","destination":0,"share":1,"naming":null,"intensity":0}"#)
                 .is_err()
         );
         assert!(w.act("not json").is_err());

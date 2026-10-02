@@ -34,8 +34,9 @@ invariants and tricky state transitions.
   navigation, touch pinch handling, and reduced-motion support.
 - The engine's map-size catalog reaches setup, including the vast theatre.
   This exposes the current geography; it does not make the geography more realistic.
-- Correct split-dialog explanation. The spatial intervention itself remains
-  the first larger piece below.
+- Chart-based settlement accounts now replace the split dialog: connected
+  territorial division, settlers from a chosen population share, and whole
+  migration, with real routes, a census and an exact pre-choice return.
 - Grammar-change events from the new engine revision join the chronicle and
   language-event filters, with their explanation and participants on the card.
 
@@ -52,10 +53,10 @@ The current engine has three related behaviors (`world.rs`):
   On one holding, it moves half the population to a better neighboring land
   or an available sea colony, falling back to the same home.
 
-The recipe's `Split` action has no destination, partition, or population-share
-field. “Half leave” was therefore misleading, especially for a territorial
-split. Proximity affects an internal decision, but is not something the
-reader can choose or inspect.
+The former `Split` action had no destination, partition, or population-share
+field. Revision 29 replaces it with `Settle`: an explicit intent, destination,
+share and naming/contact choices. “Half leave” was misleading, especially
+for a territorial split.
 
 Build a chart-based preview with three explicit intents:
 
@@ -79,6 +80,14 @@ a different choice. Later years become another telling that remains readable.
 Check non-seafarers, occupied lands, disconnected holdings, and a rejected
 preview that has become stale. Replace the old action shape if the spatial
 model calls for it, and bump the engine revision when replay changes.
+
+Delivered in the living-atlas worktree: all three intents, city residents and
+capital loss, connected authored partitions, route evidence, community ancestry,
+stale-preview rejection and atomic exact-point intervention. Desktop and phone
+clickthroughs cover applying, returning before the choice, making a different
+choice, reloading and restoring the preserved telling. Native/WASM parity covers
+the planner and all three resulting histories. Named, addressable tellings and
+side-by-side comparison remain the next piece.
 
 Separate engine question: should a one-land people spontaneously send a
 splinter group? That changes histories and needs calibration, rather than a

@@ -13,6 +13,7 @@ import type {
   WordDetail,
   WordMap,
   WorldMap,
+  SettlementPreview,
 } from "./model";
 
 // One WASM module; the Workbench owns the history and React only holds view
@@ -32,6 +33,13 @@ function wrap(bench: Workbench): Engine {
   // any history mutation also invalidates metadata on views of the past.
   let cached: { generation: number; view: Overview } | undefined;
   return {
+    overviewAt: (point) => JSON.parse(bench.overviewAt(JSON.stringify(point))) as Overview,
+    settlement: (point, community, intent, share, destination) =>
+      JSON.parse(bench.settlement(JSON.stringify(point), community, intent, share, destination ?? -1)) as SettlementPreview,
+    actAt: (point, mutation, action) => {
+      bench.actAt(JSON.stringify(point), mutation, JSON.stringify(action));
+      cached = undefined;
+    },
     act: (action: Action) => {
       cached = undefined;
       bench.act(JSON.stringify(action));

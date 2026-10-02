@@ -1,15 +1,14 @@
 import { useState, type FormEvent, type ReactNode } from "react";
-import type { Action, Catalog, ContactKind, Craft, EthosAxis, Naming, Overview } from "../model";
+import type { Action, Catalog, ContactKind, Craft, EthosAxis, Overview } from "../model";
 import { YEARS } from "../model";
 import { ETHOS_AXES, ETHOS_POLES, temperament } from "../lore";
-import { NamingSelect } from "./NamingSelect";
 import { Modal } from "./Modal";
 
 /// "found" opens the language designer; the rest are here.
-export type DialogKind = "found" | "split" | "connect" | "shift" | "state" | "religion" | "craft" | "temper";
+export type DialogKind = "found" | "connect" | "shift" | "state" | "religion" | "craft" | "temper";
+export type InterventionKind = DialogKind | "settlement";
 
 const TITLES: Record<Exclude<DialogKind, "found">, string> = {
-  split: "A people parts ways",
   connect: "Two peoples meet",
   shift: "A people takes up another language",
   state: "Found a state",
@@ -41,11 +40,10 @@ export function ActionDialog({
     (kind !== "craft" || catalog.crafts.some((craft) => !c.crafts.includes(craft.id as Craft))));
   const first = communities.find((c) => c.id === selected)?.id ?? communities[0]?.id ?? -1;
   const others = communities.filter((c) => c.id !== first);
-  const [naming, setNaming] = useState<Naming | null>(null);
   const [community, setCommunity] = useState(first);
   const [other, setOther] = useState(others[0]?.id ?? -1);
   const [contact, setContact] = useState<ContactKind>("neighbours");
-  const [intensity, setIntensity] = useState(kind === "split" ? 0.4 : 0.6);
+  const [intensity, setIntensity] = useState(0.6);
   const [capital, setCapital] = useState(overview.communities[first]?.region ?? -1);
   const [craft, setCraft] = useState<Craft>((catalog.crafts.find((c) =>
     !overview.communities[first]?.crafts.includes(c.id as Craft))?.id ?? "metalworking") as Craft);
@@ -56,15 +54,12 @@ export function ActionDialog({
   const canSubmit = !!people && (kind === "state" ? people.lands.includes(capital) :
     kind === "craft" ? !people.crafts.includes(craft) :
     kind === "temper" ? amount > 0 :
-    kind === "split" || kind === "religion" || communities.some((c) => c.id === other && c.id !== community));
+    kind === "religion" || communities.some((c) => c.id === other && c.id !== community));
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!canSubmit) return;
     switch (kind) {
-      case "split":
-        onAction({ kind: "split", community, intensity, ...(naming ? { naming } : {}) });
-        return;
       case "connect":
         onAction({ kind: "connect", a: community, b: other, intensity, contact });
         return;
@@ -192,25 +187,6 @@ export function ActionDialog({
                 <p className="muted">They organize a realm around this capital. Tribute will feed its city, and in time its court’s speech may become a standard language.</p>
               </>
             )}
-          </>
-        );
-      case "split":
-        return (
-          <>
-            {pick("Community", community, setCommunity)}
-            <label>
-              The new community calls itself
-              <NamingSelect
-                catalog={catalog}
-                value={naming}
-                onChange={setNaming}
-                daughter
-                parent={communities.find((c) => c.id === community)?.name}
-              />
-              <small>Built from their own words, so it follows their sound changes.</small>
-            </label>
-            {slider("Contact afterwards", intensity, setIntensity, "0 means the two lose touch entirely.")}
-            <p className="muted">The world chooses where they part. A people holding several lands divides along its holdings; on one land, half form a new people, settling nearby when possible. Their speech begins to change on its own.</p>
           </>
         );
       case "connect":

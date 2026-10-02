@@ -67,6 +67,10 @@ pub(crate) struct Annal {
     pub climate: Option<Climate>,
     #[serde(rename = "riverFlow")]
     pub river_flow: Option<RiverFlow>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub settlement: Option<umran_sim::settlement::SettlementRecord>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before: Option<umran_sim::HistoryPoint>,
 }
 
 /// A people's temper turning: a leaning reaching one of its ends
@@ -310,6 +314,8 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
         rivers: Vec::new(),
         climate: None,
         river_flow: None,
+        settlement: None,
+        before: None,
     };
     for (position, &(generation, ref event)) in world.events.iter().enumerate() {
         let name = |c: usize| world.community_name_at(c, generation);
@@ -327,6 +333,28 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
         let tongue = |c: usize| world.language_title_at(world.communities[c].variety, generation);
         let g = u64::from(generation);
         out.push(match *event {
+            WorldEvent::Settlement(ref record) => {
+                use umran_sim::settlement::SettlementIntent;
+                let plan = &record.plan;
+                let c = plan.choice.community;
+                let d = record.daughter;
+                let to = place(world, plan.choice.destination, generation);
+                let text = match plan.choice.intent {
+                    SettlementIntent::Partition => format!("The *{}* divided their lands. The *{}* took *{}* as their heart, with {:.0} souls.", name(c), name(d.unwrap()), to, plan.arriving.population),
+                    SettlementIntent::Settlers => format!("{:.0} of the *{}* went to settle *{}*, becoming the *{}*.", plan.arriving.population, name(c), to, name(d.unwrap())),
+                    SettlementIntent::Migration => format!("The *{}* moved together to *{}*, {:.0} souls keeping their language.", name(c), to, plan.arriving.population),
+                };
+                let mut peoples = vec![c];
+                peoples.extend(d);
+                let mut lands = plan.before.lands.clone();
+                lands.extend(&plan.arriving.lands);
+                lands.sort_unstable(); lands.dedup();
+                let mut annal = entry(generation, "settlement", text, &peoples, &lands);
+                annal.notes = plan.notes.clone();
+                annal.states = plan.falling_states.clone();
+                annal.settlement = Some(record.as_ref().clone());
+                annal
+            }
             WorldEvent::Found { community } => entry(
                 generation,
                 "found",
@@ -349,6 +377,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 from,
                 to,
                 by_sea,
+                ..
             } => {
                 let mut annal = entry(
                     generation,
@@ -929,6 +958,8 @@ fn state_annal(world: &World, generation: u32, state: usize, kind: &'static str)
         rivers: Vec::new(),
         climate: None,
         river_flow: None,
+        settlement: None,
+        before: None,
     }
 }
 
@@ -1020,6 +1051,8 @@ fn vernacular_annal(world: &World, generation: u32, variety: usize, by: Vernacul
         rivers: Vec::new(),
         climate: None,
         river_flow: None,
+        settlement: None,
+        before: None,
     }
 }
 
@@ -1138,6 +1171,8 @@ fn faith_annal(world: &World, generation: u32, religion: usize) -> Annal {
         rivers: Vec::new(),
         climate: None,
         river_flow: None,
+        settlement: None,
+        before: None,
     }
 }
 
@@ -1328,6 +1363,8 @@ fn spread_annal(world: &World, generation: u32, spreads: &[(usize, usize)]) -> A
         rivers: Vec::new(),
         climate: None,
         river_flow: None,
+        settlement: None,
+        before: None,
     }
 }
 
@@ -1434,6 +1471,8 @@ fn neighbours_annal(world: &World, generation: u32, n: &Neighbours) -> Annal {
         rivers: Vec::new(),
         climate: None,
         river_flow: None,
+        settlement: None,
+        before: None,
     }
 }
 
@@ -1555,6 +1594,8 @@ fn sound_changes(world: &World) -> Vec<Annal> {
                 rivers: Vec::new(),
                 climate: None,
                 river_flow: None,
+                settlement: None,
+                before: None,
             });
         }
     }
@@ -1762,6 +1803,8 @@ fn grammar_changes(world: &World) -> Vec<Annal> {
                 rivers: Vec::new(),
                 climate: None,
                 river_flow: None,
+                settlement: None,
+                before: None,
             });
         }
     }

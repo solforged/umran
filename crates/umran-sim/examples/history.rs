@@ -61,6 +61,13 @@ fn main() {
     let place = |r: usize, g: u32| world.place_at(r, g).unwrap_or_else(|| format!("land {r}"));
     for (generation, event) in &world.events {
         match event {
+            WorldEvent::Settlement(record) => println!(
+                "  gen {generation:>3}  {}: {:?} in {} ({} people)",
+                name(record.plan.choice.community),
+                record.plan.choice.intent,
+                place(record.plan.choice.destination, *generation),
+                record.plan.arriving.population.round(),
+            ),
             WorldEvent::Found { community } => {
                 println!("  gen {generation:>3}  {} founded", name(*community))
             }

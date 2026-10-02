@@ -3,13 +3,16 @@
 How the workbench records, replays, and stores a world.
 
 A history is a seed, a map size, and ordered `Action`s (`chronicle.rs`):
-found, connect, split, shift, state, religion, craft, temper, run. The
+found, connect, settle, shift, state, religion, craft, temper, run. The
 seed draws the map as well as the history. Found records the naming, the
 full design, the language's own seed, the one its preview used, so
 founding gives exactly the previewed words and names, and optionally the
 land the people settles (without one the world chooses) and any leanings
-of its temper (the rest are drawn). A split's naming is
-optional; without one the new people chooses. State makes a people a
+of its temper (the rest are drawn). A settlement records its intent,
+destination, departing share, optional daughter naming, and contact intensity.
+Partition divides held territory around two hearts; settlers draw a share from
+every inhabited land; migration moves the whole community without replacing
+its language. Without a naming choice the new people chooses. State makes a people a
 state, with its court at one of its lands (its heart if none is given); a
 rule contact makes the more prestigious side rule the other's state.
 Religion raises a founder among a people, and a faith with him; craft has
@@ -20,6 +23,23 @@ stays one action and undo removes the whole stretch. Any past generation
 is recovered by replaying, with checkpoints every 10 generations; the
 timeline needs no separate data. Play and "next event" work only at the
 present.
+
+An exact `HistoryPoint` names an action position and an offset into a run, so
+two choices in the same year remain distinguishable. A run's endpoint uses its
+full offset and stays fixed when playback extends that run. `act_at` validates
+a rewind and intervention on a candidate history and publishes it only on
+success; an invalid choice cannot set aside the current future. The facade
+adds a session mutation counter to every preview. Even another same-year
+action invalidates a pending preview.
+
+Settlement previews use the Rust census, food budgets and physical travel
+graph. A territorial boundary propagates through held lands only, with each
+side connected to its own heart. Journeys require routes from every inhabited
+source, including residents in external cities. The recorded account keeps
+the actual before/after populations, holdings and paths, and identifies a
+capital loss before the choice is applied. Its chronicle card can return to
+the point immediately before the decision. Community ancestry is independent
+of later language shifts.
 
 Nothing written is thrown away. Undo, and acting while viewing the past,
 set the abandoned actions aside as a `Telling` (every action from the

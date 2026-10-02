@@ -93,7 +93,7 @@ const KIN_SPAN: f32 = 20.0;
 const KIN_STRANGERS: f32 = 0.15;
 /// Population below which a people can no longer go on as a people: it
 /// dies out, or merges into a people sharing its land.
-const MIN_PEOPLE: f32 = 100.0;
+pub(crate) const MIN_PEOPLE: f32 = 100.0;
 /// Share of what its lands feed it a people must be using before it
 /// spreads into the land beside them.
 const SPREAD_FULL: f32 = 0.6;
@@ -513,6 +513,8 @@ impl ContactIndex {
 /// A group of people with a home variety and a few traits.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Community {
+    /// Direct community ancestry, independent of later language shifts.
+    pub parents: Vec<usize>,
     /// What its people call themselves, in their current language.
     pub name: Name,
     /// Index into `World::varieties`.
@@ -630,6 +632,8 @@ impl ContactKind {
 /// Something that happened to communities rather than to words.
 #[derive(Clone, Debug, PartialEq)]
 pub enum WorldEvent {
+    /// The complete census and route evidence for an authored choice.
+    Settlement(Box<crate::settlement::SettlementRecord>),
     /// `community` was founded with a new language.
     Found { community: usize },
     /// `daughter` split off from `community`, speaking a new variety, and
@@ -640,6 +644,7 @@ pub enum WorldEvent {
         from: usize,
         to: usize,
         by_sea: bool,
+        travelled: bool,
     },
     /// `community` abandoned variety `from` for a daughter of `toward`'s.
     Shift {
@@ -958,6 +963,7 @@ impl World {
         variety.name = self.language_name(&variety, &name);
         self.varieties.push(variety);
         self.communities.push(Community {
+            parents: Vec::new(),
             name,
             variety: self.varieties.len() - 1,
             prestige: power.clamp(0.0, 1.0),
@@ -1360,6 +1366,37 @@ impl World {
         intensity: f32,
         spatial: Option<&mut Spatial>,
     ) -> usize {
+        let (region, lands, share, by_sea) = self.leavers(community);
+        self.divide(
+            community,
+            naming,
+            intensity,
+            crate::settlement::Division {
+                region,
+                lands,
+                share,
+                by_sea,
+                record: true,
+            },
+            spatial,
+        )
+    }
+
+    pub(crate) fn divide(
+        &mut self,
+        community: usize,
+        naming: Option<&Naming>,
+        intensity: f32,
+        division: crate::settlement::Division,
+        spatial: Option<&mut Spatial>,
+    ) -> usize {
+        let crate::settlement::Division {
+            region,
+            lands: leaving,
+            share,
+            by_sea,
+            record,
+        } = division;
         let affected = self.communities[community].lands.clone();
         if let Some(view) = spatial.as_deref() {
             let contacts = self.contact_index();
@@ -1371,7 +1408,6 @@ impl World {
         let mut daughter = self.varieties[parent].fork(parent, self.generation);
         self.inherit_places(parent, &mut daughter);
         let home = self.communities[community].home();
-        let (region, leaving, share, by_sea) = self.leavers(community);
         // Leavers may name themselves for the actual river of their new
         // homeland, using its name as they know it, not the word "river".
         let river = (region != home
@@ -1519,6 +1555,7 @@ impl World {
         self.communities[community].lands = kept;
         let parent = &self.communities[community];
         let new = Community {
+            parents: vec![community],
             name,
             variety: self.varieties.len() - 1,
             size: gone,
@@ -1540,6 +1577,7 @@ impl World {
         let exposure = self.climate.exposure.get(community).copied().flatten();
         self.climate.exposure.resize(self.communities.len(), None);
         self.climate.exposure[index] = exposure;
+        self.divide_city_residents(community, index, size, share.is_none());
         if intensity > 0.0 {
             if !by_sea && self.nearness(community, index) > 0.0 {
                 self.link(community, index, intensity, ContactKind::Neighbours);
@@ -1551,17 +1589,20 @@ impl World {
             }
         }
         self.inherit_state(community, index);
-        self.events.push((
-            self.generation,
-            WorldEvent::Split {
-                community,
-                daughter: index,
-                from: home,
-                to: region,
-                by_sea,
-            },
-        ));
-        self.inherit_ethos(index, region != home);
+        if record {
+            self.events.push((
+                self.generation,
+                WorldEvent::Split {
+                    community,
+                    daughter: index,
+                    from: home,
+                    to: region,
+                    by_sea,
+                    travelled: share.is_some() && region != home,
+                },
+            ));
+        }
+        self.inherit_ethos(index, share.is_some() && region != home);
         self.reconcile_contacts();
         if let Some(view) = spatial {
             view.replace(self, community, &presence);
@@ -1737,7 +1778,7 @@ impl World {
     }
 
     /// Territorial changes end inaccessible relations, even without turnover.
-    fn reconcile_contacts(&mut self) {
+    pub(crate) fn reconcile_contacts(&mut self) {
         let invalid: Vec<_> = self
             .contacts
             .iter()
@@ -2104,7 +2145,7 @@ impl World {
     /// How much room each land has for `community`: what it feeds them,
     /// less everyone else living there, of whom a weaker people counts
     /// only in part, since the locals make room, or are made to.
-    fn free_room(&self, community: usize, region: usize, spatial: &Spatial) -> f32 {
+    pub(crate) fn free_room(&self, community: usize, region: usize, spatial: &Spatial) -> f32 {
         let me = &self.communities[community];
         let held: f32 = spatial.dwellers[region]
             .iter()
@@ -5889,11 +5930,19 @@ mod tests {
             let mut spread = false;
             for c in world.living() {
                 let k = &world.communities[c];
-                let fed: f32 = k.lands.iter().map(|&r| world.feeds(r, k.livelihood)).sum();
+                // Rulers and townsfolk can also eat stored food and tribute.
+                let fed: f32 = k
+                    .lands
+                    .iter()
+                    .map(|&r| world.feeds(r, k.livelihood))
+                    .sum::<f32>()
+                    + world.tribute(c);
                 assert!(
                     k.size < fed * 1.3,
-                    "seed {seed}: {} on lands feeding {fed}",
-                    k.size
+                    "seed {seed}, community {c}: {} on lands feeding {fed}; tribute {}, urban {:?}",
+                    k.size,
+                    world.tribute(c),
+                    world.city_residence(c)
                 );
                 spread |= k.lands.len() > 1;
             }

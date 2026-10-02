@@ -73,6 +73,7 @@ export interface Preview {
 }
 
 export type Action =
+  | ({ kind: "settle" } & SettlementChoice)
   /// Without `region`, the world chooses where the people settles.
   | {
       kind: "found";
@@ -88,8 +89,6 @@ export type Action =
       ethos?: Partial<Ethos>;
     }
   | { kind: "connect"; a: number; b: number; intensity: number; contact: ContactKind }
-  /// Without `naming`, the new community chooses its own name.
-  | { kind: "split"; community: number; naming?: Naming; intensity: number }
   | { kind: "shift"; community: number; toward: number }
   | { kind: "state"; community: number; capital?: number }
   | { kind: "religion"; community: number }
@@ -141,6 +140,7 @@ export interface Marker {
 }
 
 export interface Community {
+  parents: number[];
   id: number;
   /// What it calls itself, in its own language.
   name: string;
@@ -421,7 +421,14 @@ export interface Contact {
   kind: ContactKind;
 }
 
+export interface HistoryPoint {
+  action: number;
+  offset: number;
+}
+
 export interface Overview {
+  point: HistoryPoint;
+  mutation: number;
   seed: number;
   generation: number;
   latest: number;
@@ -505,6 +512,7 @@ export interface PlaceName {
 }
 
 export interface Move {
+  path: number[];
   generation: number;
   community: number;
   from: number;
@@ -524,8 +532,10 @@ export interface TellingView {
 
 /// One chronicle entry; `variety` is set for a sound law.
 export interface Annal {
+  settlement?: SettlementRecord;
+  before?: HistoryPoint;
   generation: number;
-  kind: "found" | "split" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper" | "grammar";
+  kind: "found" | "split" | "settlement" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper" | "grammar";
   /// The annalist's words; words of the language are marked *thus*.
   text: string;
   /// The apparatus: what a linguist would note, such as sound laws.
@@ -646,6 +656,9 @@ export interface WordMap {
 }
 
 export interface Engine {
+  overviewAt(point: HistoryPoint): Overview;
+  settlement(point: HistoryPoint, community: number, intent: SettlementIntent, share: number, destination: number | null): SettlementPreview;
+  actAt(point: HistoryPoint, mutation: number, action: Action): void;
   act(action: Action): void;
   undo(): boolean;
   runUntilEvent(limit: number): number;
@@ -667,3 +680,46 @@ export interface Engine {
 
 /// Years per generation, for display only.
 export const YEARS = 25;
+
+export type SettlementIntent = "partition" | "settlers" | "migration";
+export interface SettlementChoice {
+  community: number;
+  intent: SettlementIntent;
+  destination: number;
+  share: number;
+  naming: Naming | null;
+  intensity: number;
+}
+export interface Allocation {
+  lands: number[];
+  population: number;
+  presence: [number, number][];
+}
+export interface SettlementRoute {
+  from: number;
+  to: number;
+  population: number;
+  effort: number;
+  by_sea: boolean;
+  path: number[];
+}
+export interface SettlementPlan {
+  choice: SettlementChoice;
+  before: Allocation;
+  remaining: Allocation;
+  arriving: Allocation;
+  routes: SettlementRoute[];
+  inhabitants: [number, number][];
+  capacity: number;
+  room: number;
+  falling_states: number[];
+  notes: string[];
+}
+export interface SettlementRecord { plan: SettlementPlan; daughter: number | null }
+export interface SettlementPreview {
+  point: HistoryPoint;
+  mutation: number;
+  options: { region: number; reason: string | null; effort: number | null }[];
+  plan: SettlementPlan | null;
+  reason: string | null;
+}

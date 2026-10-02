@@ -38,6 +38,7 @@ mod rivers;
 pub mod rng;
 pub mod root;
 pub mod schisms;
+pub mod settlement;
 mod spelling;
 pub mod typology;
 pub mod variety;
@@ -45,7 +46,9 @@ pub mod wold;
 pub mod world;
 
 pub use change::{Env, Matcher, Rewrite, SoundChange, apply_all};
-pub use chronicle::{Action, Chronicle, ENGINE_REVISION, FORMAT, Recipe, SetAside, Telling};
+pub use chronicle::{
+    Action, Chronicle, ENGINE_REVISION, FORMAT, HistoryPoint, Recipe, SetAside, Telling,
+};
 pub use climate::{Climate, ClimateCause, ClimateChange, RegionClimate, ZoneClimate};
 pub use concepts::{CONCEPTS, Class, Concept, FAMILIES, Field, Iconic, Relation, Tier};
 pub use design::{LanguageDesign, Sound};

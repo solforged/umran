@@ -103,6 +103,15 @@ is lost: abandoned histories stay readable, struck through.
 
 ## A closer look
 
+**A choice of homeland** opens beside the chart from a people's card. Divide
+its territory around a new heart, send a chosen share of settlers, or move
+everyone together. The engine previews connected holdings, residents,
+travel routes, crowding and any capital lost. Applying the choice opens its
+historical account; **Return before this choice** lets you try another way,
+keeping the first telling even when both decisions happened in the same year.
+
+![A settlement account beside the chart, showing the people remaining and departing and the routes from their inhabited lands](docs/images/settlement.jpg)
+
 The **atlas index** finds peoples, languages, lands, states, faiths, and crafts
 by name, older name, or meaning. Accents are optional when searching. Open it
 from the chart's header, or press `/` or `⌘/Ctrl K`.

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { BookOpen, Feather, Gauge, Layers, Map as MapIcon, Pause, Play, ScrollText, Search, SkipForward, StepForward, X } from "lucide-react";
-import type { Annal, Catalog, Craft, Engine, EthosAxis, Overview, WorldMap } from "../model";
+import type { Annal, Catalog, Craft, Engine, EthosAxis, Overview, SettlementChoice, SettlementPreview, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { ETHOS_AXES, ETHOS_POLES, EVENT_KIND, hue } from "../lore";
 import { PACES, year } from "../words";
-import type { DialogKind } from "./ActionDialog";
+import type { DialogKind, InterventionKind } from "./ActionDialog";
+import { message } from "../engine";
+import { SettlementDesk, type SettlementDraft } from "./SettlementDesk";
 import { INITIAL_HISTORY } from "../history";
 import { AtlasIndex } from "./AtlasIndex";
 import type { DictionaryView } from "./Dictionary";
@@ -63,6 +65,8 @@ export function Stage({
   onNextEvent,
   onUndo,
   onDialog,
+  initialFocus,
+  onSettle,
 }: {
   engine: Engine;
   catalog: Catalog;
@@ -88,12 +92,14 @@ export function Stage({
   onNextEvent: () => void;
   onUndo: () => void;
   onDialog: (kind: DialogKind) => void;
+  initialFocus: Focus | null;
+  onSettle: (choice: SettlementChoice, preview: SettlementPreview) => void;
 }) {
   const { latest } = overview;
   const atPresent = generation === latest;
 
   // The encyclopedia's trail of cards; the last is the one open.
-  const [trail, setTrail] = useState<Focus[]>([{ kind: "world" }]);
+  const [trail, setTrail] = useState<Focus[]>([initialFocus ?? { kind: "world" }]);
   const focus = trail.at(-1)!;
   // The folio page open over the map, by its section's id.
   const [leaf, setLeaf] = useState<string | null>(null);
@@ -106,7 +112,15 @@ export function Stage({
   const [historyView, setHistoryView] = useState(INITIAL_HISTORY);
   const [dictionaryViews, setDictionaryViews] = useState<Record<number, DictionaryView>>({});
   const [indexOpen, setIndexOpen] = useState(false);
-  const [pane, setPane] = useState<"map" | "reading">("map");
+  const [pane, setPane] = useState<"map" | "reading">(initialFocus ? "reading" : "map");
+  const [settlement, setSettlement] = useState<SettlementDraft | null>(null);
+  const settlementReading = useMemo(() => settlement ? engine.overviewAt(settlement.point) : overview, [engine, settlement?.point, overview]);
+  const present = useMemo(() => settlement ? engine.overview(engine.latest()) : overview, [engine, settlement !== null, overview]);
+  const settlementPreview = useMemo(() => {
+    if (!settlement) return { preview: null, error: null };
+    try { return { preview: engine.settlement(settlement.point, settlement.community, settlement.intent, settlement.share, settlement.destination), error: null }; }
+    catch (e) { return { preview: null, error: message(e) }; }
+  }, [engine, settlement, overview.mutation]);
   const go = (next: Focus) => {
     setPane("reading");
     leavesByCard.current.set(JSON.stringify(focus), leaf);
@@ -154,9 +168,20 @@ export function Stage({
   const [pauseOn, setPauseOn] = useState<PauseOn>("peoples");
   const tick = useRef(onTick);
   tick.current = onTick;
-  const scrub = (g: number) => { setPlaying(false); onScrub(g); };
-  const openDialog = (kind: DialogKind) => { setPlaying(false); onDialog(kind); };
-  const openIndex = () => { setPlaying(false); setIndexOpen(true); };
+  const scrub = (g: number) => { setPlaying(false); setSettlement(null); onScrub(g); };
+  const openDialog = (kind: InterventionKind, community = selected) => {
+    setPlaying(false);
+    if (kind === "settlement") {
+      setLeaf(null); setPane("map");
+      setSettlement({ community, intent: overview.communities[community].lands.length > 1 ? "partition" : "settlers", share: 0.5, destination: null, point: overview.point });
+    } else { onDialog(kind); }
+  };
+  const reconsider = (annal: Annal) => {
+    if (!annal.settlement || !annal.before) return;
+    setPlaying(false); setLeaf(null); setPane("map");
+    setSettlement({ ...annal.settlement.plan.choice, destination: null, point: annal.before });
+  };
+  const openIndex = () => { setPlaying(false); setSettlement(null); setIndexOpen(true); };
   const stop = useRef(onStop);
   stop.current = onStop;
   useEffect(() => {
@@ -288,7 +313,7 @@ export function Stage({
     : tint.kind === "words" ? `Words for “${concept?.replaceAll("_", " ")}”` : "Sound change";
 
   return (
-    <div className="stage workbench" data-pane={pane}>
+    <div className="stage workbench" data-pane={pane} data-settlement={settlement !== null}>
       <header className="stage-head">
         <nav>
           <button type="button" className="link brand" onClick={onShelf} title="Back to the shelf" aria-label="Back to the shelf">
@@ -312,22 +337,23 @@ export function Stage({
       <section className="stage-map" aria-label="Map">
         <MapView
           map={map}
-          overview={overview}
-          generation={generation}
-          tint={tint}
+          overview={settlement ? settlementReading : overview}
+          generation={settlement ? settlementReading.generation : generation}
+          tint={settlement ? { kind: "peoples" } : tint}
           names={layers.names}
-          routes={layers.routes}
-          contacts={layers.contacts}
-          states={layers.states}
-          chosen={new Set(highlight.chosen)}
+          routes={!settlement && layers.routes}
+          contacts={!settlement && layers.contacts}
+          states={!settlement && layers.states}
+          chosen={new Set(settlement ? [settlement.community] : highlight.chosen)}
           lands={new Set(highlight.lands)}
-          beacons={beacons}
-          focus={highlight.point}
-          known={known}
+          beacons={settlement ? [] : beacons}
+          focus={settlement ? map.regions[settlement.destination ?? settlementReading.communities[settlement.community].region].site : highlight.point}
+          known={settlement ? null : known}
+          settlement={settlementPreview.preview}
           zoomable
-          onPeople={(id) => go({ kind: "people", id })}
-          onLand={(region) => go({ kind: "land", region })}
-          onContinent={(landmass) => go({ kind: "continent", landmass })}
+          onPeople={(id) => settlement ? setSettlement({ ...settlement, destination: settlementReading.communities[id].region }) : go({ kind: "people", id })}
+          onLand={(region) => settlement ? setSettlement({ ...settlement, destination: region }) : go({ kind: "land", region })}
+          onContinent={settlement ? undefined : (landmass) => go({ kind: "continent", landmass })}
           onState={(id) => go({ kind: "state", id })}
           onReligion={(id) => go({ kind: "religion", id })}
           onCraft={(id) => go({ kind: "craft", id })}
@@ -418,7 +444,9 @@ export function Stage({
       </section>
       <div className="folio-host" ref={setFolioHost} />
 
-      <Pedia
+      {settlement ? <SettlementDesk draft={settlement} preview={settlementPreview.preview} error={settlementPreview.error}
+        overview={settlementReading} map={map} catalog={catalog} latest={present} onChange={setSettlement}
+        onCancel={() => setSettlement(null)} onCommit={onSettle} /> : <Pedia
         trail={trail}
         onReturn={returnTo}
         onIndex={openIndex}
@@ -444,11 +472,12 @@ export function Stage({
         onKnownBy={(v) => setVeiled(v !== null)}
         onDialog={(kind, community) => {
           onSelect(community);
-          openDialog(kind);
+          openDialog(kind, community);
         }}
-      />
+        onReconsider={reconsider}
+      />}
 
-      <footer className="timebar stage-bar">
+      <footer className="timebar stage-bar" inert={settlement !== null}>
         <div className="chronicle-line">
           {last && LastIcon ? (
             <button
@@ -576,8 +605,8 @@ export function Stage({
               {!atPresent ? <p className="muted small">Writing here begins another telling. The later years are kept in the chronicle.</p> : null}
               {people?.ended === null ? (
                 <>
-                  <button type="button" onClick={() => openDialog("split")}>
-                    Some of the {people.name} go their own way
+                  <button type="button" onClick={() => openDialog("settlement")}>
+                    The {people.name} settle, divide, or move
                   </button>
                   <button type="button" onClick={() => openDialog("connect")}>
                     The {people.name} meet another people

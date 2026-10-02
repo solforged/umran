@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { LocateFixed, Maximize, Minus, Plus } from "lucide-react";
-import type { Community, Craft, EthosAxis, Overview, WordMap, WorldMap } from "../model";
+import type { Community, Craft, EthosAxis, Overview, SettlementPreview, WordMap, WorldMap } from "../model";
 import type { ShelfPeople } from "../shelf";
 import { YEARS } from "../model";
 import { hue, TERRAIN_NAME } from "../lore";
@@ -56,16 +56,6 @@ export function peoplesByRegion(overview: Overview): Map<number, Community[]> {
     }
   }
   return out;
-}
-
-/// A gently curved path from `a` to `b`, stopping short of `b` so its
-/// arrowhead does not cover the label there.
-function route([ax, ay]: [number, number], [bx, by]: [number, number]): string {
-  const [dx, dy] = [bx - ax, by - ay];
-  const length = Math.hypot(dx, dy) || 1;
-  const end: [number, number] = [bx - (dx / length) * 0.18, by - (dy / length) * 0.18];
-  const bend: [number, number] = [ax + dx / 2 - dy * 0.2, ay + dy / 2 + dx * 0.2];
-  return `M${ax},${ay} Q${bend[0]},${bend[1]} ${end[0]},${end[1]}`;
 }
 
 /// Rings of ripple lines off the coast, outermost first: how far each
@@ -286,6 +276,7 @@ export function MapView({
   focus = null,
   known = null,
   zoomable = false,
+  settlement = null,
   onPeople,
   onLand,
   onContinent,
@@ -313,6 +304,7 @@ export function MapView({
   /// with the peoples and names on it.
   known?: Set<number> | null;
   zoomable?: boolean;
+  settlement?: SettlementPreview | null;
   onPeople: (community: number) => void;
   onLand: (region: number) => void;
   onContinent?: (landmass: number) => void;
@@ -622,6 +614,9 @@ export function MapView({
     else lettered.push(extent);
   }
 
+  const possible = new Set(settlement?.options.filter((o) => o.reason === null).map((o) => o.region));
+  const remains = new Set(settlement?.plan?.remaining.lands);
+  const arrives = new Set(settlement?.plan?.arriving.lands);
   const shape = (r: WorldMap["regions"][number]) => {
     const sea = r.terrain === "sea";
     const veiled = !sea && hidden(r.id);
@@ -635,6 +630,7 @@ export function MapView({
           points={points}
         />
         {colour ? <polygon className="claim" points={points} style={{ fill: colour }} /> : null}
+        {!sea && settlement ? <polygon points={points} className={`settlement-land${possible.has(r.id) ? " possible" : ""}${remains.has(r.id) ? " remaining" : ""}${arrives.has(r.id) ? " arriving" : ""}`} /> : null}
       </g>
     );
   };
@@ -757,7 +753,7 @@ export function MapView({
                 <path
                   key={i}
                   className={`route${m.overseas ? " overseas" : ""}${mine ? " chosen" : ""}`}
-                  d={route(map.regions[m.from].site, map.regions[m.to].site)}
+                  d={m.path.map((r, step) => `${step ? "L" : "M"}${map.regions[r].site.join(",")}`).join(" ")}
                   markerEnd="url(#route-head)"
                   style={{
                     stroke: hue(family(mover)),
@@ -772,6 +768,11 @@ export function MapView({
             })}
           </g>
         ) : null}
+        {settlement?.plan ? <g className="settlement-journeys" aria-hidden="true">
+          {settlement.plan.routes.map((r) => <polyline key={r.from} className={r.by_sea ? "sea-journey" : ""}
+            points={r.path.map((region) => map.regions[region].site.join(",")).join(" ")}
+            markerEnd="url(#route-head)" />)}
+        </g> : null}
         <g className="dealings">
           {dealings.map((k, i) => {
             const [ax, ay] = at.get(k.a)!;

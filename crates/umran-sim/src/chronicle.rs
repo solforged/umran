@@ -32,6 +32,10 @@ const MAX_RUN: u32 = 2000;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum Action {
+    Settle {
+        #[serde(flatten)]
+        choice: crate::settlement::SettlementChoice,
+    },
     Found {
         /// What the people call themselves, built from their own words.
         naming: Naming,
@@ -54,13 +58,6 @@ pub enum Action {
         b: usize,
         intensity: f32,
         contact: ContactKind,
-    },
-    Split {
-        community: usize,
-        /// `None` lets the new community choose its own name.
-        #[serde(default)]
-        naming: Option<Naming>,
-        intensity: f32,
     },
     Shift {
         community: usize,
@@ -134,6 +131,15 @@ struct Cursor {
     done: u32,
 }
 
+/// An exact reading in a history. `action` actions have happened, followed
+/// by `offset` generations of the next run. Unlike a year this can distinguish
+/// two decisions made without advancing time.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HistoryPoint {
+    pub action: usize,
+    pub offset: u32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Chronicle {
     pub seed: u64,
@@ -168,6 +174,76 @@ impl Chronicle {
     /// The world after every action.
     pub fn latest(&self) -> &World {
         &self.latest
+    }
+
+    pub fn end(&self) -> HistoryPoint {
+        match self.actions.last() {
+            Some(Action::Run { generations }) => HistoryPoint {
+                action: self.actions.len() - 1,
+                offset: *generations,
+            },
+            _ => HistoryPoint {
+                action: self.actions.len(),
+                offset: 0,
+            },
+        }
+    }
+
+    /// The reading after every authored decision in `generation`.
+    pub fn point_at(&self, generation: u32) -> HistoryPoint {
+        let mut at = 0;
+        for (index, action) in self.actions.iter().enumerate() {
+            if let Action::Run { generations } = action {
+                if at + generations > generation {
+                    return HistoryPoint {
+                        action: index,
+                        offset: generation.saturating_sub(at),
+                    };
+                }
+                at += generations;
+            }
+        }
+        self.end()
+    }
+
+    fn prefix(&self, point: HistoryPoint) -> Result<Vec<Action>, String> {
+        if point.action > self.actions.len() {
+            return Err("that reading is beyond the end of this telling".into());
+        }
+        let mut actions = self.actions[..point.action].to_vec();
+        if point.offset > 0 {
+            match self.actions.get(point.action) {
+                Some(Action::Run { generations }) if point.offset <= *generations => {
+                    actions.push(Action::Run {
+                        generations: point.offset,
+                    });
+                }
+                _ => return Err("that reading is not within a recorded run".into()),
+            }
+        }
+        Ok(actions)
+    }
+
+    /// Publish a new history only after both the rewind and action succeed.
+    /// A refusal must not set aside later years or change the active world.
+    pub fn act_at(&mut self, point: HistoryPoint, action: Action) -> Result<(), String> {
+        if point == self.end() {
+            return self.act(action);
+        }
+        let mut candidate = self.clone();
+        candidate.branch_at_point(point)?;
+        candidate.act(action)?;
+        *self = candidate;
+        Ok(())
+    }
+
+    pub fn world_at_point(&self, point: HistoryPoint) -> Result<World, String> {
+        if point == self.end() {
+            return Ok(self.latest.clone());
+        }
+        let mut reading = self.clone();
+        reading.branch_at_point(point)?;
+        Ok(reading.latest)
     }
 
     /// Each action with the generation it happened at.
@@ -231,24 +307,14 @@ impl Chronicle {
     /// Sets everything after `generation` aside, so new actions continue
     /// from there. A run that crosses it is shortened.
     pub fn branch_at(&mut self, generation: u32) {
-        let mut kept = Vec::new();
-        let mut at = 0;
-        for action in &self.actions {
-            match action {
-                Action::Run { generations } if at + generations > generation => {
-                    if generation > at {
-                        kept.push(Action::Run {
-                            generations: generation - at,
-                        });
-                    }
-                    break;
-                }
-                Action::Run { generations } => {
-                    at += generations;
-                    kept.push(action.clone());
-                }
-                other => kept.push(other.clone()),
-            }
+        self.branch_at_point(self.point_at(generation))
+            .expect("a reading obtained from this history is valid");
+    }
+
+    pub fn branch_at_point(&mut self, point: HistoryPoint) -> Result<(), String> {
+        let kept = self.prefix(point)?;
+        if kept == self.actions {
+            return Ok(());
         }
         let unchanged = self
             .actions
@@ -261,6 +327,7 @@ impl Chronicle {
         self.checkpoints
             .retain(|_, (cursor, _)| cursor.action < unchanged);
         self.latest = self.replay_to(u32::MAX);
+        Ok(())
     }
 
     /// Takes up the telling at `index` again, setting the present one
@@ -400,6 +467,9 @@ fn community(world: &World, index: usize) -> Result<(), String> {
 /// leaves it as it was.
 fn apply(world: &mut World, action: &Action) -> Result<(), String> {
     match action {
+        Action::Settle { choice } => {
+            world.settle(choice)?;
+        }
         Action::Found {
             naming,
             design,
@@ -450,17 +520,6 @@ fn apply(world: &mut World, action: &Action) -> Result<(), String> {
                 return Err("a community cannot be in contact with itself".into());
             }
             world.connect(*a, *b, *intensity, *contact)?;
-        }
-        Action::Split {
-            community: c,
-            naming,
-            intensity,
-        } => {
-            community(world, *c)?;
-            if let Some(naming) = naming {
-                naming.validate()?;
-            }
-            world.split(*c, naming.as_ref(), *intensity);
         }
         Action::Shift {
             community: c,
@@ -561,6 +620,30 @@ mod tests {
                 .all(|(x, y)| x.lexicon == y.lexicon)
     }
 
+    fn settlement(world: &World, intensity: f32) -> Action {
+        use crate::settlement::{SettlementChoice, SettlementIntent};
+        for intent in [SettlementIntent::Partition, SettlementIntent::Settlers] {
+            if let Some(option) = world
+                .settlement_options(0, intent, 0.5)
+                .unwrap()
+                .into_iter()
+                .find(|o| o.reason.is_none())
+            {
+                return Action::Settle {
+                    choice: SettlementChoice {
+                        community: 0,
+                        destination: option.region,
+                        intent,
+                        share: 0.5,
+                        naming: None,
+                        intensity,
+                    },
+                };
+            }
+        }
+        panic!("the sample needs somewhere to settle")
+    }
+
     #[test]
     fn neutral_ethos_recipe_is_identical_with_multipliers_enabled() {
         let zero = FoundingEthos {
@@ -614,20 +697,21 @@ mod tests {
                 craft: Craft::Seafaring,
             },
             Action::Run { generations: 12 },
-            Action::Split {
-                community: 0,
-                naming: None,
-                intensity: 0.5,
-            },
+        ]);
+        for action in &actions {
+            apply(&mut baseline, action).unwrap();
+            apply(&mut neutral, action).unwrap();
+        }
+        for action in [
+            settlement(&baseline, 0.5),
             Action::Shift {
                 community: 1,
                 toward: 0,
             },
             Action::Run { generations: 148 },
-        ]);
-        for action in &actions {
-            apply(&mut baseline, action).unwrap();
-            apply(&mut neutral, action).unwrap();
+        ] {
+            apply(&mut baseline, &action).unwrap();
+            apply(&mut neutral, &action).unwrap();
         }
         assert!(same(&baseline, &neutral));
         assert_eq!(baseline.events, neutral.events);
@@ -732,12 +816,7 @@ mod tests {
             contact: ContactKind::Trade,
         })
         .unwrap();
-        c.act(Action::Split {
-            community: 0,
-            naming: None,
-            intensity: 0.3,
-        })
-        .unwrap();
+        c.act(settlement(c.latest(), 0.3)).unwrap();
         c.act(Action::State {
             community: 0,
             capital: None,
@@ -828,12 +907,7 @@ mod tests {
         );
 
         c.branch_at(5);
-        c.act(Action::Split {
-            community: 0,
-            naming: None,
-            intensity: 0.2,
-        })
-        .unwrap();
+        c.act(settlement(c.latest(), 0.2)).unwrap();
         assert_eq!(c.tellings().len(), 1);
         assert_eq!(c.tellings()[0].why, SetAside::Rewritten);
         let branched = c.actions().to_vec();
@@ -986,5 +1060,57 @@ mod tests {
         let mut wrong = back.clone();
         wrong.format = "something-else".into();
         assert!(Chronicle::from_recipe(&wrong).is_err());
+    }
+
+    #[test]
+    fn exact_readings_and_refused_interventions_preserve_the_history() {
+        let mut history = Chronicle::new(7, MapSize::Small);
+        history.act(found("First", "familiar")).unwrap();
+        let before_second = history.end();
+        history.act(found("Second", "airy")).unwrap();
+        history.act(Action::Run { generations: 3 }).unwrap();
+        let saved = history.recipe();
+        let world = history.latest().clone();
+        assert_eq!(
+            history
+                .world_at_point(before_second)
+                .unwrap()
+                .communities
+                .len(),
+            1
+        );
+        assert!(
+            history
+                .act_at(
+                    before_second,
+                    Action::Shift {
+                        community: 0,
+                        toward: 99
+                    }
+                )
+                .is_err()
+        );
+        assert_eq!(history.recipe(), saved);
+        assert!(same(history.latest(), &world));
+        history
+            .act_at(before_second, found("Different", "familiar"))
+            .unwrap();
+        assert_eq!(history.latest().generation, 0);
+        assert_eq!(history.latest().communities.len(), 2);
+        assert_eq!(history.tellings()[0].actions, saved.actions);
+        assert!(
+            history
+                .world_at_point(HistoryPoint {
+                    action: 0,
+                    offset: 1
+                })
+                .is_err()
+        );
+        history.act(Action::Run { generations: 3 }).unwrap();
+        let reading = history.end();
+        history.act(Action::Run { generations: 1 }).unwrap();
+        assert_eq!(history.world_at_point(reading).unwrap().generation, 3);
+        history.branch_at_point(reading).unwrap();
+        assert_eq!(history.latest().generation, 3);
     }
 }

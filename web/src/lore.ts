@@ -38,6 +38,7 @@ import type { Annal, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, 
 import { YEARS } from "./model";
 
 export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string }> = {
+  settlement: { icon: MapPinned, name: "A choice of homeland" },
   found: { icon: Flag, name: "A people appears" },
   split: { icon: GitFork, name: "A people parts" },
   migration: { icon: Footprints, name: "A people moves" },

@@ -141,6 +141,8 @@ function snapshot(bench: WasmWorkbench, generation: number): JsonObject {
   const overview = object(json(JSON.parse(bench.overview(generation))));
   delete overview.latest;
   delete overview.timeline;
+  delete overview.mutation;
+  delete overview.point;
   const competitors: JsonObject[] = [];
   const lexicons = array(overview.varieties).map(value => {
     const variety = object(value);
@@ -355,6 +357,41 @@ async function sample(): Promise<void> {
         throw new Error("Live/replayed sample differs in WASM");
       }
     } finally { replay.free(); }
+    // The planner's full census, paths and refusals must agree before an
+    // authored decision is applied. Reload the same starting history for each
+    // intent so this exercises three alternatives, not an accidental chain.
+    for (const intent of ["partition", "settlers", "migration"]) {
+      await rpc({ kind: "load", recipe });
+      const alternative = Workbench.load(recipe);
+      try {
+        const overview = object(json(JSON.parse(alternative.overview(alternative.latest()))));
+        const point = overview.point;
+        let chosen: JsonObject | undefined;
+        for (const community of array(overview.communities).map(object).filter(c => c.ended === null)) {
+          const request = { kind: "settlement", point, community: community.id, intent, share: 0.5, destination: -1 };
+          const preview = object(json(JSON.parse(alternative.settlement(JSON.stringify(point), number(community.id), intent, 0.5, -1))));
+          const nativePreview = await rpc(request);
+          if (digest(preview) !== digest(nativePreview)) throw new Error(`Settlement options differ: ${intent}: ${firstDifference(nativePreview, preview)}`);
+          const destination = array(preview.options).map(object).find(o => o.reason === null);
+          if (!destination) continue;
+          request.destination = number(destination.region);
+          const account = object(json(JSON.parse(alternative.settlement(JSON.stringify(point), number(community.id), intent, 0.5, request.destination))));
+          const nativeAccount = await rpc(request);
+          if (digest(account) !== digest(nativeAccount)) throw new Error(`Settlement account differs: ${intent}: ${firstDifference(nativeAccount, account)}`);
+          chosen = { kind: "settle", ...object(object(account.plan).choice) };
+          break;
+        }
+        if (!chosen) throw new Error(`Sample needs a valid ${intent} for parity`);
+        await rpc({ kind: "act", action: chosen });
+        wasmAct(alternative, chosen);
+        await compare(alternative, `sample/${intent}`, sampleModule.SAMPLE_LAND.seed, alternative.latest() * YEARS);
+        const saved = alternative.save();
+        await rpc({ kind: "load", recipe: saved });
+        const restored = Workbench.load(saved);
+        try { await compare(restored, `sample/${intent}/replay`, sampleModule.SAMPLE_LAND.seed, restored.latest() * YEARS); }
+        finally { restored.free(); }
+      } finally { alternative.free(); }
+    }
     worlds++;
   } finally { engine.dispose(); }
 }

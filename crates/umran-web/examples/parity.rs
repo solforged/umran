@@ -13,6 +13,8 @@ fn snapshot(bench: &mut Bench, generation: u32) -> Result<Value, String> {
         .ok_or("Overview is not an object")?;
     object.remove("latest");
     object.remove("timeline");
+    object.remove("mutation");
+    object.remove("point");
     let varieties = overview["varieties"]
         .as_array()
         .ok_or("Missing varieties")?;
@@ -101,6 +103,16 @@ fn request(bench: &mut Option<Bench>, input: Value) -> Result<Value, String> {
                 input["action"].clone(),
             )?;
             Ok(Value::Null)
+        }
+        "settlement" => {
+            let preview = bench.as_ref().ok_or("No world open")?.settlement(
+                &input["point"].to_string(),
+                input["community"].as_u64().ok_or("Missing community")? as usize,
+                input["intent"].as_str().ok_or("Missing intent")?,
+                input["share"].as_f64().ok_or("Missing share")? as f32,
+                input["destination"].as_i64().ok_or("Missing destination")? as i32,
+            )?;
+            serde_json::from_str(&preview).map_err(|e| e.to_string())
         }
         "save" => Ok(Value::String(
             bench.as_ref().ok_or("No world open")?.save()?,

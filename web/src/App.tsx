@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadCatalog, loadEngine, message } from "./engine";
-import type { Action, Catalog, Engine, WorldMap } from "./model";
+import type { Action, Catalog, Engine, SettlementChoice, SettlementPreview, WorldMap } from "./model";
+import type { Focus } from "./components/Pedia";
 import { YEARS } from "./model";
 import { ActionDialog, type DialogKind } from "./components/ActionDialog";
 import { Appendix } from "./components/Appendix";
@@ -49,6 +50,7 @@ export default function App() {
   // Entity IDs belong to one telling. Replacing it starts a fresh reading
   // so cards and language filters cannot silently point into another branch.
   const [tellingVersion, setTellingVersion] = useState(0);
+  const [initialFocus, setInitialFocus] = useState<Focus | null>(null);
   const [viewing, setViewing] = useState<number | null>(null); // null = latest
   const [community, setCommunity] = useState(0);
   const [dialog, setDialog] = useState<DialogKind | null>(null);
@@ -95,6 +97,7 @@ export default function App() {
     engine.current?.dispose();
     engine.current = next;
     setWorldMap(next.map());
+    setInitialFocus(null);
     setViewing(null);
     setCommunity(0);
     setDialog(null);
@@ -168,11 +171,10 @@ export default function App() {
       const current = engine.current;
       if (!current) return;
       try {
-        if (generation < current.latest()) {
-          current.branch(generation);
-          setTellingVersion((v) => v + 1);
-        }
-        current.act(action);
+        const reading = current.overview(generation);
+        const branches = generation < current.latest();
+        current.actAt(reading.point, reading.mutation, action);
+        if (branches) { setInitialFocus(null); setTellingVersion((v) => v + 1); }
         setViewing(null);
         setVersion((v) => v + 1);
         setError(null);
@@ -192,6 +194,7 @@ export default function App() {
     (telling: number) => {
       try {
         engine.current?.restore(telling);
+        setInitialFocus(null);
         setTellingVersion((v) => v + 1);
         setViewing(null);
         setVersion((v) => v + 1);
@@ -333,11 +336,29 @@ export default function App() {
   );
 
   const strike = () => {
+    setInitialFocus(null);
     engine.current?.undo();
     setTellingVersion((v) => v + 1);
     setViewing(null);
     setVersion((v) => v + 1);
     persist();
+  };
+
+  const settle = (choice: SettlementChoice, preview: SettlementPreview) => {
+    const current = engine.current;
+    if (!current) return;
+    try {
+      current.actAt(preview.point, preview.mutation, { kind: "settle", ...choice });
+      const after = current.overview(current.latest());
+      const event = after.annals.findLast((a) => a.kind === "settlement");
+      setInitialFocus(event ? { kind: "event", annal: event } : { kind: "people", id: choice.community });
+      setCommunity(event?.settlement?.daughter ?? choice.community);
+      setViewing(null);
+      setTellingVersion((v) => v + 1);
+      setVersion((v) => v + 1);
+      setError(null);
+      persist();
+    } catch (e) { setError(message(e)); }
   };
 
   const dialogs =
@@ -400,6 +421,8 @@ export default function App() {
         overview={overview}
         title={title}
         notices={notices}
+        initialFocus={initialFocus}
+        onSettle={settle}
         canUndo={overview.timeline.length > 1}
         selected={selected}
         onSelect={setCommunity}
