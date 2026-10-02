@@ -59,21 +59,12 @@ const CONQUEST_MIN_GAP: f32 = 0.3;
 const RULE_HOLD: f32 = 3.0;
 /// Intensity of rule after a conquest, at least.
 const CONQUEST_INTENSITY: f32 = 0.6;
-/// Travel effort beyond which a founding people no longer prefers land
-/// further from others: far enough to be its own.
-const SETTLE_APART: f32 = 800.0;
-/// Furthest a migrating people travels, in travel effort: about five
-/// open plains, or a long way across the steppe.
-const MIGRATION_REACH: f32 = 600.0;
 /// How much likelier a people is to leave land it shares with a stronger
 /// people.
 const PUSHED: f32 = 2.0;
 /// Share of a weaker people's land a stronger newcomer counts as free:
 /// the locals make room, or are made to.
 const YIELD: f32 = 0.5;
-/// Furthest a coastal people sends a colony along or across the sea when
-/// the land beside it is full, in travel effort: one or two sea regions.
-const COLONY_REACH: f32 = 800.0;
 /// How many times larger than the land's namers a people must grow before
 /// its own word for the land takes over, so names do not flip back and
 /// forth between peoples of about the same size.
@@ -181,6 +172,8 @@ pub struct Params {
     /// Population fed by a reference-area plain under farming. Actual
     /// polygon area and livelihood set its share, shared by all residents.
     pub capacity: f32,
+    /// Founding separation saturation, in effort-km.
+    pub settle_apart: f32,
     /// Population at which a farming people starts to come apart; other
     /// ways of living hold together at their share of it
     /// (`Livelihood::cohesion`).
@@ -191,6 +184,8 @@ pub struct Params {
     /// Chance per generation, per unit of strain beyond holding together,
     /// that a people splits.
     pub fission_rate: f32,
+    /// Maximum coast-to-coast colony journey, in effort-km.
+    pub colony_reach: f32,
     /// Chance per generation that a people with no room left takes land
     /// beside its own, scaled by how mobile its way of life makes it.
     pub spread_rate: f32,
@@ -226,9 +221,13 @@ pub struct Params {
     /// Chance per generation that a people opens trade with another it
     /// has no dealings with.
     pub trade_rate: f32,
+    /// Maximum symmetric merchant journey, in effort-km.
+    pub trade_reach: f32,
     /// Chance per generation, per unit of prestige gap beyond
     /// `CONQUEST_MIN_GAP`, that a people comes to rule one it deals with.
     pub conquest_rate: f32,
+    /// Maximum directed expedition or symmetric intermarriage effort-km.
+    pub conquest_reach: f32,
     /// Chance per generation that a large farming people under no state,
     /// facing a challenge, organizes itself into one; a tenth of this in
     /// comfort.
@@ -240,6 +239,8 @@ pub struct Params {
     /// within reach, scaled by how crowded home is, how mobile its terrain
     /// makes it, and whether a stronger people shares it.
     pub migration_rate: f32,
+    /// Maximum whole-people journey, in effort-km.
+    pub migration_reach: f32,
     /// Scales the chance per generation that a sound change spreads from a
     /// variety to one it is in contact with, by the contact's kind and
     /// intensity, how close their land is, how near their kinship, and
@@ -259,8 +260,10 @@ pub struct Params {
     pub conversion_rate: f32,
     /// Chance per generation that an eligible faith divides.
     pub schism_rate: f32,
-    /// Chance per generation that a reachable pilgrim road begins.
+    /// Chance per faithful people to open a shrine contact each generation.
     pub pilgrimage_rate: f32,
+    /// Maximum directed journey to the shrine, in effort-km.
+    pub pilgrimage_reach: f32,
     /// Chance per generation that a language takes up a new given name.
     pub name_turnover: f32,
     /// Fraction of the gap to a city's migrant makeup filled per generation.
@@ -295,9 +298,11 @@ impl Default for Params {
             areal_pull: 3.0,
             growth_rate: 0.07,
             capacity: 40000.0,
+            settle_apart: 800.0,
             cohesion_size: 100000.0,
             cohesion_reach: 300.0,
             fission_rate: 0.1,
+            colony_reach: 1200.0,
             spread_rate: 0.3,
             hardship_rate: 0.004,
             adoption_rate: 0.1,
@@ -309,17 +314,21 @@ impl Default for Params {
             contact_turnover: 1.0,
             neighbour_rate: 0.1,
             trade_rate: 0.01,
+            trade_reach: 1800.0,
             conquest_rate: 0.05,
+            conquest_reach: 800.0,
             state_rate: 0.02,
             collapse_rate: 0.02,
             migration_rate: 0.02,
+            migration_reach: 600.0,
             wave_rate: 1.0,
             craft_rate: 0.001,
             idea_rate: 0.02,
             religion_rate: 0.02,
             conversion_rate: 0.05,
             schism_rate: 0.035,
-            pilgrimage_rate: 0.2,
+            pilgrimage_rate: 0.02,
+            pilgrimage_reach: 1200.0,
             name_turnover: 0.1,
             city_rate: 0.25,
             ethos_enabled: true,
@@ -360,6 +369,18 @@ impl Params {
             ..Self::default()
         }
     }
+}
+
+/// A physical journey, measured in equivalent plain kilometres.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Journey {
+    pub effort: f32,
+    pub by_sea: bool,
+}
+
+fn row_distance(row: &[(u32, f32)], region: usize) -> f32 {
+    row.binary_search_by_key(&(region as u32), |&(r, _)| r)
+        .map_or(f32::INFINITY, |i| row[i].1)
 }
 
 /// A group of people with a home variety and a few traits.
@@ -833,12 +854,15 @@ impl World {
                 .roomiest(&all, Livelihood::Farming)
                 .expect("every map has land");
         }
+        let mut nearest = vec![self.params.settle_apart; self.map.regions.len()];
+        for &source in &peopled {
+            for &(r, effort) in self.map.walking_row(source, self.params.settle_apart).iter() {
+                nearest[r as usize] = nearest[r as usize].min(effort);
+            }
+        }
         let weight = |r: usize| {
             let fertility = self.map.regions[r].terrain.fertility();
-            let apart = peopled
-                .iter()
-                .map(|&o| self.map.distance(r, o))
-                .fold(SETTLE_APART, f32::min);
+            let apart = nearest[r];
             fertility * fertility * apart
         };
         let mut rng = stream(self.seed, &[key("homeland"), community as u64]);
@@ -926,13 +950,89 @@ impl World {
             .fold(0.0, f32::max)
     }
 
-    /// Travel effort between the nearest of two peoples' lands.
+    /// Exact directed access to a destination, using only the traveller's ships.
+    pub fn journey_to(&self, community: usize, region: usize) -> Option<Journey> {
+        let mut best = Journey { effort: f32::INFINITY, by_sea: false };
+        for &source in &self.communities[community].lands {
+            let walk = self.map.distance(source, region);
+            if walk < best.effort || (walk == best.effort && best.by_sea) {
+                best = Journey { effort: walk, by_sea: false };
+            }
+            if self.sails(community) {
+                let sea = self.map.voyage(source, region);
+                if sea < best.effort {
+                    best = Journey { effort: sea, by_sea: true };
+                }
+            }
+        }
+        best.effort.is_finite().then_some(best)
+    }
+
+    /// Exact access from one people to another. Only the departing side supplies ships.
+    pub fn journey_between(&self, a: usize, b: usize) -> Option<Journey> {
+        self.journey_between_within(a, b, f32::INFINITY)
+    }
+
+    fn journey_between_within(&self, a: usize, b: usize, reach: f32) -> Option<Journey> {
+        let mut best = Journey { effort: f32::INFINITY, by_sea: false };
+        for &source in &self.communities[a].lands {
+            let row = self.map.walking_row(source, reach);
+            for &destination in &self.communities[b].lands {
+                let effort = row_distance(&row, destination);
+                if effort <= reach && (effort < best.effort || (effort == best.effort && best.by_sea)) {
+                    best = Journey { effort, by_sea: false };
+                }
+            }
+            if self.sails(a) {
+                let row = self.map.voyage_row(source, reach);
+                for &destination in &self.communities[b].lands {
+                    let effort = row_distance(&row, destination);
+                    if effort <= reach && effort < best.effort {
+                        best = Journey { effort, by_sea: true };
+                    }
+                }
+            }
+        }
+        best.effort.is_finite().then_some(best)
+    }
+
+    /// Merchant or passenger access can be supplied by either side.
+    fn apart_within(&self, a: usize, b: usize, reach: f32) -> f32 {
+        [self.journey_between_within(a, b, reach), self.journey_between_within(b, a, reach)]
+            .into_iter().flatten().map(|j| j.effort).fold(f32::INFINITY, f32::min)
+    }
+
+    /// Exact symmetric journey effort between the peoples' nearest holdings.
     pub fn apart(&self, a: usize, b: usize) -> f32 {
-        let (la, lb) = (&self.communities[a].lands, &self.communities[b].lands);
-        la.iter()
-            .flat_map(|&x| lb.iter().map(move |&y| (x, y)))
-            .map(|(x, y)| self.map.distance(x, y))
-            .fold(f32::INFINITY, f32::min)
+        self.apart_within(a, b, f32::INFINITY)
+    }
+
+    /// Directed reach belongs to the actual ruler, not the subjects.
+    pub(crate) fn can_rule(&self, ruler: usize, subject: usize) -> bool {
+        self.journey_between_within(ruler, subject, self.params.conquest_reach).is_some()
+    }
+
+    /// Reachable destinations in region order, keeping the chosen travel mode.
+    fn journeys(&self, community: usize, reach: f32) -> Vec<(usize, Journey)> {
+        let mut best = vec![Journey { effort: f32::INFINITY, by_sea: false }; self.map.regions.len()];
+        let mut touched = Vec::new();
+        for &source in &self.communities[community].lands {
+            for by_sea in [false, true] {
+                if by_sea && !self.sails(community) { continue; }
+                let row = if by_sea { self.map.voyage_row(source, reach) }
+                    else { self.map.walking_row(source, reach) };
+                for &(r, effort) in row.iter().filter(|(_, d)| *d <= reach) {
+                    let r = r as usize;
+                    let old = &mut best[r];
+                    if effort < old.effort || (effort == old.effort && old.by_sea && !by_sea) {
+                        if !old.effort.is_finite() { touched.push(r); }
+                        *old = Journey { effort, by_sea };
+                    }
+                }
+            }
+        }
+        touched.sort_unstable();
+        touched.into_iter().map(|r| (r, best[r])).collect()
     }
 
     /// Whether two peoples hold any land in common.
@@ -1426,6 +1526,7 @@ impl World {
                 fed - occupied.get(&r).copied().unwrap_or(0.0)
             };
             let heart = k.home();
+            let distances = self.map.walking_row(heart, f32::INFINITY);
             let mut beside: Vec<usize> = k
                 .lands
                 .iter()
@@ -1438,7 +1539,7 @@ impl World {
                 .into_iter()
                 .map(|r| (r, room(r)))
                 .filter(|&(r, f)| f > SPREAD_ROOM * self.feeds(r, livelihood))
-                .map(|(r, f)| (r, f / (1.0 + self.map.distance(heart, r) / REFERENCE_TRAVEL_KM)))
+                .map(|(r, f)| (r, f / (1.0 + row_distance(&distances, r) / REFERENCE_TRAVEL_KM)))
                 .collect();
             if options.is_empty() {
                 continue;
@@ -1562,11 +1663,12 @@ impl World {
                 continue;
             }
             let heart = k.home();
+            let distances = self.map.walking_row(heart, f32::INFINITY);
             let too_large = k.size / (self.params.cohesion_size * k.livelihood.cohesion()) - 1.0;
             let reach = k
                 .lands
                 .iter()
-                .map(|&r| self.map.distance(heart, r))
+                .map(|&r| row_distance(&distances, r))
                 .fold(0.0, f32::max);
             let too_far = reach
                 / (self.params.cohesion_reach
@@ -1633,7 +1735,7 @@ impl World {
             let sails = self.sails(c);
             let options: Vec<(usize, f32)> = (0..self.map.regions.len())
                 .filter(|&r| r != home && self.map.regions[r].terrain.is_land())
-                .filter(|&r| self.map.distance(home, r) <= MIGRATION_REACH)
+                .filter(|&r| self.map.distance(home, r) <= self.params.migration_reach)
                 .filter(|&r| sails || !self.map.overseas(home, r))
                 .filter(|&r| free(r) > stay && free(r) >= size / 2.0)
                 .map(|r| {
@@ -2180,18 +2282,18 @@ impl World {
     fn leavers(&self, community: usize) -> (usize, Vec<usize>, Option<f32>) {
         let c = &self.communities[community];
         let heart = c.home();
+        let heart_row = self.map.walking_row(heart, f32::INFINITY);
         let far = c.lands[1..].iter().copied().max_by(|&a, &b| {
-            self.map
-                .distance(heart, a)
-                .total_cmp(&self.map.distance(heart, b))
+            row_distance(&heart_row, a).total_cmp(&row_distance(&heart_row, b))
         });
         match far {
             Some(far) => {
+                let far_row = self.map.walking_row(far, f32::INFINITY);
                 let mut leaving: Vec<usize> = c
                     .lands
                     .iter()
                     .copied()
-                    .filter(|&r| self.map.distance(r, far) < self.map.distance(r, heart))
+                    .filter(|&r| row_distance(&far_row, r) < row_distance(&heart_row, r))
                     .collect();
                 leaving.sort_by_key(|&r| r != far);
                 (far, leaving, None)
@@ -2229,7 +2331,8 @@ impl World {
                 .filter(|&r| sails && map.coastal(home) && map.coastal(r) && r != home)
                 .filter(|&r| !map.regions[home].neighbours.contains(&r))
                 .filter(|&r| {
-                    map.distance(home, r) <= COLONY_REACH && room(r) * attraction(r) > room(home)
+                    map.distance(home, r) <= self.params.colony_reach
+                        && room(r) * attraction(r) > room(home)
                 })
                 .map(|r| {
                     (r, room(r) / (1.0 + map.distance(home, r) / REFERENCE_TRAVEL_KM) * attraction(r))
@@ -3529,6 +3632,40 @@ fn renewal(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn water_pair() -> (World, usize, usize) {
+        let mut world = World::new(7, Params::static_society());
+        let coast: Vec<_> = (0..world.map.regions.len()).filter(|&r| world.map.coastal(r)).collect();
+        let (from, to) = coast.iter().find_map(|&a| coast.iter().find_map(|&b| {
+            (world.map.overseas(a, b) && world.map.voyage(a, b) <= 1800.0).then_some((a, b))
+        })).expect("nearby separate shores");
+        let a = world.found_seeded(&Naming::People, &SoundProfile::base(), 7, 0.8, 0.5,
+            Some(from), Some(Livelihood::Farming));
+        let b = world.found_seeded(&Naming::People, &SoundProfile::base(), 8, 0.2, 0.5,
+            Some(to), Some(Livelihood::Farming));
+        (world, a, b)
+    }
+
+    #[test]
+    fn journeys_require_own_ships_and_respect_inclusive_reach() {
+        let (mut world, a, b) = water_pair();
+        let to = world.communities[b].home();
+        assert!(world.journey_to(a, to).is_none());
+        assert!(world.apart(a, b).is_infinite());
+        world.learn(b, Craft::Seafaring, None);
+        assert!(world.journey_between(a, b).is_none());
+        let voyage = world.journey_between(b, a).unwrap();
+        assert!(voyage.by_sea);
+        assert_eq!(world.apart(a, b), voyage.effort);
+        let from = world.communities[a].home();
+        assert!(world.journeys(b, voyage.effort).iter().any(|(r, j)| *r == from && j.by_sea));
+        assert!(!world.journeys(b, voyage.effort - 0.01).iter().any(|(r, _)| *r == from));
+        world.learn(a, Craft::Seafaring, None);
+        let reverse = world.journey_to(a, to).unwrap();
+        assert!(reverse.by_sea);
+        assert!((reverse.effort - voyage.effort).abs() < 0.001);
+        assert!(!world.journey_to(a, from).unwrap().by_sea);
+    }
 
 
     #[test]

@@ -61,4 +61,4 @@ pub use polity::{Challenge, Fall, Member, Rise, State};
 pub use profile::{LongVowel, MorphologyKind, MorphologyPrior, SoundProfile, Spelling};
 pub use prosody::{MinimalWord, StressRule};
 pub use variety::{Fork, Variety};
-pub use world::{Community, Contact, ContactKind, Params, World, WorldEvent};
+pub use world::{Community, Contact, ContactKind, Journey, Params, World, WorldEvent};
