@@ -1753,6 +1753,201 @@ fn share(len: usize, fraction: f64) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn drainage_spills_hollows_through_the_lowest_saddle() {
+        let mut map = route_fixture(
+            &[Terrain::Sea, Terrain::Hills, Terrain::Mountains,
+                Terrain::Plains, Terrain::Plains, Terrain::Plains],
+            &[(0, 1, 100.0), (0, 2, 100.0), (1, 3, 100.0),
+                (2, 4, 100.0), (3, 4, 100.0), (3, 5, 100.0), (4, 5, 100.0)],
+        );
+        for (r, elevation) in map.regions.iter_mut().zip([0.0, 4.0, 8.0, 1.0, 0.0, 1.0]) {
+            r.elevation = elevation;
+        }
+        let (drainage, order) = rivers::drainage(&map.regions);
+        assert_eq!(drainage, [None, Some(0), Some(0), Some(1), Some(3), Some(3)]);
+        for &r in &order {
+            let n = drainage[r].unwrap();
+            if map.regions[n].terrain.is_land() {
+                assert!(order.iter().position(|&x| x == r) < order.iter().position(|&x| x == n));
+            }
+        }
+        assert_eq!(map.regions[4].elevation, 0.0);
+    }
+
+    #[test]
+    fn rivers_use_physical_runoff_not_a_count_of_polygons() {
+        let mut terrain = vec![Terrain::Plains; 13];
+        terrain[12] = Terrain::Sea;
+        let mut map = linear_map(&terrain);
+        for r in &mut map.regions {
+            r.area_km2 = 0.1 * REFERENCE_AREA_KM2;
+        }
+        let small = rivers::generate(17, &map.regions);
+        assert!(small.rivers.is_empty());
+        // One broad wet headwater can supply a long course through small
+        // polygons. Changing subdivision count is not the formation rule.
+        map.regions[0].area_km2 = 4.0 * REFERENCE_AREA_KM2;
+        let broad = rivers::generate(17, &map.regions);
+        assert_eq!(broad.rivers.len(), 1);
+        assert_eq!(broad.rivers[0].course, (0..12).collect::<Vec<_>>());
+        assert_eq!(broad.rivers[0].catchment, (0..12).collect::<Vec<_>>());
+        assert_eq!(broad.rivers[0].mouth, 12);
+        assert!(broad.flows[0] >= RIVER_FORMATION_FLOW);
+        assert!(broad.runoff[0] > 30.0 * small.runoff[0]);
+    }
+
+    #[test]
+    fn tributaries_join_without_sharing_courses_and_keep_full_catchments() {
+        let map = route_fixture(
+            &[Terrain::Plains, Terrain::Plains, Terrain::Plains, Terrain::Plains,
+                Terrain::Plains, Terrain::Plains, Terrain::Plains, Terrain::Sea],
+            &[(0, 2, 100.0), (1, 2, 100.0), (2, 5, 100.0), (3, 4, 100.0),
+                (4, 5, 100.0), (5, 6, 100.0), (6, 7, 100.0)],
+        );
+        let drainage = [Some(2), Some(2), Some(5), Some(4), Some(5), Some(6), Some(7), None];
+        let order = [1, 0, 3, 2, 4, 5, 6];
+        let flows = [4.0, 4.0, 9.0, 3.0, 4.0, 14.0, 15.0, 15.0]
+            .map(|f| f * REFERENCE_AREA_KM2);
+        let (rivers, owner) = rivers::courses(&map.regions, &drainage, &order, &flows);
+        assert_eq!(rivers, [
+            River { course: vec![1], mouth: 7, catchment: vec![1], joins: Some(2) },
+            River { course: vec![3, 4], mouth: 7, catchment: vec![3, 4], joins: Some(2) },
+            River { course: vec![0, 2, 5, 6], mouth: 7,
+                catchment: vec![0, 1, 2, 3, 4, 5, 6], joins: None },
+        ]);
+        assert_eq!(owner, [Some(2), Some(0), Some(2), Some(1),
+            Some(1), Some(2), Some(2), None]);
+    }
+
+    #[test]
+    fn generated_drainage_and_climate_zones_respect_land_boundaries() {
+        for size in [MapSize::Small, MapSize::Medium, MapSize::Large, MapSize::Vast] {
+            for seed in [3, 11] {
+                let mut map = Map::generate(seed, size);
+                let n = map.regions.len();
+                let mut rank = vec![usize::MAX; n];
+                let mut flows = map.runoff.clone();
+                for (i, &r) in map.drainage_order.iter().enumerate() {
+                    assert_eq!(rank[r], usize::MAX);
+                    rank[r] = i;
+                    let next = map.drainage[r].unwrap();
+                    flows[next] += flows[r];
+                }
+                for &r in &map.drainage_order {
+                    assert!(rank[r] < rank[map.drainage[r].unwrap()]);
+                }
+                let mut course_owner = vec![None; n];
+                for (id, river) in map.rivers.iter().enumerate() {
+                    let end = *river.course.last().unwrap();
+                    assert!(!map.regions[river.mouth].terrain.is_land());
+                    assert_eq!(river.joins, map.river_regions[map.drainage[end].unwrap()]);
+                    for &r in &river.course {
+                        assert!(course_owner[r].replace(id).is_none());
+                    }
+                    for pair in river.course.windows(2) {
+                        assert_eq!(map.drainage[pair[0]], Some(pair[1]));
+                    }
+                    let mut catchment = Vec::new();
+                    for &r in &map.drainage_order {
+                        let mut at = r;
+                        while map.regions[at].terrain.is_land() && at != end {
+                            at = map.drainage[at].unwrap();
+                        }
+                        if at == end {
+                            catchment.push(r);
+                        }
+                    }
+                    catchment.sort_unstable();
+                    assert_eq!(river.catchment, catchment);
+                    let mut outlet = end;
+                    while map.regions[outlet].terrain.is_land() {
+                        outlet = map.drainage[outlet].unwrap();
+                    }
+                    assert_eq!(river.mouth, outlet);
+                }
+                assert_eq!(course_owner, map.river_regions);
+                for (r, region) in map.regions.iter().enumerate() {
+                    assert!((0.0..=1.0).contains(&region.warmth));
+                    assert_eq!(region.climate_zone.is_some(), region.terrain.is_land());
+                    assert_eq!(rank[r] != usize::MAX, region.terrain.is_land());
+                    assert_eq!(course_owner[r].is_some(),
+                        region.terrain.is_land() && flows[r] >= RIVER_FORMATION_FLOW);
+                    if let Some(next) = map.drainage[r] {
+                        assert!(region.neighbours.contains(&next));
+                        if map.regions[next].terrain.is_land() {
+                            assert_eq!(region.landmass, map.regions[next].landmass);
+                        }
+                    } else {
+                        assert!(!region.terrain.is_land());
+                    }
+                }
+                for (id, zone) in map.climate_zones.iter().enumerate() {
+                    assert!((1..=20).contains(&zone.regions.len()));
+                    assert!(zone.regions.windows(2).all(|p| p[0] < p[1]));
+                    let start = zone.regions[0];
+                    let mut visited = vec![false; n];
+                    let mut stack = vec![start];
+                    visited[start] = true;
+                    while let Some(r) = stack.pop() {
+                        for &next in &map.regions[r].neighbours {
+                            if !visited[next] && map.regions[next].climate_zone == Some(id) {
+                                visited[next] = true;
+                                stack.push(next);
+                            }
+                        }
+                    }
+                    assert!(zone.regions.iter().all(|&r| visited[r]
+                        && map.regions[r].climate_zone == Some(id)
+                        && map.regions[r].landmass == map.regions[start].landmass));
+                }
+                assert!(!map.valley_flows_changed(&flows));
+                assert!(!map.set_valley_flows(&flows));
+            }
+        }
+    }
+
+    #[test]
+    fn valleys_refresh_only_connected_reaches_when_flow_crosses_the_threshold() {
+        let mut map = route_fixture(
+            &[Terrain::Plains, Terrain::Plains, Terrain::Plains,
+                Terrain::Plains, Terrain::Sea, Terrain::Plains],
+            &[(0, 1, 200.0), (1, 2, 200.0), (0, 3, 500.0), (3, 2, 200.0),
+                (0, 2, 1_000.0), (2, 4, 200.0), (4, 5, 200.0)],
+        );
+        map.drainage = vec![Some(1), Some(2), Some(4), Some(2), None, Some(4)];
+        map.river_regions = vec![Some(0), Some(0), Some(0), Some(1), None, None];
+        let mut flows = vec![RIVER_TRAVEL_FLOW; 6];
+        map.initialize_valleys(&flows);
+        map.walking = map.cache_routes(RouteMode::Walking);
+        let wet = map.clone();
+        assert_eq!(map.distance(0, 2), 260.0);
+        assert_eq!(map.closeness(0, 1), 80.0 / 130.0);
+        assert_eq!(map.edges.get(0, 3), Some(500.0));
+        assert_eq!(map.edges.get(0, 2), Some(1_000.0));
+        assert_eq!(map.voyage(2, 5), 600.0);
+        assert!(map.distance(2, 5).is_infinite());
+        // A dry non-river neighbour and fluctuations above the threshold
+        // cannot invalidate walking routes.
+        flows[5] = 0.0;
+        flows[0] *= 1.1;
+        assert!(!map.valley_flows_changed(&flows));
+        assert!(!map.set_valley_flows(&flows));
+        assert_eq!(map, wet);
+        flows[1] = RIVER_TRAVEL_FLOW - 1.0;
+        assert!(map.valley_flows_changed(&flows));
+        assert!(map.set_valley_flows(&flows));
+        assert_eq!(map.distance(0, 2), 400.0);
+        assert_eq!(map.closeness(0, 1), 0.4);
+        assert_eq!(map.voyages, wet.voyages);
+        assert_eq!(map.voyage(2, 5), 600.0);
+        assert!(!map.set_valley_flows(&flows));
+        flows[1] = RIVER_TRAVEL_FLOW;
+        assert!(map.set_valley_flows(&flows));
+        assert_eq!(map, wet);
+    }
+
     #[test]
     fn border_midpoints_define_reference_and_skewed_effort() {
         let g = Geography {
