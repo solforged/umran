@@ -9,6 +9,10 @@ October 2026; saved data keeps that name (see `docs/history.md`).
 
 Read further when the task touches it:
 
+- `docs/book.md`: the product frame: the book of a world as the product,
+  the found → run → read → revise loop, the book's chapters, the four
+  screens, the six-word vocabulary, and the cause contract on annals.
+  Any UI work starts here.
 - `docs/engine.md`: the engine model, module by module, the mechanism
   examples, and what is not yet modelled.
 - `docs/history.md`: actions, replay, branching, recipes, and autosave.

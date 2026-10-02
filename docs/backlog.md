@@ -1,6 +1,10 @@
 # The living atlas
 
-Design backlog, October 2026. The direction is an observation-first world
+Design backlog, October 2026. Superseded as direction by `book.md`, which
+frames the product as the book of a world and keeps the pieces delivered
+here as workshop tools. The record of what was built stays below.
+
+The direction was an observation-first world
 simulator: a lone historian charts unfamiliar peoples, follows their words,
 and gradually learns how their histories connect. A playthrough should become
 more interesting to read as it grows. More engine detail is useful when the
