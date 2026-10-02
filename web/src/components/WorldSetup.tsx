@@ -100,7 +100,7 @@ function pairEvidence(pair: FoundingPair): string {
   if (pair.reach === "neighbours") return `may meet as neighbours · ${routes}`;
   if (pair.reach === "walking") return `may meet on foot · ${routes}`;
   if (pair.reach === "sea") return `would need boats · ${routes}`;
-  return routes ? `beyond first journeys · ${routes}` : "no land route or coast-to-coast voyage";
+  return routes ? `too far for first journeys · ${routes}` : "no way between them by land or along a coast";
 }
 
 function placeName(overview: Overview, region: number): string {
@@ -273,6 +273,7 @@ export function WorldSetup({
             tint={{ kind: "peoples" }}
             chosen={new Set([selected])}
             lands={new Set(current?.region === null || !current ? [] : [current.region])}
+            focus={current?.region === null || !current ? null : map.regions[current.region].site}
             zoomable
             onPeople={openAccount}
             onLand={(region) => {
@@ -424,7 +425,7 @@ export function WorldSetup({
                   {pairs.length ? <ul>{pairs.map((pair) => <li key={`${pair.a}:${pair.b}`}>
                     <strong>{overview.communities.find((p) => p.id === pair.a)?.name}</strong> and{" "}
                     <strong>{overview.communities.find((p) => p.id === pair.b)?.name}</strong>: {pairEvidence(pair)}.
-                  </li>)}</ul> : <p className="muted small">No founding pair.</p>}
+                  </li>)}</ul> : <p className="muted small">None.</p>}
                 </div>;
               })}
             </section>
