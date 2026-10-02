@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   BookOpen,
   AudioLines,
+  Earth,
   Globe,
   Languages,
   Landmark,
@@ -17,7 +18,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, Catalog, Community, Craft, CraftView, Engine, Overview, PlaceExonym, ReligionView, RenderingRow, StateView, TellingView, Variety, WordMap, WorldMap } from "../model";
+import type { Annal, Catalog, Community, Craft, CraftView, Engine, Overview, PlaceExonym, ReligionView, RenderingRow, ShrineKind, StateView, TellingView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { CONTACT_NAME, EVENT_KIND, FAITH_HOW, FALL_NAME, howCame, howNamed, hue, LIVELIHOOD_NAME, RISE_NAME, TERMS, TERRAIN_NAME, type Term } from "../lore";
 import { bond } from "../words";
@@ -41,6 +42,7 @@ export type Focus =
   | { kind: "word"; variety: number; concept: string }
   | { kind: "law"; id: string }
   | { kind: "land"; region: number }
+  | { kind: "continent"; landmass: number }
   | { kind: "event"; annal: Annal }
   | { kind: "history" };
 
@@ -67,6 +69,9 @@ interface Context {
   onLeaf: (leaf: string | null) => void;
   /// Where the folio is laid: over the map.
   folioHost: HTMLElement | null;
+  /// The language whose known world veils the map, if one does.
+  knownBy: number | null;
+  onKnownBy: (variety: number | null) => void;
 }
 
 /// The folio: a card's long and wide sections, laid open over the map one
@@ -208,6 +213,8 @@ function focusLabel(focus: Focus, context: Context): string {
       return overview.varieties.flatMap((v) => v.laws).find((l) => l.id === focus.id)?.label ?? "A sound change";
     case "land":
       return landName(focus.region, context);
+    case "continent":
+      return continentName(focus.landmass, context);
     case "event":
       return `Year ${focus.annal.generation * YEARS}`;
     case "history":
@@ -254,6 +261,8 @@ function Card({ focus, context }: { focus: Focus; context: Context }) {
       return <LawCard id={focus.id} context={context} />;
     case "land":
       return <LandCard region={focus.region} context={context} />;
+    case "continent":
+      return <ContinentCard landmass={focus.landmass} context={context} />;
     case "event":
       return <EventCard annal={focus.annal} context={context} />;
     case "history":
@@ -428,6 +437,150 @@ function LandLink({ region, context }: { region: number; context: Context }) {
     <button type="button" className="link word" onClick={() => context.go({ kind: "land", region })}>
       {landName(region, context)}
     </button>
+  );
+}
+
+/// A continent's name on the chart, or a plain description before anyone
+/// has named it.
+function continentName(landmass: number, context: Context): string {
+  return context.overview.continents.find((c) => c.landmass === landmass)?.name?.name ?? "Unnamed continent";
+}
+
+function ContinentLink({ landmass, context }: { landmass: number; context: Context }) {
+  return (
+    <button type="button" className="link word" onClick={() => context.go({ kind: "continent", landmass })}>
+      {continentName(landmass, context)}
+    </button>
+  );
+}
+
+/// Which body of land a region lies on: its continent, as a link, or how
+/// large its island is.
+function LandmassOf({ region, context }: { region: number; context: Context }) {
+  const m = context.map.regions[region].landmass;
+  if (m === null) return null;
+  const mass = context.map.landmasses[m];
+  if (mass.kind === "continent") return <ContinentLink landmass={m} context={context} />;
+  return <>an island of {mass.regions.length === 1 ? "one land" : `${mass.regions.length} lands`}</>;
+}
+
+/// Why a faith reveres its shrine, in a few words.
+const SHRINE_KIND: Record<ShrineKind, string> = {
+  home: "the founders’ own land",
+  mountain: "a holy mountain",
+  island: "a holy island",
+  "far-shore": "a shore across the sea",
+};
+
+/// The lands a language knows by name, grouped by the body of land they
+/// lie on, with a switch to veil the rest of the map.
+function KnownWorldLeaf({ variety, context }: { variety: number; context: Context }) {
+  const { map, overview } = context;
+  const known = overview.varieties[variety].knownLands;
+  if (known.length === 0) return null;
+  const groups = new Map<number, typeof known>();
+  for (const land of known) {
+    const m = map.regions[land.region].landmass;
+    if (m === null) continue;
+    groups.set(m, [...(groups.get(m) ?? []), land]);
+  }
+  const continents = [...groups.keys()].filter((m) => map.landmasses[m].kind === "continent");
+  const islands = groups.size - continents.length;
+  const total = map.regions.filter((r) => r.landmass !== null).length;
+  const showing = context.knownBy === variety;
+  return (
+    <Leaf
+      id="known"
+      title="Their known world"
+      summary={
+        <p>
+          {known.length} of {total} lands known by name
+          {continents.length > 0 ? (
+            <>, on <Joined items={continents} link={(m) => <ContinentLink landmass={m} context={context} />} /></>
+          ) : null}
+          {islands > 0 ? <>{continents.length > 0 ? " and" : ","} {islands === 1 ? "one island" : `${islands} islands`}</> : null}.{" "}
+          <button type="button" className="link" aria-pressed={showing} onClick={() => context.onKnownBy(showing ? null : variety)}>
+            {showing ? "Show the whole chart" : "Show only these on the map"}
+          </button>
+        </p>
+      }
+    >
+      <p className="muted small">
+        Lands its speakers hold or held, border, or have heard of from peoples they deal with, each as they say its name. A
+        name heard long ago may be stale.
+      </p>
+      {[...groups].map(([m, lands]) => (
+        <section key={m}>
+          <h4>
+            {map.landmasses[m].kind === "continent" ? <ContinentLink landmass={m} context={context} /> : "An island"}
+            {map.landmasses[m].kind === "continent" ? (
+              <span className="muted"> · {lands.length} of {map.landmasses[m].regions.length} lands</span>
+            ) : null}
+          </h4>
+          <p>
+            <Joined
+              items={lands}
+              link={(land) => (
+                <button type="button" className="link word" title={`/${land.ipa}/`} onClick={() => context.go({ kind: "land", region: land.region })}>
+                  {land.spelled}
+                </button>
+              )}
+            />
+          </p>
+        </section>
+      ))}
+    </Leaf>
+  );
+}
+
+function ContinentCard({ landmass, context }: { landmass: number; context: Context }) {
+  const { map, overview } = context;
+  const mass = map.landmasses[landmass];
+  const view = overview.continents.find((c) => c.landmass === landmass);
+  const name = view?.name ?? null;
+  const islands = map.landmasses.filter((m) => m.kind === "island").length;
+  const knowers = overview.varieties.filter((v) => v.spoken && v.knownLands.some((l) => mass.regions.includes(l.region)));
+  return (
+    <>
+      <CardHead
+        icon={Earth}
+        kind="A continent"
+        title={name?.name ?? "Unnamed continent"}
+        sub={name ? <>“{name.meaning}” <span className="ipa">/{name.ipa}/</span></> : null}
+      />
+      <Facts
+        rows={[
+          ["Lands", `${mass.regions.length}, about ${(mass.regions.length * 9000).toLocaleString()} km²`],
+          ["Named by", name ? (
+            <><PeopleLink c={overview.communities[name.people]} context={context} />, in{" "}
+              <LanguageLink variety={name.variety} context={context} />, year <Year generation={name.since} context={context} /></>
+          ) : "no one yet"],
+          ["Known from", name ? <LandLink region={name.witness} context={context} /> : null],
+          ["Home of", view && view.peoples.length > 0 ? (
+            <Joined items={view.peoples} link={(id) => <PeopleLink c={overview.communities[id]} context={context} />} />
+          ) : "no one now"],
+          ["Shrines", view && view.religions.length > 0 ? (
+            <Joined items={view.religions} link={(id) => <ReligionLink religion={overview.religions[id]} context={context} />} />
+          ) : null],
+          ["Known to", knowers.length > 0 ? (
+            <Joined items={knowers} link={(v) => <LanguageLink variety={v.id} context={context} />} />
+          ) : "no living language"],
+        ]}
+      />
+      <p className="muted small">
+        {name ? <>Entered on the chart from the speech of the {overview.communities[name.people].name}, the first people known to have lived on or heard of it; the name stays as it was written, whatever becomes of their language.</> :
+          <>No living people knows any of this land, so the chart has no name for it.</>}{" "}
+        A land here stands for country about 100 km across. Beyond its shores lie{" "}
+        <Joined
+          items={[
+            ...map.landmasses.map((_, i) => i).filter((i) => i !== landmass && map.landmasses[i].kind === "continent"),
+            ...(islands > 0 ? [-1] : []),
+          ]}
+          link={(i) => (i < 0 ? <>{islands === 1 ? "one island" : `${islands} islands`}</> : <ContinentLink landmass={i} context={context} />)}
+        />
+        {map.landmasses.length === 1 ? "only the sea" : ""}.
+      </p>
+    </>
   );
 }
 
@@ -1007,6 +1160,7 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
         ]}
       />
       <LanguageSpecimen variety={c.variety} context={context} />
+      <KnownWorldLeaf variety={c.variety} context={context} />
       {contacts.length > 0 ? (
         <Leaf
           id="dealings"
@@ -1170,6 +1324,10 @@ function ReligionCard({ religion, context }: { religion: ReligionView; context: 
         ["Founded", <>year <Year generation={religion.founded} context={context} />, {FAITH_HOW[religion.how]}</>],
         ["Founder's people", <PeopleLink c={overview.communities[religion.people]} context={context} />],
         ["Founding land", <LandLink region={religion.land} context={context} />],
+        ["Sacred place", <>
+          <span className="word">{religion.shrine.name.name}</span>, “{religion.shrine.name.meaning}”, {SHRINE_KIND[religion.shrine.kind]}:{" "}
+          <LandLink region={religion.shrine.region} context={context} /> (<LandmassOf region={religion.shrine.region} context={context} />)
+        </>],
         ["Sacred language", <LanguageLink variety={religion.sacred} context={context} />],
         ["Converts", religion.converts ? "seeks converts" : "keeps to its own"],
         ["Words", religion.translates ? "followers translate its words" : "followers borrow its words"],
@@ -1373,6 +1531,7 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
           </ul>
         </Leaf>
       ) : null}
+      <KnownWorldLeaf variety={variety} context={context} />
       <FamilyHead variety={v} context={context} />
       <h3>Sounds</h3>
       <p className="segments">
@@ -1610,6 +1769,7 @@ function LandCard({ region, context }: { region: number; context: Context }) {
       <Facts
         rows={[
           ["Land", terrain(region, context)],
+          ["On", <LandmassOf region={region} context={context} />],
           [
             "Home of",
             dwellers.length > 0 ? (

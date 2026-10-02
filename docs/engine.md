@@ -15,12 +15,20 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   where peoples are founded; how many it feeds each way of life is
   `Livelihood::feeds`), how hard it is to cross (`travel`), and how
   readily its people move (`mobility`: steppe and desert most, mountain
-  folk least). Land
-  falls toward the map's edges but is rough enough that larger maps
-  usually have islands; each land region knows its `landmass`, so
-  crossing between landmasses means crossing the sea. Travel distances
-  between all regions are precomputed. Map generation uses only arithmetic
-  and square roots, so native and WASM draw the same map.
+  folk least). A region stands for land about 100 km across, so the
+  sizes are regional theatres (small about 0.6 million km² with sea,
+  middling 1.2, wide 2.3), not globes. The land is built as separated
+  basins first, then coasts: a small map has one continent of 20–27
+  regions, a middling map one or two totalling 45–55, a wide map two or
+  three totalling 90–110, with sea always between them; the rest of the
+  land is islands of one to three regions. Each continent grows best
+  first from a scored centre in its basin, so noise shapes its bays and
+  promontories but never bridges two basins. Each land region knows its
+  `landmass`; `Map::landmasses` says whether each body is a continent or
+  an island and which region anchors its name. Founders settle continents,
+  leaving islands for seafarers to find. Travel distances between all
+  regions are precomputed. Map generation uses only arithmetic and square
+  roots, so native and WASM draw the same map.
 - Languages are founded from a `LanguageDesign` (`design.rs`): the exact
   sounds, each used or favoured, plus knobs (word length, final consonants,
   inner clusters, repetition, long vowels, affixes or root-and-pattern,
@@ -128,6 +136,22 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   from the namers'), and keep it as a word of their own
   (`Variety::exonyms`): their sound laws change it and their daughter
   languages inherit it, as German *Mailand* came from *Mediolanum*.
+- A language's known world (`World::known_lands`) is the lands it knows
+  by name: those its speakers hold or held, those they border (unpeopled
+  land they see gets a name of their own coining), the lands their
+  contacts hold, and one more land each contact passes on per generation
+  in each direction, from what the teller knew at the start of it. The
+  first name heard is kept, even when it goes stale. A daughter language
+  starts with what its parent knew when they parted, a people that
+  shifts language keeps its old map of names, and a language that loses
+  a land still remembers it. Nothing new is stored: the known world is
+  read from `Variety::exonyms` and the land-name histories.
+- Each continent gets one name on the chart (`World::continent_names`),
+  from the speech of the first living people to know any of it: "the
+  land of" a people or place, a quality such as "the wide land", or,
+  for a continent known only from across the sea, "the far land". The
+  name is fixed once written, as Herodotus kept *Asia* and *Libya*,
+  whatever later becomes of the language that gave it.
 - Varieties fork on splits and shifts and keep their lineage (`Fork`);
   `World::cognate` and `root_of` give true descent. The comparative method
   (`compare.rs`) must never read lineage; it is only graded against it.
@@ -265,6 +289,11 @@ always hold are summarized in `AGENTS.md`; this is the fuller picture.
   universal church. An author can found one among any people. The
   founder's speech, frozen as it stood, becomes the
   faith's sacred language, a variety of its own that keeps its prestige.
+  Each faith reveres one place (`Religion::shrine`), chosen from lands its
+  founders knew: their home (weight 3), a mountain (3), an island (2), or
+  a shore on another continent (2), its name frozen in the sacred
+  language. Converts learn the shrine's name. Pilgrimage to it is not yet
+  modelled.
   Most faiths seek converts and spread along contacts
   (`conversion_rate`); a third translate their words, the rest keep the
   sacred language and lend from it, so converts gain learned doublets
@@ -316,7 +345,9 @@ cargo run --release -p umran-sim --example audit -- [seeds] [generations]
 
 ## Not yet modelled
 
-Rivers, climates, cities with speech of their own (a city's speech is
+Rivers, climates, pilgrimage, travel in kilometres, sea crossings that
+gate trade and conquest (only migration and colonies need seafaring), a
+map larger than a regional theatre, cities with speech of their own (a city's speech is
 its court's; no koiné), purism within a classical form, compounding and
 derivation after founding beyond renewal and new meanings, inflection,
 stress, tone, vowel harmony, consonant length, prenasalized stops, syntax

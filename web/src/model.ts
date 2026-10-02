@@ -198,6 +198,19 @@ export interface ReligionView {
   scripture: boolean;
   followers: number[];
   words: RenderingRow[];
+  /// The one place the faith reveres, chosen from the lands its founders
+  /// knew, its name frozen in the sacred language.
+  shrine: Shrine;
+}
+
+export type ShrineKind = "home" | "mountain" | "island" | "far-shore";
+
+export interface Shrine {
+  region: number;
+  /// Why it was revered: the founders' home, a mountain, an island, or a
+  /// shore on another continent.
+  kind: ShrineKind;
+  name: NameView;
 }
 
 export interface CraftView {
@@ -286,6 +299,15 @@ export interface Variety {
   /// 0–1: how much of the core vocabulary its speech still shares with
   /// `high`, while it is spoken.
   keptFromHigh: number | null;
+  /// Lands its speakers know by name, as they say them: lands they hold or
+  /// held, border, or have heard of from others. Ordered by region.
+  knownLands: KnownLand[];
+}
+
+export interface KnownLand {
+  region: number;
+  spelled: string;
+  ipa: string;
 }
 
 /// One of the few basic words shown wherever a language appears.
@@ -331,6 +353,29 @@ export interface Overview {
   annals: Annal[];
   /// Histories set aside, with what they told that this one does not.
   tellings: TellingView[];
+  /// Each continent (not island), with its name if anyone has given one.
+  /// Not indexed by landmass: find by `landmass`.
+  continents: ContinentView[];
+}
+
+/// A continent as the chart knows it in the year in view.
+export interface ContinentView {
+  landmass: number;
+  /// Entered on the chart from the speech of the first people to know it;
+  /// fixed once given. Null while no living people knows any of it.
+  name: ContinentName | null;
+  /// Living peoples holding land on it.
+  peoples: number[];
+  /// Faiths whose shrine is on it.
+  religions: number[];
+}
+
+export interface ContinentName extends NameView {
+  variety: number;
+  people: number;
+  /// The region of it that people knew when they named it.
+  witness: number;
+  since: number;
 }
 
 /// A land's names, oldest first; the last is its name now.
@@ -465,10 +510,22 @@ export interface Region {
   site: [number, number];
   outline: [number, number][];
   coastal: boolean;
-  /// Land on a body of land of at most two regions.
+  /// Land on an island rather than a continent.
   island: boolean;
   /// Regions sharing a border with it.
   neighbours: number[];
+  /// Its body of land, an index into `WorldMap.landmasses`; null for sea.
+  landmass: number | null;
+}
+
+/// One connected body of land.
+export interface Landmass {
+  id: number;
+  kind: "continent" | "island";
+  /// Its regions, in increasing order.
+  regions: number[];
+  /// The member region nearest its centre, where its name is written.
+  anchor: number;
 }
 
 /// The land a book's history plays out on; it never changes.
@@ -477,6 +534,7 @@ export interface WorldMap {
   width: number;
   height: number;
   regions: Region[];
+  landmasses: Landmass[];
 }
 
 /// Every people's word for one meaning, as a dialect atlas shows it.

@@ -275,9 +275,11 @@ export function MapView({
   lands,
   beacons = [],
   focus = null,
+  known = null,
   zoomable = false,
   onPeople,
   onLand,
+  onContinent,
   onState,
   onReligion,
   onCraft,
@@ -298,9 +300,13 @@ export function MapView({
   beacons?: readonly number[];
   /// A point to bring into view, in map units.
   focus?: [number, number] | null;
+  /// Lands one language knows by name; the rest of the land is veiled,
+  /// with the peoples and names on it.
+  known?: Set<number> | null;
   zoomable?: boolean;
   onPeople: (community: number) => void;
   onLand: (region: number) => void;
+  onContinent?: (landmass: number) => void;
   onState?: (state: number) => void;
   onReligion?: (religion: number) => void;
   onCraft?: (craft: Craft) => void;
@@ -505,20 +511,26 @@ export function MapView({
     ? overview.contacts.filter((k) => {
         const [a, b] = [overview.communities[k.a], overview.communities[k.b]];
         if (a.ended !== null || b.ended !== null || a.region === b.region) return false;
+        if (hidden(a.region) || hidden(b.region)) return false;
         return k.kind === "rule" || chosen.has(k.a) || chosen.has(k.b);
       })
     : [];
 
   // Labels grow more slowly than the land as the view closes in.
   const label = Math.sqrt(box[2] / map.width);
+  // Land a veiling language does not know.
+  function hidden(region: number): boolean {
+    return known !== null && !known.has(region);
+  }
 
   const shape = (r: WorldMap["regions"][number]) => {
-    const colour = colourOf(r.id);
-    const points = r.outline.map(([x, y]) => `${x},${y}`).join(" ");
     const sea = r.terrain === "sea";
+    const veiled = !sea && hidden(r.id);
+    const colour = veiled ? null : colourOf(r.id);
+    const points = r.outline.map(([x, y]) => `${x},${y}`).join(" ");
     return (
       <g key={r.id} onClick={sea ? undefined : () => dragged() || onLand(r.id)}>
-        <title>{sea ? "Sea" : (nameOf(r.id) ?? `Unnamed ${TERRAIN_NAME[r.terrain].toLowerCase()}`)}</title>
+        <title>{sea ? "Sea" : veiled ? "Unknown land" : (nameOf(r.id) ?? `Unnamed ${TERRAIN_NAME[r.terrain].toLowerCase()}`)}</title>
         <polygon
           className={`land terrain-${r.terrain}${sea ? "" : " open"}${lands.has(r.id) ? " shown" : ""}`}
           points={points}
@@ -560,6 +572,40 @@ export function MapView({
           {grounds.map(shape)}
         </g>
         {dress.over}
+        {known ? (
+          <g className="veil" aria-hidden="true">
+            {grounds.filter((r) => hidden(r.id)).map((r) => (
+              <polygon key={r.id} points={r.outline.map(([x, y]) => `${x},${y}`).join(" ")} />
+            ))}
+          </g>
+        ) : null}
+        <g className="continent-names">
+          {overview.continents.map((c) => {
+            const mass = map.landmasses[c.landmass];
+            if (!c.name || !mass || mass.regions.every(hidden)) return null;
+            const [x, y] = map.regions[mass.anchor].site;
+            return (
+              <text
+                key={c.landmass}
+                x={x}
+                y={y}
+                className="continent-name"
+                role={onContinent ? "button" : undefined}
+                tabIndex={onContinent ? 0 : undefined}
+                onClick={() => dragged() || onContinent?.(c.landmass)}
+                onKeyDown={(e) => {
+                  if (onContinent && (e.key === "Enter" || e.key === " ")) {
+                    e.preventDefault();
+                    onContinent(c.landmass);
+                  }
+                }}
+              >
+                <title>{`${c.name.name}, “${c.name.meaning}”`}</title>
+                {c.name.name}
+              </text>
+            );
+          })}
+        </g>
         <g className="isoglosses">
           {isoglosses.map(({ a, b, ends: [[x1, y1], [x2, y2]] }) => (
             <line key={`${a}-${b}`} className="isogloss" x1={x1} y1={y1} x2={x2} y2={y2} />
@@ -573,6 +619,7 @@ export function MapView({
         {names ? (
           <g className="place-names" aria-hidden="true">
             {overview.places.map((p) => {
+              if (hidden(p.region)) return null;
               const [x, y] = map.regions[p.region].site;
               const here = hearts.get(p.region)?.length ?? 0;
               const top = here > 0 ? y - (here / 2) * LINE * label - 0.06 * label : y;
@@ -588,7 +635,7 @@ export function MapView({
           <g className="routes">
             {overview.moves.map((m, i) => {
               const mover = overview.communities[m.community];
-              if (mover.ended !== null) return null;
+              if (mover.ended !== null || hidden(m.from) || hidden(m.to)) return null;
               const age = generation - m.generation;
               const mine = chosen.has(m.community);
               return (
@@ -636,7 +683,7 @@ export function MapView({
         </g>
         <g className="peoples">
           {overview.communities.map((c) => {
-            if (c.ended !== null) return null;
+            if (c.ended !== null || hidden(c.region)) return null;
             const [x, y] = at.get(c.id)!;
             const word = wordBy.get(c.id);
             const text = tint.kind === "words" ? (word?.spelled ?? "—") : c.name;
@@ -723,6 +770,30 @@ export function MapView({
               >
                 <title>{`${religion.name}, founded here`}</title>
                 <path d="M0,-.12L.09,0L0,.12L-.09,0Z" />
+              </g>
+            );
+          }) : null}
+          {tint.kind === "faiths" ? overview.religions.map((religion) => {
+            const [x, y] = map.regions[religion.shrine.region].site;
+            return (
+              <g
+                key={`shrine-${religion.id}`}
+                className="founding-marker shrine-marker"
+                transform={`translate(${x + 0.24 * label} ${y + 0.2 * label}) scale(${label})`}
+                style={{ "--mark": hue(religion.id) } as CSSProperties}
+                role={onReligion ? "button" : undefined}
+                tabIndex={onReligion ? 0 : undefined}
+                aria-label={`${religion.shrine.name.name}, shrine of ${religion.name}`}
+                onClick={() => dragged() || onReligion?.(religion.id)}
+                onKeyDown={(e) => {
+                  if (onReligion && (e.key === "Enter" || e.key === " ")) {
+                    e.preventDefault();
+                    onReligion(religion.id);
+                  }
+                }}
+              >
+                <title>{`${religion.shrine.name.name}, shrine of ${religion.name}`}</title>
+                <path d="M0,-.13L.035,-.035L.13,0L.035,.035L0,.13L-.035,.035L-.13,0L-.035,-.035Z" />
               </g>
             );
           }) : null}

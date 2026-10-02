@@ -21,7 +21,7 @@ Later visits resume the world left open. The top-left astrolabe and name
 return to the shelf from setup, the world, or Export; leaving for the shelf
 also makes it the next launch destination.
 
-![The stage after 4,050 years: three language families spread over the map drawn as an old chart, the encyclopedia card for the world beside it, and the latest line of the chronicle above the time bar](docs/images/stage.png)
+![The stage after 4,000 years: three language families spread over two continents with their names lettered across them, the encyclopedia card for the world beside it, and the latest line of the chronicle above the time bar](docs/images/stage.png)
 
 ## What happens in a world
 

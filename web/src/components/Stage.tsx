@@ -102,6 +102,17 @@ export function Stage({
     // Opening the card already open adds nothing to the trail.
     setTrail((t) => (JSON.stringify(t.at(-1)) === JSON.stringify(next) ? t : [...t.slice(-TRAIL_LENGTH), next]));
   };
+  // Whether the map is veiled to what the language in view knows. It
+  // follows the people or language card open, and lifts on any other.
+  const [veiled, setVeiled] = useState(false);
+  const knownBy = !veiled ? null
+    : focus.kind === "language" ? focus.variety
+    : focus.kind === "people" ? (overview.communities[focus.id]?.variety ?? null)
+    : null;
+  const known = useMemo(
+    () => (knownBy === null ? null : new Set(overview.varieties[knownBy].knownLands.map((l) => l.region))),
+    [knownBy, overview],
+  );
 
   // What the map draws beside the lands and peoples.
   const [layers, setLayers] = useState({ names: true, routes: true, contacts: true, states: true });
@@ -183,7 +194,11 @@ export function Stage({
       case "religion": {
         const religion = overview.religions[focus.id];
         const chosen = religion?.followers ?? [];
-        return { chosen, lands: chosen.flatMap((id) => overview.communities[id].lands), point: site(religion?.land) };
+        return { chosen, lands: chosen.flatMap((id) => overview.communities[id].lands), point: site(religion?.shrine.region ?? religion?.land) };
+      }
+      case "continent": {
+        const view = overview.continents.find((c) => c.landmass === focus.landmass);
+        return { chosen: view?.peoples ?? [], lands: map.landmasses[focus.landmass]?.regions ?? [], point: site(map.landmasses[focus.landmass]?.anchor) };
       }
       case "craft": {
         const craft = overview.crafts.find((c) => c.id === focus.id);
@@ -246,9 +261,11 @@ export function Stage({
           lands={new Set(highlight.lands)}
           beacons={beacons}
           focus={highlight.point}
+          known={known}
           zoomable
           onPeople={(id) => go({ kind: "people", id })}
           onLand={(region) => go({ kind: "land", region })}
+          onContinent={(landmass) => go({ kind: "continent", landmass })}
           onState={(id) => go({ kind: "state", id })}
           onReligion={(id) => go({ kind: "religion", id })}
           onCraft={(id) => go({ kind: "craft", id })}
@@ -336,6 +353,8 @@ export function Stage({
         leaf={leaf}
         onLeaf={setLeaf}
         folioHost={folioHost}
+        knownBy={knownBy}
+        onKnownBy={(v) => setVeiled(v !== null)}
         onDialog={(kind, community) => {
           onSelect(community);
           onDialog(kind);

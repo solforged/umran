@@ -1052,6 +1052,36 @@ table.preview tr {
   pointer-events: none;
 }
 
+/* Land a veiling language does not know: blank parchment laid over it,
+   as a chart leaves out what its maker never heard of. */
+.veil polygon {
+  fill: var(--paper-raised);
+  fill-opacity: 0.92;
+  stroke: color-mix(in srgb, var(--ink) 30%, transparent);
+  stroke-width: 0.03px;
+  stroke-dasharray: 0.08 0.08;
+  pointer-events: none;
+}
+
+/* A continent's name, lettered large and faint across it in spaced
+   capitals, under the names of its lands and peoples. */
+.continent-names text {
+  font-family: var(--display);
+  font-size: calc(0.5px * var(--label, 1));
+  font-variant: small-caps;
+  letter-spacing: calc(0.12px * var(--label, 1));
+  text-transform: lowercase;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  fill: color-mix(in srgb, var(--ink) 22%, transparent);
+  cursor: pointer;
+}
+.continent-names text:hover,
+.continent-names text:focus-visible {
+  fill: color-mix(in srgb, var(--accent) 60%, transparent);
+  outline: none;
+}
+
 /* Names of lands, as an old map letters them: small, spaced, italic. */
 .place-names text {
   font-family: var(--display);

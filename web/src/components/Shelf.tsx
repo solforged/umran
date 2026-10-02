@@ -9,7 +9,7 @@ import { Modal } from "./Modal";
 
 /// A sheet with no land on it yet: compass lines over open sea, the size
 /// of a middling world.
-const UNKNOWN: WorldMap = { size: "medium", width: 13.5, height: 8.794229, regions: [] };
+const UNKNOWN: WorldMap = { size: "medium", width: 13.5, height: 8.794229, regions: [], landmasses: [] };
 
 /// A world's chart, drawn once its map is ready; a blank sheet until then
 /// or if its save cannot be read.
