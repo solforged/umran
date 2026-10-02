@@ -11,6 +11,7 @@ use crate::rng::{index, key, stream};
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
+use std::{borrow::Cow, cmp::Ordering, collections::BinaryHeap};
 
 /// Height of one hex-grid row, with points one unit apart: √3 / 2.
 const ROW: f64 = 0.866_025_403_784_438_6;
@@ -20,6 +21,10 @@ pub const KM_PER_UNIT: f32 = 100.0;
 pub const REFERENCE_TRAVEL_KM: f32 = 100.0;
 /// Area of an interior reference hexagon with 100 km centre spacing.
 pub const REFERENCE_AREA_KM2: f32 = 8_660.254;
+/// Precomputed neighbourhood radius, not a limit on exact journeys.
+pub const CACHE_REACH_KM: f32 = 1_800.0;
+/// Fixed effort-km charged on each embarkation and landing.
+const EMBARK: f32 = 100.0;
 /// Furthest a point strays from its grid position, in grid units.
 const JITTER: f64 = 0.3;
 /// Share of regions under water.
@@ -199,6 +204,95 @@ pub struct Landmass {
     pub anchor: usize,
 }
 
+/// Immutable, ID-sorted adjacency or distance rows in compressed sparse form.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct RouteRows {
+    offsets: Vec<usize>,
+    entries: Vec<(u32, f32)>,
+}
+
+impl RouteRows {
+    fn row(&self, source: usize) -> &[(u32, f32)] {
+        &self.entries[self.offsets[source]..self.offsets[source + 1]]
+    }
+
+    fn get(&self, source: usize, destination: usize) -> Option<f32> {
+        let row = self.row(source);
+        row.binary_search_by_key(&(destination as u32), |&(r, _)| r)
+            .ok().map(|i| row[i].1)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RouteMode {
+    Walking,
+    Voyage,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct RouteVisit {
+    effort: f64,
+    region: u32,
+}
+
+impl Eq for RouteVisit {}
+
+impl Ord for RouteVisit {
+    fn cmp(&self, other: &Self) -> Ordering {
+        other.effort.total_cmp(&self.effort).then(other.region.cmp(&self.region))
+    }
+}
+
+impl PartialOrd for RouteVisit {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Reused across every cached source: only touched distances need resetting.
+struct RouteScratch {
+    distance: Vec<f64>,
+    touched: Vec<u32>,
+    heap: BinaryHeap<RouteVisit>,
+}
+
+impl RouteScratch {
+    fn new(n: usize) -> Self {
+        Self {
+            distance: vec![f64::INFINITY; n],
+            touched: Vec::new(),
+            heap: BinaryHeap::new(),
+        }
+    }
+
+    fn reset(&mut self) {
+        for r in self.touched.drain(..) {
+            self.distance[r as usize] = f64::INFINITY;
+        }
+        self.heap.clear();
+    }
+
+    fn relax(&mut self, region: u32, effort: f64, reach: f32) {
+        // Radius boundaries use the public f32 effort, including its rounding.
+        if effort as f32 > reach || effort >= self.distance[region as usize] {
+            return;
+        }
+        if self.distance[region as usize].is_infinite() {
+            self.touched.push(region);
+        }
+        self.distance[region as usize] = effort;
+        self.heap.push(RouteVisit { effort, region });
+    }
+
+    fn append_row(&mut self, map: &Map, source: usize, mode: RouteMode, entries: &mut Vec<(u32, f32)>) {
+        self.touched.sort_unstable();
+        entries.extend(self.touched.iter().copied().filter(|&r| {
+            map.regions[r as usize].terrain.is_land()
+                && (mode == RouteMode::Walking || r as usize != source)
+        }).map(|r| (r, self.distance[r as usize] as f32)));
+    }
+}
+
 /// The world's land and sea.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Map {
@@ -209,10 +303,10 @@ pub struct Map {
     /// Its bodies of land, numbered as `Region::landmass` numbers them.
     pub landmasses: Vec<Landmass>,
     /// Symmetric centre-to-centre effort through each shared border midpoint.
-    edges: Vec<Vec<(u32, f32)>>,
-    /// Least effort of travel between each pair of regions, by land or sea,
-    /// row by row.
-    distance: Vec<f32>,
+    edges: RouteRows,
+    /// Land-only walking and sea-interior voyage neighbourhoods to 1800 effort-km.
+    walking: RouteRows,
+    voyages: RouteRows,
 }
 
 impl Map {
@@ -368,7 +462,6 @@ impl Map {
                 landmass: landmass[i],
             })
             .collect();
-        let distance = travel_distances(&edges);
         let landmasses = describe_landmasses(&regions, size);
         assert_eq!(
             landmasses
@@ -381,20 +474,149 @@ impl Map {
             LandmassKind::Continent => m.regions.len() >= g.minimum,
             LandmassKind::Island => (1..=3).contains(&m.regions.len()),
         }));
-        Map {
+        let mut map = Map {
             size,
             width: width as f32,
             height: height as f32,
             regions,
             landmasses,
             edges,
-            distance,
-        }
+            walking: RouteRows::default(),
+            voyages: RouteRows::default(),
+        };
+        (map.walking, map.voyages) = map.cache_routes();
+        map
     }
 
-    /// Least effort of travelling from region `a` to region `b`.
+    /// Exact least land-only walking effort-km; sea endpoints are unreachable.
     pub fn distance(&self, a: usize, b: usize) -> f32 {
-        self.distance[a * self.regions.len() + b]
+        if !self.regions[a].terrain.is_land() || !self.regions[b].terrain.is_land()
+            || self.regions[a].landmass != self.regions[b].landmass
+        {
+            return f32::INFINITY;
+        }
+        self.route_pair(a, b, RouteMode::Walking)
+    }
+
+    /// Exact coast-to-coast voyage effort-km, with sea-only interiors.
+    /// A voyage needs at least one sea cell; other coasts are never transit ports.
+    pub fn voyage(&self, a: usize, b: usize) -> f32 {
+        if a == b || !self.coastal(a) || !self.coastal(b) {
+            return f32::INFINITY;
+        }
+        self.route_pair(a, b, RouteMode::Voyage)
+    }
+
+    /// ID-sorted reachable land within an inclusive effort-km radius.
+    /// Infinity requests the full exact row, not the cached neighbourhood.
+    pub fn walking_row(&self, source: usize, reach: f32) -> Cow<'_, [(u32, f32)]> {
+        self.route_row(source, reach, RouteMode::Walking)
+    }
+
+    /// ID-sorted coastal destinations within an inclusive voyage radius.
+    pub fn voyage_row(&self, source: usize, reach: f32) -> Cow<'_, [(u32, f32)]> {
+        self.route_row(source, reach, RouteMode::Voyage)
+    }
+
+    /// Stored walking and voyage tuple counts, excluding CSR offsets and graph.
+    pub fn route_entry_counts(&self) -> (usize, usize) {
+        (self.walking.entries.len(), self.voyages.entries.len())
+    }
+
+    fn route_pair(&self, a: usize, b: usize, mode: RouteMode) -> f32 {
+        // One orientation gives bit-identical answers even beyond cache coverage.
+        let (source, destination) = (a.min(b), a.max(b));
+        let rows = match mode { RouteMode::Walking => &self.walking, RouteMode::Voyage => &self.voyages };
+        if let Some(effort) = rows.get(source, destination) {
+            return effort;
+        }
+        let mut scratch = RouteScratch::new(self.regions.len());
+        self.search_routes(source, f32::INFINITY, mode, Some(destination), &mut scratch);
+        scratch.distance[destination] as f32
+    }
+
+    fn route_row(&self, source: usize, reach: f32, mode: RouteMode) -> Cow<'_, [(u32, f32)]> {
+        let eligible = match mode {
+            RouteMode::Walking => self.regions[source].terrain.is_land(),
+            RouteMode::Voyage => self.coastal(source),
+        };
+        if !eligible || !(reach >= 0.0) {
+            return Cow::Borrowed(&[]);
+        }
+        if reach <= CACHE_REACH_KM {
+            let row = match mode {
+                RouteMode::Walking => self.walking.row(source),
+                RouteMode::Voyage => self.voyages.row(source),
+            };
+            if row.iter().all(|&(_, effort)| effort <= reach) {
+                return Cow::Borrowed(row);
+            }
+            return Cow::Owned(row.iter().copied().filter(|&(_, effort)| effort <= reach).collect());
+        }
+        let mut scratch = RouteScratch::new(self.regions.len());
+        self.search_routes(source, reach, mode, None, &mut scratch);
+        let mut row = Vec::new();
+        scratch.append_row(self, source, mode, &mut row);
+        Cow::Owned(row)
+    }
+
+    fn cache_routes(&self) -> (RouteRows, RouteRows) {
+        let n = self.regions.len();
+        let mut walking = RouteRows { offsets: Vec::with_capacity(n + 1), entries: Vec::new() };
+        let mut voyages = RouteRows { offsets: Vec::with_capacity(n + 1), entries: Vec::new() };
+        let mut scratch = RouteScratch::new(n);
+        walking.offsets.push(0);
+        voyages.offsets.push(0);
+        for source in 0..n {
+            if self.regions[source].terrain.is_land() {
+                self.search_routes(source, CACHE_REACH_KM, RouteMode::Walking, None, &mut scratch);
+                scratch.append_row(self, source, RouteMode::Walking, &mut walking.entries);
+            }
+            walking.offsets.push(walking.entries.len());
+            if self.coastal(source) {
+                self.search_routes(source, CACHE_REACH_KM, RouteMode::Voyage, None, &mut scratch);
+                scratch.append_row(self, source, RouteMode::Voyage, &mut voyages.entries);
+            }
+            voyages.offsets.push(voyages.entries.len());
+        }
+        (walking, voyages)
+    }
+
+    fn search_routes(
+        &self,
+        source: usize,
+        reach: f32,
+        mode: RouteMode,
+        target: Option<usize>,
+        scratch: &mut RouteScratch,
+    ) {
+        scratch.reset();
+        scratch.relax(source as u32, 0.0, reach);
+        while let Some(RouteVisit { effort, region }) = scratch.heap.pop() {
+            let r = region as usize;
+            if effort != scratch.distance[r] {
+                continue;
+            }
+            if target == Some(r) {
+                break;
+            }
+            let land = self.regions[r].terrain.is_land();
+            if mode == RouteMode::Voyage && land && r != source {
+                continue;
+            }
+            for &(next, edge_effort) in self.edges.row(r) {
+                let n = next as usize;
+                let next_land = self.regions[n].terrain.is_land();
+                let surcharge = match mode {
+                    RouteMode::Walking if !next_land => continue,
+                    RouteMode::Walking => 0.0,
+                    RouteMode::Voyage if n == source || (land && next_land) => continue,
+                    RouteMode::Voyage if land != next_land => f64::from(EMBARK),
+                    RouteMode::Voyage => 0.0,
+                };
+                scratch.relax(next, effort + f64::from(edge_effort) + surcharge, reach);
+            }
+        }
     }
 
     /// How readily peoples on regions `a` and `b` meet as neighbours: 1 on
@@ -408,9 +630,7 @@ impl Map {
         if !ra.terrain.is_land() || !rb.terrain.is_land() || !ra.neighbours.contains(&b) {
             return 0.0;
         }
-        let position = self.edges[a].binary_search_by_key(&(b as u32), |&(r, _)| r)
-            .expect("a neighbour has a retained shared border");
-        let effort = self.edges[a][position].1;
+        let effort = self.edges.get(a, b).expect("a neighbour has a retained shared border");
         (PLAIN_CLOSENESS * REFERENCE_TRAVEL_KM / effort).min(MAX_CLOSENESS)
     }
 
@@ -1151,8 +1371,17 @@ fn travel_edges(
     sites: &[[f64; 2]],
     terrain: &[Terrain],
     borders: &[SharedBorder],
-) -> Vec<Vec<(u32, f32)>> {
-    let mut edges = vec![Vec::new(); sites.len()];
+) -> RouteRows {
+    let mut offsets = vec![0; sites.len() + 1];
+    for border in borders {
+        offsets[border.a + 1] += 1;
+        offsets[border.b + 1] += 1;
+    }
+    for r in 0..sites.len() {
+        offsets[r + 1] += offsets[r];
+    }
+    let mut entries = vec![(0, 0.0); 2 * borders.len()];
+    let mut cursor = offsets[..sites.len()].to_vec();
     for border in borders {
         let leg = |r: usize| {
             let [x, y] = sites[r];
@@ -1162,13 +1391,15 @@ fn travel_edges(
         let effort = (f64::from(KM_PER_UNIT)
             * (leg(border.a) * f64::from(terrain[border.a].travel())
                 + leg(border.b) * f64::from(terrain[border.b].travel()))) as f32;
-        edges[border.a].push((border.b as u32, effort));
-        edges[border.b].push((border.a as u32, effort));
+        for (from, to) in [(border.a, border.b), (border.b, border.a)] {
+            entries[cursor[from]] = (to as u32, effort);
+            cursor[from] += 1;
+        }
     }
-    for row in &mut edges {
-        row.sort_unstable_by_key(|&(r, _)| r);
+    for r in 0..sites.len() {
+        entries[offsets[r]..offsets[r + 1]].sort_unstable_by_key(|&(id, _)| id);
     }
-    edges
+    RouteRows { offsets, entries }
 }
 
 /// `of` ordered by `value`, lowest first, ties by index.
@@ -1182,32 +1413,6 @@ fn share(len: usize, fraction: f64) -> usize {
     (len as f64 * fraction + 0.5) as usize
 }
 
-/// Least effort-km between every pair of regions (Floyd–Warshall).
-fn travel_distances(edges: &[Vec<(u32, f32)>]) -> Vec<f32> {
-    let n = edges.len();
-    let mut d = vec![f32::INFINITY; n * n];
-    for (i, row) in edges.iter().enumerate() {
-        d[i * n + i] = 0.0;
-        for &(j, effort) in row {
-            d[i * n + j as usize] = effort;
-        }
-    }
-    for k in 0..n {
-        for i in 0..n {
-            let ik = d[i * n + k];
-            if ik.is_infinite() {
-                continue;
-            }
-            for j in 0..n {
-                let through = ik + d[k * n + j];
-                if through < d[i * n + j] {
-                    d[i * n + j] = through;
-                }
-            }
-        }
-    }
-    d
-}
 
 #[cfg(test)]
 mod tests {
@@ -1222,7 +1427,7 @@ mod tests {
         let borders = shared_borders(&cells);
         for (terrain, expected) in [(Terrain::Plains, 100.0), (Terrain::Steppe, 80.0)] {
             let edges = travel_edges(&points, &vec![terrain; points.len()], &borders);
-            let effort = edges[12].iter().find(|&&(r, _)| r == 13).unwrap().1;
+            let effort = edges.get(12, 13).unwrap();
             assert!((effort - expected).abs() < 1e-4);
         }
 
@@ -1234,9 +1439,9 @@ mod tests {
         let leg = ((mx - 0.5).powi(2) + (my - 0.5).powi(2)).sqrt();
         assert!(leg > 0.5);
         let edges = travel_edges(&points, &[Terrain::Plains, Terrain::Hills, Terrain::Sea], &borders);
-        let effort = edges[0].iter().find(|&&(r, _)| r == 1).unwrap().1;
+        let effort = edges.get(0, 1).unwrap();
         assert!((f64::from(effort) - 100.0 * leg * 3.0).abs() < 1e-4);
-        assert_eq!(effort, edges[1].iter().find(|&&(r, _)| r == 0).unwrap().1);
+        assert_eq!(effort, edges.get(1, 0).unwrap());
     }
 
 
@@ -1466,15 +1671,177 @@ mod tests {
     }
 
     #[test]
-    fn travel_follows_the_easiest_route() {
-        let map = Map::generate(3, MapSize::Medium);
-        for i in 0..map.regions.len() {
-            for &(j, direct) in &map.edges[i] {
-                let j = j as usize;
-                assert!(map.distance(i, j) <= direct + 1e-3);
-                assert!((map.distance(i, j) - map.distance(j, i)).abs() < 1e-3);
+    fn sparse_routes_match_independent_oracles_and_inclusive_radii() {
+        let map = Map::generate(6, MapSize::Small);
+        let n = map.regions.len();
+        let walk = floyd_oracle(&map, true);
+        let sea = floyd_oracle(&map, false);
+        for source in 0..n {
+            let mut voyages = vec![f32::INFINITY; n];
+            if map.coastal(source) {
+                for (destination, effort) in voyages.iter_mut().enumerate() {
+                    if source == destination || !map.coastal(destination) { continue; }
+                    for &(depart, first) in map.edges.row(source) {
+                        if map.regions[depart as usize].terrain.is_land() { continue; }
+                        for &(arrive, last) in map.edges.row(destination) {
+                            if map.regions[arrive as usize].terrain.is_land() { continue; }
+                            let total = f64::from(first) + 100.0
+                                + sea[depart as usize * n + arrive as usize]
+                                + f64::from(last) + 100.0;
+                            *effort = effort.min(total as f32);
+                        }
+                    }
+                }
+            }
+            for destination in 0..n {
+                assert_eq!(map.distance(source, destination), walk[source * n + destination] as f32);
+                assert_eq!(map.distance(source, destination), map.distance(destination, source));
+                assert_eq!(map.voyage(source, destination), voyages[destination]);
+                assert_eq!(map.voyage(source, destination), map.voyage(destination, source));
+            }
+            for reach in [0.0, 400.0, CACHE_REACH_KM, f32::INFINITY] {
+                let expected_walk: Vec<_> = (0..n).filter_map(|r| {
+                    let effort = walk[source * n + r] as f32;
+                    (effort.is_finite() && effort <= reach).then_some((r as u32, effort))
+                }).collect();
+                let expected_voyage: Vec<_> = voyages.iter().enumerate().filter_map(|(r, &effort)| {
+                    (effort.is_finite() && effort <= reach).then_some((r as u32, effort))
+                }).collect();
+                assert_eq!(map.walking_row(source, reach).as_ref(), expected_walk);
+                assert_eq!(map.voyage_row(source, reach).as_ref(), expected_voyage);
             }
         }
+    }
+
+    #[test]
+    fn walking_takes_the_land_detour_and_exact_fallback_exceeds_cache() {
+        let map = route_fixture(
+            &[Terrain::Plains, Terrain::Sea, Terrain::Plains, Terrain::Plains,
+                Terrain::Plains, Terrain::Plains, Terrain::Plains],
+            &[(0, 1, 200.0), (1, 2, 200.0), (0, 3, 100.0), (3, 4, 100.0),
+                (4, 5, 100.0), (5, 2, 100.0)],
+        );
+        assert_eq!(map.distance(0, 2), 400.0);
+        assert_eq!(map.regions[0].landmass, map.regions[2].landmass);
+        assert_eq!(map.voyage(0, 2), 600.0);
+        assert_eq!(map.distance(0, 0), 0.0);
+        assert_eq!(map.closeness(1, 1), 0.0);
+        for (a, b) in [(0, 1), (1, 1), (1, 2), (0, 6)] {
+            assert!(map.distance(a, b).is_infinite());
+        }
+        assert!(map.walking_row(1, f32::INFINITY).is_empty());
+
+        let map = linear_map(&[Terrain::Plains; 25]);
+        assert_eq!(map.distance(0, 24), 2_400.0);
+        assert_eq!(map.distance(24, 0), 2_400.0);
+        assert!(!map.walking_row(0, CACHE_REACH_KM).iter().any(|&(r, _)| r == 24));
+        assert!(map.walking_row(0, 2_400.0).contains(&(24, 2_400.0)));
+        assert!(!map.walking_row(0, 2_399.0).iter().any(|&(r, _)| r == 24));
+        assert!(map.walking_row(0, f32::INFINITY).contains(&(24, 2_400.0)));
+    }
+
+    #[test]
+    fn voyages_charge_transitions_and_never_rent_intermediate_ports() {
+        for (sea_cells, expected) in [(1, 600.0), (2, 900.0), (3, 1_200.0), (6, 2_100.0)] {
+            let mut terrain = vec![Terrain::Sea; sea_cells + 2];
+            terrain[0] = Terrain::Plains;
+            terrain[sea_cells + 1] = Terrain::Plains;
+            let map = linear_map(&terrain);
+            let end = terrain.len() - 1;
+            assert_eq!(map.voyage(0, end), expected);
+            assert_eq!(map.voyage(end, 0), expected);
+            assert!(map.distance(0, end).is_infinite());
+            assert!(map.voyage(0, 0).is_infinite());
+            assert!(map.voyage(1, end).is_infinite());
+            assert!(map.voyage_row(0, expected).contains(&(end as u32, expected)));
+            assert!(map.voyage_row(0, expected - 1.0).is_empty());
+            if expected > CACHE_REACH_KM {
+                assert!(map.voyage_row(0, CACHE_REACH_KM).is_empty());
+                assert!(map.voyage_row(0, f32::INFINITY).contains(&(end as u32, expected)));
+            }
+            terrain[0] = Terrain::Mountains;
+            assert_eq!(linear_map(&terrain).voyage(0, end), expected + 150.0);
+        }
+        let port = linear_map(&[
+            Terrain::Plains, Terrain::Sea, Terrain::Plains, Terrain::Sea, Terrain::Plains,
+        ]);
+        assert_eq!(port.voyage(0, 2), 600.0);
+        assert!(port.voyage(0, 4).is_infinite());
+        let inland = linear_map(&[
+            Terrain::Plains, Terrain::Plains, Terrain::Sea, Terrain::Plains,
+        ]);
+        assert!(inland.voyage(0, 3).is_infinite());
+        assert_eq!(inland.voyage(1, 3), 600.0);
+    }
+
+    fn floyd_oracle(map: &Map, land: bool) -> Vec<f64> {
+        let n = map.regions.len();
+        let mut distance = vec![f64::INFINITY; n * n];
+        for r in 0..n {
+            if map.regions[r].terrain.is_land() != land { continue; }
+            distance[r * n + r] = 0.0;
+            for &(s, effort) in map.edges.row(r) {
+                if map.regions[s as usize].terrain.is_land() == land {
+                    distance[r * n + s as usize] = f64::from(effort);
+                }
+            }
+        }
+        for k in 0..n {
+            for a in 0..n {
+                for b in 0..n {
+                    distance[a * n + b] = distance[a * n + b]
+                        .min(distance[a * n + k] + distance[k * n + b]);
+                }
+            }
+        }
+        distance
+    }
+
+    fn linear_map(terrain: &[Terrain]) -> Map {
+        let sites: Vec<_> = (0..terrain.len()).map(|r| [r as f64 + 0.5, 0.5]).collect();
+        let cells: Vec<_> = (0..terrain.len()).map(|r| cell(&sites, r, terrain.len() as f64, 1.0)).collect();
+        let borders = shared_borders(&cells);
+        let edges = travel_edges(&sites, terrain, &borders);
+        let links: Vec<_> = (0..terrain.len()).flat_map(|r| {
+            edges.row(r).iter().copied().filter(move |&(s, _)| r < s as usize)
+                .map(move |(s, effort)| (r, s as usize, effort))
+        }).collect();
+        route_fixture(terrain, &links)
+    }
+
+    fn route_fixture(terrain: &[Terrain], links: &[(usize, usize, f32)]) -> Map {
+        let n = terrain.len();
+        let mut adjacent = vec![Vec::new(); n];
+        for &(a, b, effort) in links {
+            adjacent[a].push((b as u32, effort));
+            adjacent[b].push((a as u32, effort));
+        }
+        for row in &mut adjacent { row.sort_unstable_by_key(|&(r, _)| r); }
+        let neighbours: Vec<Vec<_>> = adjacent.iter().map(|row| {
+            row.iter().map(|&(r, _)| r as usize).collect()
+        }).collect();
+        let masses = landmasses(terrain, &neighbours);
+        let regions: Vec<_> = (0..n).map(|r| Region {
+            site: [r as f32, 0.0],
+            outline: vec![[r as f32, 0.0], [r as f32 + 1.0, 0.0],
+                [r as f32 + 1.0, 1.0], [r as f32, 1.0]],
+            area_km2: REFERENCE_AREA_KM2,
+            terrain: terrain[r],
+            neighbours: neighbours[r].clone(),
+            landmass: masses[r],
+        }).collect();
+        let mut edges = RouteRows { offsets: vec![0], entries: Vec::new() };
+        for row in adjacent {
+            edges.entries.extend(row);
+            edges.offsets.push(edges.entries.len());
+        }
+        let mut map = Map {
+            size: MapSize::Small, width: n as f32, height: 1.0,
+            landmasses: describe_landmasses(&regions, MapSize::Small), regions, edges,
+            walking: RouteRows::default(), voyages: RouteRows::default(),
+        };
+        (map.walking, map.voyages) = map.cache_routes();
+        map
     }
 
     #[test]
