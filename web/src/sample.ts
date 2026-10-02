@@ -1,10 +1,10 @@
 // The sample world: a fixed recipe, so every visitor starts from the same
 // four thousand years. Three peoples of three families settle the map and
-// spread; the sea people make themselves a realm after bad years and are
-// the first to write. After 2,500 years the river people conquer them; a
+// spread. After 2,500 years the river people conquer the sea people; a
 // teacher among the conquered founds a faith, and when the sea people give
 // up their tongue for their rulers', it lives on as the faith's sacred
-// language. Opening it puts a copy on the shelf to continue.
+// language. What else happens is the engine's to tell, and changes with
+// its revision. Opening it puts a copy on the shelf to continue.
 
 import { createEngine, presetDesign } from "./engine";
 import type { Action, Engine, MapSize, Naming } from "./model";

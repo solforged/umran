@@ -32,7 +32,10 @@ writes its own history.
 - **Sound change.** Each generation a language may take up a sound law,
   such as "s becomes z between vowels". Laws apply to every word at once,
   as real sound changes do, and the odds favour changes the speakers'
-  sound preferences like.
+  sound preferences like. Each language puts its stress somewhere, on the
+  first syllable or the next to last, and stress shapes what follows:
+  unstressed vowels weaken and drop, as Latin *calidus* became Italian
+  *caldo*, and clusters become long consonants, as *factum* became *fatto*.
 - **Waves.** A sound change can spread to neighbouring languages, mostly
   between close relatives. The lines where a change stopped (isoglosses)
   cut across the family tree, as dialect maps of real languages do.
@@ -56,6 +59,11 @@ writes its own history.
   dialects toward it, and draws subjects of other families to shift to
   it. Some standards keep foreign words out. When the state falls, its
   dialects drift apart again, as Latin did into the Romance languages.
+- **Great cities.** A capital draws people from across its realm. When
+  several languages share its streets long enough, its townsfolk come to
+  speak a koiné of their own, levelled toward what most of them share, as
+  Hellenistic Greek was; cities pass sound changes to one another before
+  the countryside between them.
 - **Classical languages.** A written standard is in time fixed as it
   stood, by grammarians or by its state's fall, and people go on writing
   it while their speech moves on, as Latin was written over Romance
@@ -68,6 +76,10 @@ writes its own history.
   faith whose frozen speech becomes a sacred language, lending learned
   words long after and turning converts' old gods into demons. Writing
   fixes spelling while speech moves on, as English *knight* shows.
+- **Schisms and pilgrims.** A faith spread too far, claimed by a realm of
+  its own, or kept in a sacred speech its followers no longer understand
+  may break into branches. Pilgrims travel to its holy places and carry
+  words home, and a holy land held by others draws the faithful to war.
 - **Personal names.** Each language names its people its own way, from
   words its way of life favours: herders for horses and cattle, farmers
   for grain. Kings and prophets carry such names.
@@ -178,7 +190,7 @@ AGENTS.md          architecture notes and the rules every change keeps
 
 ## Status
 
-Umran is a work in progress. Not yet modelled: stress, tone, vowel harmony,
+Umran is a work in progress. Not yet modelled: tone, vowel harmony,
 inflection, syntax, rivers, and climates, among others. The full
 list is at the end of
 [`docs/engine.md`](docs/engine.md#not-yet-modelled).
