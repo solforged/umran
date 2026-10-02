@@ -28,6 +28,9 @@ and integer squares use explicit multiplication.
   plain kilometres: a 100 km mountain crossing costs 400 effort-km.
   Polygon area sets regional food capacity. Map geometry uses arithmetic
   and square roots, so native and WASM draw the same map.
+  Elevation and moisture are retained rather than discarded after terrain
+  choice. Static regional drainage supplies named river courses, and connected
+  climate zones supply weather histories without redrawing the coast.
 - Languages are founded from a `LanguageDesign` (`design.rs`): the exact
   sounds, each used or favoured, plus knobs (word length, final consonants,
   inner clusters, repetition, long vowels, geminates, stress, affixes or
@@ -264,13 +267,14 @@ and integer squares use explicit multiplication.
   how readily they move, and how large they hold together. A founded
   people settles unpeopled land, likelier the more it feeds and the
   further it lies from other peoples, and lives as that land suits unless
-  told otherwise: plains farm, steppe and desert herd, the rest forage.
-  Its number is spread over its lands by how much each feeds it, and it
-  grows logistically toward what they feed it, counting everyone living
-  there. Food is `capacity * Livelihood::feeds * area_km2 / 8660.254`.
-  The default capacity, 40,000, describes farmers on a reference-area
-  plain, not every polygon. Unequal cells keep equal density, and the
-  larger boundary cells are not normalized away. When its lands
+  told otherwise. Plains normally farm, steppe and desert herd, and the rest
+  forage. A river valley defaults to farming when its current yield is
+  substantially better. Its number is spread over its lands by how much
+  each feeds it, and it grows logistically toward that food, counting everyone
+  living there. `World::feeds` reads one generation's cached climate and
+  river yields, including `area_km2 / 8660.254`. The default capacity, 40,000,
+  describes farmers on a reference-area plain. Unequal cells keep equal
+  density, and larger boundary cells are not normalized away. When its lands
   hold more than they feed it, it declines, so foragers dwindle among
   farmers. A people using most of its lands' food spreads into bordering
   land with real room left (`spread_rate`). One too large for its way of
@@ -287,11 +291,12 @@ and integer squares use explicit multiplication.
   hold. A stronger people that outnumbers another on one of its several
   lands crowds it off. Peoples learn a way of life that feeds them half
   again as well from those they deal with (`adoption_rate`); farmers on
-  steppe turn to herding, and foragers on plain rarely begin to farm of
-  their own accord.
-- Peoples suffer and end. Famine, plague, or drought (on dry land) strikes
-  a peopled land now and then (`hardship_rate`), killing a share of
-  everyone there, so a people on one land suffers worst. A people below
+  drying land may turn to herding. Foragers and herders on suitable plains
+  or river valleys rarely begin to farm of their own accord.
+- Peoples suffer and end. Famine or plague strikes a peopled land now and
+  then (`hardship_rate`), killing a share of everyone there, so a people on
+  one land suffers worst. Drought instead lowers food until recovery; it
+  does not also impose a random drought death toll. A people below
   a hundred dies out; one far smaller than a kindred people on its heart
   land may merge into it (`merge_rate`), and one swamped by a people of
   another family shifts to its language first. An ended people keeps its
@@ -709,6 +714,77 @@ not a planet. The facade exposes `catalog.mapSizes`, `map.kmPerUnit`,
 units. Movement views use the event's recorded `bySea`, not the shape
 of the present coast.
 
+## Rivers and regional climate
+
+`rivers.rs` builds a coast-inward priority flood. Each land drains through
+one shared-border neighbour toward the sea, staying within its landmass.
+Enclosed hollows receive a lowest-saddle spill route without changing their
+visible elevation or terrain. Region ids break ties, and the upstream order
+cannot loop. Runoff accumulates physical wet catchment area, with a separate
+seeded local variation. A reach becomes a river at about 25,981 wet km²,
+not at a fraction of the map. Vast therefore has more catchments and rivers,
+not smaller cells or a river in every cell.
+
+Every river has a stable id, an ordered main course, an ultimate sea mouth,
+and its upstream catchment. The strongest branch continues the main course;
+other branches keep their own ids and join it. Shared downstream reaches are
+stored once. Tributary and main-river catchments may overlap because water
+from the tributary supplies both. Short tributaries remain short, and great
+courses can continue for many regions where a landmass permits.
+
+Water gives an immediate, bounded, additive floodplain farming benefit,
+including in steppe and desert. Foragers gain fishing and gathering food,
+and herders gain less. Hills receive a smaller farming benefit, and mountain
+streams do not become grain plains. Flow depends on upstream rain, so a
+locally dry valley can be a refuge until its wider catchment dries. Cold
+still limits farming beside a flowing river. There is no irrigation craft.
+
+Drainage-connected, usable river reaches multiply the canonical walking
+border effort by 0.65. Adjacent unrelated rivers receive no discount.
+The same costs feed distance, border closeness, migration, cohesion, trade,
+and sound waves. Flow crossing about 17,321 wet km² changes usability;
+only such crossings rebuild sparse walking rows. Sea journeys retain their
+own costs and permissions. No river grants ships or seafaring.
+
+`climate.rs` gives connected land zones, usually 6–20 regions, a shared
+seeded history. Islands and narrow leftover pieces can be smaller.
+Wetness and warmth targets are anomalies from local baselines. Epochs last
+several generations; conditions move one quarter of the remaining gap
+toward a target each generation. Short droughts, cold spells, successive
+long drying, and recovery occur on occupied and unoccupied lands alike.
+Local baseline rain and warmth keep dry interiors and highlands distinct.
+Courses, sea, relief, and landmasses remain fixed.
+
+Climate advances before growth. It caches flow, effective vegetation, and
+all three livelihood yields once for the generation. Growth, presence,
+settlement, adoption, spreading, and migration use this same food. Farming
+responds more strongly to lost rain and cold than foraging; water adds food
+rather than multiplying the desert's small farming baseline. Vegetation
+also determines whether riding has a steppe opportunity. Metalworking
+still needs relief, and writing still needs a large court city.
+
+Climate onset, worsening, recovery, and river flow changes record causes,
+affected lands, and exposed peoples. Food loss is not a claimed casualty
+share. Severe ongoing stress and six generations of remembered exposure
+count as `HardTimes`; migrants and daughters keep that exposure. Affected
+rulers also face the existing weaker-rule and collapse paths. State size,
+challenge chances, city thresholds, tribute, and split rules are unchanged.
+An automatic capital is the ruler's best-fed held land, with usable river
+access breaking a food tie; an authored capital is respected.
+`Params::static_society()` freezes climate through `climate_enabled = false`.
+Authors cannot currently impose climate targets as replay actions.
+
+A hydronym is a river name. `river_names.rs` reuses `Name`, `PlaceName`,
+and their origin records. The first settled speakers coin it from river,
+water, and descriptive words. Speakers along connected courses hear
+local forms without merging tributary identities. They inherit, borrow,
+and retain those forms through language shift. Regular sound laws change
+spoken local names and remembered forms, while deserted attestations
+freeze. Nearby land and departing peoples can be named for a real river.
+The facade exposes static river topology and zone ids in `map()`,
+historical conditions and literal feeding capacities in `climate(generation)`,
+and name histories with local alternatives in `river(generation, id)`.
+
 ## Studying one mechanism
 
 Each example prints a readable report; profiles are preset ids
@@ -722,6 +798,7 @@ cargo run --release -p umran-sim --example family -- <seed> <proto> <outsider> <
 cargo run --release -p umran-sim --example history -- <seed> <generations>
 cargo run --release -p umran-sim --example calibrate -- <seeds> <generations> [profile]
 cargo run --release -p umran-sim --example calibrate -- geography [seeds] [generations] [size] [founders]
+cargo run --release -p umran-sim --example rivers -- [seeds] [size] [generations]
 cargo run --release -p umran-sim --example length -- [seeds] [generations]
 cargo run --release -p umran-sim --example audit -- [seeds] [generations]
 cargo run --release -p umran-sim --example faiths -- [seeds] [years] [first-seed] [seeded|natural|sample|sample-unseeded]
@@ -750,8 +827,9 @@ can refuse this fixed recipe; the report counts those refusals separately.
 
 ## Not yet modelled
 
-Rivers, climates, fleets, rented ports, mixed inland-and-sea itineraries,
-resolved travel times, globe wrapping, purism within a classical form,
+Fleets, rented ports, mixed inland-and-sea itineraries, exact river channels
+and lakes, seasonal weather, resolved travel times, globe wrapping,
+purism within a classical form,
 compounding and derivation after founding beyond renewal and new meanings,
 inflection beyond count noun plural and verb past, productive root-and-pattern
 inflection, agreement, case, future marking, tone, vowel harmony beyond

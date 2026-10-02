@@ -434,13 +434,16 @@ impl World {
                 k.livelihood != Livelihood::Foraging
                     && (has(Terrain::Hills) || has(Terrain::Mountains))
             }
-            Craft::Riding => k.livelihood == Livelihood::Herding
-                && k.lands.iter().any(|&r| {
-                    self.climate.regions[r].vegetation == Terrain::Steppe
-                        || self.map.regions[r].neighbours.iter().any(|&n| {
-                            self.climate.regions[n].vegetation == Terrain::Steppe
-                        })
-                }),
+            Craft::Riding => {
+                k.livelihood == Livelihood::Herding
+                    && k.lands.iter().any(|&r| {
+                        self.climate.regions[r].vegetation == Terrain::Steppe
+                            || self.map.regions[r]
+                                .neighbours
+                                .iter()
+                                .any(|&n| self.climate.regions[n].vegetation == Terrain::Steppe)
+                    })
+            }
             Craft::Seafaring => k.lands.iter().any(|&r| self.map.coastal(r)),
             Craft::Writing => self
                 .rules(community)
@@ -733,7 +736,8 @@ impl World {
                 continue;
             }
             let rulers = &self.communities[state.rulers];
-            let troubled = self.climate_challenged(c) || self.climate_challenged(state.rulers)
+            let troubled = self.climate_challenged(c)
+                || self.climate_challenged(state.rulers)
                 || crowded.contains(&c)
                 || k.lands
                     .iter()

@@ -428,19 +428,13 @@ pub fn place_name(
         1 if !things.is_empty() || !qualities.is_empty() => {
             let all: Vec<&(&str, Form)> = things.iter().chain(&qualities).collect();
             let (id, modifier) = all[index(rng, all.len())];
-            (
-                morphology.compound(modifier, &head),
-                meaning(id, false),
-            )
+            (morphology.compound(modifier, &head), meaning(id, false))
         }
         2 if !things.is_empty() => {
             let (id, thing) = &things[index(rng, things.len())];
             match morphology.derive(thing, None, Relation::Place) {
                 Some(form) => (form, meaning(id, true)),
-                None => (
-                    morphology.compound(thing, &head),
-                    meaning(id, false),
-                ),
+                None => (morphology.compound(thing, &head), meaning(id, false)),
             }
         }
         // A land named for its people only if the name stays whole: clipped,
@@ -461,11 +455,7 @@ pub fn place_name(
 
 /// A hydronym from the first settlers' own word for river or water,
 /// optionally qualified as a long, dark, wide, or otherwise marked river.
-pub fn river_name(
-    variety: &Variety,
-    rng: &mut impl Rng,
-    generation: u32,
-) -> Option<Name> {
+pub fn river_name(variety: &Variety, rng: &mut impl Rng, generation: u32) -> Option<Name> {
     let word = |id| variety.lexicon.word_for(by_id(id)?).map(|l| &l.form);
     let heads: Vec<_> = ["river", "water"]
         .into_iter()

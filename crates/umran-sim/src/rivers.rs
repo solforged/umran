@@ -26,7 +26,10 @@ impl Eq for Flood {}
 
 impl Ord for Flood {
     fn cmp(&self, other: &Self) -> Ordering {
-        other.spill.total_cmp(&self.spill).then(other.region.cmp(&self.region))
+        other
+            .spill
+            .total_cmp(&self.spill)
+            .then(other.region.cmp(&self.region))
     }
 }
 
@@ -48,41 +51,60 @@ pub(crate) fn drainage(regions: &[Region]) -> (Vec<Option<usize>>, Vec<usize>) {
         if !region.terrain.is_land() {
             continue;
         }
-        if let Some(sea) = region.neighbours.iter().copied()
-            .filter(|&n| !regions[n].terrain.is_land()).min()
+        if let Some(sea) = region
+            .neighbours
+            .iter()
+            .copied()
+            .filter(|&n| !regions[n].terrain.is_land())
+            .min()
         {
             downstream[r] = Some(sea);
-            heap.push(Flood { spill: region.elevation, region: r });
+            heap.push(Flood {
+                spill: region.elevation,
+                region: r,
+            });
         }
     }
     while let Some(Flood { spill, region: r }) = heap.pop() {
         order.push(r);
         for &n in &regions[r].neighbours {
-            if !regions[n].terrain.is_land() || downstream[n].is_some()
+            if !regions[n].terrain.is_land()
+                || downstream[n].is_some()
                 || regions[n].landmass != regions[r].landmass
             {
                 continue;
             }
             downstream[n] = Some(r);
-            heap.push(Flood { spill: spill.max(regions[n].elevation), region: n });
+            heap.push(Flood {
+                spill: spill.max(regions[n].elevation),
+                region: n,
+            });
         }
     }
-    assert_eq!(order.len(), regions.iter().filter(|r| r.terrain.is_land()).count(),
-        "every landmass must have a sea outlet");
+    assert_eq!(
+        order.len(),
+        regions.iter().filter(|r| r.terrain.is_land()).count(),
+        "every landmass must have a sea outlet"
+    );
     order.reverse();
     (downstream, order)
 }
 
 pub(crate) fn generate(seed: u64, regions: &[Region]) -> Hydrology {
     let (drainage, drainage_order) = drainage(regions);
-    let runoff: Vec<f32> = regions.iter().enumerate().map(|(r, region)| {
-        if !region.terrain.is_land() {
-            return 0.0;
-        }
-        let mut rng = stream(seed, &[key("river runoff"), r as u64]);
-        region.area_km2 * (0.25 + 1.5 * region.moisture.clamp(0.0, 1.0))
-            * rng.gen_range(0.85..1.15)
-    }).collect();
+    let runoff: Vec<f32> = regions
+        .iter()
+        .enumerate()
+        .map(|(r, region)| {
+            if !region.terrain.is_land() {
+                return 0.0;
+            }
+            let mut rng = stream(seed, &[key("river runoff"), r as u64]);
+            region.area_km2
+                * (0.25 + 1.5 * region.moisture.clamp(0.0, 1.0))
+                * rng.gen_range(0.85..1.15)
+        })
+        .collect();
     let mut flows = runoff.clone();
     for &r in &drainage_order {
         if let Some(n) = drainage[r] {
@@ -90,7 +112,14 @@ pub(crate) fn generate(seed: u64, regions: &[Region]) -> Hydrology {
         }
     }
     let (rivers, river_regions) = courses(regions, &drainage, &drainage_order, &flows);
-    Hydrology { drainage, drainage_order, runoff, rivers, river_regions, flows }
+    Hydrology {
+        drainage,
+        drainage_order,
+        runoff,
+        rivers,
+        river_regions,
+        flows,
+    }
 }
 
 /// The strongest upstream branch continues a course; other branches join it.
@@ -110,9 +139,8 @@ pub(crate) fn courses(
             continue;
         }
         if let Some(n) = drainage[r].filter(|&n| regions[n].terrain.is_land()) {
-            let replace = main_upstream[n].is_none_or(|old| {
-                flows[r] > flows[old] || (flows[r] == flows[old] && r < old)
-            });
+            let replace = main_upstream[n]
+                .is_none_or(|old| flows[r] > flows[old] || (flows[r] == flows[old] && r < old));
             if replace {
                 main_upstream[n] = Some(r);
             }
@@ -121,7 +149,11 @@ pub(crate) fn courses(
     let mut mouths = vec![0; regions.len()];
     for &r in order.iter().rev() {
         let n = drainage[r].expect("land has a downstream region");
-        mouths[r] = if regions[n].terrain.is_land() { mouths[n] } else { n };
+        mouths[r] = if regions[n].terrain.is_land() {
+            mouths[n]
+        } else {
+            n
+        };
     }
     let mut rivers = Vec::new();
     let mut owner = vec![None; regions.len()];
@@ -148,11 +180,21 @@ pub(crate) fn courses(
         stack.push(end);
         while let Some(r) = stack.pop() {
             catchment.push(r);
-            stack.extend(regions[r].neighbours.iter().copied()
-                .filter(|&n| drainage[n] == Some(r)));
+            stack.extend(
+                regions[r]
+                    .neighbours
+                    .iter()
+                    .copied()
+                    .filter(|&n| drainage[n] == Some(r)),
+            );
         }
         catchment.sort_unstable();
-        rivers.push(River { course, mouth: mouths[end], catchment, joins: None });
+        rivers.push(River {
+            course,
+            mouth: mouths[end],
+            catchment,
+            joins: None,
+        });
     }
     for river in &mut rivers {
         let end = *river.course.last().unwrap();
@@ -180,7 +222,10 @@ pub(crate) fn climate_zones(
     const MAXIMUM: usize = 20;
     let mut rng = stream(seed, &[key("climate zones")]);
     let priorities: Vec<u64> = (0..regions.len()).map(|_| rng.r#gen()).collect();
-    let mut seeds: Vec<usize> = landmasses.iter().flat_map(|m| m.regions.iter().copied()).collect();
+    let mut seeds: Vec<usize> = landmasses
+        .iter()
+        .flat_map(|m| m.regions.iter().copied())
+        .collect();
     seeds.sort_unstable_by_key(|&r| (priorities[r], r));
     let mut owner = vec![None; regions.len()];
     let mut queued = vec![usize::MAX; regions.len()];
@@ -218,7 +263,9 @@ pub(crate) fn climate_zones(
             if size == 0 || size >= MINIMUM {
                 continue;
             }
-            let neighbour = zones[id].regions.iter()
+            let neighbour = zones[id]
+                .regions
+                .iter()
                 .flat_map(|&r| regions[r].neighbours.iter())
                 .filter_map(|&n| owner[n])
                 .filter(|&z| z != id && zones[z].regions.len() + size <= MAXIMUM)

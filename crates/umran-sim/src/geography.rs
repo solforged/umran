@@ -618,7 +618,10 @@ impl Map {
             }
             let entry = |a, b| {
                 self.edges.offsets[a]
-                    + self.edges.row(a).binary_search_by_key(&(b as u32), |&(id, _)| id)
+                    + self
+                        .edges
+                        .row(a)
+                        .binary_search_by_key(&(b as u32), |&(id, _)| id)
                         .expect("drainage follows a shared border")
             };
             let entries = [entry(r, n), entry(n, r)];
@@ -1757,16 +1760,32 @@ mod tests {
     #[test]
     fn drainage_spills_hollows_through_the_lowest_saddle() {
         let mut map = route_fixture(
-            &[Terrain::Sea, Terrain::Hills, Terrain::Mountains,
-                Terrain::Plains, Terrain::Plains, Terrain::Plains],
-            &[(0, 1, 100.0), (0, 2, 100.0), (1, 3, 100.0),
-                (2, 4, 100.0), (3, 4, 100.0), (3, 5, 100.0), (4, 5, 100.0)],
+            &[
+                Terrain::Sea,
+                Terrain::Hills,
+                Terrain::Mountains,
+                Terrain::Plains,
+                Terrain::Plains,
+                Terrain::Plains,
+            ],
+            &[
+                (0, 1, 100.0),
+                (0, 2, 100.0),
+                (1, 3, 100.0),
+                (2, 4, 100.0),
+                (3, 4, 100.0),
+                (3, 5, 100.0),
+                (4, 5, 100.0),
+            ],
         );
         for (r, elevation) in map.regions.iter_mut().zip([0.0, 4.0, 8.0, 1.0, 0.0, 1.0]) {
             r.elevation = elevation;
         }
         let (drainage, order) = rivers::drainage(&map.regions);
-        assert_eq!(drainage, [None, Some(0), Some(0), Some(1), Some(3), Some(3)]);
+        assert_eq!(
+            drainage,
+            [None, Some(0), Some(0), Some(1), Some(3), Some(3)]
+        );
         for &r in &order {
             let n = drainage[r].unwrap();
             if map.regions[n].terrain.is_land() {
@@ -1801,29 +1820,85 @@ mod tests {
     #[test]
     fn tributaries_join_without_sharing_courses_and_keep_full_catchments() {
         let map = route_fixture(
-            &[Terrain::Plains, Terrain::Plains, Terrain::Plains, Terrain::Plains,
-                Terrain::Plains, Terrain::Plains, Terrain::Plains, Terrain::Sea],
-            &[(0, 2, 100.0), (1, 2, 100.0), (2, 5, 100.0), (3, 4, 100.0),
-                (4, 5, 100.0), (5, 6, 100.0), (6, 7, 100.0)],
+            &[
+                Terrain::Plains,
+                Terrain::Plains,
+                Terrain::Plains,
+                Terrain::Plains,
+                Terrain::Plains,
+                Terrain::Plains,
+                Terrain::Plains,
+                Terrain::Sea,
+            ],
+            &[
+                (0, 2, 100.0),
+                (1, 2, 100.0),
+                (2, 5, 100.0),
+                (3, 4, 100.0),
+                (4, 5, 100.0),
+                (5, 6, 100.0),
+                (6, 7, 100.0),
+            ],
         );
-        let drainage = [Some(2), Some(2), Some(5), Some(4), Some(5), Some(6), Some(7), None];
+        let drainage = [
+            Some(2),
+            Some(2),
+            Some(5),
+            Some(4),
+            Some(5),
+            Some(6),
+            Some(7),
+            None,
+        ];
         let order = [1, 0, 3, 2, 4, 5, 6];
-        let flows = [4.0, 4.0, 9.0, 3.0, 4.0, 14.0, 15.0, 15.0]
-            .map(|f| f * REFERENCE_AREA_KM2);
+        let flows = [4.0, 4.0, 9.0, 3.0, 4.0, 14.0, 15.0, 15.0].map(|f| f * REFERENCE_AREA_KM2);
         let (rivers, owner) = rivers::courses(&map.regions, &drainage, &order, &flows);
-        assert_eq!(rivers, [
-            River { course: vec![1], mouth: 7, catchment: vec![1], joins: Some(2) },
-            River { course: vec![3, 4], mouth: 7, catchment: vec![3, 4], joins: Some(2) },
-            River { course: vec![0, 2, 5, 6], mouth: 7,
-                catchment: vec![0, 1, 2, 3, 4, 5, 6], joins: None },
-        ]);
-        assert_eq!(owner, [Some(2), Some(0), Some(2), Some(1),
-            Some(1), Some(2), Some(2), None]);
+        assert_eq!(
+            rivers,
+            [
+                River {
+                    course: vec![1],
+                    mouth: 7,
+                    catchment: vec![1],
+                    joins: Some(2)
+                },
+                River {
+                    course: vec![3, 4],
+                    mouth: 7,
+                    catchment: vec![3, 4],
+                    joins: Some(2)
+                },
+                River {
+                    course: vec![0, 2, 5, 6],
+                    mouth: 7,
+                    catchment: vec![0, 1, 2, 3, 4, 5, 6],
+                    joins: None
+                },
+            ]
+        );
+        assert_eq!(
+            owner,
+            [
+                Some(2),
+                Some(0),
+                Some(2),
+                Some(1),
+                Some(1),
+                Some(2),
+                Some(2),
+                None
+            ]
+        );
     }
 
     #[test]
     fn generated_drainage_and_climate_zones_respect_land_boundaries() {
-        for size in [MapSize::Small, MapSize::Medium, MapSize::Large, MapSize::Vast] {
+        for size in [
+            MapSize::Small,
+            MapSize::Medium,
+            MapSize::Large,
+            MapSize::Vast,
+        ] {
             for seed in [3, 11] {
                 let mut map = Map::generate(seed, size);
                 let n = map.regions.len();
@@ -1872,8 +1947,10 @@ mod tests {
                     assert!((0.0..=1.0).contains(&region.warmth));
                     assert_eq!(region.climate_zone.is_some(), region.terrain.is_land());
                     assert_eq!(rank[r] != usize::MAX, region.terrain.is_land());
-                    assert_eq!(course_owner[r].is_some(),
-                        region.terrain.is_land() && flows[r] >= RIVER_FORMATION_FLOW);
+                    assert_eq!(
+                        course_owner[r].is_some(),
+                        region.terrain.is_land() && flows[r] >= RIVER_FORMATION_FLOW
+                    );
                     if let Some(next) = map.drainage[r] {
                         assert!(region.neighbours.contains(&next));
                         if map.regions[next].terrain.is_land() {
@@ -1911,10 +1988,23 @@ mod tests {
     #[test]
     fn valleys_refresh_only_connected_reaches_when_flow_crosses_the_threshold() {
         let mut map = route_fixture(
-            &[Terrain::Plains, Terrain::Plains, Terrain::Plains,
-                Terrain::Plains, Terrain::Sea, Terrain::Plains],
-            &[(0, 1, 200.0), (1, 2, 200.0), (0, 3, 500.0), (3, 2, 200.0),
-                (0, 2, 1_000.0), (2, 4, 200.0), (4, 5, 200.0)],
+            &[
+                Terrain::Plains,
+                Terrain::Plains,
+                Terrain::Plains,
+                Terrain::Plains,
+                Terrain::Sea,
+                Terrain::Plains,
+            ],
+            &[
+                (0, 1, 200.0),
+                (1, 2, 200.0),
+                (0, 3, 500.0),
+                (3, 2, 200.0),
+                (0, 2, 1_000.0),
+                (2, 4, 200.0),
+                (4, 5, 200.0),
+            ],
         );
         map.drainage = vec![Some(1), Some(2), Some(4), Some(2), None, Some(4)];
         map.river_regions = vec![Some(0), Some(0), Some(0), Some(1), None, None];

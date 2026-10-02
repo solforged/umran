@@ -968,14 +968,20 @@ impl Bench {
         let spoken = world.spoken();
         to_json(&RiverNamesView {
             river: id,
-            names: names.iter().map(|name| place_name_view(world, name)).collect(),
+            names: names
+                .iter()
+                .map(|name| place_name_view(world, name))
+                .collect(),
             exonyms: world
                 .varieties
                 .iter()
                 .enumerate()
                 .filter(|(v, _)| spoken[*v] && names.last().is_some_and(|p| p.variety != *v))
                 .filter_map(|(v, speech)| {
-                    let (_, name) = speech.river_exonyms.iter().find(|(river, _)| *river == id)?;
+                    let (_, name) = speech
+                        .river_exonyms
+                        .iter()
+                        .find(|(river, _)| *river == id)?;
                     Some(place_exonym_view(world, v, name))
                 })
                 .collect(),
@@ -1127,7 +1133,14 @@ impl Bench {
                     format!("Climate {} in zone {zone}", kebab(&format!("{change:?}")))
                 }
                 WorldEvent::RiverFlow { river, flowing, .. } => {
-                    format!("River {river} {}", if *flowing { "flow returned" } else { "flow fell" })
+                    format!(
+                        "River {river} {}",
+                        if *flowing {
+                            "flow returned"
+                        } else {
+                            "flow fell"
+                        }
+                    )
                 }
                 WorldEvent::Adopted {
                     community,
@@ -1421,10 +1434,7 @@ fn place_views(world: &World) -> Vec<PlaceView> {
                     Some(place_exonym_view(world, v, name))
                 })
                 .collect(),
-            names: names
-                .iter()
-                .map(|p| place_name_view(world, p))
-                .collect(),
+            names: names.iter().map(|p| place_name_view(world, p)).collect(),
         })
         .collect()
 }

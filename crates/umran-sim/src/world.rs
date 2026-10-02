@@ -1374,11 +1374,19 @@ impl World {
             && naming.is_none()
             && stream(
                 self.seed,
-                &[key("river people"), community as u64, u64::from(self.generation)],
-            ).r#gen::<f32>() < 0.35)
+                &[
+                    key("river people"),
+                    community as u64,
+                    u64::from(self.generation),
+                ],
+            )
+            .r#gen::<f32>()
+                < 0.35)
             .then(|| self.nearby_river_name(parent, region))
             .flatten();
-        let land = river.cloned().or_else(|| self.heard_place(region, parent, &daughter));
+        let land = river
+            .cloned()
+            .or_else(|| self.heard_place(region, parent, &daughter));
         let naming = match naming {
             Some(n) => n.clone(),
             None => {
@@ -4778,7 +4786,9 @@ mod tests {
             .regions
             .iter()
             .enumerate()
-            .filter(|(id, r)| r.terrain == Terrain::Plains && world.map.river_regions[*id].is_none())
+            .filter(|(id, r)| {
+                r.terrain == Terrain::Plains && world.map.river_regions[*id].is_none()
+            })
             .map(|(r, _)| r)
             .take(2)
             .collect();
@@ -5837,11 +5847,14 @@ mod tests {
     #[test]
     fn peoples_spread_but_never_outgrow_what_their_lands_feed_them() {
         for seed in [8, 9, 10] {
-            let mut world = World::new(seed, Params {
-                growth_rate: Params::default().growth_rate,
-                spread_rate: Params::default().spread_rate,
-                ..Params::static_society()
-            });
+            let mut world = World::new(
+                seed,
+                Params {
+                    growth_rate: Params::default().growth_rate,
+                    spread_rate: Params::default().spread_rate,
+                    ..Params::static_society()
+                },
+            );
             let design = SoundProfile::base();
             world.found_seeded(
                 &Naming::People,

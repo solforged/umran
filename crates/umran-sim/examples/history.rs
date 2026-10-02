@@ -146,6 +146,26 @@ fn main() {
                 place(*region, *generation),
                 share * 100.0
             ),
+            WorldEvent::Climate {
+                zone,
+                cause,
+                change,
+                lands,
+                peoples,
+                ..
+            } => println!(
+                "  gen {generation:>3}  zone {zone} {cause:?} {change:?}, lands {lands:?}, peoples {peoples:?}"
+            ),
+            WorldEvent::RiverFlow {
+                river,
+                flowing,
+                cause,
+                lands,
+                peoples,
+            } => println!(
+                "  gen {generation:>3}  river {river} {} ({cause:?}), lands {lands:?}, peoples {peoples:?}",
+                if *flowing { "recovers" } else { "weakens" }
+            ),
             WorldEvent::Adopted {
                 community,
                 livelihood,

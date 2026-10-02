@@ -13,7 +13,11 @@ impl World {
     /// The river's local naming record at `generation`. Its spoken form at
     /// that date is `record.name.form_at(generation)`, not its current form.
     pub fn river_name_at(&self, river: usize, generation: u32) -> Option<&PlaceName> {
-        self.river_names.get(river)?.iter().rev().find(|p| p.since <= generation)
+        self.river_names
+            .get(river)?
+            .iter()
+            .rev()
+            .find(|p| p.since <= generation)
     }
 
     /// This language's own remembered hydronym, never another language's
@@ -47,9 +51,14 @@ impl World {
 
     fn remember_river_name(&mut self, river: usize) {
         if let Some(place) = self.river_names[river].last()
-            && !self.varieties[place.variety].river_exonyms.iter().any(|(r, _)| *r == river)
+            && !self.varieties[place.variety]
+                .river_exonyms
+                .iter()
+                .any(|(r, _)| *r == river)
         {
-            self.varieties[place.variety].river_exonyms.push((river, place.name.clone()));
+            self.varieties[place.variety]
+                .river_exonyms
+                .push((river, place.name.clone()));
         }
     }
 
@@ -62,12 +71,13 @@ impl World {
 
     pub(crate) fn preserve_river_names_indexed(&mut self, dwellers: &[Vec<(usize, f32)>]) {
         for river in 0..self.river_names.len() {
-            if self.river_names[river]
-                .last()
-                .is_some_and(|p| !self.map.rivers[river].course.iter().any(|&region| {
-                    dwellers[region].iter().any(|&(c, _)| self.communities[c].variety == p.variety)
-                }))
-            {
+            if self.river_names[river].last().is_some_and(|p| {
+                !self.map.rivers[river].course.iter().any(|&region| {
+                    dwellers[region]
+                        .iter()
+                        .any(|&(c, _)| self.communities[c].variety == p.variety)
+                })
+            }) {
                 self.remember_river_name(river);
             }
         }
@@ -93,7 +103,9 @@ impl World {
                 Some((_, n)) if n >= size => best,
                 _ => Some((c, size)),
             });
-            let Some((holder, size)) = largest else { continue };
+            let Some((holder, size)) = largest else {
+                continue;
+            };
             let variety = self.communities[holder].variety;
             let before = self.river_names[river].last();
             if before.is_some_and(|p| p.variety == variety) {
@@ -101,11 +113,17 @@ impl World {
             }
             let mut rng = stream(
                 self.seed,
-                &[key("river succession"), river as u64, variety as u64, u64::from(self.generation)],
+                &[
+                    key("river succession"),
+                    river as u64,
+                    variety as u64,
+                    u64::from(self.generation),
+                ],
             );
             let origin = match before {
                 Some(p) => {
-                    let namers: f32 = holders.iter()
+                    let namers: f32 = holders
+                        .iter()
                         .filter(|(c, _)| self.communities[**c].variety == p.variety)
                         .map(|(_, n)| *n)
                         .sum();
@@ -117,11 +135,16 @@ impl World {
                     } else if self.known_river(variety, river).is_some() {
                         Some(PlaceOrigin::Borrowed)
                     } else {
-                        let knew = namers > 0.0 || self.contacts.iter().any(|k| {
-                            (k.a == holder && self.communities[k.b].variety == p.variety)
-                                || (k.b == holder && self.communities[k.a].variety == p.variety)
-                        });
-                        let keep = if knew { PLACE_KEEP_KNOWN } else { PLACE_KEEP_UNKNOWN };
+                        let knew = namers > 0.0
+                            || self.contacts.iter().any(|k| {
+                                (k.a == holder && self.communities[k.b].variety == p.variety)
+                                    || (k.b == holder && self.communities[k.a].variety == p.variety)
+                            });
+                        let keep = if knew {
+                            PLACE_KEEP_KNOWN
+                        } else {
+                            PLACE_KEEP_UNKNOWN
+                        };
                         (rng.r#gen::<f32>() < keep).then_some(PlaceOrigin::Borrowed)
                     }
                 }
@@ -142,8 +165,12 @@ impl World {
                     }
                 }
             } else {
-                let mut naming = stream(self.seed, &[key("river name"), river as u64, variety as u64]);
-                let Some(name) = river_name(&self.varieties[variety], &mut naming, self.generation) else {
+                let mut naming = stream(
+                    self.seed,
+                    &[key("river name"), river as u64, variety as u64],
+                );
+                let Some(name) = river_name(&self.varieties[variety], &mut naming, self.generation)
+                else {
                     continue;
                 };
                 name
@@ -173,20 +200,27 @@ impl World {
     fn hear_river_names(&mut self) {
         // Joins, not shared sea outlets or mere proximity, define a network.
         // Every tributary keeps its own identity and naming history.
-        let networks: Vec<usize> = (0..self.map.rivers.len()).map(|river| {
-            let mut downstream = river;
-            while let Some(next) = self.map.rivers[downstream].joins {
-                downstream = next;
-            }
-            downstream
-        }).collect();
+        let networks: Vec<usize> = (0..self.map.rivers.len())
+            .map(|river| {
+                let mut downstream = river;
+                while let Some(next) = self.map.rivers[downstream].joins {
+                    downstream = next;
+                }
+                downstream
+            })
+            .collect();
         let mut network_rivers = vec![Vec::new(); networks.len()];
         for (river, &network) in networks.iter().enumerate() {
             network_rivers[network].push(river);
         }
         let mut known = HashSet::new();
         for (variety, speech) in self.varieties.iter().enumerate() {
-            known.extend(speech.river_exonyms.iter().map(|(river, _)| (variety, *river)));
+            known.extend(
+                speech
+                    .river_exonyms
+                    .iter()
+                    .map(|(river, _)| (variety, *river)),
+            );
         }
         for (river, names) in self.river_names.iter().enumerate() {
             known.extend(names.iter().map(|p| (p.variety, river)));
@@ -196,19 +230,31 @@ impl World {
         for c in self.living() {
             let community = &self.communities[c];
             let variety = community.variety;
-            let nearby: BTreeSet<usize> = community.lands.iter()
-                .flat_map(|&land| std::iter::once(land).chain(self.map.regions[land].neighbours.iter().copied()))
+            let nearby: BTreeSet<usize> = community
+                .lands
+                .iter()
+                .flat_map(|&land| {
+                    std::iter::once(land).chain(self.map.regions[land].neighbours.iter().copied())
+                })
                 .filter_map(|land| self.map.river_regions[land])
                 .map(|river| networks[river])
                 .collect();
-            for river in nearby.iter().flat_map(|&network| network_rivers[network].iter().copied()) {
-                if known.contains(&(variety, river)) || heard.contains_key(&(variety, river))
-                {
+            for river in nearby
+                .iter()
+                .flat_map(|&network| network_rivers[network].iter().copied())
+            {
+                if known.contains(&(variety, river)) || heard.contains_key(&(variety, river)) {
                     continue;
                 }
-                let Some(place) = self.river_names[river].last() else { continue };
-                let mut rng = stream(self.seed, &[key("river exonym"), river as u64, variety as u64]);
-                let name = self.place_heard(variety, place.variety, &place.name, &mut rng, &mut ears);
+                let Some(place) = self.river_names[river].last() else {
+                    continue;
+                };
+                let mut rng = stream(
+                    self.seed,
+                    &[key("river exonym"), river as u64, variety as u64],
+                );
+                let name =
+                    self.place_heard(variety, place.variety, &place.name, &mut rng, &mut ears);
                 heard.insert((variety, river), name);
             }
         }
@@ -227,11 +273,16 @@ impl World {
         stress: StressRule,
         held: &[usize],
     ) {
-        let mut rivers: Vec<usize> = held.iter().filter_map(|&r| self.map.river_regions[r]).collect();
+        let mut rivers: Vec<usize> = held
+            .iter()
+            .filter_map(|&r| self.map.river_regions[r])
+            .collect();
         rivers.sort_unstable();
         rivers.dedup();
         for river in rivers {
-            if let Some(place) = self.river_names[river].last_mut().filter(|p| p.variety == variety)
+            if let Some(place) = self.river_names[river]
+                .last_mut()
+                .filter(|p| p.variety == variety)
             {
                 place.name.change(law, minimal, stress, self.generation);
             }
@@ -246,14 +297,24 @@ impl World {
     pub(crate) fn shift_river_names(&self, community: usize, old: usize, new: &mut Variety) {
         let mut ear = None;
         for river in 0..self.river_names.len() {
-            let Some(name) = self.known_river(old, river) else { continue };
-            let adapter = ear.get_or_insert_with(|| Adapter::new(
-                new.lexicon.living().map(|l| &l.form),
-                &new.profile.inventory,
-            ));
-            let mut rng = stream(self.seed, &[
-                key("river memory shift"), community as u64, river as u64, u64::from(self.generation),
-            ]);
+            let Some(name) = self.known_river(old, river) else {
+                continue;
+            };
+            let adapter = ear.get_or_insert_with(|| {
+                Adapter::new(
+                    new.lexicon.living().map(|l| &l.form),
+                    &new.profile.inventory,
+                )
+            });
+            let mut rng = stream(
+                self.seed,
+                &[
+                    key("river memory shift"),
+                    community as u64,
+                    river as u64,
+                    u64::from(self.generation),
+                ],
+            );
             let kept = Name {
                 form: adapter.adapt(&name.form, 0.0, &mut rng),
                 meaning: name.meaning.clone(),
@@ -272,13 +333,17 @@ impl World {
     /// separately from the earlier speakers' frozen attestation.
     pub(crate) fn keep_river_names(&mut self, community: usize, old: usize) {
         let variety = self.communities[community].variety;
-        let mut rivers: Vec<usize> = self.communities[community].lands.iter()
+        let mut rivers: Vec<usize> = self.communities[community]
+            .lands
+            .iter()
             .filter_map(|&r| self.map.river_regions[r])
             .collect();
         rivers.sort_unstable();
         rivers.dedup();
         for river in rivers {
-            if !self.river_names[river].last().is_some_and(|p| p.variety == old)
+            if !self.river_names[river]
+                .last()
+                .is_some_and(|p| p.variety == old)
             {
                 continue;
             }
@@ -308,27 +373,58 @@ mod tests {
         world.found(&SoundProfile::by_id("familiar").unwrap(), 0.2, 0.5);
         world.found(&SoundProfile::by_id("polynesian").unwrap(), 0.9, 0.5);
         let regions = &world.map.regions;
-        let (a, b, c) = regions.iter().enumerate().find_map(|(a, region)| {
-            if !region.terrain.is_land() {
-                return None;
-            }
-            region.neighbours.iter().copied()
-                .filter(|&b| regions[b].terrain.is_land())
-                .find_map(|b| {
-                    region.neighbours.iter().copied().find(|&c| {
-                        c != b && regions[c].terrain.is_land() && !regions[b].neighbours.contains(&c)
-                    }).map(|c| (a, b, c))
-                })
-        }).unwrap();
-        let away = regions.iter().enumerate().find(|(r, land)| {
-            land.terrain.is_land()
-                && ![a, b, c].contains(r)
-                && [a, b, c].iter().all(|&near| !regions[near].neighbours.contains(r))
-        }).unwrap().0;
+        let (a, b, c) = regions
+            .iter()
+            .enumerate()
+            .find_map(|(a, region)| {
+                if !region.terrain.is_land() {
+                    return None;
+                }
+                region
+                    .neighbours
+                    .iter()
+                    .copied()
+                    .filter(|&b| regions[b].terrain.is_land())
+                    .find_map(|b| {
+                        region
+                            .neighbours
+                            .iter()
+                            .copied()
+                            .find(|&c| {
+                                c != b
+                                    && regions[c].terrain.is_land()
+                                    && !regions[b].neighbours.contains(&c)
+                            })
+                            .map(|c| (a, b, c))
+                    })
+            })
+            .unwrap();
+        let away = regions
+            .iter()
+            .enumerate()
+            .find(|(r, land)| {
+                land.terrain.is_land()
+                    && ![a, b, c].contains(r)
+                    && [a, b, c]
+                        .iter()
+                        .all(|&near| !regions[near].neighbours.contains(r))
+            })
+            .unwrap()
+            .0;
         let mouth = regions.iter().position(|r| !r.terrain.is_land()).unwrap();
         Arc::make_mut(&mut world.map).rivers = vec![
-            River { course: vec![a, b], mouth, catchment: vec![a, b, c], joins: None },
-            River { course: vec![c], mouth, catchment: vec![c], joins: Some(0) },
+            River {
+                course: vec![a, b],
+                mouth,
+                catchment: vec![a, b, c],
+                joins: None,
+            },
+            River {
+                course: vec![c],
+                mouth,
+                catchment: vec![c],
+                joins: Some(0),
+            },
         ];
         let map = Arc::make_mut(&mut world.map);
         map.river_regions.fill(None);
@@ -368,7 +464,10 @@ mod tests {
         let native = world.communities[0].variety;
         let old = world.communities[1].variety;
         let local = world.river_names[0].last().unwrap().name.clone();
-        assert_eq!(world.river_names[0][0].origin, PlaceOrigin::Coined { community: 0 });
+        assert_eq!(
+            world.river_names[0][0].origin,
+            PlaceOrigin::Coined { community: 0 }
+        );
         assert!(world.river_name_at(0, 0).is_none());
 
         // Newcomers hear the native name before they outnumber its coiners.
@@ -390,7 +489,9 @@ mod tests {
         let target = world.communities[rulers].variety;
         let mut competing = world.varieties[target].name.clone();
         competing.meaning = "the rulers' river".into();
-        world.varieties[target].river_exonyms.retain(|(r, _)| *r != 0);
+        world.varieties[target]
+            .river_exonyms
+            .retain(|(r, _)| *r != 0);
         world.varieties[target].river_exonyms.push((0, competing));
         world.generation = 3;
         let shifted = world.shift(1, rulers);
@@ -400,7 +501,10 @@ mod tests {
         assert_eq!(world.known_river(shifted, 0), Some(&kept.name));
         assert_eq!(world.river_name_at(0, 2).unwrap().name, heard);
         assert_eq!(world.river_name_at(0, 1).unwrap().name, local);
-        assert_eq!(world.known_river(target, 0).unwrap().meaning, "the rulers' river");
+        assert_eq!(
+            world.known_river(target, 0).unwrap().meaning,
+            "the rulers' river"
+        );
         assert!(!world.spoken()[native] && !world.spoken()[old]);
 
         // A constructed regular merger changes both current local usage
@@ -451,7 +555,10 @@ mod tests {
         let tributary_local = world.known_river(upstream, 1).unwrap().clone();
         let upstream_heard = world.known_river(upstream, 0).unwrap().clone();
         assert_eq!(upstream_heard.meaning, main_local.meaning);
-        assert_eq!(world.known_river(main, 1).unwrap().meaning, tributary_local.meaning);
+        assert_eq!(
+            world.known_river(main, 1).unwrap().meaning,
+            tributary_local.meaning
+        );
         world.communities[1].lands = vec![a, b, c];
         world.communities[1].size = world.communities[0].size * 20.0;
         world.generation = 1;
