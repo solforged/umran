@@ -1029,13 +1029,17 @@ impl World {
         self.params.capacity * self.climate.regions[region].feeding[livelihood as usize]
     }
 
-    /// River valleys can invite farming even where the surrounding land is dry.
+    /// Current food can invite valley farming or grazing on a drying plain.
     fn default_livelihood(&self, region: usize) -> Livelihood {
         let baseline = Livelihood::of_land(self.map.regions[region].terrain);
         if self.map.river_regions[region].is_some()
             && self.feeds(region, Livelihood::Farming) > self.feeds(region, baseline) * 1.5
         {
             Livelihood::Farming
+        } else if baseline == Livelihood::Farming
+            && self.feeds(region, Livelihood::Herding) > self.feeds(region, Livelihood::Farming)
+        {
+            Livelihood::Herding
         } else {
             baseline
         }

@@ -554,6 +554,12 @@ mod tests {
                     "migrants must carry their exposure, seed {seed}"
                 );
             }
+            let newcomer = dry.found_seeded(
+                &Naming::People, &SoundProfile::base(), seed + 100,
+                0.5, 0.5, Some(home), None, None,
+            );
+            assert_eq!(dry.communities[newcomer].livelihood, Livelihood::Herding,
+                "a late founder must use the dry land's current food");
         }
         assert!(cohort >= 20, "only {cohort} boundary refuges");
         assert!(
