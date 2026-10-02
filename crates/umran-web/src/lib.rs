@@ -3388,6 +3388,20 @@ mod tests {
     }
 
     #[test]
+    fn river_scrubbing_excludes_names_coined_after_the_requested_generation() {
+        let mut w = Bench::new(5, "medium").unwrap();
+        let home = w.chronicle.latest().map.rivers[0].course[0];
+        let initial: serde_json::Value = serde_json::from_str(&w.river(0, 0).unwrap()).unwrap();
+        w.act(r#"{"kind":"run","generations":1}"#).unwrap();
+        w.act(&found_at("River", "familiar", home)).unwrap();
+        let present: serde_json::Value = serde_json::from_str(&w.river(1, 0).unwrap()).unwrap();
+        assert_eq!(present["names"][0]["since"], 1);
+        let past: serde_json::Value = serde_json::from_str(&w.river(0, 0).unwrap()).unwrap();
+        assert_eq!(past, initial);
+        assert!(w.river(0, usize::MAX).is_err());
+    }
+
+    #[test]
     fn ethos_overview_scrubs_and_authored_nudges_report_thresholds() {
         let mut w = Bench::new(5, "medium").unwrap();
         let mut action: serde_json::Value =
