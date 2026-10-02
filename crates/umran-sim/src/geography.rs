@@ -7,7 +7,7 @@
 //! mask. Generation uses only arithmetic and square roots, never `exp` or
 //! `sin`, whose last bits can differ between native code and WASM.
 
-use crate::livelihood::Livelihood;
+use crate::rivers;
 use crate::rng::{index, key, stream};
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
@@ -22,6 +22,12 @@ pub const KM_PER_UNIT: f32 = 100.0;
 pub const REFERENCE_TRAVEL_KM: f32 = 100.0;
 /// Area of an interior reference hexagon with 100 km centre spacing.
 pub const REFERENCE_AREA_KM2: f32 = 8_660.254;
+/// A named reach needs rain from roughly three wet reference cells.
+pub const RIVER_FORMATION_FLOW: f32 = 3.0 * REFERENCE_AREA_KM2;
+/// A fixed river valley is usable while both endpoints carry this much water.
+pub const RIVER_TRAVEL_FLOW: f32 = 2.0 * REFERENCE_AREA_KM2;
+/// Travel effort along a usable valley relative to its shared-border cost.
+const VALLEY_EFFORT: f32 = 0.65;
 /// Precomputed neighbourhood radius, not a limit on exact journeys.
 pub const CACHE_REACH_KM: f32 = 1_800.0;
 /// Fixed effort-km charged on each embarkation and landing.
@@ -192,6 +198,13 @@ pub struct Region {
     /// Physical area, derived before drawing coordinates are rounded.
     pub area_km2: f32,
     pub terrain: Terrain,
+    /// Original relief and moisture noise, retained without changing map draws.
+    pub elevation: f32,
+    pub moisture: f32,
+    /// Static normalized thermal baseline, separate from climate history.
+    pub warmth: f32,
+    /// Connected climatic district; sea has no zone.
+    pub climate_zone: Option<usize>,
     /// Regions sharing a border with it, in increasing order.
     pub neighbours: Vec<usize>,
     /// The body of land it belongs to, an index into `Map::landmasses`;
@@ -217,6 +230,34 @@ pub struct Landmass {
     /// The member region nearest its centre of area, where a chart writes
     /// its name; never sea, even for a crescent of land.
     pub anchor: usize,
+}
+
+/// One named course, upstream to downstream, with no reach owned twice.
+#[derive(Clone, Debug, PartialEq)]
+pub struct River {
+    pub course: Vec<usize>,
+    /// Ultimate sea outlet, including for tributaries.
+    pub mouth: usize,
+    /// All upstream land supplying the course's final reach, in region order.
+    pub catchment: Vec<usize>,
+    /// The river owning the next downstream reach; none at the sea.
+    pub joins: Option<usize>,
+}
+
+/// A connected district sharing one climate history.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClimateZone {
+    /// Land regions in increasing order.
+    pub regions: Vec<usize>,
+}
+
+/// Only drainage-linked river lands can become valley travel edges.
+#[derive(Clone, Debug, PartialEq)]
+struct ValleyEdge {
+    regions: [usize; 2],
+    entries: [usize; 2],
+    dry_effort: f32,
+    usable: bool,
 }
 
 /// Immutable, ID-sorted adjacency or distance rows in compressed sparse form.
@@ -338,12 +379,22 @@ pub struct Map {
     pub regions: Vec<Region>,
     /// Its bodies of land, numbered as `Region::landmass` numbers them.
     pub landmasses: Vec<Landmass>,
+    /// Each land's next bordering land or sea; sea has no downstream region.
+    pub drainage: Vec<Option<usize>>,
+    /// Land-only topological order, upstream before downstream.
+    pub drainage_order: Vec<usize>,
+    /// Local base rainfall supply in wet km², before downstream accumulation.
+    pub runoff: Vec<f32>,
+    /// Stable river IDs are indices, and each reach belongs to exactly one.
+    pub rivers: Vec<River>,
+    pub river_regions: Vec<Option<usize>>,
+    pub climate_zones: Vec<ClimateZone>,
     /// Symmetric centre-to-centre effort through each shared border midpoint.
     edges: RouteRows,
     /// Land-only walking and sea-interior voyage neighbourhoods to 1800 effort-km.
     walking: RouteRows,
     voyages: RouteRows,
-    feeding: Vec<[f32; 3]>,
+    valleys: Vec<ValleyEdge>,
 }
 
 impl Map {
@@ -487,7 +538,7 @@ impl Map {
 
         let landmass = landmasses(&terrain, &neighbours);
         let edges = travel_edges(&sites, &terrain, &borders);
-        let regions: Vec<Region> = cells
+        let mut regions: Vec<Region> = cells
             .into_iter()
             .zip(neighbours)
             .enumerate()
@@ -497,6 +548,10 @@ impl Map {
                 area_km2: (area(&outline) * (f64::from(KM_PER_UNIT) * f64::from(KM_PER_UNIT)))
                     as f32,
                 terrain: terrain[i],
+                elevation: elevation[i] as f32,
+                moisture: moisture[i] as f32,
+                warmth: rivers::warmth(seed, i, elevation[i] as f32),
+                climate_zone: None,
                 neighbours,
                 landmass: landmass[i],
             })
@@ -523,23 +578,99 @@ impl Map {
                 count
             );
         }
+        let climate_zones = rivers::climate_zones(seed, &mut regions, &landmasses);
+        let rivers::Hydrology {
+            drainage,
+            drainage_order,
+            runoff,
+            rivers,
+            river_regions,
+            flows,
+        } = rivers::generate(seed, &regions);
         let mut map = Map {
             size,
             width: width as f32,
             height: height as f32,
-            feeding: feeding_factors(&regions),
             regions,
             landmasses,
+            drainage,
+            drainage_order,
+            runoff,
+            rivers,
+            river_regions,
+            climate_zones,
             edges,
             walking: RouteRows::default(),
             voyages: RouteRows::default(),
+            valleys: Vec::new(),
         };
-        (map.walking, map.voyages) = map.cache_routes();
+        map.initialize_valleys(&flows);
+        map.walking = map.cache_routes(RouteMode::Walking);
+        map.voyages = map.cache_routes(RouteMode::Voyage);
         map
     }
 
-    pub(crate) fn feeding_factor(&self, region: usize, livelihood: Livelihood) -> f32 {
-        self.feeding[region][livelihood as usize]
+    fn initialize_valleys(&mut self, flows: &[f32]) {
+        for (r, downstream) in self.drainage.iter().enumerate() {
+            let Some(n) = *downstream else { continue };
+            if self.river_regions[r].is_none() || self.river_regions[n].is_none() {
+                continue;
+            }
+            let entry = |a, b| {
+                self.edges.offsets[a]
+                    + self.edges.row(a).binary_search_by_key(&(b as u32), |&(id, _)| id)
+                        .expect("drainage follows a shared border")
+            };
+            let entries = [entry(r, n), entry(n, r)];
+            let dry_effort = self.edges.entries[entries[0]].1;
+            let usable = flows[r] >= RIVER_TRAVEL_FLOW && flows[n] >= RIVER_TRAVEL_FLOW;
+            if usable {
+                for &index in &entries {
+                    self.edges.entries[index].1 = dry_effort * VALLEY_EFFORT;
+                }
+            }
+            self.valleys.push(ValleyEdge {
+                regions: [r, n],
+                entries,
+                dry_effort,
+                usable,
+            });
+        }
+    }
+
+    /// Check before making a shared map mutable: unchanged usability needs
+    /// neither an `Arc` clone nor a walking-cache refresh.
+    pub fn valley_flows_changed(&self, flows: &[f32]) -> bool {
+        assert_eq!(flows.len(), self.regions.len());
+        self.valleys.iter().any(|valley| {
+            let [a, b] = valley.regions;
+            (flows[a] >= RIVER_TRAVEL_FLOW && flows[b] >= RIVER_TRAVEL_FLOW) != valley.usable
+        })
+    }
+
+    /// Refresh walking only when a drainage-linked river edge becomes usable
+    /// or dries. Flow changes within the same band do not rebuild any routes.
+    /// Sea edges, voyage permissions, and voyage caches are never changed.
+    pub fn set_valley_flows(&mut self, flows: &[f32]) -> bool {
+        assert_eq!(flows.len(), self.regions.len());
+        let mut changed = false;
+        for valley in &mut self.valleys {
+            let [a, b] = valley.regions;
+            let usable = flows[a] >= RIVER_TRAVEL_FLOW && flows[b] >= RIVER_TRAVEL_FLOW;
+            if usable == valley.usable {
+                continue;
+            }
+            valley.usable = usable;
+            changed = true;
+            let effort = valley.dry_effort * if usable { VALLEY_EFFORT } else { 1.0 };
+            for &index in &valley.entries {
+                self.edges.entries[index].1 = effort;
+            }
+        }
+        if changed {
+            self.walking = self.cache_routes(RouteMode::Walking);
+        }
+        changed
     }
 
     /// Exact least land-only walking effort-km; sea endpoints are unreachable.
@@ -673,44 +804,26 @@ impl Map {
         Cow::Owned(row)
     }
 
-    fn cache_routes(&self) -> (RouteRows, RouteRows) {
+    fn cache_routes(&self, mode: RouteMode) -> RouteRows {
         let n = self.regions.len();
-        let mut walking = RouteRows {
-            offsets: Vec::with_capacity(n + 1),
-            entries: Vec::new(),
-        };
-        let mut voyages = RouteRows {
+        let mut rows = RouteRows {
             offsets: Vec::with_capacity(n + 1),
             entries: Vec::new(),
         };
         let mut scratch = RouteScratch::new(n);
-        walking.offsets.push(0);
-        voyages.offsets.push(0);
+        rows.offsets.push(0);
         for source in 0..n {
-            if self.regions[source].terrain.is_land() {
-                self.search_routes(
-                    source,
-                    CACHE_REACH_KM,
-                    RouteMode::Walking,
-                    None,
-                    &mut scratch,
-                );
-                scratch.append_row(self, source, RouteMode::Walking, &mut walking.entries);
+            let eligible = match mode {
+                RouteMode::Walking => self.regions[source].terrain.is_land(),
+                RouteMode::Voyage => self.coastal(source),
+            };
+            if eligible {
+                self.search_routes(source, CACHE_REACH_KM, mode, None, &mut scratch);
+                scratch.append_row(self, source, mode, &mut rows.entries);
             }
-            walking.offsets.push(walking.entries.len());
-            if self.coastal(source) {
-                self.search_routes(
-                    source,
-                    CACHE_REACH_KM,
-                    RouteMode::Voyage,
-                    None,
-                    &mut scratch,
-                );
-                scratch.append_row(self, source, RouteMode::Voyage, &mut voyages.entries);
-            }
-            voyages.offsets.push(voyages.entries.len());
+            rows.offsets.push(rows.entries.len());
         }
-        (walking, voyages)
+        rows
     }
 
     fn search_routes(
@@ -794,13 +907,6 @@ impl Map {
             .landmass
             .is_some_and(|m| self.landmasses[m].kind == LandmassKind::Island)
     }
-}
-
-fn feeding_factors(regions: &[Region]) -> Vec<[f32; 3]> {
-    regions
-        .iter()
-        .map(|r| Livelihood::ALL.map(|l| l.feeds(r.terrain) * r.area_km2 / REFERENCE_AREA_KM2))
-        .collect()
 }
 
 /// Grid rectangles are only candidate basins, never the finished coastline.
@@ -2277,6 +2383,10 @@ mod tests {
                 ],
                 area_km2: REFERENCE_AREA_KM2,
                 terrain: terrain[r],
+                elevation: 0.5,
+                moisture: 0.5,
+                warmth: 0.6,
+                climate_zone: None,
                 neighbours: neighbours[r].clone(),
                 landmass: masses[r],
             })
@@ -2293,14 +2403,21 @@ mod tests {
             size: MapSize::Small,
             width: n as f32,
             height: 1.0,
-            feeding: feeding_factors(&regions),
             landmasses: describe_landmasses(&regions, MapSize::Small),
             regions,
+            drainage: vec![None; n],
+            drainage_order: Vec::new(),
+            runoff: vec![0.0; n],
+            rivers: Vec::new(),
+            river_regions: vec![None; n],
+            climate_zones: Vec::new(),
             edges,
             walking: RouteRows::default(),
             voyages: RouteRows::default(),
+            valleys: Vec::new(),
         };
-        (map.walking, map.voyages) = map.cache_routes();
+        map.walking = map.cache_routes(RouteMode::Walking);
+        map.voyages = map.cache_routes(RouteMode::Voyage);
         map
     }
 
