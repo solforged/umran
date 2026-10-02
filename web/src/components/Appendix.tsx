@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Catalog, NotebookNote, ReadEngine, Overview } from "../model";
 import { YEARS } from "../model";
 import { bookMarkdown, craftLines, download, fileName, givenNameLines, glossaryCsv, peopleLines, religionLines, renderingLines, stateLines } from "../takeout";
@@ -16,7 +16,6 @@ export function Appendix({
   notebook,
   variety,
   onBack,
-  onShelf,
 }: {
   engine: ReadEngine;
   catalog: Catalog;
@@ -28,11 +27,26 @@ export function Appendix({
   /// The tongue to open the glossary on.
   variety: number;
   onBack: () => void;
-  onShelf: () => void;
 }) {
   const [tongue, setTongue] = useState(variety);
   const [order, setOrder] = useState<"word" | "meaning">("word");
   const [copied, setCopied] = useState<string | null>(null);
+  const close = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    close.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || document.querySelector("dialog[open]")) return;
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return;
+      onBack();
+    };
+    document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  }, [onBack]);
+
   const name = (id: number) => overview.communities[id]?.name ?? "?";
   const chosen = overview.varieties[tongue] ?? overview.varieties[variety];
   const religions = religionLines(overview);
@@ -67,22 +81,17 @@ export function Appendix({
   };
 
   return (
-    <main className="appendix">
-      <header className="appendix-head">
-        <nav className="row">
-          <button type="button" className="link brand" onClick={onShelf} title="Back to the shelf" aria-label="Back to the shelf">
-            <span className="brand-name"><span>ʿUmrān</span></span>
-          </button>
-          <button type="button" className="link" onClick={onBack}>
-            ← Back to the map
-          </button>
-        </nav>
-        <h2>Export</h2>
+    <section className="export-sheet appendix" role="dialog" aria-modal="false" aria-label="Export">
+      <header className="sheet-head">
+        <span className="sheet-of">Export</span>
+        <h2>{title}</h2>
         <p className="muted">
           As the world stands in year {generation * YEARS}. Copy or download anything here to use it elsewhere.
         </p>
+        <button ref={close} type="button" className="icon-btn sheet-close" aria-label="Back to the map" onClick={onBack}>×</button>
       </header>
 
+      <div className="sheet-page">
       <section>
         <h3>The whole world</h3>
         <ul className="takeout">
@@ -279,7 +288,7 @@ export function Appendix({
         </table>
       </section>
 
-
-    </main>
+      </div>
+    </section>
   );
 }

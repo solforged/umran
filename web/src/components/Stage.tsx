@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import { BookMarked, BookOpen, Feather, Gauge, Layers, Map as MapIcon, Pause, Play, ScrollText, Search, SkipForward, StepForward, X } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronUp, Layers, Map as MapIcon, Pause, Play, ScrollText, Search, SkipForward, StepForward, Undo2, X } from "lucide-react";
 import type { Annal, Catalog, Craft, Destination, HistoryPoint, ReadEngine, EthosAxis, Overview, SettlementChoice, SettlementPreview, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { ETHOS_AXES, ETHOS_POLES, EVENT_KIND, hue } from "../lore";
-import { PACES, year } from "../words";
+import { PACES } from "../words";
 import type { DialogKind, InterventionKind } from "./ActionDialog";
 import { message } from "../engine";
 import { SettlementDesk, type SettlementDraft } from "./SettlementDesk";
@@ -14,6 +14,9 @@ import { Told } from "./Told";
 import { MapView, type MapMotionReading, type Tint } from "./MapView";
 import { Pedia, type Focus } from "./Pedia";
 import { emphasizeInk, useLiftedValue } from "../motion";
+import { LightChoice } from "./LightSwitch";
+import { Popover } from "./Popover";
+import { Timeline, marksFromAnnals } from "./Timeline";
 
 /// What stops the years passing on their own.
 type PauseOn = "nothing" | "peoples" | "sounds" | "anything";
@@ -54,6 +57,7 @@ export function Stage({
   overview,
   title,
   notices,
+  sheet,
   canUndo,
   selected,
   onSelect,
@@ -86,6 +90,8 @@ export function Stage({
   overview: Overview;
   title: string;
   notices: ReactNode;
+  /// A sheet laid over the map: the export page.
+  sheet?: ReactNode;
   canUndo: boolean;
   selected: number;
   onSelect: (community: number) => void;
@@ -315,8 +321,6 @@ export function Stage({
         event.preventDefault(); openIndex();
       } else if (!event.metaKey && !event.ctrlKey && !event.altKey && event.key === "/") {
         event.preventDefault(); openIndex();
-      } else if (event.key === "Escape") {
-        document.querySelectorAll<HTMLDetailsElement>(".map-layers[open], .bar-menu[open]").forEach((menu) => menu.open = false);
       }
     };
     window.addEventListener("keydown", shortcut);
@@ -423,11 +427,12 @@ export function Stage({
   }, [focus, overview, map]);
   // Changes to holdings have their own, recorded motion; no decorative pulse.
 
-  const people = overview.communities[selected];
   // The latest moment written, for the chronicle's line.
   const last = overview.annals.at(-1) ?? null;
   const sameYear = last ? overview.annals.filter((a) => a.generation === last.generation).length : 0;
   const LastIcon = last ? EVENT_KIND[last.kind].icon : null;
+  const tellingName = overview.tellings.find((t) => t.id === overview.telling)?.name;
+  const { marks, sounds } = useMemo(() => marksFromAnnals(overview.annals), [overview.annals]);
 
   const layerName = tint.kind === "peoples" ? "Language families"
     : tint.kind === "faiths" ? "Faiths" : tint.kind === "crafts" ? catalog.crafts.find((c) => c.id === tint.craft)?.name
@@ -439,28 +444,7 @@ export function Stage({
     <div className="stage workbench" data-pane={pane} data-settlement={desk !== null}
       onClickCapture={(event) => { keyboardActivation.current = event.detail === 0; }}
       onKeyDownCapture={(event) => { if (event.key === "Enter" || event.key === " ") keyboardActivation.current = true; }}>
-      <header className="stage-head">
-        <nav>
-          <button type="button" className="link brand" onClick={onShelf} title="Back to the shelf" aria-label="Back to the shelf">
-            <span className="brand-name"><span>ʿUmrān</span></span>
-          </button>
-          <button type="button" className="link" onClick={onExport}>
-            Export
-          </button>
-          <button type="button" className="link notebook-open" aria-label="Open the field notebook" onClick={() => { setPlaying(false); liftThen(onNotebook, document.activeElement instanceof HTMLElement ? document.activeElement : null); }}><BookMarked size={16} aria-hidden="true" /><span>Notebook</span></button>
-        </nav>
-        <span className="stage-title">{title}<button type="button" className="link telling-badge" onClick={() => { setPlaying(false); go({ kind: "history" }); setLeaf("tellings"); }} title="Read and compare the tellings of this world">
-          {overview.tellings.find((t) => t.id === overview.telling)?.name}
-        </button></span>
-        <button type="button" className="atlas-open" onClick={openIndex} title="Search the atlas (⌘K or /)" aria-label="Open the atlas index">
-          <Search size={16} aria-hidden="true" /> <span>Atlas index</span><kbd>/</kbd>
-        </button>
-      </header>
       <div className="stage-notices">{notices}{followed ? <p className="following-note">Following {followed.label}. Playback stops when this subject appears in the record. <button type="button" className="link" onClick={() => setFollowed(null)}>Stop following</button></p> : null}</div>
-      <nav className="stage-panes" aria-label="Workspace">
-        <button type="button" aria-pressed={pane === "map"} onClick={() => { setPane("map"); setLeaf(null); }}><MapIcon size={16} aria-hidden="true" /> Chart</button>
-        <button type="button" aria-pressed={pane === "reading"} onClick={() => setPane("reading")}><BookOpen size={16} aria-hidden="true" /> Reading</button>
-      </nav>
 
       <section className="stage-map" aria-label="Map">
         <MapView
@@ -491,10 +475,32 @@ export function Stage({
           onCraft={(id) => go({ kind: "craft", id })}
           onRiver={settlement ? undefined : (id) => go({ kind: "river", id })}
         />
-        <details className="map-layers">
-          <summary title="What the map shows">
-            <Layers size={16} aria-hidden="true" /> {layerName}
-          </summary>
+        <div className="cartouche world-cartouche">
+          <Popover label="This world" role="menu" side="bottom" align="start"
+            trigger={(props) => (
+              <button type="button" className="cartouche-open" {...props}>
+                <span className="cartouche-kicker">A chart of</span>
+                <span className="cartouche-title">{title}</span>
+                <span className="cartouche-note">{tellingName} · year {generation * YEARS}</span>
+                <ChevronDown size={14} aria-hidden="true" />
+              </button>
+            )}>
+            {(close) => (<>
+              <button type="button" onClick={() => { close(); setPlaying(false); go({ kind: "history" }); setLeaf("tellings"); }}>Other tellings</button>
+              <button type="button" onClick={() => { close(); setPlaying(false); liftThen(onNotebook, document.querySelector<HTMLElement>(".cartouche-open")); }}>Field notebook</button>
+              <button type="button" onClick={() => { close(); onExport(); }}>Export…</button>
+              <hr />
+              <LightChoice />
+              <hr />
+              <button type="button" onClick={() => { close(); onShelf(); }}>Back to the shelf</button>
+            </>)}
+          </Popover>
+        </div>
+        <div className="map-tools">
+          <button type="button" className="map-tool" onClick={openIndex} title="Find anything (⌘K or /)"><Search size={15} aria-hidden="true" /><span className="map-tool-label sr-only">Find</span></button>
+          <Popover role="dialog" label="What the map shows" side="bottom" align="end"
+            trigger={(props) => <button type="button" className="map-tool" title={layerName} {...props}><Layers size={15} aria-hidden="true" /><span className="map-tool-label sr-only">{layerName}</span><ChevronDown size={12} aria-hidden="true" /></button>}>
+            {() => <div className="layers-menu">
           <label>
             Colour lands by
             <select value={tint.kind}
@@ -576,13 +582,41 @@ export function Stage({
               {label}
             </label>
           ))}
-        </details>
+            </div>}
+          </Popover>
+        </div>
+        {settlement === null ? <div className="map-caption">
+          {last && LastIcon ? (
+            <button
+              type="button"
+              className="chronicle-latest"
+              title="Open this moment"
+              onClick={() => {
+                setPlaying(false);
+                go({ kind: "event", id: last.id });
+              }}
+            >
+              <LastIcon size={14} aria-hidden="true" />
+              <span className="chronicle-year">{last.generation * YEARS}</span>
+              <span className="chronicle-text">
+                <Told text={last.text} />
+              </span>
+            </button>
+          ) : (
+            <span className="chronicle-latest muted">Nothing is written yet.</span>
+          )}
+          {sameYear > 1 ? <span className="chronicle-more muted">and {sameYear - 1} more that year</span> : null}
+          <button type="button" className="link chronicle-open" onClick={() => go({ kind: "history" })}>
+            <ScrollText size={14} aria-hidden="true" /> Chronicle
+          </button>
+        </div> : null}
         {known !== null ? <div className="map-perspective">
           Known to {overview.varieties[knownBy!]?.name}
           <button type="button" className="icon" aria-label="Show the whole known and unknown world" onClick={() => setVeiled(false)}><X size={14} /></button>
         </div> : null}
       </section>
       <div className="folio-host" ref={setFolioHost} />
+      {sheet ? <div className="sheet-host">{sheet}</div> : null}
 
       {desk ? <SettlementDesk draft={desk} closing={liftedSettlement.closing} preview={settlementPreview.preview} error={settlementPreview.error}
         overview={settlementReading} map={map} catalog={catalog} latest={present} onChange={setSettlement}
@@ -615,6 +649,8 @@ export function Stage({
         onScrub={scrub}
         onVisit={(subject, year) => scrub(year, subject)}
         onPlay={() => setPlaying(true)}
+        canUndo={canUndo}
+        onUndo={onUndo}
         onRestore={onRestore}
         onRenameTelling={onRenameTelling}
         onCompare={(telling) => {
@@ -634,32 +670,7 @@ export function Stage({
       />
 
       <footer className="timebar stage-bar" inert={settlement !== null}>
-        <div className="chronicle-line">
-          {last && LastIcon ? (
-            <button
-              type="button"
-              className="chronicle-latest"
-              title="Open this moment"
-              onClick={() => {
-                setPlaying(false);
-                go({ kind: "event", id: last.id });
-              }}
-            >
-              <LastIcon size={14} aria-hidden="true" />
-              <span className="chronicle-year">{last.generation * YEARS}</span>
-              <span className="chronicle-text">
-                <Told text={last.text} />
-              </span>
-            </button>
-          ) : (
-            <span className="chronicle-latest muted">Nothing is written yet.</span>
-          )}
-          {sameYear > 1 ? <span className="chronicle-more muted">and {sameYear - 1} more that year</span> : null}
-          <button type="button" className="link chronicle-open" onClick={() => go({ kind: "history" })}>
-            <ScrollText size={14} aria-hidden="true" /> Chronicle
-          </button>
-        </div>
-        <div className="transport">
+        <div className="play-split">
           <button
             type="button"
             className="play primary"
@@ -670,129 +681,40 @@ export function Stage({
             {playing ? <Pause size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}
             {playing ? "Pause" : "Play"}
           </button>
-          <button
-            type="button"
-            className="icon"
-            disabled={playing}
-            title="Until something happens"
-            aria-label="Until something happens"
-            onClick={onNextEvent}
-          >
-            <SkipForward size={18} />
-          </button>
-          <button type="button" className="icon step-year" disabled={playing}
-            title="Advance 25 years" aria-label="Advance 25 years" onClick={() => { onTick(); onStop(); }}>
-            <StepForward size={18} aria-hidden="true" />
-          </button>
-          <div className="track scrub">
-            <input
-              type="range"
-              min={0}
-              max={latest}
-              value={generation}
-              disabled={latest === 0}
-              aria-label="Year"
-              aria-valuetext={year(generation)}
-              onChange={(e) => scrub(Number(e.target.value))}
-            />
-            <div className="ticks" aria-hidden="true">
-              {overview.timeline
-                .filter((m) => m.kind !== "run")
-                .map((m, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    tabIndex={-1}
-                    className={`tick tick-${m.kind}`}
-                    style={{ left: `${(m.generation / Math.max(latest, 1)) * 100}%` }}
-                    title={`In ${year(m.generation)}: ${m.label}`}
-                    onClick={() => scrub(m.generation)}
-                  />
-                ))}
-            </div>
-          </div>
-          <span className={`stage-year${atPresent ? "" : " in-past"}`}>
-            Year {generation * YEARS}
-            {atPresent ? null : (
-              <>
-                {" · "}
-                <button type="button" className="link" onClick={() => scrub(latest)}>
-                  to this telling’s latest year
-                </button>
-              </>
+          <Popover label="How the years pass" role="dialog" side="top" align="start"
+            trigger={(props) => <button type="button" className="play-more primary" aria-label="How the years pass" {...props}><ChevronUp size={14} aria-hidden="true" /></button>}>
+            {() => (
+              <div className="pace-menu">
+                <fieldset><legend>How quickly</legend>{PACES.map(([value, name]) => <label key={value}><input type="radio" name="pace" checked={pace === value} onChange={() => setPace(value)} /> {name}</label>)}</fieldset>
+                <fieldset><legend>Stop for</legend>{PAUSE_ON.map(([value, name]) => <label key={value}><input type="radio" name="pause" checked={pauseOn === value} onChange={() => setPauseOn(value)} /> {name}</label>)}</fieldset>
+                {followed ? <p className="small">Following {followed.label}. <button type="button" className="link" onClick={() => setFollowed(null)}>Stop following</button></p>
+                  : <p className="small muted">To follow one subject, open its card and choose “Follow”.</p>}
+              </div>
             )}
-          </span>
-          <details className="bar-menu">
-            <summary title="How quickly the years pass, and what stops them">
-              <Gauge size={16} aria-hidden="true" />
-              <span className="bar-label">Pace</span>
-            </summary>
-            <div className="bar-menu-body">
-              <label>
-                How quickly
-                <select value={pace} onChange={(e) => setPace(Number(e.target.value))}>
-                  {PACES.map(([value, name]) => (
-                    <option key={value} value={value}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Stop for
-                <select value={pauseOn} onChange={(e) => setPauseOn(e.target.value as PauseOn)}>
-                  {PAUSE_ON.map(([value, name]) => (
-                    <option key={value} value={value}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </details>
-          <details className="bar-menu act" onToggle={(e) => { if (e.currentTarget.open) setPlaying(false); }}>
-            <summary title="Shape history">
-              <Feather size={16} aria-hidden="true" />
-              <span className="bar-label">Shape history</span>
-            </summary>
-            <div className="bar-menu-body act-menu" onClick={(e) => {
-              if ((e.target as HTMLElement).closest("button")) (e.currentTarget.parentElement as HTMLDetailsElement).removeAttribute("open");
-            }}>
-              {!atPresent ? <p className="muted small">Writing here begins another telling. The later years are kept in the chronicle.</p> : null}
-              {people?.ended === null ? (
-                <>
-                  <button type="button" onClick={() => openDialog("settlement")}>
-                    The {people.name} settle, divide, or move
-                  </button>
-                  <button type="button" onClick={() => openDialog("connect")}>
-                    The {people.name} meet another people
-                  </button>
-                  <button type="button" onClick={() => openDialog("shift")}>
-                    The {people.name} take up another language
-                  </button>
-                  <button type="button" onClick={() => openDialog("temper")}>
-                    The {people.name}'s temper turns
-                  </button>
-                </>
-              ) : null}
-              <button type="button" onClick={() => openDialog("found")}>
-                A new people arrives
-              </button>
-              <button type="button" onClick={() => openDialog("state")}>
-                Found a state
-              </button>
-              <button type="button" onClick={() => openDialog("religion")}>
-                Found a religion
-              </button>
-              <button type="button" onClick={() => openDialog("craft")}>
-                Teach a craft
-              </button>
-              <button type="button" disabled={!canUndo} onClick={onUndo}>
-                Return before the last action
-              </button>
-            </div>
-          </details>
+          </Popover>
         </div>
+        <button type="button" className="icon step-year" disabled={playing}
+          title="Advance 25 years" aria-label="Advance 25 years" onClick={() => { onTick(); onStop(); }}>
+          <StepForward size={18} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className="icon"
+          disabled={playing}
+          title="Until something happens"
+          aria-label="Until something happens"
+          onClick={onNextEvent}
+        >
+          <SkipForward size={18} />
+        </button>
+        <Timeline marks={marks} sounds={sounds} latest={latest} viewed={generation}
+          onScrub={(g) => scrub(g)} onOpen={(mark) => { scrub(mark.generation); go({ kind: "event", id: mark.annal.id }); }} />
+        <span className={`stage-year${atPresent ? "" : " in-past"}`}>Year {generation * YEARS}{atPresent ? null : <> · <button type="button" className="link" onClick={() => scrub(latest)}>to the present</button></>}</span>
+        <button type="button" className="icon strike-out" disabled={!canUndo} title="Return before the last action" aria-label="Return before the last action" onClick={onUndo}><Undo2 size={16} aria-hidden="true" /></button>
+        <nav className="stage-panes" aria-label="Workspace">
+          <button type="button" aria-pressed={pane === "map"} onClick={() => { setPane("map"); setLeaf(null); }}><MapIcon size={16} aria-hidden="true" /> Chart</button>
+          <button type="button" aria-pressed={pane === "reading"} onClick={() => setPane("reading")}><BookOpen size={16} aria-hidden="true" /> Reading</button>
+        </nav>
       </footer>
       <AtlasIndex open={indexOpen} overview={overview} map={map} go={go} onClose={() => setIndexOpen(false)} />
     </div>

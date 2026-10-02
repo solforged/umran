@@ -39,13 +39,6 @@
   background: transparent;
 }
 
-:root .tick {
-  width: 7px;
-  height: 7px;
-  border-radius: 0;
-  transform: translateX(-3px) rotate(45deg);
-}
-
 :root button {
   border-radius: 2px;
   border-color: var(--ink-soft);
@@ -102,22 +95,10 @@
   border-radius: 0;
 }
 
-/* Ticks and inline links are buttons too; keep them out of the button
-   styling above. */
-:root .tick {
-  background: var(--accent);
-  border: none;
-  box-shadow: none;
-  padding: 0;
-}
-
-:root .tick-event {
-  background: var(--event);
-}
-
-/* A link shows by its colour, the rubric or its people's hue, and is
-   underlined only under the hand, so a card full of names reads as text.
-   Dotted underlines stay for glossary terms. */
+/* Inline links are buttons too; keep them out of the button styling
+   above. A link shows by its colour, the rubric or its people's hue, and
+   is underlined only under the hand, so a card full of names reads as
+   text. Dotted underlines stay for glossary terms. */
 :root button.link {
   border: none;
   background: none;
@@ -270,36 +251,8 @@
   color: var(--tone, var(--accent));
 }
 
-/* On the stage the switch sits quietly in the head's right-hand cell
-   instead of floating over the time bar, centred on the head's 2.5rem
-   row (see .stage-head in styles.css). */
-.app:has(> .stage) ~ .light-switch {
-  top: 1.25rem;
-  bottom: auto;
-  right: 0.8rem;
-  transform: translateY(-50%);
-  padding: 0 0.3rem;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-/* The head reads as a chart's border: the name in spaced capitals, the
-   world's title in old type, the way back and out kept quiet. */
-:root .stage-head .brand,
-:root .appendix-head .brand {
-  color: var(--ink);
-}
-:root .stage-head nav button.link:not(.brand) {
-  color: var(--ink-soft);
-}
-:root .stage-head nav button.link:hover {
-  color: var(--accent);
-}
-:root .stage-title {
-  font-family: var(--display);
-  font-style: normal;
-  font-size: 1.25rem;
+.app:has(> .workbench) ~ .light-switch {
+  display: none;
 }
 
 /* ---------- The map as an old chart ---------- */
@@ -395,19 +348,38 @@
 /* The chart and the notebook lie on a dark desk, each a sheet of its own. */
 :root .setup {
   background: var(--desk);
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-areas: "map pedia" "time time";
 }
-:root .setup .stage-head,
 :root .setup .timebar {
   border: 0;
   background: transparent;
   color: var(--desk-ink);
 }
 :root .app:has(> .setup) ~ .light-switch {
+  top: 1.25rem;
+  bottom: auto;
+  right: 0.8rem;
+  transform: translateY(-50%);
+  padding: 0 0.3rem;
+  border: 0;
+  background: var(--desk);
+  box-shadow: none;
   color: var(--desk-ink);
 }
 :root .app:has(> .setup) ~ .light-switch select {
   color: var(--desk-ink);
   background: var(--desk);
+}
+@media (max-width: 900px) {
+  :root .setup {
+    grid-template-rows: auto auto auto;
+    grid-template-areas: "map" "pedia" "time";
+  }
+
+  :root .app > .setup .stage-map {
+    margin-top: 2.5rem;
+  }
 }
 :root .brand {
   display: inline-flex;
@@ -509,7 +481,7 @@
 :root .shelf-head h1 {
   font-family: var(--display);
   font-weight: 400;
-  color: var(--desk-ink);
+  color: var(--ink);
 }
 :root .sheet-title strong {
   font-family: var(--display);

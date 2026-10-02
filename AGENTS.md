@@ -35,14 +35,19 @@ Read further when the task touches it:
   map, drawn from its seed with the peoples saved in the shelf index),
   the world setup (`WorldSetup`: a chart with its title box and a
   book of accounts, one per founding people, its choices set as phrases
-  in the account's sentences), the stage (the only world view: `MapView`
-  with its layers and the chart's inked coast, compass lines, and terrain
-  marks, the chronicle line and one-row time bar in `Stage`, and the
-  encyclopedia cards in `Pedia`, each opening with a head and a box of
-  facts, with a trail of cards visited, a whole-history card, and
-  `FamilyTree` charts; a card's long or wide sections (`Leaf`) keep a
-  line on the card and open in the folio, a sheet laid over the map),
-  the export page (`Appendix`), and dialogs.
+  in the account's sentences, each a `Phrase` that opens a menu), the
+  stage (the only world view: `MapView` with its layers and the chart's
+  inked coast, compass lines, and terrain marks; in `Stage`, the world's
+  cartouche and its menu over the map's top-left corner, Find and the
+  layers over its top-right, the chronicle's latest line as a caption
+  over its foot, and a one-row time bar whose `Timeline` draws turning
+  points over a quieter track of sound changes; the encyclopedia cards
+  in `Pedia`, each opening with a head and a box of facts, with a trail
+  of cards visited, a whole-history card, and `FamilyTree` charts; a
+  card's long or wide sections (`Leaf`) keep a line on the card and open
+  in the folio, a sheet laid over the map), the export sheet (`Appendix`,
+  laid over the map the same way), and dialogs. Every menu is a `Popover`:
+  one open at a time, closed by an outside click or Escape.
   Annals carry the peoples, lands, and laws they tell of, so every entry
   can link to their cards. Every language view carries a specimen, a few
   basic words chosen by `SPECIMEN` in the facade (`Specimen.tsx` shows

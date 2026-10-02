@@ -256,14 +256,6 @@ export function WorldSetup({
 
   return (
     <div className="stage setup">
-      <header className="stage-head">
-        <nav>
-          <button type="button" className="link brand" onClick={onShelf} title="Back to the shelf" aria-label="Back to the shelf">
-            <span className="brand-name"><span>ʿUmrān</span></span>
-          </button>
-        </nav>
-      </header>
-
       <section className="stage-map" aria-label="Map">
         {map && overview && overview.communities.length === founders.length ? (
           <MapView
@@ -321,6 +313,9 @@ export function WorldSetup({
             >
               Redraw the coasts
             </button>
+          </div>
+          <div className="cartouche-tools">
+            <button type="button" className="link" onClick={onShelf}>Back to the shelf</button>
           </div>
         </div>
         <p className="map-hint">Choose an account, then touch a land to set its people there.</p>

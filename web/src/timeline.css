@@ -75,7 +75,7 @@
 }
 
 .timeline .mark-faith {
-  color: var(--faith, #a07cc8);
+  color: var(--faith);
 }
 
 :root .timeline .mark-more {
@@ -124,6 +124,10 @@
 
 .timeline-tick:first-child small {
   transform: none;
+}
+
+.timeline-tick:last-child:not(:first-child) small {
+  transform: translateX(-100%);
 }
 
 .timeline-cursor {

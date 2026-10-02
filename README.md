@@ -17,11 +17,16 @@ languages branch out. It runs entirely in the browser.
 visit opens the chart room. Choose "Unknown waters" to set up a new world,
 or "A chronicle already written" to open a sample four thousand years along.
 
-Later visits resume the world left open. The top-left astrolabe and name
-return to the shelf from setup, the world, or Export; leaving for the shelf
-also makes it the next launch destination.
+Later visits resume the world left open. On the stage the chart fills the
+window: a cartouche in its top-left corner names the world, its telling,
+and the year, and opens the world's menu (other tellings, the field
+notebook, Export, day or lamplight, and the way back to the shelf);
+leaving for the shelf also makes it the next launch destination. Find and
+the map's layers sit top-right, the chronicle's latest line is a caption
+over the map's foot, and the time bar beneath draws every turning point
+on a timeline, with sound changes as a quieter track below it.
 
-![The workbench: rivers and Weather colouring on the chart beside a climate-zone card, with the chronicle and time controls below](docs/images/stage.jpg)
+![The workbench after 4,000 years: rivers and Weather colouring on the chart under its cartouche, beside the world's encyclopedia card, with the chronicle caption and the drawn timeline below](docs/images/stage.jpg)
 
 ## What happens in a world
 
@@ -122,7 +127,7 @@ only moves your reading: the first new choice starts another telling.
 
 The **atlas index** finds peoples, languages, lands, states, faiths, and crafts
 by name, older name, or meaning. Accents are optional when searching. Open it
-from the chart's header, or press `/` or `⌘/Ctrl K`.
+with Find on the chart, or press `/` or `⌘/Ctrl K`.
 
 The **chronicle** can be searched, read from either end, and filtered to the
 journeys of peoples, the fortunes of states, faiths, language, or livelihood.

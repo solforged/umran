@@ -247,10 +247,6 @@ select {
   height: 100%;
 }
 
-.appendix {
-  padding-right: 2rem;
-}
-
 .notice {
   margin: 0;
   padding: 0.4rem 1rem;
@@ -270,40 +266,6 @@ input[type="checkbox"] {
   accent-color: var(--accent);
 }
 
-/* Timeline */
-
-.track {
-  position: relative;
-  padding-top: 0.6rem;
-}
-
-.track input[type="range"] {
-  width: 100%;
-  margin: 0;
-}
-
-.ticks {
-  position: absolute;
-  inset: 0 0.5rem auto;
-  height: 0.6rem;
-}
-
-.tick {
-  position: absolute;
-  top: 0;
-  width: 3px;
-  height: 0.6rem;
-  padding: 0;
-  border: none;
-  border-radius: 1px;
-  transform: translateX(-1px);
-  background: var(--accent);
-}
-
-.tick-event {
-  background: var(--event);
-}
-
 .gloss-hint {
   font-style: italic;
 }
@@ -316,9 +278,12 @@ input[type="checkbox"] {
   padding: 2.5rem clamp(1rem, 4vw, 3.5rem) 2rem;
 }
 
-.shelf-head {
-  max-width: 40rem;
-  margin-bottom: 2.2rem;
+.shelf-head.cartouche {
+  position: static;
+  display: inline-grid;
+  max-width: min(40rem, calc(100% - 1.2rem));
+  margin: 1.2rem 0 1rem 1.2rem;
+  color: var(--ink);
 }
 
 .shelf-head h1 {
@@ -1005,14 +970,73 @@ table.preview tr {
 
 /* The appendix: everything ready to take out. */
 
-.appendix {
+.sheet-host {
+  grid-area: map;
+  position: relative;
+  z-index: 7;
+  min-height: 0;
+  min-width: 0;
+}
+
+.export-sheet {
+  position: absolute;
+  inset: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.3);
+  animation: unfold-sheet 160ms ease-out;
+}
+
+.app > .export-sheet {
+  position: relative;
+  inset: auto;
   flex: 1;
+}
+
+.export-sheet .sheet-head {
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  align-items: baseline;
+  gap: 0.8rem;
+  padding: 0.65rem 1rem 0.4rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.export-sheet .sheet-head h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.export-sheet .sheet-head p {
+  order: 2;
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.export-sheet .sheet-of {
+  font-family: var(--display);
+  font-size: 0.8rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.export-sheet .sheet-close {
+  margin-left: auto;
+}
+
+.export-sheet .sheet-page {
   min-height: 0;
   overflow: auto;
-  padding: 1rem 1.4rem 3rem;
-  max-width: 72rem;
-  width: 100%;
-  margin: 0 auto;
+  padding: 1rem 1.6rem 2rem;
+  overscroll-behavior: contain;
 }
 
 .appendix section {
@@ -1068,9 +1092,19 @@ table.preview tr {
     overflow-x: auto;
   }
 }
+@media (max-width: 900px) {
+  .workbench .sheet-host {
+    grid-area: content;
+  }
 
-.appendix-head h2 {
-  margin-top: 0.75rem;
+  .export-sheet .sheet-head {
+    gap: 0.5rem;
+    padding-inline: 0.6rem;
+  }
+
+  .export-sheet .sheet-page {
+    padding-inline: 0.8rem;
+  }
 }
 
 /* Terrain is a tint of the paper, so it suits day and lamplight alike. */
@@ -1387,11 +1421,6 @@ table.preview tr {
   color: var(--ink-soft);
 }
 
-@media (max-width: 960px) {
-  .appendix {
-    padding-right: 0;
-  }
-}
 
 /* The stage: the map in the middle, the encyclopedia beside it, and time
    along the bottom. */
@@ -1401,36 +1430,11 @@ table.preview tr {
   height: 100dvh;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(20rem, 27rem);
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-areas:
-    "head head"
     "notices notices"
     "map pedia"
     "time time";
-}
-
-/* The light switch docks in the head's right-hand cell (see chart.css),
-   so the shelf and book view sit together on the left. */
-.stage-head {
-  grid-area: head;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  gap: 1rem;
-  min-height: 2.5rem;
-  padding: 0 1rem;
-  border-bottom: 1px solid var(--line);
-  font-size: 0.95rem;
-}
-
-.stage-head nav {
-  display: flex;
-  gap: 1.2rem;
-}
-
-.stage-title {
-  font-style: italic;
-  font-size: 1.1rem;
 }
 
 .stage-notices {
@@ -2064,49 +2068,44 @@ button.icon,
   letter-spacing: 0;
 }
 
-/* What the map shows, folded away in its corner. */
-.map-layers {
+/* The map's tools open their controls over the chart. */
+.map-tools {
   position: absolute;
-  top: 0.6rem;
-  left: 0.6rem;
-  padding: 0.3rem 0.6rem;
+  top: 0.8rem;
+  right: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+:root .map-tool {
+  background: var(--paper-raised);
   border: 1px solid var(--line);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--paper-raised) 92%, transparent);
+  border-radius: 2px;
+  padding: 0.3rem 0.6rem;
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  font-variant: normal;
+  letter-spacing: normal;
   font-size: 0.9rem;
 }
 
-.map-layers summary {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  cursor: pointer;
-  list-style: none;
+.layers-menu {
+  padding: 0.3rem;
+  font-size: 0.9rem;
 }
 
-.map-layers summary::-webkit-details-marker {
-  display: none;
-}
-
-.map-layers[open] summary {
-  margin-bottom: 0.3rem;
-}
-
-.map-layers label {
+.layers-menu label {
   display: flex;
   align-items: center;
   gap: 0.4rem;
   padding: 0.1rem 0;
 }
 
-.map-layers[open] {
-  max-width: min(26rem, calc(100% - 1.2rem));
-  max-height: calc(100% - 1.2rem);
-  overflow-y: auto;
-}
-
-.map-layers select {
+.layers-menu select {
   min-width: 0;
+  accent-color: var(--accent);
 }
 
 /* A family as a chart of descent: a bar for each language over time. */
@@ -2208,19 +2207,13 @@ button.icon,
 .timebar {
   font-size: 0.95rem;
   grid-area: time;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto auto auto minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 0.5rem 0.9rem;
-  padding: 0.45rem 1rem;
+  gap: 0.5rem;
+  padding: 0.35rem 0.8rem;
   border-top: 1px solid var(--line);
   background: var(--paper-raised);
-}
-
-.transport {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
 }
 
 /* Play is the one control everyone needs first, so it is labelled and
@@ -2233,9 +2226,48 @@ button.play {
   min-width: 6rem;
 }
 
-.scrub {
-  flex: 1;
-  min-width: 12rem;
+.play-split {
+  display: flex;
+  align-items: stretch;
+}
+
+:root .play-split .play {
+  border-radius: 2px 0 0 2px;
+}
+
+:root .play-split .play-more {
+  display: grid;
+  place-items: center;
+  padding-inline: 0.35rem;
+  border-left: 0;
+  border-radius: 0 2px 2px 0;
+}
+
+.pace-menu {
+  padding: 0.3rem;
+}
+
+.pace-menu fieldset {
+  display: grid;
+  gap: 0.2rem;
+  border: 0;
+  margin: 0 0 0.7rem;
+  padding: 0;
+}
+
+.pace-menu legend {
+  margin-bottom: 0.3rem;
+  color: var(--ink-soft);
+}
+
+.pace-menu label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.pace-menu input {
+  accent-color: var(--accent);
 }
 
 .stage-year {
@@ -2243,26 +2275,16 @@ button.play {
   font-variant-numeric: tabular-nums;
 }
 
-/* On the stage, the chronicle's latest line sits above one row of
-   controls, the rarer ones in menus that open upward. */
-.stage-bar {
-  flex-direction: column;
-  flex-wrap: nowrap;
-  align-items: stretch;
-  gap: 0.25rem;
-  padding: 0.3rem 1rem 0.45rem;
-}
-
-.stage-bar .transport {
-  gap: 0.6rem;
-  min-width: 0;
-}
-
-.stage-bar .scrub {
-  min-width: 6rem;
-}
-
-.chronicle-line {
+/* The latest annal captions the chart without taking a row from it. */
+.map-caption {
+  position: absolute;
+  left: 0.8rem;
+  right: 0.8rem;
+  bottom: 0.6rem;
+  background: color-mix(in srgb, var(--paper-raised) 92%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 0.35rem 0.7rem;
   display: flex;
   align-items: baseline;
   gap: 0.6rem;
@@ -2318,63 +2340,6 @@ button.chronicle-latest:hover {
   white-space: nowrap;
 }
 
-.bar-menu {
-  position: relative;
-  flex: none;
-}
-
-.bar-menu summary {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.3rem 0.7rem;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  list-style: none;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.bar-menu summary::-webkit-details-marker {
-  display: none;
-}
-
-.bar-menu-body {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 0.4rem);
-  z-index: 30;
-  display: grid;
-  gap: 0.5rem;
-  min-width: 16rem;
-  padding: 0.6rem;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--paper-raised);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.3);
-}
-
-.bar-menu-body label {
-  display: grid;
-  gap: 0.2rem;
-}
-
-.act-menu {
-  min-width: 18rem;
-  gap: 0.3rem;
-}
-
-.act-menu button {
-  text-align: left;
-}
-
-/* Where the bar is narrow, its menus keep only their icons. */
-@media (max-width: 720px) {
-  .bar-label {
-    display: none;
-  }
-}
-
 /* Setting up a new world: the chart in the middle with its title box,
    the book of peoples beside it, and Begin where time will run. */
 .map-hint {
@@ -2424,6 +2389,50 @@ button.chronicle-latest:hover {
   font-style: italic;
   font-size: 0.88rem;
   color: var(--ink-soft);
+}
+
+.world-cartouche {
+  left: 0.8rem;
+  top: 0.8rem;
+  max-width: min(22rem, calc(100% - 9rem));
+  padding: 0.45rem 0.9rem 0.5rem;
+}
+
+:root .cartouche-open {
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  padding: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.05rem;
+}
+
+.cartouche-title {
+  grid-column: 1 / -1;
+  font-family: var(--display);
+  font-size: 1.15rem;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.cartouche-open .cartouche-kicker {
+  grid-column: 1 / -1;
+}
+
+.cartouche-open .cartouche-note {
+  font-size: 0.8rem;
+}
+
+.cartouche-open > svg {
+  align-self: end;
+  margin-bottom: 0.15rem;
+  color: var(--ink-soft);
+}
+
+.cartouche-open:hover .cartouche-title {
+  color: var(--accent);
 }
 
 .cartouche-tools {
@@ -2573,12 +2582,13 @@ button.chronicle-latest:hover {
   font-size: 0.78rem;
 }
 
-.phrase-choice::before {
+/* A chosen row in any menu carries a bullet; the others keep its room. */
+.popover-panel [role="menuitemradio"]::before {
   content: "";
   flex: 0 0 0.65em;
 }
 
-.phrase-choice[aria-checked="true"]::before {
+.popover-panel [role="menuitemradio"][aria-checked="true"]::before {
   content: "•";
 }
 
@@ -2615,9 +2625,8 @@ button.chronicle-latest:hover {
 @media (max-width: 900px) {
   .stage {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto minmax(0, 1fr) minmax(0, 42vh) auto;
+    grid-template-rows: auto minmax(0, 1fr) minmax(0, 42vh) auto;
     grid-template-areas:
-      "head"
       "notices"
       "map"
       "pedia"
@@ -2626,7 +2635,7 @@ button.chronicle-latest:hover {
 
   .folio-host {
     grid-area: auto;
-    grid-row: 3 / 5;
+    grid-row: 2 / 4;
     grid-column: 1;
   }
 

@@ -114,10 +114,11 @@ The first visit opens the shelf, even when it is empty; setup and the
 sample are explicit choices there. Later visits resume the world left
 open, including one reopened without making changes. Returning to the
 shelf clears that resume choice, so reloading stays on the shelf. The
-top-left astrolabe and name lead to the shelf from setup, the stage, and
-Export; Export also has a separate link back to the map. Leaving the stage
-during playback saves the latest generation before recording the shelf as
-the next launch destination.
+world's cartouche on the stage opens a menu with the way back to the
+shelf; setup's cartouche and footer carry the same link. Export is a sheet
+laid over the map, so the stage keeps its cards, layers, and pace while
+it is open. Leaving the stage during playback saves the latest generation
+before recording the shelf as the next launch destination.
 
 The production workbench is also an installable offline app. Its service
 worker caches the app shell and WebAssembly engine, not worlds; saved

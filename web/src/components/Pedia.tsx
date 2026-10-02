@@ -23,7 +23,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, Catalog, Community, Craft, CraftView, ReadEngine, Ethos, HolyLand, LoanCause, Overview, PlaceExonym, ReligionView, RenderingRow, ShrineKind, StateView, Variety, WordMap, WorldMap } from "../model";
+import type { Annal, Catalog, CityView, Community, Craft, CraftView, ReadEngine, Ethos, HolyLand, LoanCause, Overview, PlaceExonym, ReligionView, RenderingRow, ShrineKind, StateView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, FAITH_HOW, FALL_NAME, howCame, howNamed, hue, LIVELIHOOD_NAME, RISE_NAME, SCHISM_CAUSE, STRESS_RULE, STRONG, temperament, TERMS, TERRAIN_NAME, weatherDeparture, type Term } from "../lore";
 import { filterHistory, findAnnal, individualAnnals, relatedMoments, subjectHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
@@ -66,6 +66,8 @@ interface Context {
   onScrub: (generation: number) => void;
   onVisit: (subject: Focus, generation: number) => void;
   onPlay: () => void;
+  canUndo: boolean;
+  onUndo: () => void;
   onDialog: (kind: InterventionKind, community: number) => void;
   onReconsider: (annal: Annal) => void;
   /// Tell the history again as a telling set aside told it.
@@ -660,6 +662,13 @@ function KnownWorldLeaf({ variety, context }: { variety: number; context: Contex
   );
 }
 
+/// Cities by name, each once: a city that fell and rose again under
+/// another state keeps its name, and the chart names it once.
+function cityNames(cities: CityView[]): CityView[] {
+  const seen = new Set<string>();
+  return cities.filter((city) => !seen.has(city.name.name) && seen.add(city.name.name));
+}
+
 function ContinentCard({ landmass, context }: { landmass: number; context: Context }) {
   const { map, overview } = context;
   const mass = map.landmasses[landmass];
@@ -667,6 +676,18 @@ function ContinentCard({ landmass, context }: { landmass: number; context: Conte
   const name = view?.name ?? null;
   const islands = map.landmasses.filter((m) => m.kind === "island").length;
   const knowers = overview.varieties.filter((v) => v.spoken && v.knownLands.some((l) => mass.regions.includes(l.region)));
+  const peoples = (view?.peoples ?? []).map((id) => overview.communities[id]).sort((a, b) => b.size - a.size);
+  const languages = [...new Set(peoples.map((c) => c.variety))].filter((id) => overview.varieties[id].spoken);
+  const families = new Set(languages.map((id) => overview.varieties[id].family));
+  const terrainCounts = new Map<(typeof map.regions)[number]["terrain"], number>();
+  for (const id of mass.regions) {
+    const terrain = map.regions[id].terrain;
+    terrainCounts.set(terrain, (terrainCounts.get(terrain) ?? 0) + 1);
+  }
+  const lands = [...terrainCounts].sort((a, b) => b[1] - a[1])
+    .map(([terrain, count]) => `${count} ${TERRAIN_NAME[terrain].toLowerCase()}`).join(", ");
+  const states = overview.states.filter((state) => state.lands.some((id) => mass.regions.includes(id)));
+  const cities = cityNames(overview.cities.filter((city) => mass.regions.includes(city.region)));
   return (
     <>
       <CardHead
@@ -677,7 +698,7 @@ function ContinentCard({ landmass, context }: { landmass: number; context: Conte
       />
       <Facts
         rows={[
-          ["Lands", `${mass.regions.length}, ${Math.round(mass.regions.reduce((area, id) => area + map.regions[id].areaKm2, 0)).toLocaleString()} km²`],
+          ["Area", `${mass.regions.length} lands, ${Math.round(mass.regions.reduce((area, id) => area + map.regions[id].areaKm2, 0)).toLocaleString()} km²`],
           ["Named by", name ? (
             <><PeopleLink c={overview.communities[name.people]} context={context} />, in{" "}
               <LanguageLink variety={name.variety} context={context} />, year <Year generation={name.since} context={context} /></>
@@ -686,6 +707,17 @@ function ContinentCard({ landmass, context }: { landmass: number; context: Conte
           ["Home of", view && view.peoples.length > 0 ? (
             <Joined items={view.peoples} link={(id) => <PeopleLink c={overview.communities[id]} context={context} />} />
           ) : "no one now"],
+          ["Languages", languages.length > 0 ? (
+            <Joined items={languages} link={(variety) => <LanguageLink variety={variety} context={context} />} />
+          ) : null],
+          ["Families", families.size],
+          ["Lands", `${mass.regions.length}: ${lands}`],
+          ["States", states.length > 0 ? (
+            <Joined items={states} link={(state) => <StateLink state={state} context={context} />} />
+          ) : null],
+          ["Cities", cities.length > 0 ? (
+            <Joined items={cities} link={(city) => <span className="word">{city.name.name}</span>} />
+          ) : null],
           ["Shrines", view && view.religions.length > 0 ? (
             <Joined items={view.religions} link={(id) => <ReligionLink religion={overview.religions[id]} context={context} />} />
           ) : null],
@@ -694,6 +726,21 @@ function ContinentCard({ landmass, context }: { landmass: number; context: Conte
           ) : "no living language"],
         ]}
       />
+      {peoples.length > 3 ? (
+        <Leaf
+          id="peoples"
+          title="Its peoples"
+          summary={`${peoples.length} peoples; the largest is ${peoples[0].name}`}
+        >
+          <ul className="roster">
+            {peoples.map((c) => (
+              <li key={c.id}>
+                <PeopleLink c={c} context={context} /> <span className="muted">{overview.varieties[c.variety].name}</span>
+              </li>
+            ))}
+          </ul>
+        </Leaf>
+      ) : null}
       <p className="muted small">
         {name ? <>Entered on the chart from the speech of the {overview.communities[name.people].name}, the first people known to have lived on or heard of it; the name stays as it was written, whatever becomes of their language.</> :
           <>No living people knows any of this land, so the chart has no name for it.</>}{" "}
@@ -1055,6 +1102,16 @@ function WorldCard({ context }: { context: Context }) {
           ["Lands held", `${held} of ${land}`],
         ]}
       />
+      <section>
+        <h3>Shape history</h3>
+        {!overview.atTip ? <p className="muted small">Writing here begins another telling. The later years are kept in the chronicle.</p> : null}
+        <div className="card-actions">
+          <button type="button" onClick={() => context.onDialog("found", peoples[0]?.id ?? 0)}>A new people arrives</button>
+          <button type="button" onClick={() => context.onDialog("religion", peoples[0]?.id ?? 0)}>Found a religion</button>
+          <button type="button" onClick={() => context.onDialog("craft", peoples[0]?.id ?? 0)}>Teach a craft</button>
+          <button type="button" disabled={!context.canUndo} onClick={context.onUndo}>Return before the last action</button>
+        </div>
+      </section>
       {overview.latest > 0 ? (
         <p>
           <button type="button" className="link" onClick={() => context.go({ kind: "history" })}>
@@ -2155,6 +2212,9 @@ function LawCard({ id, context }: { id: string; context: Context }) {
   const without = peoples.filter((c) => !had.some((h) => h.c.id === c.id));
   const told = subjectHistory({ kind: "law", id }, overview, context.map);
   const waves = had.filter(({ law }) => law.from !== null).length;
+  const living = overview.varieties.filter((v) => v.spoken);
+  const livingHad = living.filter((v) => v.laws.some((law) => law.id === id));
+  const silentHad = overview.varieties.filter((v) => !v.spoken && v.laws.some((law) => law.id === id));
   return (
     <>
       <CardHead icon={AudioLines} kind="A sound change" title={label} />
@@ -2169,6 +2229,9 @@ function LawCard({ id, context }: { id: string; context: Context }) {
         A <Explained term="sound law">sound law</Explained>. On the map, orange land underwent it and grey land did not;
         red lines are <Explained term="isogloss">isoglosses</Explained>, where it stopped.
       </p>
+      {living.length > 0 && livingHad.length === living.length ? (
+        <p className="muted small">Every living language has undergone this change.</p>
+      ) : null}
       {had.length > 0 ? (
         <Leaf
           id="who"
@@ -2198,7 +2261,11 @@ function LawCard({ id, context }: { id: string; context: Context }) {
       ) : (
         <>
           <h3>Who has it</h3>
-          <p className="muted">No living people has it.</p>
+          <p className="muted small">
+            No living language has undergone it{silentHad.length > 0 ? (
+              <>; it is known from <Joined items={silentHad} link={(v) => <LanguageLink variety={v.id} context={context} />} /></>
+            ) : null}.
+          </p>
         </>
       )}
       <StoryLeaf title="As it happened" annals={told} context={context} />
@@ -2207,13 +2274,19 @@ function LawCard({ id, context }: { id: string; context: Context }) {
 }
 
 function LandCard({ region, context }: { region: number; context: Context }) {
-  const { overview } = context;
+  const { map, overview } = context;
   const place = overview.places.find((p) => p.region === region);
   const names = place?.names ?? [];
   const exonyms = place?.exonyms ?? [];
   const dwellers = peoplesByRegion(overview).get(region) ?? [];
   const arrivals = overview.moves.filter((m) => m.to === region || m.from === region);
   const now = names.at(-1);
+  const neighbours = map.regions[region].neighbours.filter((id) => map.regions[id].terrain !== "sea");
+  const states = overview.states.filter((state) => state.lands.includes(region));
+  const religions = overview.religions.filter((religion) => religion.land === region || religion.shrines.some((shrine) => shrine.region === region));
+  const cities = cityNames(overview.cities.filter((city) => city.region === region));
+  const here = individualAnnals(overview.annals).filter((annal) => annal.lands.includes(region))
+    .sort((a, b) => b.generation - a.generation);
   return (
     <>
       <CardHead
@@ -2231,6 +2304,9 @@ function LandCard({ region, context }: { region: number; context: Context }) {
             link={(river) => <RiverLink id={river.id} context={context} />} /> : null],
           ["Weather", context.map.regions[region].climateZone === null ? null : <ZoneLink id={context.map.regions[region].climateZone!} context={context} />],
           ["On", <LandmassOf region={region} context={context} />],
+          ["Neighbours", neighbours.length > 0 ? (
+            <Joined items={neighbours} link={(id) => <LandLink region={id} context={context} />} />
+          ) : null],
           [
             "Home of",
             dwellers.length > 0 ? (
@@ -2241,9 +2317,43 @@ function LandCard({ region, context }: { region: number; context: Context }) {
               "no one yet"
             ),
           ],
+          ["Held by", states.length > 0 ? (
+            <Joined items={states} link={(state) => <StateLink state={state} context={context} />} />
+          ) : null],
+          ["Shrine of", religions.length > 0 ? (
+            <Joined items={religions} link={(religion) => <ReligionLink religion={religion} context={context} />} />
+          ) : null],
+          ["City", cities.length > 0 ? (
+            <Joined items={cities} link={(city) => <span className="word">{city.name.name}</span>} />
+          ) : null],
           ["Names", names.length > 1 ? `${names.length} so far` : null],
         ]}
       />
+      {here.length > 0 ? (
+        <Leaf
+          id="here"
+          title="What happened here"
+          summary={`${here.length} moments, from year ${here.at(-1)!.generation * YEARS} to year ${here[0].generation * YEARS}`}
+        >
+          <ol className="history">
+            {here.slice(0, 60).map((annal) => {
+              const kind = EVENT_KIND[annal.kind];
+              return (
+                <li key={annal.id}>
+                  <Year generation={annal.generation} context={context} />
+                  <span>
+                    <kind.icon size={14} aria-label={kind.name} />{" "}
+                    <button type="button" className="link" onClick={() => context.go({ kind: "event", id: annal.id })}>
+                      <Told text={momentExcerpt(annal.text)} />
+                    </button>
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+          {here.length > 60 ? <p className="muted small">and {here.length - 60} earlier</p> : null}
+        </Leaf>
+      ) : null}
       {names.length > 0 ? (
         <Leaf
           id="names"
@@ -2339,6 +2449,12 @@ function LandCard({ region, context }: { region: number; context: Context }) {
   );
 }
 
+function momentExcerpt(text: string): string {
+  if (text.length <= 90) return text;
+  const cut = text.slice(0, 90).replace(/\s+\S*$/, "");
+  return `${cut}${(cut.match(/\*/g)?.length ?? 0) % 2 ? "*" : ""}…`;
+}
+
 /// Languages' names for a land, grouped by how they spell it, those that
 /// say it as its holders do last; within a group, the earliest hearing.
 function otherNames(exonyms: PlaceExonym[], own: string | undefined) {
@@ -2360,9 +2476,48 @@ function EventCard({ annal, context }: { annal: Annal; context: Context }) {
   const peoples = annal.peoples.filter((id) => overview.communities[id]);
   const kind = EVENT_KIND[annal.kind];
   const lawLabel = (id: string) => overview.varieties.flatMap((v) => v.laws).find((l) => l.id === id)?.label ?? id;
+  const people = overview.communities[peoples[0]];
+  const land = annal.lands.at(-1);
+  let title = people?.name ?? `Year ${annal.generation * YEARS}`;
+  let sub: ReactNode = land === undefined ? null : <LandLink region={land} context={context} />;
+  switch (annal.kind) {
+    case "conquest":
+      if (peoples.length > 1) title = `${overview.communities[peoples[0]].name} over ${overview.communities[peoples[1]].name}`;
+      break;
+    case "contact": case "neighbours": case "parted":
+      if (peoples.length > 1) title = `${overview.communities[peoples[0]].name} and ${overview.communities[peoples[1]].name}`;
+      break;
+    case "law": case "meaning": case "respelling": case "standard": case "classical": case "vernacular": case "koine":
+      title = (annal.variety === null ? null : overview.varieties[annal.variety]?.name) ?? title;
+      break;
+    case "rose": case "fell":
+      title = overview.states[annal.states[0]]?.name ?? title;
+      break;
+    case "faith": case "schism": case "conversion": case "pilgrimage": case "holy-land":
+      title = overview.religions[annal.religions[0]]?.name ?? title;
+      if (annal.kind === "conversion" && people) sub = <PeopleLink c={people} context={context} />;
+      break;
+    case "craft":
+      title = context.catalog.crafts.find((craft) => craft.id === annal.crafts[0])?.name ?? title;
+      if (people) sub = <PeopleLink c={people} context={context} />;
+      break;
+    case "city":
+      title = overview.cities.find((city) => city.since === annal.generation &&
+        (annal.states.includes(city.state) || annal.lands.includes(city.region)))?.name.name ?? title;
+      break;
+    case "settlement": {
+      const parent = annal.settlement ? overview.communities[annal.settlement.plan.choice.community] : people;
+      title = parent?.name ?? title;
+      const daughter = annal.settlement?.daughter;
+      if (daughter !== null && daughter !== undefined && overview.communities[daughter]) {
+        sub = <PeopleLink c={overview.communities[daughter]} context={context} />;
+      }
+      break;
+    }
+  }
   return (
     <>
-      <CardHead icon={kind.icon} kind={kind.name} title={`Year ${annal.generation * YEARS}`} />
+      <CardHead icon={kind.icon} kind={`${kind.name} · year ${annal.generation * YEARS}`} title={title} sub={sub} />
       <p className="event-text">
         <Told text={annal.text} />
       </p>

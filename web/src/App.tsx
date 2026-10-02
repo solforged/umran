@@ -463,7 +463,7 @@ export default function App() {
       />
     ) : null;
 
-  if (page === "export" || !worldMap) {
+  if (!worldMap) {
     return (
       <div className="app">
         {notices}
@@ -477,7 +477,6 @@ export default function App() {
           title={title}
           variety={overview.communities[selected].variety}
           onBack={() => setPage("stage")}
-          onShelf={toShelf}
         />
         {dialogs}
       </div>
@@ -496,6 +495,19 @@ export default function App() {
         overview={overview}
         title={title}
         notices={notices}
+        sheet={page === "export" ? (
+          <Appendix
+            engine={readingEngine}
+            notebook={notebook}
+            catalog={catalog}
+            version={version}
+            generation={generation}
+            overview={overview}
+            title={title}
+            variety={overview.communities[selected].variety}
+            onBack={() => setPage("stage")}
+          />
+        ) : null}
         initialFocus={initialFocus}
         onFocus={setFocus}
         onSettle={settle}

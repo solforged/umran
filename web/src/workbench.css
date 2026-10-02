@@ -52,32 +52,10 @@
 .settlement-journeys { pointer-events: none; fill: none; stroke: var(--ink); stroke-width: 1.7; }
 .settlement-journeys polyline { vector-effect: non-scaling-stroke; stroke-linejoin: round; }
 .settlement-journeys .sea-journey { stroke-dasharray: 4 3; }
-.stage[data-settlement=true] .map-layers, .stage[data-settlement=true] .map-perspective { display: none; }
+.stage[data-settlement=true] .map-tools, .stage[data-settlement=true] .map-perspective { display: none; }
 .stage[data-settlement=true] .stage-bar { opacity: .5; }
 .reconsider { margin-bottom: 1rem; border-color: var(--accent); color: var(--accent); width: 100%; }
-.workbench .stage-head {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  min-height: 3rem;
-}
-.workbench .stage-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: center;
-  font-size: 1rem;
-}
-.workbench .atlas-open {
-  display: inline-flex;
-  justify-self: end;
-  align-items: center;
-  gap: .45rem;
-  margin-right: 11rem;
-  padding: .3rem .6rem;
-  border-color: var(--line);
-  white-space: nowrap;
-}
 kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(--line); padding: 0 .3em; border-radius: 2px; }
-.app:has(> .workbench) ~ .light-switch { top: 1.5rem; }
 .stage-panes { display: none; }
 .pedia-nav { gap: .35rem; padding-block: .6rem; border-bottom: 1px solid var(--line); }
 .pedia-nav .icon { display: inline-flex; align-items: center; gap: .4rem; min-height: 2rem; border-color: var(--line); }
@@ -100,16 +78,13 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .folio-page { overscroll-behavior: contain; scrollbar-width: thin; padding: 1rem 1.25rem 2rem; }
 .map-zoom { gap: .3rem; }
 .map-zoom button { background: var(--paper-raised); border-color: var(--line); width: 2.15rem; height: 2.15rem; }
-.map-layers { max-width: min(20rem, calc(100% - 4rem)); }
-.map-layers summary { max-width: 100%; }
-.map-perspective { position: absolute; left: .6rem; bottom: 2.5rem; display: flex; align-items: center; gap: .5rem; background: var(--paper-raised); border: 1px solid var(--line); padding: .2rem .5rem; font-size: .9rem; max-width: calc(100% - 6rem); }
-.chart-help { position: absolute; left: .7rem; bottom: .35rem; margin: 0; color: var(--ink-soft); background: color-mix(in srgb, var(--paper) 88%, transparent); padding: .1rem .4rem; font-size: .8rem; pointer-events: none; }
+.workbench .map-zoom { top: 3.4rem; }
+.map-perspective { position: absolute; left: .6rem; bottom: 5rem; display: flex; align-items: center; gap: .5rem; background: var(--paper-raised); border: 1px solid var(--line); padding: .2rem .5rem; font-size: .9rem; max-width: calc(100% - 6rem); }
+.chart-help { position: absolute; left: .7rem; bottom: 3rem; margin: 0; color: var(--ink-soft); background: color-mix(in srgb, var(--paper) 88%, transparent); padding: .1rem .4rem; font-size: .8rem; pointer-events: none; }
 .mapview > svg:focus-visible { outline-offset: -3px; }
 .stage-year.in-past { color: var(--accent); }
-.act-menu p { margin: .3rem; }
 .map-scale-note { font-size: .8rem; color: var(--ink-soft); max-width: 26rem; margin: .5rem auto; }
 .telling-note { padding: .65rem .8rem; margin: 0 0 1rem; border-left: 2px solid var(--accent); background: var(--accent-mute); font-size: .95rem; }
-:root .setup .stage-head .brand { color: var(--desk-ink); }
 
 /* The index is a page of entries, not a second encyclopedia. */
 .index-intro { margin: 0 0 1rem; color: var(--ink-soft); }
@@ -173,49 +148,37 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 @media (max-width: 900px) {
   .workbench {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto auto minmax(0, 1fr) auto;
-    grid-template-areas: "head" "notices" "panes" "content" "time";
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas: "notices" "content" "time";
   }
   .workbench .stage-map, .workbench .pedia, .workbench .folio-host { grid-area: content; min-width: 0; }
   .workbench[data-pane=map] .pedia { display: none; }
   .workbench[data-pane=reading] .stage-map { visibility: hidden; }
   .workbench .pedia { border-top: 0; }
-  .stage-panes { grid-area: panes; display: flex; gap: 1rem; align-items: stretch; justify-content: center; padding: 0 .8rem; background: var(--paper-raised); border-bottom: 1px solid var(--line); }
-  :root .stage-panes button { display: flex; align-items: center; justify-content: center; gap: .5rem; min-height: 2.7rem; flex: 1; border: 0; border-bottom: 2px solid transparent; color: var(--ink-soft); border-radius: 0; }
+  .stage-panes { display: flex; gap: .3rem; align-items: stretch; justify-content: end; }
+  :root .stage-panes button { display: flex; align-items: center; justify-content: center; gap: .25rem; min-height: 2.5rem; padding: .2rem .35rem; border: 0; border-bottom: 2px solid transparent; color: var(--ink-soft); border-radius: 0; }
   :root .stage-panes button[aria-pressed=true] { color: var(--accent); border-bottom-color: var(--accent); }
   .workbench .folio { inset: 0; border: 0; box-shadow: none; }
   .workbench:has(.folio:not([data-closing])) .pedia { visibility: hidden; }
-  .workbench .stage-head { gap: .75rem; }
-  .workbench .atlas-open { margin-right: 9.5rem; }
-  .workbench .atlas-open kbd { display: none; }
-  .workbench .stage-title { font-size: .9rem; }
-  .stage-bar { padding: .4rem .7rem .6rem; }
-  .stage-bar .transport { display: grid; grid-template-columns: auto auto auto minmax(0, 1fr) auto auto; gap: .4rem; }
-  .stage-bar .play { grid-row: 1; grid-column: 1; }
-  .stage-bar .transport > .icon:not(.step-year) { grid-row: 1; grid-column: 2; }
-  .stage-bar .step-year { grid-row: 1; grid-column: 3; }
-  .stage-bar .bar-menu:not(.act) { grid-column: 5; }
-  .stage-bar .act { grid-column: 6; }
-  .stage-bar .scrub { grid-row: 2; grid-column: 1 / -1; min-width: 0; margin-top: .3rem; }
-  .stage-year { grid-column: 4; grid-row: 1; font-size: .9rem; text-align: center; white-space: normal; line-height: 1.15; }
+  .stage-bar { grid-template-columns: auto auto auto minmax(0, 1fr) auto auto; padding: .4rem .7rem .6rem; gap: .4rem; }
+  .stage-bar > :not(.timeline) { grid-row: 1; }
+  .stage-bar .timeline { grid-row: 2; grid-column: 1 / -1; min-width: 0; margin-top: .3rem; }
+  .stage-year { font-size: .9rem; text-align: center; white-space: normal; line-height: 1.15; }
   .stage-year .link { display: block; }
-  .bar-menu { grid-row: 1; }
-  .bar-menu summary { min-height: 2.5rem; padding: .5rem; }
-  .bar-menu-body { max-height: 55dvh; overflow: auto; max-width: calc(100vw - 1.5rem); }
   .stage-bar button.play { min-width: 4.6rem; min-height: 2.5rem; padding-inline: .5rem; }
-  .stage-bar button.icon { min-height: 2.5rem; width: 2.25rem; }
+  .stage-bar > button.icon { min-height: 2.5rem; width: 2.25rem; }
   .chronicle-more { display: none; }
-  .chronicle-line { font-size: .85rem; gap: .4rem; }
+  .map-caption { font-size: .85rem; gap: .4rem; }
   .chronicle-latest { flex: 1; }
   .chronicle-open { min-height: 1.8rem; }
   .map-zoom button { width: 2.75rem; height: 2.75rem; }
-  .map-layers summary { min-height: 2.5rem; }
+  .map-tool[aria-haspopup] .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
   .chart-help { display: none; }
   .index-results { max-height: 45dvh; }
   .index-results button { min-height: 3.75rem; }
 }
 @media (max-width: 900px) {
-  .workbench[data-settlement=true] { grid-template-rows: auto auto minmax(10rem, 1fr) minmax(16rem, 50dvh); grid-template-areas: "head" "notices" "map" "decision"; }
+  .workbench[data-settlement=true] { grid-template-rows: auto minmax(10rem, 1fr) minmax(16rem, 50dvh); grid-template-areas: "notices" "map" "decision"; }
   .workbench[data-settlement=true] .stage-map { grid-area: map; visibility: visible; }
   .workbench[data-settlement=true] .stage-panes, .workbench[data-settlement=true] .stage-bar, .workbench[data-settlement=true] .folio-host { display: none; }
   .workbench .settlement-desk { grid-area: decision; border-left: 0; border-top: 1px solid var(--line); }
@@ -231,14 +194,19 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
   .settlement-desk > footer button { min-height: 2.5rem; }
 }
 @media (max-width: 560px) {
-  .workbench .stage-head { padding: .3rem .7rem .45rem; grid-template-columns: auto 1fr auto; min-height: 4.5rem; row-gap: .2rem; }
-  .workbench .stage-head nav { gap: .8rem; }
-  .workbench .stage-title { grid-row: 2; grid-column: 1 / -1; text-align: left; }
-  .workbench .atlas-open { grid-column: 2; grid-row: 1; justify-self: end; margin-right: 0; border: 0; padding: .4rem; }
-  .workbench .atlas-open span { display: none; }
-  .workbench .stage-head::after { content: ""; width: 6rem; grid-column: 3; grid-row: 1; }
-  .app:has(> .workbench) ~ .light-switch { top: 1.35rem; right: .5rem; font-size: 0; }
-  .app:has(> .workbench) ~ .light-switch select { width: 6.3rem; font-size: .8rem; text-overflow: ellipsis; }
+  .map-tools { flex-direction: column; }
+  :root .map-tool { width: 2.4rem; height: 2.4rem; padding: 0; justify-content: center; }
+  .map-tool .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+  .map-tool > .lucide-chevron-down { display: none; }
+  .world-cartouche { max-width: calc(100% - 4.2rem); }
+  .workbench .map-zoom { top: 6.2rem; }
+  .stage-bar { gap: .2rem; padding-inline: .5rem; }
+  .stage-bar button.play { min-width: 3.3rem; padding-inline: .25rem; gap: .2rem; font-size: .8rem; }
+  :root .stage-bar .play-more { padding-inline: .15rem; }
+  .stage-bar > button.icon { width: 1.5rem; padding-inline: .1rem; }
+  .stage-year { font-size: .75rem; }
+  .stage-panes { gap: .1rem; }
+  :root .stage-panes button { flex-direction: column; gap: 0; padding-inline: .2rem; font-size: .75rem; }
   .pedia { padding-inline: .8rem; }
   .pedia-nav .icon { min-height: 2.5rem; padding-inline: .5rem; }
   .folio-page { padding-inline: .8rem; }
@@ -252,10 +220,8 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
   .modal-head h2 { font-size: 1.5rem; }
 }
 @media (max-height: 500px) and (max-width: 900px) {
-  .workbench .stage-title { display: none; }
-  .workbench .stage-head { min-height: 2.5rem; }
   .stage-panes button { min-height: 2rem; }
-  .chronicle-line { display: none; }
+  .map-caption { display: none; }
   .index-results { max-height: 28dvh; }
 }
 .chronicle-tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem; padding: .1rem 0 1rem; border-bottom: 1px solid var(--line); }
@@ -292,7 +258,6 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .telling-comparison { min-width: 0; }
 .modal:has(.telling-comparison) { width: min(78rem, calc(100vw - 2rem)); }
 .modal:has(.telling-comparison) .modal-body { max-height: 80vh; }
-.stage-title .telling-badge { display: block; margin: .1rem auto 0; font-size: .72rem; font-weight: 400; color: var(--ink-soft); }
 .comparison-tools { display: flex; gap: 1rem; align-items: end; flex-wrap: wrap; }
 .comparison-tools p { margin: 0; }
 .comparison-tools label, .comparison-investigation > label, .comparison-words > label { display: grid; gap: .35rem; color: var(--ink-soft); font-size: .86rem; }
@@ -315,7 +280,6 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .comparison-form { font-size: 1.6rem; }
 
 /* The reader's own accounts sit beside, and outside, the world's record. */
-.notebook-open { display: inline-flex; align-items: center; gap: .35rem; }
 .modal:has(.notebook) { width: min(68rem, calc(100vw - 2rem)); }
 .notebook { display: grid; grid-template-columns: minmax(14rem, .8fr) minmax(0, 1.2fr); gap: 1.5rem; }
 .notebook label { display: grid; gap: .35rem; color: var(--ink-soft); font-size: .9rem; margin: .8rem 0; }
@@ -350,7 +314,6 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
   .notebook-index > ol { max-height: 13rem; }
   .notebook-empty { margin: 1rem 0; }
   .notebook-entry { scroll-margin-top: .8rem; }
-  .notebook-open span { display: none; }
 }
 @media (max-width: 600px) {
   .comparison-tools { align-items: stretch; }
