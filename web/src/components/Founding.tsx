@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Feather, Plus } from "lucide-react";
 import { createEngine, message, presetDesign } from "../engine";
-import type { Catalog, Engine, EthosAxis, FoundingPreview, Livelihood, MapSize, Naming, Overview, WorldMap } from "../model";
-import { ETHOS_AXES, ETHOS_POLES, hue, LIVELIHOOD_NAME, temperament, TERRAIN_NAME } from "../lore";
+import type { Catalog, Engine, EthosAxis, FoundingPreview, GrammarChoice, GrammarDesign, Livelihood, MapSize, Naming, Overview, PossessorOrder, Variety, WordOrder, WorldMap } from "../model";
+import { ETHOS_AXES, ETHOS_POLES, hue, LIVELIHOOD_NAME, MARKING_PHRASE, POSSESSOR_PHRASE, temperament, TERRAIN_NAME, WORD_ORDER_PHRASE } from "../lore";
 import { worldName } from "../shelf";
 import { Designer, randomSeed, type Founding as FoundingDesign } from "./Designer";
 import { MapView, type MapCamera } from "./MapView";
@@ -11,6 +11,7 @@ import { decodeNaming, encodeNaming, namingChoices } from "./NamingSelect";
 import { Phrase } from "./Phrase";
 import { ReachOverlay } from "./ReachOverlay";
 import { Specimen } from "./Specimen";
+import { Sample } from "./Sample";
 import "./founding.css";
 
 const ORDINAL = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth", "eleventh", "twelfth"];
@@ -54,6 +55,11 @@ function drawFounder(catalog: Catalog, key: number): Founder {
   return { key, preset, seed, design: presetDesign(preset, seed), naming, power: 0.5, openness: 0.5, region: null, livelihood: null, bent: null };
 }
 
+function markerChoice(speech: Variety, category: "plural" | "past" | "object"): GrammarChoice {
+  const marker = speech.grammar.markers.find((m) => m.category === category && m.productive && m.retired === null);
+  return !marker || marker.kind === "none" ? "none" : marker.kind === "particle" ? "particle" : marker.side;
+}
+
 /// Found for real behind the chart, then hand that same engine to the workshop.
 export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
   catalog: Catalog;
@@ -77,6 +83,7 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
   const [error, setError] = useState<string | null>(null);
   const engine = useRef<Engine | null>(null);
   const handedOver = useRef(false);
+  const grammarDraws = useRef(new Map<number, { order: WordOrder; object: GrammarChoice; possessor: PossessorOrder }>());
   const nextKey = useRef(FIRST_PEOPLES);
   const accounts = useRef<HTMLDivElement>(null);
 
@@ -99,6 +106,15 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
           });
         }
         const overview = next.overview(0);
+        founders.forEach((founder, i) => {
+          const speech = overview.varieties.find((variety) => variety.id === overview.communities[i].variety)!;
+          const previous = grammarDraws.current.get(founder.key);
+          grammarDraws.current.set(founder.key, {
+            order: !previous || founder.design.grammar?.order == null ? speech.grammar.order : previous.order,
+            object: !previous || founder.design.grammar?.object == null ? markerChoice(speech, "object") : previous.object,
+            possessor: !previous || founder.design.grammar?.possessor == null ? speech.grammar.possessor : previous.possessor,
+          });
+        });
         const founded: Built = { map: next.map(), overview, preview: next.foundingPreview(), founders, seed: worldSeed, size };
         engine.current?.dispose();
         engine.current = next;
@@ -195,6 +211,12 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
             const people = overview?.communities[i];
             const speech = people ? overview?.varieties.find((variety) => variety.id === people.variety) : undefined;
             const chosen = selected === i;
+            const drawn = grammarDraws.current.get(founder.key);
+            const setGrammar = (patch: Partial<GrammarDesign>) => {
+              if (!speech) return;
+              const grammar = founder.design.grammar ?? { plural: markerChoice(speech, "plural"), past: markerChoice(speech, "past") };
+              update(i, { design: { ...founder.design, grammar: { ...grammar, ...patch } } });
+            };
             const speechPhrase = founder.preset === null ? "their own speech, shaped by hand" : lower(catalog.presets.find((preset) => preset.id === founder.preset)!.name);
             const description = people ? `${PEOPLE_LIVELIHOOD[people.livelihood]} of ${landName(people.region)} · ${speechPhrase}` : "Settling…";
             return <article className={`account${chosen ? " chosen" : ""}`} key={founder.key}
@@ -236,14 +258,35 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
                   <p className="account-text">Their speech is <Phrase label="Sounds" value={founder.preset ?? ""}
                     choices={[...(founder.preset === null ? [{ key: "", text: "their own, shaped by hand" }] : []),
                       ...catalog.presets.map((preset) => ({ key: preset.id, text: lower(preset.name), title: preset.description }))]}
-                    onChange={(key) => { if (key && key !== founder.preset) update(i, { preset: key, design: presetDesign(key, founder.seed) }); }} />.</p>
+                    onChange={(key) => { if (key && key !== founder.preset) update(i, { preset: key, design: { ...presetDesign(key, founder.seed), ...(founder.design.grammar ? { grammar: founder.design.grammar } : {}) } }); }} />.</p>
                   <div className="account-acts">
-                    <button type="button" className="link" onClick={() => { const seed = randomSeed(); update(i, { seed, design: founder.preset === null ? founder.design : presetDesign(founder.preset, seed) }); }}>Hear other words</button>
+                    <button type="button" className="link" onClick={() => { const seed = randomSeed(); update(i, { seed, design: founder.preset === null ? founder.design : { ...presetDesign(founder.preset, seed), ...(founder.design.grammar ? { grammar: founder.design.grammar } : {}) } }); }}>Hear other words</button>
                     <button type="button" className="link" onClick={() => setAdjusting(true)}>Adjust their sounds…</button>
                   </div>
                 </section>
+                <section className="founding-stage founding-grammar">
+                  <h3 className="eyebrow">5 · Grammar</h3>
+                  <p className="account-text">They put <Phrase label="Word order" value={founder.design.grammar?.order ?? ""}
+                    choices={[{ key: "", text: `as their speech falls out (${WORD_ORDER_PHRASE[drawn?.order ?? speech.grammar.order].choice})` },
+                      ...(["SOV", "SVO", "VSO"] as WordOrder[]).map((order) => ({ key: order, text: WORD_ORDER_PHRASE[order].choice }))]}
+                    onChange={(key) => setGrammar({ order: key === "" ? null : key as WordOrder })} />, <Phrase label="Object marking"
+                    value={founder.design.grammar?.object == null ? "" : founder.design.grammar.object === "none" ? "order" : "case"}
+                    choices={[{ key: "", text: `as their speech falls out (${MARKING_PHRASE[(drawn?.object ?? markerChoice(speech, "object")) === "none" ? "order" : "case"].choice})` },
+                      ...(["case", "order"] as const).map((marking) => ({ key: marking, text: MARKING_PHRASE[marking].choice }))]}
+                    onChange={(key) => {
+                      const object = drawn?.object ?? markerChoice(speech, "object");
+                      setGrammar({ object: key === "" ? null : key === "order" ? "none" : object !== "none" ? object : founder.design.suffixing >= 0.5 ? "suffix" : "prefix" });
+                    }} />, and say <Phrase label="Possessor placement" value={founder.design.grammar?.possessor ?? ""}
+                    choices={[{ key: "", text: `as their speech falls out (${POSSESSOR_PHRASE[drawn?.possessor ?? speech.grammar.possessor].choice})` },
+                      ...(["before", "after"] as PossessorOrder[]).map((possessor) => ({ key: possessor, text: POSSESSOR_PHRASE[possessor].choice }))]}
+                    onChange={(key) => setGrammar({ possessor: key === "" ? null : key as PossessorOrder })} />.</p>
+                  {speech.grammar.sample ? <>
+                    <Sample rendering={speech.grammar.sample.sentence} label="Sample sentence" />
+                    <Sample rendering={speech.grammar.sample.possession} label="Sample possession" />
+                  </> : null}
+                </section>
                 <section className="founding-stage">
-                  <h3 className="eyebrow">5 · Identity</h3>
+                  <h3 className="eyebrow">6 · Identity</h3>
                   <p className="account-text">They name themselves <Phrase label="Name" value={encodeNaming(founder.naming)} choices={namingChoices(catalog)}
                     onChange={(key) => { const naming = decodeNaming(key); if (naming) update(i, { naming }); }} />, <b>{people.name}</b>. They call their speech <i>{speech.name}</i>.</p>
                 </section>

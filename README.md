@@ -55,6 +55,9 @@ writes its own history.
 - **Words compete.** Every meaning has one or more words competing for
   use. New words arise, old ones are renewed when they wear too short or
   sound like another word, and losers fall out of use.
+- **Grammar.** Founding sets word order, object marking, and possessor
+  placement; daughters inherit the sketch, and sound change can wear the
+  object's mark away, leaving word order to say who did what.
 - **Borrowing.** Peoples in contact trade words, mostly from the more
   prestigious side. How readily a meaning is borrowed comes from that
   meaning alone, so patterns by field have to emerge on their own.
@@ -162,8 +165,8 @@ quiet. The system's reduced-motion setting makes all these changes immediate.
 
 | | |
 |---|---|
-| ![Founding: an old chart beside the book of accounts, one people's five stages open and the rest one line each, with the open people's reach drawn on the chart](docs/images/setup.png) | ![Words compared: a table of basic words across related languages, shaded by shared root](docs/images/cognates.png) |
-| **Founding a world.** Each people is one line in the book of accounts until opened: homeland, livelihood, temper, speech, and identity. Who can meet whom is drawn on the chart from the engine's travel rules. Name the world, or let it take the name of its continent. Sounds can be tuned on a full sound chart. | **Words compared.** Basic words across the living languages, shaded alike when they come from one root (cognates). |
+| ![Founding: an old chart beside the book of accounts, one people's six stages open and the rest one line each, with the open people's reach drawn on the chart](docs/images/setup.png) | ![Words compared: a table of basic words across related languages, shaded by shared root](docs/images/cognates.png) |
+| **Founding a world.** Each people is one line in the book of accounts until opened: homeland, livelihood, temper, speech, grammar, and identity. Who can meet whom is drawn on the chart from the engine's travel rules. Name the world, or let it take the name of its continent. Sounds can be tuned on a full sound chart; the grammar sketch shows a sentence and possession with their sounds and glosses. | **Words compared.** Basic words across the living languages, shaded alike when they come from one root (cognates). |
 | ![A language's family tree, with its sounds and word-building patterns](docs/images/family.png) | ![A sound law's card: the peoples who have it and where it spread, with the isogloss drawn on the map](docs/images/law.png) |
 | **A family tree.** Every language card charts its family's descent, its sounds, and how it builds words, here by vowel patterns over consonant roots, as Arabic does. | **A sound law.** Who has a change, whether it arose among them or spread from a neighbour, and on the map, where it stopped. |
 

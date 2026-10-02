@@ -80,8 +80,11 @@ the engine, not a second source. Blank where the engine has nothing yet.
    - *Sound laws*: a dated ledger, each law with the words it changed,
      before and after, and where it came from if it spread as a wave
      (`Variety.laws`, `Annal.specimen`, `word` history).
-   - *Word building*: the builders, and the grammar the engine models
-     (plural, past, `grammar.markers`), with a heading reserved for what
+   - *Word building*: the builders (affixes or vowel patterns).
+   - *Grammar*: the sketch (word order, how the object is marked, where
+     the possessor goes), a sample sentence and a possession phrase
+     rendered from the lexicon, the categories the engine models
+     (plural, past, object: `grammar.markers`), and a heading for what
      it does not model yet, stated as such.
    - *Lexicon*: every word with its origin (inherited, borrowed with its
      source and the contact behind it, coined, stretched), competitors,
@@ -118,7 +121,8 @@ its chronicle, never a comma list of language names.
 The chart, with the title box, and the book of accounts beside it. The
 accounts are the navigation: each people is one inked line when closed
 ("Hū · the people · farmers of Nūhupam · soft-spoken, rich in f, th,
-kh") and opens into its five stages when chosen. This scales to twelve
+kh") and opens into its six stages when chosen (homeland, livelihood,
+temper, speech, grammar, identity). This scales to twelve
 peoples without a tab strip. Reach is drawn on the chart when an account
 is open (a ring, neighbours it can meet shaded), with effort on hover,
 not listed as lines of effort-km. The sound chart and naming pattern are

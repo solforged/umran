@@ -1,11 +1,12 @@
 import { useMemo, useState, type ReactNode } from "react";
 import type { Annal, HistoryLine, Law, LexiconRow, LoanCause, Origin, Overview, ReadEngine, Subject, Variety, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { CONTACT_NAME, STRESS_RULE } from "../lore";
+import { CONTACT_NAME, MARKING_PHRASE, POSSESSOR_PHRASE, STRESS_RULE, WORD_ORDER_PHRASE } from "../lore";
 import { individualAnnals, findAnnal } from "../history";
 import { Dictionary, INITIAL_DICTIONARY, type DictionaryView } from "./Dictionary";
 import { FamilyTree } from "./FamilyTree";
 import { Specimen } from "./Specimen";
+import { Sample } from "./Sample";
 import { WordGloss } from "./WordGloss";
 import "./chapter.css";
 
@@ -25,11 +26,6 @@ export interface ChapterContext {
 }
 interface SectionProps { variety: Variety; ctx: ChapterContext }
 
-// These views are emitted by the facade, but are not yet in model.ts.
-export interface GrammarView {
-  categories: { category: string; label: string; description: string; eligible: number; howSynthetic: number; contrastRetention: number }[];
-  markers: { id: number; category: string; kind: string; side: string; form: string; spelled: string; said: string | null; ipa: string; share: number; born: number; retired: number | null; productive: boolean; history: HistoryLine[]; origin: { kind: string; gloss?: string; from?: number; language?: string } }[];
-}
 export interface ParadigmView {
   category: string;
   label: string;
@@ -103,15 +99,26 @@ export function SoundLaws({ variety, ctx }: SectionProps) {
   </div>;
 }
 
-export function WordBuilding({ variety: v, ctx }: SectionProps) {
-  const grammar = (v as Variety & { grammar?: GrammarView }).grammar;
+export function WordBuilding({ variety: v }: SectionProps) {
   return <div className="language-section">
     <p>Words are built with {v.wordBuilding}.</p>
     <dl className="builders">{v.builders.map((b) => <div key={b.relation}><dt>{b.relation}</dt><dd className="ipa">{b.shape}</dd></div>)}</dl>
-    <h4>Grammar</h4>
-    {grammar ? grammar.categories.map((category) => <section key={category.category} className="grammar-category"><h5>{category.label}</h5><p>{category.description} {category.eligible} eligible words; {Math.round(category.howSynthetic * 100)}% bound marking, {Math.round(category.contrastRetention * 100)}% retain a contrast.</p><ul className="roster">{grammar.markers.filter((m) => m.category === category.category).map((m) => <li key={m.id}><span className="word">{m.spelled || "∅"}</span>{m.said !== null ? <> · said <span className="word">{m.said}</span></> : null} <span className="ipa">/{m.ipa}/</span> · {m.side} {m.kind}, {Math.round(m.share * 100)}% of uses; {m.productive ? "productive" : "not productive"}{m.retired !== null ? `; retired in ${year(m.retired)}` : `; since ${year(m.born)}`}.{m.origin.kind === "grammaticalized" ? <> From the word “{m.origin.gloss}”.</> : m.origin.kind === "imported" && m.origin.from !== undefined ? <> Imported from {language(m.origin.from, ctx)}.</> : m.origin.kind === "fused" ? " Fused from a particle." : " Founding marker."}<details><summary>Recorded changes</summary><ol className="history">{m.history.map((line, i) => <li key={i}><span className="gen">{line.generation * YEARS}</span><span>{line.text}</span></li>)}</ol></details></li>)}</ul></section>) : <p className="muted">This engine view does not expose its grammar markers. It models count noun plural and verb past; no further grammar is implied here.</p>}
+  </div>;
+}
+
+export function GrammarSketch({ variety: v, ctx }: SectionProps) {
+  const grammar = v.grammar;
+  const object = grammar.markers.find((marker) => marker.category === "object" && marker.productive && marker.retired === null && marker.kind !== "none");
+  return <div className="language-section grammar-sketch">
+    <p>{WORD_ORDER_PHRASE[grammar.order].prose}; {MARKING_PHRASE[grammar.marking].prose}
+      {grammar.marking === "case" && object ? <> with <span className="word">{object.spelled}</span></> : null}; {POSSESSOR_PHRASE[grammar.possessor].prose}.</p>
+    {grammar.sample ? <>
+      <Sample rendering={grammar.sample.sentence} label="Sample sentence" />
+      <Sample rendering={grammar.sample.possession} label="Sample possession" />
+    </> : null}
+    {grammar.categories.map((category) => <section key={category.category} className="grammar-category"><h5>{category.label}</h5><p>{category.description} {category.eligible} eligible words; {Math.round(category.howSynthetic * 100)}% bound marking, {Math.round(category.contrastRetention * 100)}% retain a contrast.</p><ul className="roster">{grammar.markers.filter((m) => m.category === category.category).map((m) => <li key={m.id}><span className="word">{m.spelled || "∅"}</span>{m.said !== null ? <> · said <span className="word">{m.said}</span></> : null} <span className="ipa">/{m.ipa}/</span> · {m.side} {m.kind}, {Math.round(m.share * 100)}% of uses; {m.productive ? "productive" : "not productive"}{m.retired !== null ? `; retired in ${year(m.retired)}` : `; since ${year(m.born)}`}.{m.origin.kind === "grammaticalized" ? <> From the word “{m.origin.gloss}”.</> : m.origin.kind === "imported" ? <> Imported from {language(m.origin.from, ctx)}.</> : m.origin.kind === "fused" ? " Fused from a particle." : " Founding marker."}<details><summary>Recorded changes</summary><ol className="history">{m.history.map((line, i) => <li key={i}><span className="gen">{line.generation * YEARS}</span><span>{line.text}</span></li>)}</ol></details></li>)}</ul></section>)}
     <h4>Not yet modelled</h4>
-    <p className="muted">Inflection beyond count noun plural and verb past; productive root-and-pattern inflection; agreement, case, future marking, syntax and alignment. Compounding and derivation after founding are limited to renewal and new meanings.</p>
+    <p className="muted">Agreement, gender and noun classes, tense beyond past, pronoun paradigms, and a genitive marker.</p>
   </div>;
 }
 
@@ -241,6 +248,7 @@ export const CHAPTER = [
   { id: "sounds", title: "Sounds", Section: Sounds },
   { id: "laws", title: "Sound laws", Section: SoundLaws },
   { id: "building", title: "Word building", Section: WordBuilding },
+  { id: "grammar", title: "Grammar", Section: GrammarSketch },
   { id: "lexicon", title: "Lexicon", Section: Lexicon },
   { id: "names", title: "Names", Section: Names },
   { id: "standing", title: "Standing", Section: Standing },
@@ -256,7 +264,8 @@ export function ChapterSummary({ variety: v, section, ctx }: SectionProps & { se
     }
     case "sounds": return <p>{v.consonants.length} consonants, {v.vowels.length} vowels; stress {STRESS_RULE[v.stress]}.</p>;
     case "laws": return <p>{v.laws.length ? <>{v.laws.length} laws; the latest in {year(v.laws.at(-1)!.generation)}: {v.laws.at(-1)!.label}.</> : "No sound laws yet."}</p>;
-    case "building": return <p>{v.wordBuilding}; count noun plural and verb past.</p>;
+    case "building": return <p>{v.wordBuilding}.</p>;
+    case "grammar": return <p>{WORD_ORDER_PHRASE[v.grammar.order].summary}; {MARKING_PHRASE[v.grammar.marking].summary}; {POSSESSOR_PHRASE[v.grammar.possessor].summary}.</p>;
     case "lexicon": return <p>{v.words.toLocaleString()} words, with origins, competitors, and cognates.</p>;
     case "names": return <p>{v.names.slice(0, 3).map((n) => n.name).join(", ") || "No given names recorded"}; {v.nameStyle === "double" ? "two-part" : "one-word"} names.</p>;
     default: return <p>{v.spoken ? "Spoken" : "Silent"}{v.standardOf !== null ? "; standard" : ""}{v.classicalOf !== null ? "; classical" : ""}{v.sacredOf !== null ? "; sacred" : ""}; {v.high !== null && v.vernacular === null ? <>writes {language(v.high, ctx)}</> : v.written !== null ? "written" : "unwritten"}.</p>;

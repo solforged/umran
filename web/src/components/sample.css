@@ -1,0 +1,7 @@
+.grammar-sample { margin: .65rem 0; overflow-x: auto; }
+.sample-columns { display: flex; gap: .85rem; align-items: start; width: max-content; max-width: none; padding-bottom: .15rem; }
+.sample-column { display: grid; grid-template-rows: auto auto auto; gap: .12rem; white-space: nowrap; }
+.sample-column .word { font-size: 1.05rem; }
+.sample-column .ipa { font-size: .8rem; color: var(--ink-soft); }
+.sample-gloss { font-size: .75rem; color: var(--ink-soft); }
+.sample-category { font-variant: small-caps; letter-spacing: .035em; }

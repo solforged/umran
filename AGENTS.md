@@ -41,7 +41,7 @@ Read further when the task touches it:
   worlds, the last opened leading, each a miniature of its map drawn
   from its seed with the peoples saved in the shelf index); founding
   (`Founding`: the chart with its title box and the book of accounts,
-  one line per people when closed, five stages when open, each choice a
+  one line per people when closed, six stages when open, each choice a
   `Phrase` that opens a menu; `ReachOverlay` draws who can meet whom);
   the workshop (`Stage`: `MapView` with its layers, label policy by
   zoom, and the `lens` that draws the chart as one people knew it; the

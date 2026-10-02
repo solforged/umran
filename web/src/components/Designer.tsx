@@ -134,7 +134,8 @@ export function Designer({
             <select
               defaultValue=""
               onChange={(e) => {
-                if (e.target.value) setDesign(presetDesign(e.target.value, seed));
+                const preset = e.target.value;
+                if (preset) setDesign((current) => ({ ...presetDesign(preset, seed), ...(current.grammar ? { grammar: current.grammar } : {}) }));
                 e.target.value = "";
               }}
             >
@@ -156,7 +157,7 @@ export function Designer({
             Vowels <output>{vowels}</output>
             <input type="range" min={2} max={10} value={vowels} onChange={(e) => setVowels(Number(e.target.value))} />
           </label>
-          <button type="button" onClick={() => setDesign(frequencyDesign(seed, consonants, vowels))}>
+          <button type="button" onClick={() => setDesign((current) => ({ ...frequencyDesign(seed, consonants, vowels), ...(current.grammar ? { grammar: current.grammar } : {}) }))}>
             Draw by world frequency
           </button>
         </section>

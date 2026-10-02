@@ -146,7 +146,7 @@ is fixed once given, so the title never drifts as a people's name wears.
 An authored title is marked `named` on the entry and kept on every save.
 
 Founding keeps one account open beside the chart, with independent
-homeland, livelihood, temper, speech, and identity choices; the others
+homeland, livelihood, temper, speech, grammar, and identity choices; the others
 are one inked line each. The chosen people's reach, from the engine's
 founding preview, is drawn on the chart rather than listed.
 

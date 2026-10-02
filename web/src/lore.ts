@@ -311,3 +311,19 @@ export const MECHANISM_NAME: Record<Mechanism, string> = {
   pilgrimage: "along a pilgrim road",
   "unfaithful-holder": "against an unfaithful holder",
 };
+
+export const WORD_ORDER_PHRASE = {
+  SOV: { choice: "the verb last", prose: "The verb comes last", summary: "Verb last" },
+  SVO: { choice: "the verb between", prose: "The verb comes between", summary: "Verb between" },
+  VSO: { choice: "the verb first", prose: "The verb comes first", summary: "Verb first" },
+} as const;
+
+export const MARKING_PHRASE = {
+  case: { choice: "mark the thing acted on", prose: "the thing acted on is marked on the noun", summary: "object marked on the noun" },
+  order: { choice: "let the order say who did what", prose: "word order says who did what", summary: "word order marks the object" },
+} as const;
+
+export const POSSESSOR_PHRASE = {
+  before: { choice: "the child's fish", prose: "the possessor comes before", summary: "possessor before" },
+  after: { choice: "the fish of the child", prose: "the possessor comes after", summary: "possessor after" },
+} as const;
