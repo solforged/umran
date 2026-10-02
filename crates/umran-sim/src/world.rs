@@ -379,7 +379,7 @@ pub struct Journey {
     pub by_sea: bool,
 }
 
-fn row_distance(row: &[(u32, f32)], region: usize) -> f32 {
+pub(crate) fn row_distance(row: &[(u32, f32)], region: usize) -> f32 {
     row.binary_search_by_key(&(region as u32), |&(r, _)| r)
         .map_or(f32::INFINITY, |i| row[i].1)
 }
@@ -388,7 +388,7 @@ fn pair(a: usize, b: usize) -> (usize, usize) {
     (a.min(b), a.max(b))
 }
 
-fn route_row(map: &Map, source: usize, reach: f32, by_sea: bool) -> Cow<'_, [(u32, f32)]> {
+pub(crate) fn route_row(map: &Map, source: usize, reach: f32, by_sea: bool) -> Cow<'_, [(u32, f32)]> {
     if reach <= CACHE_REACH_KM {
         Cow::Borrowed(if by_sea { map.voyage_cached(source) } else { map.walking_cached(source) })
     } else if by_sea { map.voyage_row(source, reach) } else { map.walking_row(source, reach) }
@@ -1583,7 +1583,6 @@ impl World {
         self.standardize();
         self.spread_crafts();
         self.found_religions();
-        self.make_pilgrimages();
         self.spread_faiths();
         self.divide_faiths();
         self.send_pilgrims();
@@ -3974,21 +3973,21 @@ mod tests {
         world.params.pilgrimage_rate = 1.0;
         world.learn(holder, Craft::Seafaring, None);
         assert!(world.journey_between(pilgrim, holder).is_some());
-        world.make_pilgrimages();
+        world.send_pilgrims();
         assert!(world.contacts.is_empty());
         world.learn(pilgrim, Craft::Seafaring, None);
         let effort = world.map.voyage(home, shrine);
         world.params.pilgrimage_reach = effort - 0.01;
-        world.make_pilgrimages();
+        world.send_pilgrims();
         assert!(world.contacts.is_empty());
         world.params.pilgrimage_reach = effort;
-        world.make_pilgrimages();
+        world.send_pilgrims();
         assert_eq!(world.contacts[0].kind, ContactKind::Religion);
         assert_eq!(world.contacts[0].intensity, 0.3);
         world.connect(pilgrim, holder, 0.7, ContactKind::Trade).unwrap();
         let contacts = world.contacts.clone();
         let events = world.events.clone();
-        world.make_pilgrimages();
+        world.send_pilgrims();
         assert_eq!(world.contacts, contacts);
         assert_eq!(world.events, events);
     }

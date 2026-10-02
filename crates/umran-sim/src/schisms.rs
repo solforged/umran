@@ -4,11 +4,10 @@ use crate::ethos::{Effect, Ethos};
 use crate::ideas::Religion;
 use crate::names::{MAX_PEOPLE_NAME, Name, Naming, clipped, given_name};
 use crate::rng::{index, key, stream, weighted_index};
-use crate::world::{ContactKind, World, WorldEvent};
+use crate::world::{ContactKind, World, WorldEvent, route_row, row_distance};
 use rand::Rng;
 use serde::Serialize;
 
-const PILGRIM_REACH: f32 = 18.0;
 const SCHISM_QUIET: u32 = 12;
 const MAX_DESCENDANTS: usize = 6;
 const REFORM_SHARING: f32 = 0.55;
@@ -432,108 +431,46 @@ impl World {
         (name, named)
     }
 
-    /// Cheapest permitted route. The precomputed all-pairs distances both
-    /// gate reach and reconstruct the usual path. A land-only detour is
-    /// needed only when the unconstrained cheapest path takes a sea shortcut.
+    /// Cheapest permitted journey from a held land to the exact shrine.
     pub fn pilgrim_path(&self, community: usize, to: usize) -> Option<Vec<usize>> {
-        let from = self.communities[community].home();
-        if self.map.distance(from, to) > PILGRIM_REACH {
-            return None;
-        }
-        let sails = self.sails(community);
-        if !sails && self.map.regions[from].landmass != self.map.regions[to].landmass {
-            return None;
-        }
-        let mut path = vec![from];
-        let mut at = from;
-        while at != to {
-            let next = self.map.regions[at]
-                .neighbours
-                .iter()
-                .copied()
-                .min_by(|&a, &b| {
-                    let cost = |n: usize| {
-                        (self.map.regions[at].terrain.travel()
-                            + self.map.regions[n].terrain.travel())
-                            / 2.0
-                            + self.map.distance(n, to)
-                    };
-                    cost(a).total_cmp(&cost(b)).then(a.cmp(&b))
-                })?;
-            if !sails && !self.map.regions[next].terrain.is_land() {
-                return self.pilgrim_land_path(from, to);
-            }
-            path.push(next);
-            at = next;
-        }
-        Some(path)
-    }
-
-    fn pilgrim_land_path(&self, from: usize, to: usize) -> Option<Vec<usize>> {
-        let n = self.map.regions.len();
-        let mut distances = vec![f32::INFINITY; n];
-        let mut previous = vec![None; n];
-        let mut visited = vec![false; n];
-        distances[from] = 0.0;
-        loop {
-            let at = (0..n)
-                .filter(|&r| !visited[r])
-                .min_by(|&a, &b| distances[a].total_cmp(&distances[b]).then(a.cmp(&b)))?;
-            if distances[at] > PILGRIM_REACH {
-                return None;
-            }
-            if at == to {
-                break;
-            }
-            visited[at] = true;
-            for &next in &self.map.regions[at].neighbours {
-                if !self.map.regions[next].terrain.is_land() || visited[next] {
-                    continue;
-                }
-                let cost = distances[at]
-                    + (self.map.regions[at].terrain.travel()
-                        + self.map.regions[next].terrain.travel())
-                        / 2.0;
-                if cost < distances[next] {
-                    distances[next] = cost;
-                    previous[next] = Some(at);
-                }
-            }
-        }
-        let mut path = vec![to];
-        let mut at = to;
-        while at != from {
-            at = previous[at]?;
-            path.push(at);
-        }
-        path.reverse();
-        Some(path)
+        let reach = self.params.pilgrimage_reach;
+        let journey = self.journey_to_within(community, to, reach)?;
+        let from = self.communities[community].lands.iter().copied().find(|&r| {
+            row_distance(&route_row(&self.map, r, reach, journey.by_sea), to) == journey.effort
+        })?;
+        self.map.route_path(from, to, journey.by_sea, reach)
     }
 
     pub(crate) fn send_pilgrims(&mut self) {
-        if self.params.pilgrimage_rate <= 0.0 {
-            return;
-        }
+        let spatial = self.spatial();
+        let mut contacts = self.contact_index();
         for religion in 0..self.religions.len() {
             let mut routes = std::mem::take(&mut self.religions[religion].pilgrims);
             routes.retain(|p| {
-                self.communities[p.people].living()
-                    && self.communities[p.people].faith == Some(religion)
-                    && self.communities[p.people].home() == p.from
+                if !self.communities[p.people].living()
+                    || self.communities[p.people].faith != Some(religion)
+                    || !self.communities[p.people].lands.contains(&p.from) {
+                    return false;
+                }
+                let by_sea = p.path.iter().any(|&r| !self.map.regions[r].terrain.is_land());
+                let effort = if by_sea && self.sails(p.people) { self.map.voyage(p.from, p.to) }
+                    else if !by_sea { self.map.distance(p.from, p.to) }
+                    else { f32::INFINITY };
+                effort <= self.params.pilgrimage_reach
             });
-            let shrines: Vec<_> = self.religions[religion]
-                .shrines()
-                .map(|s| s.region)
-                .collect();
-            for c in self
-                .living()
-                .filter(|&c| self.communities[c].faith == Some(religion))
-            {
-                let from = self.communities[c].home();
+            let shrines: Vec<_> = self.religions[religion].shrines().map(|s| s.region).collect();
+            let faithful: Vec<_> = self.living()
+                .filter(|&c| self.communities[c].faith == Some(religion)).collect();
+            for c in faithful {
                 for &to in &shrines {
-                    if from == to || routes.iter().any(|p| p.people == c && p.to == to) {
-                        continue;
-                    }
+                    if self.params.pilgrimage_rate <= 0.0 { continue; }
+                    let Some(journey) = self.journey_to_within(c, to, self.params.pilgrimage_reach)
+                        else { continue };
+                    let existing = routes.iter().any(|p| p.people == c && p.to == to);
+                    let holders: Vec<_> = spatial.dwellers[to].iter().copied()
+                        .filter(|&(holder, n)| holder != c && n > 0.0 && !contacts.contains(c, holder))
+                        .collect();
+                    if holders.is_empty() && (existing || journey.effort == 0.0) { continue; }
                     let mut rng = stream(
                         self.seed,
                         &[
@@ -550,14 +487,17 @@ impl World {
                     {
                         continue;
                     }
-                    if let Some(path) = self.pilgrim_path(c, to) {
+                    if !existing && journey.effort > 0.0 {
+                        let path = self.pilgrim_path(c, to).expect("the bounded journey has a path");
                         routes.push(Pilgrimage {
-                            people: c,
-                            from,
-                            to,
-                            path,
-                            since: self.generation,
+                            people: c, from: path[0], to, path, since: self.generation,
                         });
+                    }
+                    if !holders.is_empty() {
+                        let holder = holders[weighted_index(&mut rng, holders.iter().map(|(_, n)| *n))].0;
+                        self.connect(c, holder, 0.3, ContactKind::Religion)
+                            .expect("the pilgrim reaches land held by the shrine holder");
+                        contacts.insert(*self.contacts.last().unwrap());
                     }
                 }
             }
@@ -581,33 +521,6 @@ impl World {
                             to: route.to,
                         },
                     ));
-                }
-                let Some(holder) = self.land_holder(route.to) else {
-                    continue;
-                };
-                if holder == route.people {
-                    continue;
-                }
-                let mut rng = stream(
-                    self.seed,
-                    &[
-                        key("pilgrimage"),
-                        key("contact"),
-                        religion as u64,
-                        route.people as u64,
-                        holder as u64,
-                        route.to as u64,
-                    ],
-                );
-                let intensity = rng.gen_range(0.25..0.4);
-                if let Some(contact) = self.contacts.iter_mut().find(|k| {
-                    (k.a, k.b) == (route.people, holder) || (k.b, k.a) == (route.people, holder)
-                }) {
-                    // Preserve rule and other established dealings, and never
-                    // reset their age: ordinary contact turnover still applies.
-                    contact.intensity = contact.intensity.max(intensity);
-                } else {
-                    self.connect(route.people, holder, intensity, ContactKind::Religion);
                 }
             }
             self.religions[religion].pilgrims = routes;
@@ -666,8 +579,8 @@ mod tests {
         let other_faith = settled(&mut world, home);
         world.convert(subject, parent, None);
         world.convert(outsider, parent, None);
-        world.connect(ruler, subject, 0.6, ContactKind::Rule);
-        world.connect(ruler, other_faith, 0.6, ContactKind::Rule);
+        world.connect(ruler, subject, 0.6, ContactKind::Rule).unwrap();
+        world.connect(ruler, other_faith, 0.6, ContactKind::Rule).unwrap();
         let branch = world.schism(ruler, SchismCause::Rule).unwrap();
         assert_eq!(world.communities[ruler].faith, Some(branch));
         assert_eq!(world.communities[subject].faith, Some(branch));
@@ -749,7 +662,7 @@ mod tests {
                 world.map.regions.iter().enumerate().find_map(|(b, s)| {
                     (s.terrain.is_land()
                         && r.landmass != s.landmass
-                        && world.map.distance(a, b) < PILGRIM_REACH)
+                        && world.map.voyage(a, b) <= world.params.pilgrimage_reach)
                         .then_some((a, b))
                 })
             })
@@ -768,14 +681,11 @@ mod tests {
         let route = &world.religions[religion].pilgrims[0];
         assert_eq!(route.path.first(), Some(&remote));
         assert_eq!(route.path.last(), Some(&home));
-        let mut cost = 0.0;
+        assert!(route.path[1..route.path.len()-1].iter().all(|&r| !world.map.regions[r].terrain.is_land()));
         for pair in route.path.windows(2) {
             assert!(world.map.regions[pair[0]].neighbours.contains(&pair[1]));
-            cost += (world.map.regions[pair[0]].terrain.travel()
-                + world.map.regions[pair[1]].terrain.travel())
-                / 2.0;
         }
-        assert!((cost - world.map.distance(remote, home)).abs() < 0.0001);
+        assert!(world.map.voyage(remote, home) <= world.params.pilgrimage_reach);
         world.send_pilgrims();
         world.religions[religion].pilgrims.clear();
         world.send_pilgrims();

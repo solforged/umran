@@ -17,9 +17,11 @@ and integer squares use explicit multiplication.
   (`MapSize`). Regions are Voronoi cells around jittered hex-grid points,
   so each borders about six others. Terrain is sea, plains, forest,
   steppe, hills, mountains, or desert. About half the regions are land, split
-  into two main continents and separate small islands. Each land region
-  has one `landmass`; sea has none. Continental budgets are checked during
-  generation rather than left to a favourable seed.
+  among separated continental bodies and small islands. Each land region
+  has one `landmass`; sea has none. The existing sizes have one to three
+  continents with size-specific budgets. Vast has two, each at least
+  800 regions. Budgets are checked rather than left to a favourable seed.
+  Founders settle continents before islands.
   Drawing coordinates stay in map units. One unit means 100 km.
   Shared-border midpoints give geometric centre-to-centre routes.
   Terrain multiplies their physical length to give effort-km, equivalent
@@ -424,16 +426,17 @@ and integer squares use explicit multiplication.
   per-faith hazard by a divisor of `1 + 0.4 × descendants`. Related
   branches remain rivals, but conversion is twice as likely between
   them as between unrelated founded faiths.
-  Pilgrim roads begin with probability `pilgrimage_rate` (0.2) per
-  generation for every follower and shrine within eighteen travel units.
-  They follow the cheapest permitted route, using the precomputed travel
-  distances; sea requires seafaring, and non-seafarers take a land-only
-  detour if the cheapest unrestricted route crosses water. Roads persist
-  while the community lives there and follows the faith. Pilgrims create
-  religion contacts with the largest people living at the shrine, or
-  strengthen existing dealings to intensity 0.25–0.4 without replacing
-  their kind or resetting their age. Ordinary contact turnover still
-  applies, so roads no longer travelled leave contacts that fade.
+  Pilgrim roads begin with probability `pilgrimage_rate` (0.02) per
+  generation for every follower and shrine within 1,200 effort-km.
+  They follow the cheapest permitted directed journey from a held land
+  to the exact site. A boat journey requires the pilgrim's own Seafaring
+  and coastal endpoints, with no borrowed port or inland leg.
+  Roads persist only while their departure land remains held, their
+  people follow the faith, and their recorded mode stays reachable.
+  Pilgrims open Religion at intensity 0.3 with a shrine holder, weighted
+  by population at that site. Existing contacts stay unchanged.
+  Contact creation uses the pilgrimage hazard even on an existing road.
+  Ordinary contact turnover and physical reconciliation still apply.
   Borrowing and waves use those contacts without a separate mechanism.
   Each faith records its first overseas pilgrims from each landmass.
   A holy land's holder is its largest local population (lowest community

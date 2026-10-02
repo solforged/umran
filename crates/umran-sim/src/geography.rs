@@ -269,6 +269,7 @@ struct RouteScratch {
     distance: Vec<f64>,
     touched: Vec<u32>,
     heap: BinaryHeap<RouteVisit>,
+    predecessor: Option<Vec<u32>>,
 }
 
 impl RouteScratch {
@@ -277,6 +278,7 @@ impl RouteScratch {
             distance: vec![f64::INFINITY; n],
             touched: Vec::new(),
             heap: BinaryHeap::new(),
+            predecessor: None,
         }
     }
 
@@ -287,7 +289,7 @@ impl RouteScratch {
         self.heap.clear();
     }
 
-    fn relax(&mut self, region: u32, effort: f64, reach: f32) {
+    fn relax(&mut self, region: u32, effort: f64, reach: f32, previous: u32) {
         // Radius boundaries use the public f32 effort, including its rounding.
         if effort as f32 > reach || effort >= self.distance[region as usize] {
             return;
@@ -296,6 +298,9 @@ impl RouteScratch {
             self.touched.push(region);
         }
         self.distance[region as usize] = effort;
+        if let Some(parents) = &mut self.predecessor {
+            parents[region as usize] = previous;
+        }
         self.heap.push(RouteVisit { effort, region });
     }
 
@@ -532,6 +537,31 @@ impl Map {
         self.route_pair(a, b, RouteMode::Voyage)
     }
 
+    /// Builds a path only for consumers that display an actual journey.
+    pub(crate) fn route_path(&self, source: usize, target: usize, by_sea: bool, reach: f32) -> Option<Vec<usize>> {
+        let mode = if by_sea { RouteMode::Voyage } else { RouteMode::Walking };
+        let eligible = if by_sea {
+            source != target && self.coastal(source) && self.coastal(target)
+        } else {
+            self.regions[source].terrain.is_land() && self.regions[target].terrain.is_land()
+                && self.regions[source].landmass == self.regions[target].landmass
+        };
+        if !eligible || !(reach >= 0.0) { return None; }
+        let mut scratch = RouteScratch::new(self.regions.len());
+        scratch.predecessor = Some(vec![u32::MAX; self.regions.len()]);
+        self.search_routes(source, reach, mode, Some(target), &mut scratch);
+        if !scratch.distance[target].is_finite() { return None; }
+        let parents = scratch.predecessor.as_ref().unwrap();
+        let mut path = vec![target];
+        let mut at = target;
+        while at != source {
+            at = parents[at] as usize;
+            path.push(at);
+        }
+        path.reverse();
+        Some(path)
+    }
+
     /// ID-sorted reachable land within an inclusive effort-km radius.
     /// Infinity requests the full exact row, not the cached neighbourhood.
     pub fn walking_row(&self, source: usize, reach: f32) -> Cow<'_, [(u32, f32)]> {
@@ -626,7 +656,7 @@ impl Map {
         scratch: &mut RouteScratch,
     ) {
         scratch.reset();
-        scratch.relax(source as u32, 0.0, reach);
+        scratch.relax(source as u32, 0.0, reach, source as u32);
         while let Some(RouteVisit { effort, region }) = scratch.heap.pop() {
             let r = region as usize;
             if effort != scratch.distance[r] {
@@ -649,7 +679,7 @@ impl Map {
                     RouteMode::Voyage if land != next_land => f64::from(EMBARK),
                     RouteMode::Voyage => 0.0,
                 };
-                scratch.relax(next, effort + f64::from(edge_effort) + surcharge, reach);
+                scratch.relax(next, effort + f64::from(edge_effort) + surcharge, reach, region);
             }
         }
     }
@@ -1850,6 +1880,28 @@ mod tests {
                 assert_eq!(map.distance(source, destination), map.distance(destination, source));
                 assert_eq!(map.voyage(source, destination), voyages[destination]);
                 assert_eq!(map.voyage(source, destination), map.voyage(destination, source));
+                for (by_sea, expected) in [(false, walk[source * n + destination] as f32), (true, voyages[destination])] {
+                    let path = map.route_path(source, destination, by_sea, CACHE_REACH_KM);
+                    if !expected.is_finite() || expected > CACHE_REACH_KM {
+                        assert!(path.is_none());
+                        continue;
+                    }
+                    let path = path.unwrap();
+                    assert_eq!(path.first(), Some(&source));
+                    assert_eq!(path.last(), Some(&destination));
+                    if by_sea {
+                        assert!(path[1..path.len()-1].iter().all(|&r| !map.regions[r].terrain.is_land()));
+                    } else {
+                        assert!(path.iter().all(|&r| map.regions[r].terrain.is_land()));
+                    }
+                    let cost: f64 = path.windows(2).map(|p| {
+                        let embark = if map.regions[p[0]].terrain.is_land() != map.regions[p[1]].terrain.is_land() {
+                            f64::from(EMBARK)
+                        } else { 0.0 };
+                        f64::from(map.edges.get(p[0], p[1]).unwrap()) + embark
+                    }).sum();
+                    assert_eq!(cost as f32, expected);
+                }
             }
             for reach in [0.0, 400.0, CACHE_REACH_KM, f32::INFINITY] {
                 let expected_walk: Vec<_> = (0..n).filter_map(|r| {
