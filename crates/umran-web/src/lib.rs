@@ -6,15 +6,16 @@ mod annals;
 use annals::{Annal, annals};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use umran_sim::climate::ClimateCause;
 use umran_sim::compare::intelligibility;
 use umran_sim::concepts::{Concept, by_id, related};
-use umran_sim::geography::{KM_PER_UNIT, LandmassKind};
+use umran_sim::geography::{KM_PER_UNIT, LandmassKind, RIVER_TRAVEL_FLOW};
 use umran_sim::grammar::{
     Category, GrammarChoice, GrammarEntry, GrammarEvent, Marker as GrammarMarker, MarkerOrigin,
 };
 use umran_sim::ideas::{NEEDS, Need, SacredKind};
 use umran_sim::morphology::Slot;
-use umran_sim::names::{Name, PlaceOrigin};
+use umran_sim::names::{Name, PlaceName, PlaceOrigin};
 use umran_sim::phoneme::{Backness, Manner, Secondary};
 use umran_sim::schisms::{BranchNaming, HolyLand, Pilgrimage, SchismCause};
 use umran_sim::{
@@ -123,6 +124,16 @@ impl Workbench {
     /// The land: regions with their outlines and terrain.
     pub fn map(&self) -> Result<String, JsValue> {
         self.bench.map().map_err(fail)
+    }
+
+    /// The climate and feeding capacities at `generation`.
+    pub fn climate(&mut self, generation: u32) -> Result<String, JsValue> {
+        self.bench.climate(generation).map_err(fail)
+    }
+
+    /// A river's names and local forms at `generation`.
+    pub fn river(&mut self, generation: u32, id: usize) -> Result<String, JsValue> {
+        self.bench.river(generation, id).map_err(fail)
     }
 
     /// Every living people's word for `concept`, grouped by common root.
@@ -836,6 +847,10 @@ impl Bench {
                     id,
                     terrain: r.terrain,
                     area_km2: r.area_km2,
+                    elevation: r.elevation,
+                    moisture: r.moisture,
+                    warmth: r.warmth,
+                    climate_zone: r.climate_zone,
                     landmass: r.landmass,
                     site: r.site,
                     outline: r.outline.clone(),
@@ -853,6 +868,115 @@ impl Bench {
                     kind: landmass.kind,
                     regions: landmass.regions.clone(),
                     anchor: landmass.anchor,
+                })
+                .collect(),
+            rivers: map
+                .rivers
+                .iter()
+                .enumerate()
+                .map(|(id, river)| RiverView {
+                    id,
+                    course: &river.course,
+                    mouth: river.mouth,
+                    catchment: &river.catchment,
+                    joins: river.joins,
+                })
+                .collect(),
+            climate_zones: map
+                .climate_zones
+                .iter()
+                .enumerate()
+                .map(|(id, zone)| ClimateZoneView {
+                    id,
+                    regions: &zone.regions,
+                })
+                .collect(),
+        })
+    }
+
+    /// Climate and literal feeding capacities from the requested world's
+    /// replay, not from the present day's conditions.
+    pub fn climate(&mut self, generation: u32) -> Result<String, String> {
+        let world = self.world(generation);
+        to_json(&ClimateView {
+            generation: world.generation,
+            zones: world
+                .climate
+                .zones
+                .iter()
+                .enumerate()
+                .map(|(id, zone)| ZoneClimateView {
+                    id,
+                    epoch: zone.epoch,
+                    remaining: zone.remaining,
+                    wetness: zone.wetness,
+                    warmth: zone.warmth,
+                    target_wetness: zone.target_wetness,
+                    target_warmth: zone.target_warmth,
+                    cause: zone.cause,
+                    severity: zone.severity,
+                })
+                .collect(),
+            regions: world
+                .climate
+                .regions
+                .iter()
+                .enumerate()
+                .map(|(id, region)| RegionClimateView {
+                    id,
+                    zone: world.map.regions[id].climate_zone,
+                    wetness: region.wetness,
+                    warmth: region.warmth,
+                    vegetation: region.vegetation,
+                    river_flow: region.river_flow,
+                    feeding: FeedingView {
+                        foraging: world.feeds(id, Livelihood::Foraging),
+                        herding: world.feeds(id, Livelihood::Herding),
+                        farming: world.feeds(id, Livelihood::Farming),
+                    },
+                    severe: region.severe,
+                })
+                .collect(),
+            rivers: world
+                .map
+                .rivers
+                .iter()
+                .enumerate()
+                .map(|(id, river)| {
+                    let flow = river
+                        .course
+                        .last()
+                        .map_or(0.0, |&region| world.climate.regions[region].river_flow);
+                    RiverFlowView {
+                        id,
+                        flow,
+                        flowing: flow >= RIVER_TRAVEL_FLOW,
+                    }
+                })
+                .collect(),
+        })
+    }
+
+    /// All names and living local forms of a static river identity as
+    /// they stood at `generation`.
+    pub fn river(&mut self, generation: u32, id: usize) -> Result<String, String> {
+        let world = self.world(generation);
+        if id >= world.map.rivers.len() {
+            return Err("No such river.".into());
+        }
+        let names = &world.river_names[id];
+        let spoken = world.spoken();
+        to_json(&RiverNamesView {
+            river: id,
+            names: names.iter().map(|name| place_name_view(world, name)).collect(),
+            exonyms: world
+                .varieties
+                .iter()
+                .enumerate()
+                .filter(|(v, _)| spoken[*v] && names.last().is_some_and(|p| p.variety != *v))
+                .filter_map(|(v, speech)| {
+                    let (_, name) = speech.river_exonyms.iter().find(|(river, _)| *river == id)?;
+                    Some(place_exonym_view(world, v, name))
                 })
                 .collect(),
         })
@@ -998,6 +1122,12 @@ impl Bench {
                         kebab(&format!("{kind:?}")),
                         place.as_deref().unwrap_or("a land without a name")
                     )
+                }
+                WorldEvent::Climate { zone, change, .. } => {
+                    format!("Climate {} in zone {zone}", kebab(&format!("{change:?}")))
+                }
+                WorldEvent::RiverFlow { river, flowing, .. } => {
+                    format!("River {river} {}", if *flowing { "flow returned" } else { "flow fell" })
                 }
                 WorldEvent::Adopted {
                     community,
@@ -1288,52 +1418,57 @@ fn place_views(world: &World) -> Vec<PlaceView> {
                 .filter_map(|v| {
                     let speech = &world.varieties[v];
                     let (_, name) = speech.exonyms.iter().find(|(r, _)| *r == region)?;
-                    let spelled = speech.title(&name.form);
-                    Some(PlaceExonymView {
-                        variety: v,
-                        language: language_label(world, v),
-                        ipa: name.form.ipa_stressed(speech.stress()),
-                        heard: name.coined,
-                        once: Some(speech.title(name.form_at(name.coined)))
-                            .filter(|once| *once != spelled),
-                        spelled,
-                    })
+                    Some(place_exonym_view(world, v, name))
                 })
                 .collect(),
             names: names
                 .iter()
-                .map(|p| {
-                    let speech = &world.varieties[p.variety];
-                    let spelled = speech.title(&p.name.form);
-                    let until = p
-                        .name
-                        .log
-                        .last()
-                        .map_or(p.since, |e| e.generation.max(p.since));
-                    PlaceNameView {
-                        since: p.since,
-                        variety: p.variety,
-                        language: world.language_title_at(p.variety, p.since),
-                        ipa: p.name.form.ipa_stressed(speech.stress_at(until)),
-                        meaning: p.name.meaning.clone(),
-                        origin: match p.origin {
-                            PlaceOrigin::Coined { .. } => "coined",
-                            PlaceOrigin::Inherited => "inherited",
-                            PlaceOrigin::Kept => "kept",
-                            PlaceOrigin::Borrowed => "borrowed",
-                        },
-                        by: match p.origin {
-                            PlaceOrigin::Coined { community } => Some(community),
-                            _ => None,
-                        },
-                        once: Some(speech.title(p.name.form_at(p.since)))
-                            .filter(|once| *once != spelled),
-                        spelled,
-                    }
-                })
+                .map(|p| place_name_view(world, p))
                 .collect(),
         })
         .collect()
+}
+
+fn place_exonym_view(world: &World, variety: usize, name: &Name) -> PlaceExonymView {
+    let speech = &world.varieties[variety];
+    let spelled = speech.title(&name.form);
+    PlaceExonymView {
+        variety,
+        language: language_label(world, variety),
+        ipa: name.form.ipa_stressed(speech.stress()),
+        heard: name.coined,
+        once: Some(speech.title(name.form_at(name.coined))).filter(|once| *once != spelled),
+        spelled,
+    }
+}
+
+fn place_name_view(world: &World, place: &PlaceName) -> PlaceNameView {
+    let speech = &world.varieties[place.variety];
+    let spelled = speech.title(&place.name.form);
+    let until = place
+        .name
+        .log
+        .last()
+        .map_or(place.since, |entry| entry.generation.max(place.since));
+    PlaceNameView {
+        since: place.since,
+        variety: place.variety,
+        language: world.language_title_at(place.variety, place.since),
+        ipa: place.name.form.ipa_stressed(speech.stress_at(until)),
+        meaning: place.name.meaning.clone(),
+        origin: match place.origin {
+            PlaceOrigin::Coined { .. } => "coined",
+            PlaceOrigin::Inherited => "inherited",
+            PlaceOrigin::Kept => "kept",
+            PlaceOrigin::Borrowed => "borrowed",
+        },
+        by: match place.origin {
+            PlaceOrigin::Coined { community } => Some(community),
+            _ => None,
+        },
+        once: Some(speech.title(place.name.form_at(place.since))).filter(|once| *once != spelled),
+        spelled,
+    }
 }
 
 /// Every people's going to new land, in order.
@@ -1948,6 +2083,13 @@ struct PlaceView {
     names: Vec<PlaceNameView>,
     /// What speakers of other living languages call it now, each heard
     /// from its holders once and changed since by its own sound laws.
+    exonyms: Vec<PlaceExonymView>,
+}
+
+#[derive(Serialize)]
+struct RiverNamesView {
+    river: usize,
+    names: Vec<PlaceNameView>,
     exonyms: Vec<PlaceExonymView>,
 }
 
@@ -3072,7 +3214,7 @@ struct WordView {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct MapView {
+struct MapView<'a> {
     size: MapSize,
     width: f32,
     height: f32,
@@ -3080,6 +3222,8 @@ struct MapView {
     km_per_unit: f32,
     regions: Vec<RegionView>,
     landmasses: Vec<LandmassView>,
+    rivers: Vec<RiverView<'a>>,
+    climate_zones: Vec<ClimateZoneView<'a>>,
 }
 
 #[derive(Serialize)]
@@ -3088,6 +3232,10 @@ struct RegionView {
     id: usize,
     terrain: Terrain,
     area_km2: f32,
+    elevation: f32,
+    moisture: f32,
+    warmth: f32,
+    climate_zone: Option<usize>,
     /// Index into the map's landmasses; `None` for sea.
     landmass: Option<usize>,
     site: [f32; 2],
@@ -3105,6 +3253,70 @@ struct LandmassView {
     kind: LandmassKind,
     regions: Vec<usize>,
     anchor: usize,
+}
+
+#[derive(Serialize)]
+struct RiverView<'a> {
+    id: usize,
+    course: &'a [usize],
+    mouth: usize,
+    catchment: &'a [usize],
+    joins: Option<usize>,
+}
+
+#[derive(Serialize)]
+struct ClimateZoneView<'a> {
+    id: usize,
+    regions: &'a [usize],
+}
+
+#[derive(Serialize)]
+struct ClimateView {
+    generation: u32,
+    zones: Vec<ZoneClimateView>,
+    regions: Vec<RegionClimateView>,
+    rivers: Vec<RiverFlowView>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ZoneClimateView {
+    id: usize,
+    epoch: u32,
+    remaining: u32,
+    wetness: f32,
+    warmth: f32,
+    target_wetness: f32,
+    target_warmth: f32,
+    cause: ClimateCause,
+    severity: u8,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RegionClimateView {
+    id: usize,
+    zone: Option<usize>,
+    wetness: f32,
+    warmth: f32,
+    vegetation: Terrain,
+    river_flow: f32,
+    feeding: FeedingView,
+    severe: bool,
+}
+
+#[derive(Serialize)]
+struct FeedingView {
+    foraging: f32,
+    herding: f32,
+    farming: f32,
+}
+
+#[derive(Serialize)]
+struct RiverFlowView {
+    id: usize,
+    flow: f32,
+    flowing: bool,
 }
 
 #[derive(Serialize)]
@@ -3158,6 +3370,21 @@ mod tests {
             .unwrap();
         w.act(r#"{"kind":"run","generations":10}"#).unwrap();
         w
+    }
+
+    #[test]
+    fn climate_scrubbing_restores_past_conditions_after_advancing() {
+        let mut w = Bench::new(5, "medium").unwrap();
+        let initial: serde_json::Value = serde_json::from_str(&w.climate(0).unwrap()).unwrap();
+        w.act(r#"{"kind":"run","generations":12}"#).unwrap();
+        let present: serde_json::Value = serde_json::from_str(&w.climate(12).unwrap()).unwrap();
+        assert_eq!(present["generation"], 12);
+        assert_ne!(present["zones"], initial["zones"]);
+        let past: serde_json::Value = serde_json::from_str(&w.climate(0).unwrap()).unwrap();
+        assert_eq!(past, initial);
+        let clamped: serde_json::Value =
+            serde_json::from_str(&w.climate(u32::MAX).unwrap()).unwrap();
+        assert_eq!(clamped, present);
     }
 
     #[test]
