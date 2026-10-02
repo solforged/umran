@@ -235,7 +235,7 @@ mod tests {
         let mut world = World::new(seed, Params::static_society());
         let rulers = world.found(&SoundProfile::base(), 0.9, 0.5);
         let subjects = world.split(rulers, None, 0.0);
-        world.connect(rulers, subjects, 0.8, ContactKind::Rule);
+        world.connect(rulers, subjects, 0.8, ContactKind::Rule).unwrap();
         let s = world.rules(rulers).expect("rule raises a state");
         world.adopt_standard(s);
         world.learn(rulers, Craft::Writing, None);

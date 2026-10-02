@@ -1253,7 +1253,8 @@ mod tests {
                     Some(Livelihood::Farming),
                     None,
                 );
-                world.connect(smiths, learners, 0.6, ContactKind::Trade);
+                world.communities[learners].lands = world.communities[smiths].lands.clone();
+                world.connect(smiths, learners, 0.6, ContactKind::Trade).unwrap();
                 world.learn(smiths, Craft::Metalworking, None);
                 world.learn_words();
                 world.learn(learners, Craft::Metalworking, Some(smiths));

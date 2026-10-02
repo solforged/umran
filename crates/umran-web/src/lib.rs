@@ -8,7 +8,7 @@ use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use umran_sim::compare::intelligibility;
 use umran_sim::concepts::{Concept, by_id, related};
-use umran_sim::geography::LandmassKind;
+use umran_sim::geography::{KM_PER_UNIT, LandmassKind};
 use umran_sim::ideas::{NEEDS, Need, SacredKind};
 use umran_sim::morphology::Slot;
 use umran_sim::names::{Name, PlaceOrigin};
@@ -31,7 +31,7 @@ pub struct Workbench {
 
 #[wasm_bindgen]
 impl Workbench {
-    /// A new history whose map `size` ("small", "medium", or "large") is
+    /// A new history whose map `size` ("small", "medium", "large", or "vast") is
     /// drawn from `seed`.
     #[wasm_bindgen(constructor)]
     pub fn new(seed: u32, size: &str) -> Result<Workbench, JsValue> {
@@ -170,10 +170,23 @@ impl Bench {
         serde_json::to_string_pretty(&self.chronicle.recipe()).map_err(|e| e.to_string())
     }
 
-    /// Sound profiles, flavors, and contact kinds to offer in forms.
+    /// Map sizes, sound profiles, flavors, and contact kinds to offer in forms.
     pub fn catalog() -> Result<String, String> {
         to_json(&CatalogView {
             revision: ENGINE_REVISION,
+            map_sizes: [
+                ("small", "small", "63 regions, 31 land; about 950 × 620 km. A regional sea and its shores."),
+                ("medium", "middling", "130 regions, 65 land; about 1,350 × 879 km. A large regional basin."),
+                ("large", "wide", "252 regions, 126 land; about 1,850 × 1,226 km. A small subcontinental theatre."),
+                ("vast", "vast", "3,600 regions, 1,800 land; about 6,050 × 5,210 km. Two small continents and separate islands, not a globe."),
+            ]
+            .into_iter()
+            .map(|(id, name, description)| Choice {
+                id: id.into(),
+                name: name.into(),
+                description: description.into(),
+            })
+            .collect(),
             sounds: CATALOG
                 .segments
                 .iter()
@@ -798,6 +811,18 @@ impl Bench {
             size: map.size,
             width: map.width,
             height: map.height,
+            km_per_unit: KM_PER_UNIT,
+            landmasses: map
+                .landmasses
+                .iter()
+                .enumerate()
+                .map(|(id, landmass)| LandmassView {
+                    id,
+                    kind: landmass.kind,
+                    regions: landmass.regions.clone(),
+                    anchor: landmass.anchor,
+                })
+                .collect(),
             regions: map
                 .regions
                 .iter()
@@ -805,6 +830,8 @@ impl Bench {
                 .map(|(id, r)| RegionView {
                     id,
                     terrain: r.terrain,
+                    area_km2: r.area_km2,
+                    landmass: r.landmass,
                     site: r.site,
                     outline: r.outline.clone(),
                     coastal: map.coastal(id),
@@ -1311,15 +1338,16 @@ fn move_views(world: &World) -> Vec<MoveView> {
         .events
         .iter()
         .filter_map(|&(generation, ref event)| {
-            let (community, from, to, kind) = match *event {
+            let (community, from, to, kind, by_sea) = match *event {
                 WorldEvent::Migrated {
                     community,
                     from,
                     to,
-                } => (community, from, to, "migration"),
+                    by_sea,
+                } => (community, from, to, "migration", by_sea),
                 WorldEvent::Split {
-                    daughter, from, to, ..
-                } if from != to => (daughter, from, to, "split"),
+                    daughter, from, to, by_sea, ..
+                } if from != to => (daughter, from, to, "split", by_sea),
                 _ => return None,
             };
             Some(MoveView {
@@ -1328,7 +1356,7 @@ fn move_views(world: &World) -> Vec<MoveView> {
                 from,
                 to,
                 kind,
-                overseas: world.map.overseas(from, to),
+                by_sea,
             })
         })
         .collect()
@@ -1645,6 +1673,7 @@ struct Exonym {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CatalogView {
+    map_sizes: Vec<Choice>,
     sounds: Vec<SoundView>,
     /// Chart columns and rows, in display order.
     places: Vec<&'static str>,
@@ -1919,6 +1948,7 @@ struct PlaceNameView {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct MoveView {
     generation: u32,
     community: usize,
@@ -1927,7 +1957,7 @@ struct MoveView {
     /// "migration" or "split".
     kind: &'static str,
     /// Whether they crossed the sea.
-    overseas: bool,
+    by_sea: bool,
 }
 
 #[derive(Serialize)]
@@ -2592,10 +2622,14 @@ struct WordView {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct MapView {
     size: MapSize,
     width: f32,
     height: f32,
+    /// Drawing coordinates remain in map units.
+    km_per_unit: f32,
+    landmasses: Vec<LandmassView>,
     regions: Vec<RegionView>,
     landmasses: Vec<LandmassView>,
 }
@@ -2609,9 +2643,13 @@ struct LandmassView {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct RegionView {
     id: usize,
     terrain: Terrain,
+    area_km2: f32,
+    /// Index into the map's landmasses; `None` for sea.
+    landmass: Option<usize>,
     site: [f32; 2],
     outline: Vec<[f32; 2]>,
     coastal: bool,
@@ -2620,6 +2658,14 @@ struct RegionView {
     landmass: Option<usize>,
     /// Regions sharing a border with it.
     neighbours: Vec<usize>,
+}
+
+#[derive(Serialize)]
+struct LandmassView {
+    id: usize,
+    kind: LandmassKind,
+    regions: Vec<usize>,
+    anchor: usize,
 }
 
 #[derive(Serialize)]
@@ -2655,10 +2701,17 @@ mod tests {
         .to_string()
     }
 
+    fn found_at(name: &str, preset: &str, region: usize) -> String {
+        let mut action: serde_json::Value = serde_json::from_str(&found(name, preset)).unwrap();
+        action["region"] = region.into();
+        action.to_string()
+    }
+
     fn bench() -> Bench {
         let mut w = Bench::new(5, "medium").unwrap();
         w.act(&found("Hill", "familiar")).unwrap();
-        w.act(&found("Coast", "polynesian")).unwrap();
+        let home = w.chronicle.latest().communities[0].home();
+        w.act(&found_at("Coast", "polynesian", home)).unwrap();
         w.act(r#"{"kind":"connect","a":0,"b":1,"intensity":0.6,"contact":"trade"}"#)
             .unwrap();
         w.act(r#"{"kind":"run","generations":12}"#).unwrap();
@@ -2975,7 +3028,8 @@ mod tests {
     fn the_chronicle_tells_contacts_beginning_and_ending() {
         let mut w = Bench::new(5, "medium").unwrap();
         w.act(&found("Hill", "familiar")).unwrap();
-        w.act(&found("Coast", "polynesian")).unwrap();
+        let home = w.chronicle.latest().communities[0].home();
+        w.act(&found_at("Coast", "polynesian", home)).unwrap();
         w.act(r#"{"kind":"connect","a":0,"b":1,"intensity":0.6,"contact":"trade"}"#)
             .unwrap();
         w.act(r#"{"kind":"run","generations":80}"#).unwrap();
@@ -3106,6 +3160,53 @@ mod tests {
             !word["cognates"].as_array().unwrap().is_empty(),
             "Upland's water is cognate with Hill's"
         );
+    }
+
+    #[test]
+    fn physically_refused_contacts_leave_the_book_and_world_unchanged() {
+        let mut w = Bench::new(5, "medium").unwrap();
+        let landmasses = &w.chronicle.latest().map.landmasses;
+        let a = landmasses[0].anchor;
+        let b = landmasses[1].anchor;
+        w.act(&found_at("Hill", "familiar", a)).unwrap();
+        w.act(&found_at("Coast", "polynesian", b)).unwrap();
+        let saved = w.save().unwrap();
+        let before = w.overview(0).unwrap();
+        for contact in ["neighbours", "trade", "intermarriage", "religion", "rule"] {
+            let action = serde_json::json!({
+                "kind": "connect", "a": 0, "b": 1, "intensity": 0.8, "contact": contact
+            });
+            assert!(w.act(&action.to_string()).is_err(), "{contact}");
+            assert_eq!(w.save().unwrap(), saved, "{contact} changed the recipe");
+            assert_eq!(w.overview(0).unwrap(), before, "{contact} changed the world");
+        }
+        // The refusal does not prevent a later physically valid action.
+        w.act(r#"{"kind":"split","community":0,"intensity":0}"#).unwrap();
+        w.act(r#"{"kind":"connect","a":0,"b":2,"intensity":0.6,"contact":"trade"}"#)
+            .unwrap();
+        assert_eq!(w.chronicle.latest().contacts[0].kind, umran_sim::ContactKind::Trade);
+    }
+
+    #[test]
+    fn vast_recipes_replay_and_branch_on_the_same_physical_map() {
+        let mut w = Bench::new(7, "vast").unwrap();
+        let map = w.map().unwrap();
+        assert_eq!(w.chronicle.latest().map.regions.len(), 3600);
+        let home = w.chronicle.latest().map.landmasses[0].anchor;
+        w.act(&found_at("Hill", "familiar", home)).unwrap();
+        w.act(r#"{"kind":"run","generations":2}"#).unwrap();
+        let mut loaded = Bench::load(&w.save().unwrap()).unwrap();
+        assert_eq!(loaded.map().unwrap(), map);
+        assert_eq!(loaded.overview(2).unwrap(), w.overview(2).unwrap());
+        loaded.branch(1);
+        loaded.act(r#"{"kind":"craft","community":0,"craft":"writing"}"#).unwrap();
+        loaded.act(r#"{"kind":"run","generations":2}"#).unwrap();
+        let recipe: Recipe = serde_json::from_str(&loaded.save().unwrap()).unwrap();
+        assert_eq!(recipe.map, MapSize::Vast);
+        assert_eq!(loaded.latest(), 3);
+        let mut replayed = Bench::load(&loaded.save().unwrap()).unwrap();
+        assert_eq!(replayed.map().unwrap(), map);
+        assert_eq!(replayed.overview(3).unwrap(), loaded.overview(3).unwrap());
     }
 
     #[test]

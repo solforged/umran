@@ -449,7 +449,7 @@ fn apply(world: &mut World, action: &Action) -> Result<(), String> {
             if a == b {
                 return Err("a community cannot be in contact with itself".into());
             }
-            world.connect(*a, *b, *intensity, *contact);
+            world.connect(*a, *b, *intensity, *contact)?;
         }
         Action::Split {
             community: c,
@@ -719,7 +719,11 @@ mod tests {
     fn sample() -> Chronicle {
         let mut c = Chronicle::new(7, MapSize::default());
         c.act(found("Hill", "familiar")).unwrap();
-        c.act(found("Coast", "polynesian")).unwrap();
+        let mut coast = found("Coast", "polynesian");
+        if let Action::Found { region, .. } = &mut coast {
+            *region = Some(c.latest().communities[0].home());
+        }
+        c.act(coast).unwrap();
         c.act(Action::Run { generations: 15 }).unwrap();
         c.act(Action::Connect {
             a: 0,

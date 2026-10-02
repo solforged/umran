@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 use umran_sim::wold::{BORROWED_SCORE, spearman};
-use umran_sim::{CATALOG, ContactKind, Event, Field, Origin, Params, SoundProfile, World};
+use umran_sim::{CATALOG, ContactKind, Event, Field, Naming, Origin, Params, SoundProfile, World};
 
 fn world(
     seed: u64,
@@ -17,8 +17,17 @@ fn world(
 ) -> World {
     let mut world = World::new(seed, Params::static_society());
     let d = world.found(donor, 0.8, 0.4);
-    let r = world.found(recipient, 0.3, 0.7);
-    world.connect(d, r, 0.8, kind);
+    // This experiment studies language contact, not the chance of reaching it.
+    let r = world.found_seeded(
+        &Naming::People,
+        recipient,
+        seed.wrapping_add(1),
+        0.3,
+        0.7,
+        Some(world.communities[d].home()),
+        None,
+    );
+    world.connect(d, r, 0.8, kind).unwrap();
     world.run(generations);
     world
 }

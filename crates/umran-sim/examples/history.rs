@@ -5,7 +5,7 @@
 //! cargo run --release -p umran-sim --example history -- [seed] [generations]
 
 use umran_sim::compare::intelligibility;
-use umran_sim::{ContactKind, Params, SoundProfile, World, WorldEvent};
+use umran_sim::{ContactKind, Naming, Params, SoundProfile, World, WorldEvent};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -21,11 +21,19 @@ fn main() {
         },
     );
     let hill = world.found(&profile("familiar"), 0.5, 0.4);
-    let coast = world.found(&profile("polynesian"), 0.4, 0.6);
-    let empire = world.found(&profile("iranian"), 0.85, 0.3);
-    world.connect(hill, coast, 0.5, ContactKind::Trade);
-    world.connect(empire, coast, 0.8, ContactKind::Rule);
-    world.connect(empire, hill, 0.3, ContactKind::Neighbours);
+    // Begin with neighbouring peoples; later journeys still obey physical reach.
+    let home = world.communities[hill].home();
+    let coast = world.found_seeded(
+        &Naming::People, &profile("polynesian"), seed.wrapping_add(1),
+        0.4, 0.6, Some(home), None,
+    );
+    let empire = world.found_seeded(
+        &Naming::People, &profile("iranian"), seed.wrapping_add(2),
+        0.85, 0.3, Some(home), None,
+    );
+    world.connect(hill, coast, 0.5, ContactKind::Trade).unwrap();
+    world.connect(empire, coast, 0.8, ContactKind::Rule).unwrap();
+    world.connect(empire, hill, 0.3, ContactKind::Neighbours).unwrap();
     world.run(generations);
 
     println!(
@@ -44,29 +52,28 @@ fn main() {
                 community,
                 daughter,
                 to,
+                by_sea,
                 ..
             } => {
                 println!(
-                    "  gen {generation:>3}  {} splits; {} founded in {}",
+                    "  gen {generation:>3}  {} splits; {} founded in {}{}",
                     name(*community),
                     name(*daughter),
-                    place(*to, *generation)
+                    place(*to, *generation),
+                    if *by_sea { " by sea" } else { "" }
                 )
             }
             WorldEvent::Migrated {
                 community,
                 from,
                 to,
+                by_sea,
             } => println!(
                 "  gen {generation:>3}  {} leave {} for {}{}",
                 name(*community),
                 place(*from, generation.saturating_sub(1)),
                 place(*to, *generation),
-                if world.map.overseas(*from, *to) {
-                    " by sea"
-                } else {
-                    ""
-                }
+                if *by_sea { " by sea" } else { "" }
             ),
             WorldEvent::Shift {
                 community,

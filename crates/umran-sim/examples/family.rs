@@ -5,7 +5,7 @@
 //! cargo run --release -p umran-sim --example family -- [seed] [proto profile] [outsider profile] [generations]
 
 use umran_sim::compare::{Pair, Settings, compare, regular_correspondences};
-use umran_sim::{CATALOG, CONCEPTS, ContactKind, Origin, Params, SoundProfile, World, catalog};
+use umran_sim::{CATALOG, CONCEPTS, ContactKind, Naming, Origin, Params, SoundProfile, World, catalog};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -17,10 +17,18 @@ fn main() {
 
     let mut world = World::new(seed, Params::static_society());
     let west = world.found(&proto, 0.5, 0.5);
-    let outsiders = world.found(&outsider, 0.9, 0.3);
+    let outsiders = world.found_seeded(
+        &Naming::People,
+        &outsider,
+        seed.wrapping_add(1),
+        0.9,
+        0.3,
+        Some(world.communities[west].home()),
+        None,
+    );
     world.run(5);
     let east = world.split(west, None, 0.0);
-    world.connect(outsiders, east, 0.8, ContactKind::Rule);
+    world.connect(outsiders, east, 0.8, ContactKind::Rule).unwrap();
     world.run(generations);
 
     let (wv, ev) = (

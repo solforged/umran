@@ -277,15 +277,15 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 daughter,
                 from,
                 to,
+                by_sea,
             } => {
-                let overseas = world.map.overseas(from, to);
                 let mut annal = entry(
                     generation,
                     "split",
                     tell(
                         world,
                         &[key("split"), g, daughter as u64],
-                        if overseas { SPLIT_OVERSEAS } else { SPLIT },
+                        if by_sea { SPLIT_OVERSEAS } else { SPLIT },
                         &[
                             ("p", &name(community)),
                             ("d", &name(daughter)),
@@ -305,15 +305,15 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 community,
                 from,
                 to,
+                by_sea,
             } => {
-                let overseas = world.map.overseas(from, to);
                 let mut annal = entry(
                     generation,
                     "migration",
                     tell(
                         world,
                         &[key("migration"), g, community as u64],
-                        if overseas {
+                        if by_sea {
                             MIGRATION_OVERSEAS
                         } else {
                             MIGRATION
