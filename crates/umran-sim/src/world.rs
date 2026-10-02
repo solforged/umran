@@ -5097,8 +5097,12 @@ mod tests {
         let rulers = world.found(&SoundProfile::by_id("iranian").unwrap(), 0.9, 0.3);
         let subjects = world.found(&SoundProfile::by_id("polynesian").unwrap(), 0.2, 0.6);
         let home = world.communities[rulers].home();
-        let nearby = world.map.regions[home].neighbours.iter().copied()
-            .find(|&r| world.map.regions[r].terrain.is_land()).unwrap();
+        let nearby = world.map.regions[home]
+            .neighbours
+            .iter()
+            .copied()
+            .find(|&r| world.map.regions[r].terrain.is_land())
+            .unwrap();
         world.communities[subjects].lands = vec![nearby];
         world
             .connect(rulers, subjects, 1.0, ContactKind::Rule)

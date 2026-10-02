@@ -494,7 +494,8 @@ impl Map {
             .map(|(i, ((outline, _), neighbours))| Region {
                 site: [sites[i][0] as f32, sites[i][1] as f32],
                 outline: outline.iter().map(|&[x, y]| [x as f32, y as f32]).collect(),
-                area_km2: (area(&outline) * f64::from(KM_PER_UNIT).powi(2)) as f32,
+                area_km2: (area(&outline) * (f64::from(KM_PER_UNIT) * f64::from(KM_PER_UNIT)))
+                    as f32,
                 terrain: terrain[i],
                 neighbours,
                 landmass: landmass[i],
@@ -1614,7 +1615,8 @@ fn travel_edges(sites: &[[f64; 2]], terrain: &[Terrain], borders: &[SharedBorder
         let leg = |r: usize| {
             let [x, y] = sites[r];
             let [mx, my] = border.midpoint;
-            ((x - mx).powi(2) + (y - my).powi(2)).sqrt()
+            let (dx, dy) = (x - mx, y - my);
+            (dx * dx + dy * dy).sqrt()
         };
         let effort = (f64::from(KM_PER_UNIT)
             * (leg(border.a) * f64::from(terrain[border.a].travel())
@@ -1673,7 +1675,8 @@ mod tests {
         let borders = shared_borders(&cells);
         let border = borders.iter().find(|b| (b.a, b.b) == (0, 1)).unwrap();
         let [mx, my] = border.midpoint;
-        let leg = ((mx - 0.5).powi(2) + (my - 0.5).powi(2)).sqrt();
+        let (dx, dy) = (mx - 0.5, my - 0.5);
+        let leg = (dx * dx + dy * dy).sqrt();
         assert!(leg > 0.5);
         let edges = travel_edges(
             &points,

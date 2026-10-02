@@ -625,6 +625,8 @@ larger reaches use phase-local rows without mutating the shared map.
 Spatial and contact indexes are derived per phase. Successful spread
 redistributes all old holding presence; later migrants see earlier
 migrants' consumed room. These indexes are not additional replay state.
+Urban residence adds population at a city, not a territorial holding or
+borrowable port. The phase indexes distinguish residents from land holders.
 
 The fixed drawing scale gives these rectangular extents:
 

@@ -134,7 +134,10 @@ impl World {
                     .iter()
                     .map(|&r| self.map.distance(r, region))
                     .fold(f32::INFINITY, f32::min);
-                (c, self.communities[c].size / (1.0 + d / crate::geography::REFERENCE_TRAVEL_KM))
+                (
+                    c,
+                    self.communities[c].size / (1.0 + d / crate::geography::REFERENCE_TRAVEL_KM),
+                )
             })
             .collect()
     }
