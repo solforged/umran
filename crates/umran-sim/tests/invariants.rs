@@ -1017,6 +1017,7 @@ fn scramble_descent(variety: &mut Variety) {
             Origin::Borrowed {
                 from: usize::MAX,
                 source: LexemeId(u32::MAX),
+                cause: umran_sim::LoanCause::Unrecorded,
             }
         } else {
             Origin::Renewed {
@@ -1030,6 +1031,7 @@ fn scramble_descent(variety: &mut Variety) {
             event: Event::Borrowed {
                 from: usize::MAX,
                 source: Form::from_phones([]),
+                cause: umran_sim::LoanCause::Unrecorded,
             },
         }];
         for paradigm in &mut lexeme.paradigms {

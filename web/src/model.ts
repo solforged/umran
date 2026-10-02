@@ -609,10 +609,24 @@ export interface Annal {
   riverFlow: { river: number; cause: ClimateCause; flowing: boolean } | null;
 }
 
+export type LoanCause =
+  | { kind: "contact"; contact: ContactKind; donor: number; recipient: number; since: number; event: string | null }
+  | { kind: "rule"; ruler: number; ruled: number; state: number | null; event: string | null }
+  | { kind: "faith"; religion: number; teacher: number | null; recipient: number; event: string | null }
+  | { kind: "shift"; community: number; fromVariety: number; event: string | null }
+  | { kind: "city"; city: number; community: number; event: string | null }
+  | { kind: "coinage"; peoples: number[]; event: string | null }
+  | { kind: "classical"; classical: number; recipient: number; event: string | null }
+  | { kind: "unrecorded" };
+
+export interface Story { annals: string[] }
+
 export interface Origin {
   kind: "inherited" | "coined" | "borrowed" | "kept" | "derived";
   from: string | null;
   generation: number;
+  fromVariety: number | null;
+  cause: LoanCause | null;
 }
 
 export interface LexiconRow {
@@ -631,6 +645,7 @@ export interface LexiconRow {
 export interface HistoryLine {
   generation: number;
   text: string;
+  cause?: LoanCause;
 }
 
 export interface Variant {
@@ -713,6 +728,7 @@ export interface ReadEngine {
   lexicon(generation: number, variety: number): LexiconRow[];
   kin(generation: number, variety: number): Kin[];
   word(generation: number, variety: number, concept: string): WordDetail;
+  story(generation: number, subject: Subject): Story;
   map(): WorldMap;
   wordMap(generation: number, concept: string): WordMap;
   save(): string;

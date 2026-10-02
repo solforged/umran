@@ -19,6 +19,7 @@ import type {
   WordMap,
   WorldMap,
   SettlementPreview,
+  Story,
 } from "./model";
 
 // One WASM module; the Workbench owns the history and React only holds view
@@ -48,6 +49,7 @@ function reader(bench: Workbench | ReadView, save: () => string) {
     lexicon: (generation, variety) => JSON.parse(bench.lexicon(generation, variety)) as LexiconRow[],
     kin: (generation, variety) => JSON.parse(bench.kin(generation, variety)) as Kin[],
     word: (generation, variety, concept) => JSON.parse(bench.word(generation, variety, concept)) as WordDetail,
+    story: (generation, subject) => JSON.parse(bench.story(generation, JSON.stringify(subject))) as Story,
     map: () => JSON.parse(bench.map()) as WorldMap,
     wordMap: (generation, concept) => JSON.parse(bench.wordMap(generation, concept)) as WordMap,
     save,
@@ -93,6 +95,7 @@ function wrap(bench: Workbench): Engine {
         latest: () => get().latest(), overview: (g) => get().overview(g), overviewAt: (p) => get().overviewAt(p),
         settlement: (p, c, intent, share, destination) => get().settlement(p, c, intent, share, destination),
         lexicon: (g, v) => get().lexicon(g, v), kin: (g, v) => get().kin(g, v), word: (g, v, c) => get().word(g, v, c),
+        story: (g, subject) => get().story(g, subject),
         wordMap: (g, c) => get().wordMap(g, c), map: () => get().map(), save: () => bench.save(),
       };
     },

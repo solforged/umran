@@ -291,6 +291,10 @@ fn tell(world: &World, keys: &[u64], options: &[&str], fill: &[(&str, &str)]) ->
     text
 }
 
+pub(crate) fn world_event_id(position: usize) -> String {
+    format!("world:{position}")
+}
+
 /// Everything that happened in `world`, as chronicle entries in order.
 /// Names are written as they were said at the time of each entry.
 pub(crate) fn annals(world: &World) -> Vec<Annal> {
@@ -950,7 +954,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 annal
             }
         };
-        annal.id = format!("world:{position}");
+        annal.id = world_event_id(position);
         if matches!(annal.kind, "neighbours" | "spread") {
             grouped
                 .entry((annal.kind, generation))
@@ -997,6 +1001,9 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 .collect();
             if let WorldEvent::Shift { from, variety, .. } = world.events[position].1 {
                 languages.extend([from, variety]);
+            }
+            if let WorldEvent::Fixed { state } = world.events[position].1 {
+                languages.extend(world.states[state].classical.map(|c| c.variety));
             }
             languages
         } else {

@@ -702,6 +702,7 @@ mod tests {
                     word.origin = Origin::Borrowed {
                         from: 93,
                         source: crate::lexicon::LexemeId(94),
+                        cause: crate::LoanCause::Unrecorded,
                     };
                     word.log.push(Entry {
                         generation: 203,

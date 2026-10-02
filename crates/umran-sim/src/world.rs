@@ -20,6 +20,7 @@ use crate::polity::{
     State,
 };
 use crate::profile::SoundProfile;
+use crate::provenance::LoanCause;
 use crate::rng::{index, key, stream, weighted_index};
 use crate::root::mint_one;
 use crate::schisms::SchismCause;
@@ -3505,9 +3506,14 @@ impl World {
                 continue;
             };
             let form = self.varieties[old].lexicon.get(word).form.clone();
+            let cause = LoanCause::Shift {
+                community,
+                from_variety: old,
+            };
             let origin = Origin::Borrowed {
                 from: old,
                 source: word,
+                cause,
             };
             let id = new.lexicon.coin(form.clone(), origin, concept, generation);
             new.lexicon.get_mut(id).log.push(Entry {
@@ -3515,6 +3521,7 @@ impl World {
                 event: Event::Borrowed {
                     from: old,
                     source: form,
+                    cause,
                 },
             });
             new.lexicon.slots[i].introduce(id, self.params.loan_share);
@@ -3929,6 +3936,7 @@ impl World {
             source: LexemeId,
             source_form: Form,
             form: Form,
+            cause: LoanCause,
         }
         /// Words flowing from a donor variety, with the donor's standing,
         /// to a people, at an intensity, along a kind of contact, as
@@ -3940,6 +3948,7 @@ impl World {
             intensity: f32,
             kind: ContactKind,
             levelled: bool,
+            cause: LoanCause,
         }
         let mut channels: Vec<Channel> = Vec::new();
         for contact in &self.contacts {
@@ -3958,6 +3967,7 @@ impl World {
                     kind: contact.kind,
                     levelled: self.under_standard(recipient, donor)
                         && self.family(d.variety) == self.family(r.variety),
+                    cause: self.contact_loan_cause(contact, donor, recipient),
                 });
             }
         }
@@ -3973,6 +3983,11 @@ impl World {
                 intensity: SACRED_INTENSITY * if reads { 2.0 } else { 1.0 },
                 kind: ContactKind::Religion,
                 levelled: false,
+                cause: LoanCause::Faith {
+                    religion: faith,
+                    teacher: None,
+                    recipient: c,
+                },
             });
         }
         for (c, high, intensity, standing) in self.classical_sources() {
@@ -3983,6 +3998,10 @@ impl World {
                 intensity,
                 kind: ContactKind::Rule,
                 levelled: false,
+                cause: LoanCause::Classical {
+                    classical: high,
+                    recipient: c,
+                },
             });
         }
         let mut loans = Vec::new();
@@ -4021,11 +4040,10 @@ impl World {
                     continue;
                 }
                 let already = recipient_lexicon.slots[i].variants.iter().any(|v| {
-                    recipient_lexicon.get(v.lexeme).origin
-                        == Origin::Borrowed {
-                            from: channel.donor,
-                            source,
-                        }
+                    recipient_lexicon
+                        .get(v.lexeme)
+                        .origin
+                        .is_loan_from(channel.donor, source)
                 });
                 if already {
                     continue;
@@ -4057,6 +4075,7 @@ impl World {
                     source,
                     source_form,
                     form,
+                    cause: channel.cause,
                 });
             }
         }
@@ -4070,10 +4089,14 @@ impl World {
             let origin = Origin::Borrowed {
                 from: loan.from,
                 source: loan.source,
+                cause: loan.cause,
             };
             // A donor word already borrowed for another sense is the same
             // loanword gaining a meaning, not a second borrowing.
-            let existing = lexicon.living().find(|l| l.origin == origin).map(|l| l.id);
+            let existing = lexicon
+                .living()
+                .find(|l| l.origin.is_loan_from(loan.from, loan.source))
+                .map(|l| l.id);
             let id = match existing {
                 Some(id) => {
                     lexicon.get_mut(id).log.push(Entry {
@@ -4089,6 +4112,7 @@ impl World {
                         event: Event::Borrowed {
                             from: loan.from,
                             source: loan.source_form,
+                            cause: loan.cause,
                         },
                     });
                     id
@@ -5279,7 +5303,7 @@ mod tests {
             .collect();
         assert!(!loans.is_empty());
         for loan in loans {
-            let Origin::Borrowed { from, source } = loan.origin else {
+            let Origin::Borrowed { from, source, .. } = loan.origin else {
                 unreachable!()
             };
             assert_eq!(from, donor);
@@ -5298,7 +5322,7 @@ mod tests {
             .lexicon
             .living()
             .filter_map(|l| match l.origin {
-                Origin::Borrowed { from, source } => Some((from, source)),
+                Origin::Borrowed { from, source, .. } => Some((from, source)),
                 _ => None,
             })
             .collect();

@@ -28,6 +28,7 @@ use crate::lexicon::{Entry, Event, LexemeId, Origin};
 use crate::livelihood::Livelihood;
 use crate::names::{GivenName, MAX_PEOPLE_NAME, Name, clipped, given_name};
 use crate::phonotactics::Phonotactics;
+use crate::provenance::LoanCause;
 use crate::rng::{index, key, stream, weighted_index};
 use crate::root::mint_one;
 use crate::schisms::{BranchNaming, HolyLand, Pilgrimage, SchismCause};
@@ -515,7 +516,14 @@ impl World {
         let lexicon = &self.varieties[v].lexicon;
         let sacred = faith.filter(|r| !r.translates && r.sacred != v);
         let teacher = match sacred {
-            Some(r) => Some(r.sacred),
+            Some(r) => Some((
+                r.sacred,
+                LoanCause::Faith {
+                    religion: k.faith.expect("sacred language belongs to the held faith"),
+                    teacher: None,
+                    recipient: community,
+                },
+            )),
             None => need(concept).and_then(|need| {
                 self.partners(community)
                     .filter(|&(o, _, _)| {
@@ -534,7 +542,15 @@ impl World {
                         };
                         weight(a).total_cmp(&weight(b)).then(b.0.cmp(&a.0))
                     })
-                    .map(|(o, _, _)| self.communities[o].variety)
+                    .map(|(o, _, _)| {
+                        (
+                            self.communities[o].variety,
+                            LoanCause::Coinage {
+                                donor: o,
+                                recipient: community,
+                            },
+                        )
+                    })
             }),
         };
         let mut donors: Vec<LexemeId> = related(concept)
@@ -571,8 +587,9 @@ impl World {
         let id = match weighted_index(&mut rng, weights.into_iter()) {
             0 => match self.loan(
                 v,
-                teacher.expect("weighted only with a teacher"),
+                teacher.expect("weighted only with a teacher").0,
                 concept,
+                teacher.expect("weighted only with a teacher").1,
                 &mut rng,
             ) {
                 Some(id) => id,
@@ -637,13 +654,21 @@ impl World {
         v: usize,
         from: usize,
         concept: &'static Concept,
+        cause: LoanCause,
         rng: &mut impl Rng,
     ) -> Option<LexemeId> {
         let generation = self.generation;
         let source = self.varieties[from].lexicon.slot(concept).dominant()?;
-        let origin = Origin::Borrowed { from, source };
+        let origin = Origin::Borrowed {
+            from,
+            source,
+            cause,
+        };
         let lexicon = &mut self.varieties[v].lexicon;
-        let existing = lexicon.living().find(|l| l.origin == origin).map(|l| l.id);
+        let existing = lexicon
+            .living()
+            .find(|l| l.origin.is_loan_from(from, source))
+            .map(|l| l.id);
         if let Some(id) = existing {
             lexicon.get_mut(id).log.push(Entry {
                 generation,
@@ -662,6 +687,7 @@ impl World {
             event: Event::Borrowed {
                 from,
                 source: source_form,
+                cause,
             },
         });
         Some(id)
@@ -1099,7 +1125,12 @@ impl World {
                 let Some(concept) = by_id(from_meaning) else {
                     continue;
                 };
-                if let Some(new) = self.loan(v, sacred, concept, &mut rng) {
+                let cause = LoanCause::Faith {
+                    religion,
+                    teacher: from,
+                    recipient: community,
+                };
+                if let Some(new) = self.loan(v, sacred, concept, cause, &mut rng) {
                     self.pejorate(community, from_meaning, to_meaning, new);
                 }
             }
@@ -1336,7 +1367,7 @@ mod tests {
             let v = world.communities[0].variety;
             let lexicon = &world.varieties[v].lexicon;
             for l in lexicon.living() {
-                let Origin::Borrowed { from, source } = l.origin else {
+                let Origin::Borrowed { from, source, .. } = l.origin else {
                     continue;
                 };
                 if from != sacred {

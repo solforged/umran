@@ -1,6 +1,7 @@
 use crate::concepts::{CONCEPTS, Concept, Relation};
 use crate::form::Form;
 use crate::grammar::Paradigm;
+use crate::provenance::LoanCause;
 use crate::root::Minted;
 use std::collections::{HashMap, HashSet};
 
@@ -15,7 +16,11 @@ pub enum Origin {
     /// A new, expressive root coined from the language's current sounds.
     Expressive,
     /// Taken from another variety's word, adapted to this one's sounds.
-    Borrowed { from: usize, source: LexemeId },
+    Borrowed {
+        from: usize,
+        source: LexemeId,
+        cause: LoanCause,
+    },
     /// Built from another word of the same language: fish > fishing.
     Derived { base: LexemeId, relation: Relation },
     /// Rebuilt from a word that had worn too short or come to sound like
@@ -25,6 +30,14 @@ pub enum Origin {
         base: LexemeId,
         with: Option<LexemeId>,
     },
+}
+
+impl Origin {
+    /// Loan identity excludes bookkeeping: hearing the same source through
+    /// another channel must not create a second word or change replay.
+    pub fn is_loan_from(self, variety: usize, word: LexemeId) -> bool {
+        matches!(self, Self::Borrowed { from, source, .. } if from == variety && source == word)
+    }
 }
 
 /// One word: a form plus its history. Meanings live in `Slot`s, so a
@@ -70,6 +83,7 @@ pub enum Event {
     Borrowed {
         from: usize,
         source: Form,
+        cause: LoanCause,
     },
     SoundLaw {
         law: &'static str,

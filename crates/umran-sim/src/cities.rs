@@ -8,6 +8,7 @@ use crate::laws::Law;
 use crate::lexicon::{Entry, Event, LexemeId, Origin, Variant};
 use crate::names::{Name, Naming};
 use crate::phoneme::PhonemeId;
+use crate::provenance::LoanCause;
 use crate::rng::{key, stream};
 use crate::variety::Variety;
 use crate::world::{Community, ContactKind, World, WorldEvent};
@@ -334,7 +335,11 @@ impl World {
 
     fn form_koine(&mut self, city: usize) {
         let parent = self.cities[city].makeup[0].0;
-        let mut variety = self.levelled_variety(&self.cities[city].makeup);
+        let cause = LoanCause::City {
+            city,
+            community: self.communities.len(),
+        };
+        let mut variety = self.levelled_variety(&self.cities[city].makeup, cause);
         self.inherit_places(parent, &mut variety);
         let land = self
             .heard_place(self.cities[city].region, parent, &variety)
@@ -420,7 +425,7 @@ impl World {
         ));
     }
 
-    fn levelled_variety(&self, makeup: &[(usize, f32)]) -> Variety {
+    fn levelled_variety(&self, makeup: &[(usize, f32)], cause: LoanCause) -> Variety {
         let parent = makeup[0].0;
         let mut out = self.varieties[parent].fork(parent, self.generation);
         out.koine_of = makeup.to_vec();
@@ -476,7 +481,11 @@ impl World {
                 let word = self.varieties[from].lexicon.get(source);
                 let id = out.lexicon.coin(
                     word.form.clone(),
-                    Origin::Borrowed { from, source },
+                    Origin::Borrowed {
+                        from,
+                        source,
+                        cause,
+                    },
                     out.lexicon.slots[i].concept,
                     self.generation,
                 );
@@ -485,6 +494,7 @@ impl World {
                     event: Event::Borrowed {
                         from,
                         source: word.form.clone(),
+                        cause,
                     },
                 });
                 id
@@ -948,7 +958,8 @@ mod tests {
             .unwrap()
             .form
             .clone();
-        let koine = world.levelled_variety(&[(0, 0.45), (1, 0.30), (2, 0.25)]);
+        let koine =
+            world.levelled_variety(&[(0, 0.45), (1, 0.30), (2, 0.25)], LoanCause::Unrecorded);
         assert_eq!(koine.lexicon.word_for(sense).unwrap().form, expected);
         assert_eq!(koine.parent.unwrap().variety, 0);
     }

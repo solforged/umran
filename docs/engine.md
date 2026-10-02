@@ -203,6 +203,21 @@ and integer squares use explicit multiplication.
   per semantic field, so field patterns must emerge. `wold.rs` holds WOLD
   figures for validation only; the model never reads them. Loans adapt to
   the recipient's established sounds and then undergo only later laws.
+  Every lexical loan keeps the mechanism that brought it (`provenance.rs`)
+  in both its origin and borrowing log: a specific contact, rule, sacred
+  language or conversion, classical learning, substrate retention, city
+  levelling, or finding a word for a newly held idea. This is bookkeeping,
+  not a new borrowing decision; loan identity still depends only on donor
+  variety and word.
+  The facade links these records to annal ids by recorded participants and
+  dates. A parent–daughter contact links to its split or settlement when
+  that event created it; classical learning links to the fixing of that
+  language. Contacts without a recorded beginning, inherited faith without
+  a conversion, and idea word-finding can have no event link. Religion
+  contacts without a named faith remain contacts. Reading-scoped
+  `story` returns original annal ids for a subject, expanding grouped entries
+  and limiting word stories to the selected meaning's words and their
+  recorded causes, meaning changes, and sound changes.
 - Names (`names.rs`) are words: a people's name is coined from its own
   lexicon by a `Naming` (the people, those who speak, people of a place,
   an epithet on an older name, or, for a people that moves off, the land
@@ -826,6 +841,7 @@ cargo run --release -p umran-sim --example cities -- --band 40 160
 cargo run --release -p umran-sim --example ethos -- [seed] [generations]
 cargo run --release -p umran-sim --example ethos -- --band 40 160
 cargo run --release -p umran-sim --example endings -- [seeds]
+cargo run --release -p umran-web --example provenance
 ```
 
 The faith report's `seeded` setup begins with three peoples sharing one

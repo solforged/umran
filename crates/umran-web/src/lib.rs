@@ -3,9 +3,11 @@
 
 mod annals;
 mod notebook;
+mod provenance;
 
 use annals::{Annal, annals};
 use notebook::{Document, Note, Subject};
+use provenance::{LoanCauseView, cause_view, origin_cause};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::{cell::RefCell, rc::Rc};
@@ -180,6 +182,10 @@ impl Workbench {
         self.bench.word(generation, variety, concept).map_err(fail)
     }
 
+    pub fn story(&mut self, generation: u32, subject: &str) -> Result<String, JsValue> {
+        self.bench.story(generation, subject).map_err(fail)
+    }
+
     /// The land: regions with their outlines and terrain.
     pub fn map(&self) -> Result<String, JsValue> {
         self.bench.map().map_err(fail)
@@ -254,6 +260,12 @@ impl ReadView {
         self.bench
             .borrow_mut()
             .word(generation, variety, concept)
+            .map_err(fail)
+    }
+    pub fn story(&mut self, generation: u32, subject: &str) -> Result<String, JsValue> {
+        self.bench
+            .borrow_mut()
+            .story(generation, subject)
             .map_err(fail)
     }
     pub fn map(&self) -> Result<String, JsValue> {
@@ -1992,21 +2004,19 @@ fn move_views(world: &World) -> Vec<MoveView> {
         .collect()
 }
 
-/// Whether a "borrowed" word was really kept from the speakers' old
-/// language when their community shifted (a substrate word), judged in the
-/// variety where the word entered.
-fn kept_through_shift(world: &World, variety: usize, word: &Lexeme) -> bool {
-    let Origin::Borrowed { from, .. } = word.origin else {
-        return false;
-    };
-    let (owner, _) = world.root_of(variety, word.id);
-    world.varieties[owner]
-        .parent
-        .is_some_and(|fork| fork.generation == word.born && fork.variety != from)
+/// Whether the borrowing record explicitly names substrate retention.
+fn kept_through_shift(word: &Lexeme) -> bool {
+    matches!(
+        word.origin,
+        Origin::Borrowed {
+            cause: umran_sim::LoanCause::Shift { .. },
+            ..
+        }
+    )
 }
 
 fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
-    if kept_through_shift(world, variety, word) {
+    if kept_through_shift(word) {
         let Origin::Borrowed { from, .. } = word.origin else {
             unreachable!()
         };
@@ -2014,6 +2024,8 @@ fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
             kind: "kept",
             from: Some(language_label(world, from)),
             generation: word.born,
+            from_variety: Some(from),
+            cause: origin_cause(world, word),
         };
     }
     match word.origin {
@@ -2021,11 +2033,15 @@ fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
             kind: "inherited",
             from: None,
             generation: word.born,
+            from_variety: None,
+            cause: None,
         },
         Origin::Expressive => OriginView {
             kind: "coined",
             from: None,
             generation: word.born,
+            from_variety: None,
+            cause: None,
         },
         Origin::Derived { base, relation } => OriginView {
             kind: "derived",
@@ -2035,6 +2051,8 @@ fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
                 relation.label()
             )),
             generation: word.born,
+            from_variety: None,
+            cause: None,
         },
         Origin::Renewed { base, with } => {
             let gloss = |id| world.varieties[variety].lexicon.get(id).first_sense.gloss;
@@ -2045,12 +2063,16 @@ fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
                     None => format!("{} (renewed)", gloss(base)),
                 }),
                 generation: word.born,
+                from_variety: None,
+                cause: None,
             }
         }
         Origin::Borrowed { from, .. } => OriginView {
             kind: "borrowed",
             from: Some(language_label(world, from)),
             generation: word.born,
+            from_variety: Some(from),
+            cause: origin_cause(world, word),
         },
     }
 }
@@ -2070,6 +2092,7 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
     let laws = catalog();
     let mut out = vec![HistoryLine {
         generation: word.born,
+        cause: origin_cause(world, word),
         text: match word.origin {
             Origin::Founding => format!(
                 "A root of the founding language, for '{}'",
@@ -2128,7 +2151,7 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
                     }
                 }
             }
-            Origin::Borrowed { from, .. } if kept_through_shift(world, variety, word) => format!(
+            Origin::Borrowed { from, .. } if kept_through_shift(word) => format!(
                 "Kept from {} when its speakers changed language, for '{}'",
                 world.language_title(from),
                 word.first_sense.gloss
@@ -2140,13 +2163,14 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
             ),
         },
     }];
-    let kept = kept_through_shift(world, variety, word);
+    let kept = kept_through_shift(word);
     let (passing, folded) = passing_senses(word);
     for (i, entry) in word.log.iter().enumerate() {
         if folded.contains(&i) {
             if let Some(&(concept, times)) = passing.get(&i) {
                 out.push(HistoryLine {
                     generation: entry.generation,
+                    cause: None,
                     text: if times == 1 {
                         format!("For a few generations also used for '{}'", concept.gloss)
                     } else {
@@ -2162,7 +2186,7 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
         let text = match &entry.event {
             // A kept word was never heard as foreign.
             Event::Borrowed { .. } if kept => continue,
-            Event::Borrowed { source, from } => format!(
+            Event::Borrowed { source, from, .. } => format!(
                 "Heard as /{}/, adapted to /{}/",
                 source.ipa_stressed(world.varieties[*from].stress_at(entry.generation)),
                 form_after(word, i)
@@ -2189,6 +2213,10 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
         out.push(HistoryLine {
             generation: entry.generation,
             text,
+            cause: match entry.event {
+                Event::Borrowed { cause, .. } => Some(cause_view(world, cause, entry.generation)),
+                _ => None,
+            },
         });
     }
     out
@@ -3342,6 +3370,7 @@ fn grammar_history(
         out.push(HistoryLine {
             generation: entry.generation,
             text,
+            cause: None,
         });
         match &entry.event {
             GrammarEvent::SoundLaw { before, .. } | GrammarEvent::Analogy { before } => {
@@ -3532,9 +3561,7 @@ fn own_words(world: &World, variety: usize) -> OwnWords {
     };
     for &id in &dominant {
         let word = lexicon.get(id);
-        if matches!(word.origin, Origin::Borrowed { .. })
-            && !kept_through_shift(world, variety, word)
-        {
+        if matches!(word.origin, Origin::Borrowed { .. }) && !kept_through_shift(word) {
             out.loans += 1;
         } else if uses[&id] > 1 {
             out.shared += 1;
@@ -3553,10 +3580,13 @@ struct KinView {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct OriginView {
     kind: &'static str,
     from: Option<String>,
     generation: u32,
+    from_variety: Option<usize>,
+    cause: Option<LoanCauseView>,
 }
 
 #[derive(Serialize)]
@@ -3579,6 +3609,8 @@ struct LexiconRow {
 struct HistoryLine {
     generation: u32,
     text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cause: Option<LoanCauseView>,
 }
 
 #[derive(Serialize)]

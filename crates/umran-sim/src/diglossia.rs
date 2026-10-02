@@ -287,7 +287,7 @@ mod tests {
             let v = world.communities[rulers].variety;
             let lexicon = &world.varieties[v].lexicon;
             for l in lexicon.living() {
-                let Origin::Borrowed { from, source } = l.origin else {
+                let Origin::Borrowed { from, source, .. } = l.origin else {
                     continue;
                 };
                 if from != high {
