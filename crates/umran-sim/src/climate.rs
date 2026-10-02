@@ -288,6 +288,42 @@ impl Climate {
 }
 
 impl World {
+    /// Recorded climate currently reducing this livelihood's food, not baseline aridity.
+    pub(crate) fn feeding_cause(
+        &self,
+        region: usize,
+        livelihood: crate::Livelihood,
+    ) -> Option<crate::Cause> {
+        let i = livelihood as usize;
+        if self.climate.regions[region].feeding[i] >= self.climate.baseline_feeding[region][i] {
+            return None;
+        }
+        let zone = self.map.regions[region].climate_zone?;
+        self.triggers.climate.get(&zone).map(|&event| crate::Cause {
+            event,
+            mechanism: crate::Mechanism::Climate,
+        })
+    }
+
+    pub(crate) fn adoption_cause(
+        &self,
+        community: usize,
+        own: crate::Livelihood,
+        next: crate::Livelihood,
+    ) -> Option<crate::Cause> {
+        let lands = &self.communities[community].lands;
+        let baseline = |l: crate::Livelihood| {
+            lands
+                .iter()
+                .map(|&r| self.climate.baseline_feeding[r][l as usize])
+                .sum::<f32>()
+        };
+        if baseline(next) >= crate::world::ADOPT_GAIN * baseline(own) {
+            return None;
+        }
+        lands.iter().find_map(|&r| self.feeding_cause(r, own))
+    }
+
     pub(crate) fn climate_challenged(&self, community: usize) -> bool {
         let exposed = |c: usize| {
             self.communities[c]
@@ -343,19 +379,16 @@ impl World {
                 }
             }
             let current = &self.climate.zones[zone];
-            self.events.push((
-                self.generation,
-                WorldEvent::Climate {
-                    zone,
-                    cause,
-                    change,
-                    severity: current.severity,
-                    wetness: current.wetness,
-                    warmth: current.warmth,
-                    lands,
-                    peoples,
-                },
-            ));
+            self.record_event(WorldEvent::Climate {
+                zone,
+                cause,
+                change,
+                severity: current.severity,
+                wetness: current.wetness,
+                warmth: current.warmth,
+                lands,
+                peoples,
+            });
         }
         for c in 0..self.communities.len() {
             if self.communities[c].living()
@@ -366,6 +399,17 @@ impl World {
             {
                 self.climate.exposure[c] = Some(self.generation);
                 self.communities[c].ethos_challenged = self.generation;
+                if let Some(event) = self.communities[c]
+                    .lands
+                    .iter()
+                    .filter(|&&r| self.climate.regions[r].severe)
+                    .filter_map(|&r| self.map.regions[r].climate_zone)
+                    .find_map(|z| self.triggers.climate.get(&z).copied())
+                {
+                    self.triggers.exposure.insert(c, event);
+                } else {
+                    self.triggers.exposure.remove(&c);
+                }
             }
         }
         for (id, river) in self.map.rivers.iter().enumerate() {

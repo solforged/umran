@@ -233,8 +233,7 @@ impl World {
                     residents: Vec::new(),
                     mixed: 0,
                 });
-                self.events
-                    .push((self.generation, WorldEvent::City { city: i }));
+                self.record_event(WorldEvent::City { city: i });
             }
         }
         for i in 0..self.cities.len() {
@@ -415,14 +414,18 @@ impl World {
         if !law.rules.is_empty() {
             self.apply_law(v, &law);
         }
-        self.events.push((
-            self.generation,
+        let cause = self.triggers.cities.get(&city).map(|&event| crate::Cause {
+            event,
+            mechanism: crate::Mechanism::City,
+        });
+        self.record_response(
             WorldEvent::Koine {
                 city,
                 community: town,
                 variety: v,
             },
-        ));
+            cause,
+        );
     }
 
     fn levelled_variety(&self, makeup: &[(usize, f32)], cause: LoanCause) -> Variety {

@@ -6,6 +6,7 @@
 #![deny(clippy::disallowed_methods)]
 
 pub mod adapt;
+pub mod causes;
 pub mod change;
 pub mod chronicle;
 pub mod cities;
@@ -46,6 +47,7 @@ pub mod variety;
 pub mod wold;
 pub mod world;
 
+pub use causes::{Cause, Mechanism};
 pub use change::{Env, Matcher, Rewrite, SoundChange, apply_all};
 pub use chronicle::{
     Action, Chronicle, ENGINE_REVISION, FORMAT, HistoryPoint, ReadingRef, Recipe, Telling,

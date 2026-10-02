@@ -107,7 +107,7 @@ const CROWDED_OUT: f32 = 4.0;
 const DISPLACE_CHANCE: f32 = 0.3;
 /// How much more a way of life must feed on a people's own lands before
 /// they take it up.
-const ADOPT_GAIN: f32 = 1.5;
+pub(crate) const ADOPT_GAIN: f32 = 1.5;
 /// How much rarer foragers begin farming of their own accord than learn
 /// it from farmers they deal with.
 const FARMING_FOUND: f32 = 0.02;
@@ -822,6 +822,8 @@ pub struct Contact {
     pub kind: ContactKind,
     /// The generation it began.
     pub since: u32,
+    /// Recorded beginning, or the pilgrimage that created this contact.
+    pub cause: Option<crate::Cause>,
 }
 
 /// Communities, their varieties, and the contacts between them, stepping
@@ -840,6 +842,9 @@ pub struct World {
     /// Things that happened to communities, with the generation they
     /// happened in.
     pub events: Vec<(u32, WorldEvent)>,
+    /// Optional causes by response event index, within this telling.
+    pub causes: std::collections::BTreeMap<usize, crate::Cause>,
+    pub(crate) triggers: crate::causes::Triggers,
     /// What each region is called, by every language that has held it,
     /// oldest first; the last is its name now. Empty for land no one has
     /// held, and for the sea.
@@ -904,6 +909,8 @@ impl World {
             contacts: Vec::new(),
             params,
             events: Vec::new(),
+            causes: Default::default(),
+            triggers: Default::default(),
             states: Vec::new(),
             cities: Vec::new(),
             religions: Vec::new(),
@@ -1693,6 +1700,7 @@ impl World {
                 .contacts
                 .iter()
                 .any(|k| k.kind == ContactKind::Rule && pair(k.a, k.b) == pair(a, b));
+        let event = self.events.len();
         self.events
             .push((self.generation, WorldEvent::Met { a, b, kind }));
         if kind == ContactKind::Rule {
@@ -1701,9 +1709,13 @@ impl World {
             } else {
                 (b, a)
             };
-            self.subject(rulers, ruled, intensity);
+            self.subject(rulers, ruled, intensity, event);
         } else {
             self.link(a, b, intensity, kind);
+            self.contacts.last_mut().unwrap().cause = Some(crate::Cause {
+                event,
+                mechanism: crate::Mechanism::Contact,
+            });
         }
         if changes_rule {
             self.reconcile_contacts();
@@ -1723,6 +1735,7 @@ impl World {
             intensity: intensity.clamp(0.0, 1.0),
             kind,
             since: self.generation,
+            cause: None,
         });
     }
 
@@ -2046,14 +2059,11 @@ impl World {
                 }
                 self.communities[c].size -= lost;
             }
-            self.events.push((
-                generation,
-                WorldEvent::HardTimes {
-                    region: r,
-                    kind,
-                    share,
-                },
-            ));
+            self.record_event(WorldEvent::HardTimes {
+                region: r,
+                kind,
+                share,
+            });
         }
     }
 
@@ -2235,14 +2245,15 @@ impl World {
                 lands.retain(|&r| r != best);
                 lands.insert(0, best);
             }
-            self.events.push((
-                self.generation,
+            let cause = self.neighbour_cause(c, by);
+            self.record_response(
                 WorldEvent::Displaced {
                     community: c,
                     region,
                     by,
                 },
-            ));
+                cause,
+            );
             self.communities[c].ethos_challenged = self.generation;
         }
     }
@@ -2307,6 +2318,7 @@ impl World {
             // people is among them.
             let mut here = 0.0;
             let mut stronger = false;
+            let mut stronger_cause = None;
             for &(o, n) in &dwellers[home] {
                 if o == c || !self.communities[o].living() {
                     continue;
@@ -2314,6 +2326,9 @@ impl World {
                 let k = &self.communities[o];
                 here += n;
                 stronger |= k.prestige > prestige && k.size > size;
+                if k.prestige > prestige && k.size > size && stronger_cause.is_none() {
+                    stronger_cause = self.neighbour_cause(c, o);
+                }
             }
             let fed = self.feeds(home, livelihood).max(1.0);
             let crowding = (size + here) / fed;
@@ -2349,15 +2364,16 @@ impl World {
             before.clear();
             before.extend(self.presence_iter(c));
             self.communities[c].lands = vec![to];
-            self.events.push((
-                self.generation,
+            let cause = stronger_cause.or_else(|| self.feeding_cause(home, livelihood));
+            self.record_response(
                 WorldEvent::Migrated {
                     community: c,
                     from: home,
                     to,
                     by_sea: journey.by_sea,
                 },
-            ));
+                cause,
+            );
             self.meet_locals(c, to, &mut rng, &spatial, &mut contacts);
             spatial.replace(self, c, &before);
         }
@@ -2407,15 +2423,16 @@ impl World {
             }
             let (livelihood, from, _) =
                 options[weighted_index(&mut rng, options.iter().map(|o| o.2))];
+            let cause = self.adoption_cause(c, own, livelihood);
             self.communities[c].livelihood = livelihood;
-            self.events.push((
-                self.generation,
+            self.record_response(
                 WorldEvent::Adopted {
                     community: c,
                     livelihood,
                     from,
                 },
-            ));
+                cause,
+            );
         }
     }
 
@@ -3403,9 +3420,9 @@ impl World {
             }
             if let Some(contact) = conquered {
                 let ruled = if contact.a == c { contact.b } else { contact.a };
-                self.events
-                    .push((self.generation, WorldEvent::Conquered { ruler: c, ruled }));
-                self.subject(c, ruled, contact.intensity.max(CONQUEST_INTENSITY));
+                let cause = self.holy_war_cause(c, ruled);
+                let event = self.record_response(WorldEvent::Conquered { ruler: c, ruled }, cause);
+                self.subject(c, ruled, contact.intensity.max(CONQUEST_INTENSITY), event);
                 contacts = self.contact_index();
             }
         }

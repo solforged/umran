@@ -1075,10 +1075,14 @@ impl World {
                 continue;
             }
             let (o, r, _) = teachers[weighted_index(&mut rng, teachers.iter().map(|t| t.2))];
-            converted.push((c, r, o));
+            converted.push((c, r, o, self.contact_cause(c, o)));
         }
-        for (c, r, o) in converted {
+        for (c, r, o, cause) in converted {
+            let event = self.events.len();
             self.convert(c, r, Some(o));
+            if let Some(cause) = cause {
+                self.causes.insert(event, cause);
+            }
         }
     }
 

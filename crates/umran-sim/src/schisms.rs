@@ -99,18 +99,22 @@ impl World {
         }
         for religion in 0..self.religions.len() {
             let now = self.holy_lands(religion);
-            for (old, new) in self.religions[religion].holy_land.iter().zip(&now) {
+            for (i, new) in now
+                .iter()
+                .enumerate()
+                .take(self.religions[religion].holy_land.len())
+            {
+                let old = &self.religions[religion].holy_land[i];
                 if old.faithful != new.faithful {
-                    self.events.push((
-                        self.generation,
-                        WorldEvent::HolyLand {
-                            religion,
-                            region: new.region,
-                            was_held_by: old.held_by,
-                            held_by: new.held_by,
-                            faithful: new.faithful,
-                        },
-                    ));
+                    self.record_event(WorldEvent::HolyLand {
+                        religion,
+                        region: new.region,
+                        was_held_by: old.held_by,
+                        held_by: new.held_by,
+                        faithful: new.faithful,
+                    });
+                } else if old.held_by != new.held_by {
+                    self.triggers.holy_lands.remove(&(religion, new.region));
                 }
             }
             self.religions[religion].holy_land = now;
@@ -142,6 +146,32 @@ impl World {
             ancestor = self.religions[f].parent;
         }
         false
+    }
+
+    pub(crate) fn holy_war_cause(&self, attacker: usize, target: usize) -> Option<crate::Cause> {
+        if self.params.conquest_rate <= 0.0
+            || self.communities[attacker].faith == self.communities[target].faith
+        {
+            return None;
+        }
+        let mut ancestor = self.communities[attacker].faith;
+        while let Some(f) = ancestor {
+            if self.communities[target].faith != Some(f) {
+                for shrine in self.religions[f].shrines() {
+                    if let Some(&event) = self.triggers.holy_lands.get(&(f, shrine.region))
+                        && matches!(self.events[event].1, WorldEvent::HolyLand { held_by: Some(holder), faithful: false, .. } if holder == target)
+                        && self.land_holder(shrine.region) == Some(target)
+                    {
+                        return Some(crate::Cause {
+                            event,
+                            mechanism: crate::Mechanism::UnfaithfulHolder,
+                        });
+                    }
+                }
+            }
+            ancestor = self.religions[f].parent;
+        }
+        None
     }
 
     pub(crate) fn divide_faiths(&mut self) {
@@ -315,12 +345,12 @@ impl World {
         let v = self.communities[community].variety;
         let joins: Vec<_> = followers
             .into_iter()
-            .filter(|&c| {
+            .filter_map(|c| {
                 if c == community {
-                    return true;
+                    return Some((c, None));
                 }
                 if cause == SchismCause::Rule {
-                    return self.state_of(c) == state;
+                    return (self.state_of(c) == state).then_some((c, None));
                 }
                 let contact = self
                     .partners(c)
@@ -332,7 +362,7 @@ impl World {
                     self.seed,
                     &[key("schism"), key("join"), id as u64, c as u64],
                 );
-                joining.r#gen::<f32>() < chance
+                (joining.r#gen::<f32>() < chance).then(|| (c, self.contact_cause(c, community)))
             })
             .collect();
         self.events.push((
@@ -344,12 +374,16 @@ impl World {
                 cause,
             },
         ));
-        for c in joins {
+        for (c, cause) in joins {
             let mut conversion = stream(
                 self.seed,
                 &[key("schism"), key("conversion"), id as u64, c as u64],
             );
+            let event = self.events.len();
             self.convert_with_rng(c, id, Some(community), &mut conversion);
+            if let Some(cause) = cause {
+                self.causes.insert(event, cause);
+            }
         }
         self.religions[id].holy_land = self.holy_lands(id);
         Some(id)
@@ -450,6 +484,7 @@ impl World {
         let mut contacts = self.contact_index();
         for religion in 0..self.religions.len() {
             let mut routes = std::mem::take(&mut self.religions[religion].pilgrims);
+            let mut meetings = Vec::new();
             routes.retain(|p| {
                 if !self.communities[p.people].living()
                     || self.communities[p.people].faith != Some(religion)
@@ -535,6 +570,10 @@ impl World {
                         self.connect(c, holder, 0.3, ContactKind::Religion)
                             .expect("the pilgrim reaches land held by the shrine holder");
                         contacts.insert(*self.contacts.last().unwrap());
+                        // Only an annal for this actual route can explain its contact.
+                        if let Some(route) = routes.iter().find(|p| p.people == c && p.to == to) {
+                            meetings.push((c, holder, route.from, to));
+                        }
                     }
                 }
             }
@@ -548,16 +587,26 @@ impl World {
                         .contains(&landmass)
                 {
                     self.religions[religion].pilgrim_landmasses.push(landmass);
-                    self.events.push((
-                        self.generation,
-                        WorldEvent::Pilgrimage {
-                            religion,
-                            community: route.people,
-                            landmass,
-                            from: route.from,
-                            to: route.to,
-                        },
-                    ));
+                    self.record_event(WorldEvent::Pilgrimage {
+                        religion,
+                        community: route.people,
+                        landmass,
+                        from: route.from,
+                        to: route.to,
+                    });
+                }
+            }
+            for (c, holder, from, to) in meetings {
+                if let Some(&event) = self.triggers.pilgrimages.get(&(religion, c, from, to))
+                    && let Some(contact) = self
+                        .contacts
+                        .iter_mut()
+                        .find(|k| k.a == c && k.b == holder && k.kind == ContactKind::Religion)
+                {
+                    contact.cause = Some(crate::Cause {
+                        event,
+                        mechanism: crate::Mechanism::Pilgrimage,
+                    });
                 }
             }
             self.religions[religion].pilgrims = routes;

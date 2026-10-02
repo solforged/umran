@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 
 /// Bumped whenever an engine change would make an existing recipe replay
 /// differently. Saves record it so a mismatch can be reported.
-pub const ENGINE_REVISION: u32 = 30;
+pub const ENGINE_REVISION: u32 = 31;
 /// Identifies saved recipes. Kept from the project's first name, langgen,
 /// so files saved before the rename still load.
 pub const FORMAT: &str = "langgen-sim-recipe";
@@ -738,6 +738,10 @@ mod tests {
 
     fn same(a: &World, b: &World) -> bool {
         a.generation == b.generation
+            && a.events == b.events
+            && a.causes == b.causes
+            && a.triggers == b.triggers
+            && a.contacts == b.contacts
             && a.communities == b.communities
             && a.states == b.states
             && a.religions == b.religions

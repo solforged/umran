@@ -44,6 +44,8 @@ pub(crate) struct Annal {
     /// The apparatus: what a linguist would note, such as the sound laws
     /// behind a change.
     pub notes: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cause: Option<umran_sim::Cause>,
     /// The variety a sound law changed, so a view can show one language's.
     pub variety: Option<usize>,
     /// The peoples it tells of, so a view can link to them.
@@ -314,6 +316,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
         kind,
         text,
         notes: Vec::new(),
+        cause: None,
         variety: None,
         peoples: peoples.to_vec(),
         lands: lands.to_vec(),
@@ -955,6 +958,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
             }
         };
         annal.id = world_event_id(position);
+        annal.cause = world.causes.get(&position).copied();
         if matches!(annal.kind, "neighbours" | "spread") {
             grouped
                 .entry((annal.kind, generation))
@@ -1132,6 +1136,7 @@ fn state_annal(world: &World, generation: u32, state: usize, kind: &'static str)
             ],
         ),
         notes,
+        cause: None,
         variety: None,
         peoples,
         lands: vec![s.capital],
@@ -1228,6 +1233,7 @@ fn vernacular_annal(world: &World, generation: u32, variety: usize, by: Vernacul
         notes: vec![format!(
             "{tongue} is written in its own right from now on; {high} still lends it learned words, more slowly."
         )],
+        cause: None,
         variety: Some(variety),
         peoples,
         lands: Vec::new(),
@@ -1351,6 +1357,7 @@ fn faith_annal(world: &World, generation: u32, religion: usize) -> Annal {
             ],
         ),
         notes,
+        cause: None,
         variety: None,
         peoples: vec![r.people],
         lands: vec![r.land],
@@ -1546,6 +1553,7 @@ fn spread_annal(world: &World, generation: u32, spreads: &[(usize, usize)]) -> A
         kind: "spread",
         text,
         notes,
+        cause: None,
         variety: None,
         peoples,
         lands: spreads.iter().map(|&(_, r)| r).collect(),
@@ -1657,6 +1665,7 @@ fn neighbours_annal(world: &World, generation: u32, n: &Neighbours) -> Annal {
         kind: "neighbours",
         text,
         notes,
+        cause: None,
         variety: None,
         peoples,
         lands: Vec::new(),
@@ -1781,6 +1790,7 @@ fn sound_changes(world: &World) -> Vec<Annal> {
                 kind: "law",
                 text,
                 notes: ids.iter().map(|id| note(id)).collect(),
+                cause: None,
                 variety: Some(v),
                 peoples: (0..world.communities.len())
                     .filter(|&c| {
@@ -1999,6 +2009,7 @@ fn grammar_changes(world: &World) -> Vec<Annal> {
                 kind: "grammar",
                 text,
                 notes,
+                cause: None,
                 variety: Some(v),
                 peoples: (0..world.communities.len())
                     .filter(|&c| {
@@ -2160,4 +2171,66 @@ fn change_in(word: &Lexeme, generation: u32) -> Option<(usize, &Form, &Form)> {
     let &(last, _) = then.last()?;
     let after = befores(last + 1).next().map_or(&word.form, |(_, _, f)| f);
     Some((then.len(), before, after))
+}
+
+#[cfg(test)]
+mod cause_tests {
+    use super::*;
+    use umran_sim::{Naming, Params, SoundProfile};
+
+    #[test]
+    fn conversion_cause_resolves_inside_grouped_neighbours_and_unknown_is_absent() {
+        let mut world = World::new(
+            21,
+            Params {
+                conversion_rate: 100.0,
+                ..Params::static_society()
+            },
+        );
+        let home = world.map.landmasses[0].anchor;
+        for seed in 0..3 {
+            world.found_seeded(
+                &Naming::People,
+                &SoundProfile::base(),
+                seed,
+                0.5,
+                0.5,
+                Some(home),
+                None,
+                None,
+            );
+        }
+        world.found_religion(0, Revelation::Proclaimed);
+        let meeting = world.events.len();
+        world.connect(0, 1, 1.0, ContactKind::Neighbours).unwrap();
+        world.connect(0, 2, 1.0, ContactKind::Neighbours).unwrap();
+        world.step();
+        let entries = annals(&world);
+        let converted = entries
+            .iter()
+            .find(|a| a.kind == "conversion" && a.peoples[0] == 1)
+            .unwrap();
+        let recorded = converted.cause.unwrap();
+        assert_eq!(
+            recorded,
+            umran_sim::Cause {
+                event: meeting,
+                mechanism: umran_sim::Mechanism::Contact
+            }
+        );
+        let group = entries
+            .iter()
+            .find(|a| {
+                a.members
+                    .iter()
+                    .any(|m| m.id == world_event_id(recorded.event))
+            })
+            .unwrap();
+        assert!(group.generation <= converted.generation);
+        let json = serde_json::to_value(converted).unwrap();
+        assert_eq!(json["cause"]["event"], meeting);
+        assert_eq!(json["cause"]["mechanism"], "contact");
+        let found = entries.iter().find(|a| a.kind == "found").unwrap();
+        assert!(serde_json::to_value(found).unwrap().get("cause").is_none());
+    }
 }

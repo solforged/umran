@@ -364,8 +364,7 @@ impl World {
             purism,
             classical: None,
         });
-        self.events
-            .push((self.generation, WorldEvent::Rose { state: index }));
+        self.record_event(WorldEvent::Rose { state: index });
         index
     }
 
@@ -396,7 +395,7 @@ impl World {
     /// conquered state falls; only subjects the conquerors can reach pass
     /// to them, while the others become independent. Rulers who were
     /// themselves subjects break away first.
-    pub(crate) fn subject(&mut self, rulers: usize, ruled: usize, intensity: f32) {
+    pub(crate) fn subject(&mut self, rulers: usize, ruled: usize, intensity: f32, event: usize) {
         if rulers == ruled || !self.can_rule(rulers, ruled) {
             return;
         }
@@ -406,17 +405,27 @@ impl World {
         if let Some(s) = self.ruled_by(ruled) {
             self.leave(s, ruled);
         }
+        let cause = crate::Cause {
+            event,
+            mechanism: crate::Mechanism::Conquest,
+        };
         let state = match self.rules(rulers) {
             Some(s) => s,
-            None => self.raise_state(rulers, None, Rise::Conquest),
+            None => {
+                let s = self.raise_state(rulers, None, Rise::Conquest);
+                self.causes.insert(self.triggers.states[&s], cause);
+                s
+            }
         };
+        self.triggers.states.insert(state, event);
         let taken: Vec<usize> = match self.rules(ruled) {
             Some(old) => {
                 let subjects: Vec<usize> = self.states[old]
                     .subjects()
                     .filter(|&c| c != rulers && self.can_rule(rulers, c))
                     .collect();
-                self.fall(old, Fall::Conquered { by: rulers });
+                let fell = self.fall(old, Fall::Conquered { by: rulers });
+                self.causes.insert(fell, cause);
                 subjects
             }
             None => Vec::new(),
@@ -426,6 +435,10 @@ impl World {
                 continue;
             }
             self.link(rulers, c, intensity, ContactKind::Rule);
+            self.contacts.last_mut().unwrap().cause = Some(crate::Cause {
+                event,
+                mechanism: crate::Mechanism::Contact,
+            });
             self.communities[c].ethos_challenged = self.generation;
             self.states[state].members.push(Member {
                 community: c,
@@ -481,15 +494,15 @@ impl World {
 
     /// State `s` falls: its subjects are freed, and its written standard
     /// is left behind as a classical form.
-    pub(crate) fn fall(&mut self, s: usize, how: Fall) {
+    pub(crate) fn fall(&mut self, s: usize, how: Fall) -> usize {
         let subjects: Vec<usize> = self.states[s].subjects().collect();
         for c in subjects {
             self.leave(s, c);
         }
         self.states[s].fell = Some((self.generation, how));
-        self.events
-            .push((self.generation, WorldEvent::Fell { state: s }));
+        let event = self.record_event(WorldEvent::Fell { state: s });
         self.fix_at_fall(s);
+        event
     }
 
     /// Keeps states true to the peoples they hold: a subject that came to
@@ -534,7 +547,11 @@ impl World {
                 ],
             );
             if rng.r#gen::<f32>() < hazard {
-                self.fall(s, Fall::Collapsed);
+                let cause = self.hard_times_cause(rulers);
+                let event = self.fall(s, Fall::Collapsed);
+                if let Some(cause) = cause {
+                    self.causes.insert(event, cause);
+                }
                 continue;
             }
             let gone: Vec<usize> = self.states[s]
@@ -598,21 +615,21 @@ impl World {
             {
                 continue;
             }
-            let neighbour = self.contacts.iter().any(|contact| {
+            let neighbour = self.contacts.iter().find_map(|contact| {
                 let other = match (contact.a == c, contact.b == c) {
                     (true, _) => contact.b,
                     (_, true) => contact.a,
-                    _ => return false,
+                    _ => return None,
                 };
-                self.state_of(other).is_some()
-                    && self.communities[other].prestige > self.communities[c].prestige
+                self.state_of(other)
+                    .filter(|_| self.communities[other].prestige > self.communities[c].prestige)
             });
             let challenge =
                 if self.climate_challenged(c) || k.lands.iter().any(|r| struck.contains(r)) {
                     Challenge::HardTimes
                 } else if crowded.contains(&c) {
                     Challenge::Crowded
-                } else if neighbour {
+                } else if neighbour.is_some() {
                     Challenge::Neighbour
                 } else {
                     Challenge::Comfort
@@ -625,7 +642,20 @@ impl World {
             if rng.r#gen::<f32>()
                 < self.params.state_rate * pressure * k.ethos.factor(Effect::State)
             {
-                self.raise_state(c, None, Rise::Challenge(challenge));
+                let cause = match challenge {
+                    Challenge::HardTimes => self.hard_times_cause(c),
+                    Challenge::Neighbour => neighbour
+                        .and_then(|s| self.triggers.states.get(&s))
+                        .map(|&event| crate::Cause {
+                            event,
+                            mechanism: crate::Mechanism::StrongerNeighbour,
+                        }),
+                    Challenge::Crowded | Challenge::Comfort => None,
+                };
+                let state = self.raise_state(c, None, Rise::Challenge(challenge));
+                if let Some(cause) = cause {
+                    self.causes.insert(self.triggers.states[&state], cause);
+                }
             }
         }
     }
@@ -674,8 +704,16 @@ impl World {
                 .unwrap_or(self.states[s].rulers),
         );
         self.states[s].standard = Some(self.generation);
-        self.events
-            .push((self.generation, WorldEvent::Standard { state: s }));
+        let cause = self
+            .cities
+            .iter()
+            .position(|city| city.state == s)
+            .and_then(|city| self.triggers.cities.get(&city))
+            .map(|&event| crate::Cause {
+                event,
+                mechanism: crate::Mechanism::City,
+            });
+        self.record_response(WorldEvent::Standard { state: s }, cause);
         let v = self.standard_variety(s);
         self.write_vernacular(v, Vernacular::Standard { state: s });
     }

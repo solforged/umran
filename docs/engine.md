@@ -354,6 +354,54 @@ and integer squares use explicit multiplication.
   disabled. Each beginning, ending, and conquest is a `WorldEvent`, so
   it is told in the history and stops "until something happens".
   `Params::static_society()` disables autonomous hazards, not physical gates.
+- Response annals carry an optional `cause: { event, mechanism }` (revision
+  31). `event` is the original position in this telling's `World::events`;
+  its facade identity is `world:<event>`, including entries inside grouped
+  neighbour accounts. It always precedes the response in event order and
+  is no later in generation. `World::causes` stores only recorded links;
+  `causes.rs` retains trigger identities where the corresponding state is
+  changed. No facade search or adjacency rule supplies missing causes.
+  This adds bookkeeping only: no draws, hazards, words, or event order change.
+  - Migration records `stronger-neighbour` for a recorded meeting with a
+    stronger, larger co-resident, or `climate` for a recorded climate
+    transition still reducing its old land's food. Displacement records
+    the meeting with the stronger people actually displacing it.
+  - Automatic splits depend on size and territorial reach, not on a
+    hardship or climate event, so have no cause. Crowding without an event
+    also remains unlinked. Famine and plague reduce population, not food
+    capacity; attaching them to migration or splitting would claim a
+    decision the engine does not make.
+  - Livelihood change records `climate` only when recorded weather reduces
+    the old livelihood's yield and the new livelihood would not meet the
+    adoption gain at baseline. Learning a craft does not change these
+    yields or the adoption decision, so no `craft` link is emitted.
+    Learning a livelihood from a neighbour or finding it independently
+    without that climate trigger remains unlinked.
+  - State rise and collapse record `hardship` for recent famine or plague,
+    or `climate` for ongoing or remembered climate pressure. These use the
+    same six-generation challenge window as the decisions. Rise under
+    `stronger-neighbour` names that state's recorded rise or latest
+    conquest. State rise or fall caused by conquest records `conquest`,
+    including an authored rule-contact annal that imposed that conquest.
+    Comfort, unrecorded crowding, rulers ending, and capital loss do not
+    acquire an inferred cause.
+  - Standards and koinés record `city` with that city's threshold annal.
+    A court-only standard without a recorded city has no city cause.
+  - Conversion records `contact` from the relationship actually selected
+    at the decision point, including a rule relationship established by
+    conquest. A pilgrim-created relationship records `pilgrimage` only if
+    that exact route has a recorded pilgrimage; otherwise its recorded
+    meeting remains the cause. Implicit links, direct authored conversion,
+    and a schism's reformer or statewide conversion do not gain inferred
+    meeting links. Joining a schism through a selected contact keeps that
+    contact's cause when its beginning was recorded.
+  - A conquest whose hazard includes holy-land pressure records
+    `unfaithful-holder` only when the shrine's recorded allegiance change
+    names the actual target. An unrecorded change between unfaithful
+    holders clears that link. Ordinary conquest stays unlinked.
+  The shared mechanism vocabulary reserves `crowding` and `craft`; neither
+  currently has a recorded trigger for these responses. Empty causes are
+  omitted from JSON rather than serialized as null.
 - States (`polity.rs`) sit above peoples: a ruling people, the peoples it
   rules, a capital land, and a name coined from the rulers' name with
   their belonging affix ("the realm of the Ivo"), which changes with
