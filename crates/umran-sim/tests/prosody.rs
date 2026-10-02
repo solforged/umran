@@ -221,9 +221,19 @@ fn founding_knobs_and_spelling_keep_length_and_stress_separate() {
     let mut design = LanguageDesign::preset("polynesian", 7).unwrap();
     design.stress = Some(StressRule::Free);
     design.geminates = 1.0;
-    let long = Variety::found(7, &design.profile(), Livelihood::Farming);
+    let long = Variety::found(
+        7,
+        &design.profile(),
+        Livelihood::Farming,
+        Default::default(),
+    );
     design.geminates = 0.0;
-    let short = Variety::found(7, &design.profile(), Livelihood::Farming);
+    let short = Variety::found(
+        7,
+        &design.profile(),
+        Livelihood::Farming,
+        Default::default(),
+    );
     assert!(long.lexicon.living().any(|w| {
         w.form
             .segs

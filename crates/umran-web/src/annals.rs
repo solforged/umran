@@ -14,8 +14,8 @@ use umran_sim::names::PlaceOrigin;
 use umran_sim::rng::{index, key, stream};
 use umran_sim::world::{ContactKind, Hardship};
 use umran_sim::{
-    Challenge, Craft, Event, Fall, Fixing, Form, Lexeme, Livelihood, Origin, Revelation, Rise,
-    Variety, Vernacular, World, WorldEvent, catalog,
+    Axis, Challenge, Craft, Event, Fall, Fixing, Form, Lexeme, Livelihood, Origin, Pole,
+    Revelation, Rise, TemperCause, Variety, Vernacular, World, WorldEvent, catalog,
 };
 
 #[derive(Clone, PartialEq, Serialize)]
@@ -25,7 +25,7 @@ pub(crate) struct Annal {
     /// "neighbours", "conquest", "spread", "displaced", "hardship",
     /// "livelihood", "ended", "rose", "fell", "standard", "classical",
     /// "vernacular", "craft", "faith", "conversion", "meaning",
-    /// "respelling", "schism", "pilgrimage", "holy-land", or "law".
+    /// "respelling", "schism", "pilgrimage", "holy-land", "temper", or "law".
     pub kind: &'static str,
     /// The annalist's words. Words of the language are marked `*thus*`.
     pub text: String,
@@ -49,6 +49,57 @@ pub(crate) struct Annal {
     pub religions: Vec<usize>,
     /// The crafts it tells of.
     pub crafts: Vec<Craft>,
+    /// For a change of temper, what turned and why.
+    pub temper: Option<Temper>,
+}
+
+/// A people's temper turning: a leaning reaching one of its ends
+/// (`entered`) or falling back from it.
+#[derive(Clone, PartialEq, Serialize)]
+pub(crate) struct Temper {
+    pub axis: Axis,
+    pub pole: Pole,
+    pub entered: bool,
+    pub cause: TemperCause,
+}
+
+const TEMPER_ENTERED: &[&str] = &["{c}, the {p} grew {w}.", "{c}, the {p} turned {w}."];
+const TEMPER_LEFT: &[&str] = &[
+    "{c}, the {p} were {w} no longer.",
+    "{c}, the {p} ceased to be {w}.",
+];
+
+/// What turned a people's temper, as the start of a sentence.
+fn temper_cause(cause: TemperCause) -> &'static str {
+    match cause {
+        TemperCause::Drift => "Over the generations",
+        TemperCause::Inheritance => "Parting from their kin",
+        TemperCause::Contact => "Living among others",
+        TemperCause::Hardship => "In the hard years",
+        TemperCause::Freed => "Free of foreign rule",
+        TemperCause::LongRule => "After long rule over others",
+        TemperCause::Comfort => "After long years of ease",
+        TemperCause::Seafaring => "Taking to the sea",
+        TemperCause::Faith => "Moved by their faith",
+        TemperCause::Fate => "By fate's hand",
+    }
+}
+
+/// One end of a leaning, as a word for a people; the workbench's
+/// `ETHOS_POLES` uses the same words.
+fn temper_word(axis: Axis, pole: Pole) -> &'static str {
+    let (low, high) = match axis {
+        Axis::Martial => ("peaceable", "warlike"),
+        Axis::Open => ("insular", "welcoming"),
+        Axis::Pious => ("worldly", "devout"),
+        Axis::Hierarchical => ("egalitarian", "hierarchical"),
+        Axis::Roving => ("rooted", "restless"),
+        Axis::Seaward => ("landbound", "seagoing"),
+    };
+    match pole {
+        Pole::Low => low,
+        Pole::High => high,
+    }
 }
 
 const FOUND: &[&str] = &[
@@ -187,6 +238,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
         states: Vec::new(),
         religions: Vec::new(),
         crafts: Vec::new(),
+        temper: None,
     };
     for (position, &(generation, ref event)) in world.events.iter().enumerate() {
         let name = |c: usize| world.community_name_at(c, generation);
@@ -623,6 +675,26 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
             WorldEvent::Vernacular { variety, by } => {
                 vernacular_annal(world, generation, variety, by)
             }
+            WorldEvent::Temper { community, axis, pole, entered, cause } => {
+                let mut annal = entry(
+                    generation,
+                    "temper",
+                    tell(
+                        world,
+                        &[key("temper"), g, community as u64, key(axis.id())],
+                        if entered { TEMPER_ENTERED } else { TEMPER_LEFT },
+                        &[
+                            ("c", temper_cause(cause)),
+                            ("p", &name(community)),
+                            ("w", temper_word(axis, pole)),
+                        ],
+                    ),
+                    &[community],
+                    &[],
+                );
+                annal.temper = Some(Temper { axis, pole, entered, cause });
+                annal
+            }
         });
     }
     out.extend(
@@ -754,6 +826,7 @@ fn state_annal(world: &World, generation: u32, state: usize, kind: &'static str)
         states: vec![state],
         religions: Vec::new(),
         crafts: Vec::new(),
+        temper: None,
     }
 }
 
@@ -839,6 +912,7 @@ fn vernacular_annal(world: &World, generation: u32, variety: usize, by: Vernacul
         states,
         religions,
         crafts: Vec::new(),
+        temper: None,
     }
 }
 
@@ -951,6 +1025,7 @@ fn faith_annal(world: &World, generation: u32, religion: usize) -> Annal {
         states: Vec::new(),
         religions: vec![religion],
         crafts: Vec::new(),
+        temper: None,
     }
 }
 
@@ -1140,6 +1215,7 @@ fn spread_annal(world: &World, generation: u32, spreads: &[(usize, usize)]) -> A
         states: Vec::new(),
         religions: Vec::new(),
         crafts: Vec::new(),
+        temper: None,
     }
 }
 
@@ -1240,6 +1316,7 @@ fn neighbours_annal(world: &World, generation: u32, n: &Neighbours) -> Annal {
         states: Vec::new(),
         religions: Vec::new(),
         crafts: Vec::new(),
+        temper: None,
     }
 }
 
@@ -1355,6 +1432,7 @@ fn sound_changes(world: &World) -> Vec<Annal> {
                 states: Vec::new(),
                 religions: Vec::new(),
                 crafts: Vec::new(),
+                temper: None,
             });
         }
     }

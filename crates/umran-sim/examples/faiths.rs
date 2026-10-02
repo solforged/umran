@@ -104,6 +104,7 @@ fn sample(seed: u64, years: u32, authored: bool) -> Result<Chronicle, String> {
             openness: 0.5,
             region: None,
             livelihood: None,
+            ethos: None,
         })?;
     }
     history.act(Action::Run { generations: 100 })?;

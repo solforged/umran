@@ -7,6 +7,7 @@
 //! book shows struck through and can return to.
 
 use crate::design::LanguageDesign;
+use crate::ethos::{Axis, FoundingEthos};
 use crate::geography::MapSize;
 use crate::ideas::{Craft, Revelation};
 use crate::livelihood::Livelihood;
@@ -18,7 +19,7 @@ use std::collections::BTreeMap;
 
 /// Bumped whenever an engine change would make an existing recipe replay
 /// differently. Saves record it so a mismatch can be reported.
-pub const ENGINE_REVISION: u32 = 25;
+pub const ENGINE_REVISION: u32 = 26;
 /// Identifies saved recipes. Kept from the project's first name, langgen,
 /// so files saved before the rename still load.
 pub const FORMAT: &str = "langgen-sim-recipe";
@@ -45,6 +46,8 @@ pub enum Action {
         /// How they live; `None` lets their land decide.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         livelihood: Option<Livelihood>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ethos: Option<FoundingEthos>,
     },
     Connect {
         a: usize,
@@ -78,6 +81,11 @@ pub enum Action {
     Craft {
         community: usize,
         craft: Craft,
+    },
+    Temper {
+        community: usize,
+        axis: Axis,
+        amount: f32,
     },
     Run {
         generations: u32,
@@ -400,9 +408,13 @@ fn apply(world: &mut World, action: &Action) -> Result<(), String> {
             openness,
             region,
             livelihood,
+            ethos,
         } => {
             design.validate()?;
             naming.validate()?;
+            if let Some(ethos) = ethos {
+                ethos.validate()?;
+            }
             if *naming == Naming::Land {
                 return Err("a founding people has no land name to be called by yet".into());
             }
@@ -423,6 +435,7 @@ fn apply(world: &mut World, action: &Action) -> Result<(), String> {
                 *openness,
                 *region,
                 *livelihood,
+                ethos.as_ref(),
             );
         }
         Action::Connect {
@@ -500,6 +513,13 @@ fn apply(world: &mut World, action: &Action) -> Result<(), String> {
             }
             world.learn(*c, *craft, None);
         }
+        Action::Temper {
+            community,
+            axis,
+            amount,
+        } => {
+            world.temper(*community, *axis, *amount)?;
+        }
         Action::Run { generations } => {
             if *generations == 0 || *generations > MAX_RUN {
                 return Err(format!("run between 1 and {MAX_RUN} generations"));
@@ -513,6 +533,7 @@ fn apply(world: &mut World, action: &Action) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{Pole, TemperCause, WorldEvent};
 
     fn found(name: &str, preset: &str) -> Action {
         Action::Found {
@@ -524,6 +545,7 @@ mod tests {
             openness: 0.5,
             region: None,
             livelihood: None,
+            ethos: None,
         }
     }
 
@@ -537,6 +559,161 @@ mod tests {
                 .iter()
                 .zip(&b.varieties)
                 .all(|(x, y)| x.lexicon == y.lexicon)
+    }
+
+    #[test]
+    fn neutral_ethos_recipe_is_identical_with_multipliers_enabled() {
+        let zero = FoundingEthos {
+            martial: Some(0.0),
+            open: Some(0.0),
+            pious: Some(0.0),
+            hierarchical: Some(0.0),
+            roving: Some(0.0),
+            seaward: Some(0.0),
+        };
+        let mut baseline = World::new(
+            7,
+            Params {
+                ethos_enabled: false,
+                ..Params::default()
+            },
+        );
+        let mut neutral = World::new(
+            7,
+            Params {
+                ethos_shifts: false,
+                ..Params::default()
+            },
+        );
+        let mut actions = vec![
+            found("Hill", "familiar"),
+            found("Coast", "polynesian"),
+            found("Court", "semitic"),
+        ];
+        for action in &mut actions {
+            if let Action::Found { ethos, .. } = action {
+                *ethos = Some(zero);
+            }
+        }
+        actions.extend([
+            Action::Connect {
+                a: 0,
+                b: 1,
+                intensity: 0.8,
+                contact: ContactKind::Trade,
+            },
+            Action::Connect {
+                a: 2,
+                b: 1,
+                intensity: 0.8,
+                contact: ContactKind::Rule,
+            },
+            Action::Religion { community: 1 },
+            Action::Craft {
+                community: 0,
+                craft: Craft::Seafaring,
+            },
+            Action::Run { generations: 12 },
+            Action::Split {
+                community: 0,
+                naming: None,
+                intensity: 0.5,
+            },
+            Action::Shift {
+                community: 1,
+                toward: 0,
+            },
+            Action::Run { generations: 148 },
+        ]);
+        for action in &actions {
+            apply(&mut baseline, action).unwrap();
+            apply(&mut neutral, action).unwrap();
+        }
+        assert!(same(&baseline, &neutral));
+        assert_eq!(baseline.events, neutral.events);
+        assert_eq!(baseline.contacts, neutral.contacts);
+        assert_eq!(baseline.cities, neutral.cities);
+        assert_eq!(baseline.places, neutral.places);
+        for (a, b) in baseline.varieties.iter().zip(&neutral.varieties) {
+            assert_eq!(a.given, b.given);
+            assert_eq!(a.laws, b.laws);
+            assert_eq!(a.waves, b.waves);
+        }
+    }
+
+    #[test]
+    fn ethos_recipe_validates_before_mutation_and_replays_twice() {
+        let mut chronicle = Chronicle::new(7, MapSize::Medium);
+        let mut action = found("Hill", "familiar");
+        if let Action::Found { ethos, .. } = &mut action {
+            *ethos = Some(FoundingEthos {
+                martial: Some(1.1),
+                ..FoundingEthos::default()
+            });
+        }
+        assert!(chronicle.act(action.clone()).is_err());
+        assert!(chronicle.latest().communities.is_empty());
+        if let Action::Found { ethos, .. } = &mut action {
+            *ethos = Some(FoundingEthos {
+                martial: Some(0.4),
+                ..FoundingEthos::default()
+            });
+        }
+        chronicle.act(action).unwrap();
+        chronicle.act(Action::Run { generations: 1 }).unwrap();
+        chronicle
+            .act(Action::Temper {
+                community: 0,
+                axis: Axis::Martial,
+                amount: 0.4,
+            })
+            .unwrap();
+        for amount in [-0.4, -0.1, 0.25] {
+            chronicle
+                .act(Action::Temper {
+                    community: 0,
+                    axis: Axis::Martial,
+                    amount,
+                })
+                .unwrap();
+        }
+        let transitions: Vec<_> = chronicle
+            .latest()
+            .events
+            .iter()
+            .filter_map(|(_, event)| match event {
+                WorldEvent::Temper {
+                    pole,
+                    entered,
+                    cause: TemperCause::Fate,
+                    ..
+                } => Some((*pole, *entered)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            transitions,
+            [(Pole::High, true), (Pole::High, false), (Pole::High, true)]
+        );
+        chronicle.act(Action::Run { generations: 20 }).unwrap();
+        let recipe = chronicle.recipe();
+        let a = Chronicle::from_recipe(&recipe).unwrap();
+        let b = Chronicle::from_recipe(&recipe).unwrap();
+        assert!(same(a.latest(), b.latest()));
+        assert_eq!(a.latest().events, b.latest().events);
+        let before = chronicle.latest().communities.clone();
+        assert!(
+            chronicle
+                .act(Action::Temper {
+                    community: 0,
+                    axis: Axis::Martial,
+                    amount: 1.1
+                })
+                .is_err()
+        );
+        assert_eq!(chronicle.latest().communities, before);
+        assert_eq!(chronicle.recipe(), recipe);
+        assert_eq!(chronicle.world_at(0).communities[0].ethos.martial, 0.4);
     }
 
     fn sample() -> Chronicle {
@@ -579,6 +756,7 @@ mod tests {
             0.5,
             None,
             None,
+            None,
         );
         direct.found_seeded(
             &Naming::People,
@@ -586,6 +764,7 @@ mod tests {
             5,
             0.5,
             0.5,
+            None,
             None,
             None,
         );

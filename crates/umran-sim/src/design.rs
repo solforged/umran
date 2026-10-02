@@ -211,7 +211,12 @@ mod tests {
     fn designs_found_exactly_their_sounds() {
         let design = LanguageDesign::by_frequency(7, 12, 5);
         assert!(design.validate().is_ok());
-        let variety = Variety::found(7, &design.profile(), crate::Livelihood::Farming);
+        let variety = Variety::found(
+            7,
+            &design.profile(),
+            crate::Livelihood::Farming,
+            Default::default(),
+        );
         let (c, v) = variety.inventory();
         let mut used: Vec<&str> = c
             .iter()

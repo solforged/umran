@@ -588,6 +588,7 @@ pub fn given_name(
     variety: &Variety,
     livelihood: Livelihood,
     devout: bool,
+    ethos: crate::Ethos,
     rng: &mut impl Rng,
     generation: u32,
 ) -> Option<Name> {
@@ -601,7 +602,11 @@ pub fn given_name(
         .filter_map(|(id, weights)| {
             let word = variety.lexicon.word_for(by_id(id)?)?;
             let devotion = if devout && *id == "god" { DEVOUT } else { 1.0 };
-            Some((*id, &word.form, weights[way] * devotion))
+            Some((
+                *id,
+                &word.form,
+                weights[way] * devotion * ethos.name_weight(id),
+            ))
         })
         .collect();
     if elements.is_empty() {
@@ -634,6 +639,7 @@ pub fn given_name(
 pub fn given_stock(
     variety: &Variety,
     livelihood: Livelihood,
+    ethos: crate::Ethos,
     rng: &mut impl Rng,
 ) -> Vec<GivenName> {
     let mut stock: Vec<GivenName> = Vec::new();
@@ -641,7 +647,7 @@ pub fn given_stock(
         if stock.len() == GIVEN_STOCK {
             break;
         }
-        let Some(name) = given_name(variety, livelihood, false, rng, 0) else {
+        let Some(name) = given_name(variety, livelihood, false, ethos, rng, 0) else {
             break;
         };
         if !stock.iter().any(|g| g.name.form == name.form) {
@@ -661,6 +667,7 @@ mod tests {
             seed,
             &SoundProfile::by_id(preset).unwrap(),
             Livelihood::Farming,
+            Default::default(),
         )
     }
 

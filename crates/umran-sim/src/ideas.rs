@@ -21,6 +21,7 @@
 use crate::adapt::Adapter;
 use crate::concepts::{CONCEPTS, Concept, Relation, by_id, related};
 use crate::diglossia::Vernacular;
+use crate::ethos::{Axis, Effect, TemperCause};
 use crate::form::Form;
 use crate::geography::{LandmassKind, Terrain};
 use crate::lexicon::{Entry, Event, LexemeId, Origin};
@@ -388,7 +389,14 @@ impl World {
                         (o, self.params.idea_rate * intensity * craft.carried(kind))
                     })
                     .collect();
-                let invent = self.params.craft_rate * craft.invention() * self.invites(c, craft);
+                let invent = self.params.craft_rate
+                    * craft.invention()
+                    * self.invites(c, craft)
+                    * if craft == Craft::Seafaring {
+                        self.communities[c].ethos.factor(Effect::Seafaring)
+                    } else {
+                        1.0
+                    };
                 let taught: f32 = teachers.iter().map(|t| t.1).sum();
                 let draw = rng.r#gen::<f32>();
                 if draw >= invent + taught {
@@ -454,6 +462,9 @@ impl World {
                 from,
             },
         ));
+        if craft == Craft::Seafaring {
+            self.nudge_ethos(community, Axis::Seaward, 0.12, TemperCause::Seafaring);
+        }
     }
 
     /// Every people that holds an idea has words for its meanings. Where
@@ -532,8 +543,10 @@ impl World {
                 let free = !lexicon.living().any(|l| l.form == form);
                 free.then_some((form, base, relation))
             });
-        let borrow =
-            k.openness * (1.0 - purism) * if sacred.is_some() { SACRED_BORROW } else { 1.0 };
+        let borrow = k.openness
+            * (1.0 - purism)
+            * if sacred.is_some() { SACRED_BORROW } else { 1.0 }
+            * k.ethos.factor(Effect::Borrowing);
         let translating = faith.is_some_and(|r| r.translates);
         let weights = [
             if teacher.is_some() { borrow } else { 0.0 },
@@ -659,7 +672,7 @@ impl World {
         let variety = &self.varieties[k.variety];
         let devout = k.faith.is_some();
         (0..8).find_map(|_| {
-            let name = given_name(variety, k.livelihood, devout, rng, self.generation)?;
+            let name = given_name(variety, k.livelihood, devout, k.ethos, rng, self.generation)?;
             let taken = variety.given.iter().any(|g| g.name.form == name.form);
             (!taken).then_some(name)
         })
@@ -719,7 +732,9 @@ impl World {
                     .any(|r| struck.contains(r));
             let pressure = if troubled { 1.0 } else { FAITH_COMFORT };
             let mut rng = self.community_rng(c, "faith");
-            if rng.r#gen::<f32>() < self.params.religion_rate * pressure {
+            if rng.r#gen::<f32>()
+                < self.params.religion_rate * pressure * k.ethos.factor(Effect::Faith)
+            {
                 let how = if troubled {
                     Revelation::Troubles
                 } else {
@@ -808,6 +823,7 @@ impl World {
         self.religions[index].name = self.coin_faith_name(community, &founder, &mut rng);
         self.events
             .push((generation, WorldEvent::Revealed { religion: index }));
+        self.nudge_ethos(community, Axis::Pious, 0.12, TemperCause::Faith);
         // He teaches in his own speech, as the Buddha did in a vernacular
         // rather than Sanskrit; written down, it is written in its own right.
         if self.religions[index].scripture {
@@ -1002,7 +1018,13 @@ impl World {
                     };
                     let pull =
                         crate::math::exp(self.params.prestige_pull * (other.prestige - k.prestige));
-                    let w = self.params.conversion_rate * intensity * carried * open * rival * pull;
+                    let w = self.params.conversion_rate
+                        * intensity
+                        * carried
+                        * open
+                        * rival
+                        * pull
+                        * k.ethos.factor(Effect::Conversion);
                     Some((o, r, w))
                 })
                 .collect();
@@ -1050,6 +1072,7 @@ impl World {
                 from,
             },
         ));
+        self.nudge_ethos(community, Axis::Pious, 0.08, TemperCause::Faith);
         let r = &self.religions[religion];
         let (sacred, translates, scripture) = (r.sacred, r.translates, r.scripture);
         let v = self.communities[community].variety;
@@ -1182,6 +1205,7 @@ mod tests {
             0.5,
             None,
             Some(livelihood),
+            None,
         );
         world
     }
@@ -1217,6 +1241,7 @@ mod tests {
                     0.5,
                     None,
                     Some(Livelihood::Farming),
+                    None,
                 );
                 let learners = world.found_seeded(
                     &Naming::People,
@@ -1226,6 +1251,7 @@ mod tests {
                     openness,
                     None,
                     Some(Livelihood::Farming),
+                    None,
                 );
                 world.connect(smiths, learners, 0.6, ContactKind::Trade);
                 world.learn(smiths, Craft::Metalworking, None);
@@ -1454,6 +1480,7 @@ mod tests {
             0.5,
             Some(home),
             Some(Livelihood::Farming),
+            None,
         );
         (world, founder)
     }
@@ -1583,6 +1610,7 @@ mod tests {
             0.5,
             Some(home),
             Some(Livelihood::Farming),
+            None,
         );
         let variety = world.communities[convert].variety;
         assert!(world.known_place(variety, shrine.region).is_none());

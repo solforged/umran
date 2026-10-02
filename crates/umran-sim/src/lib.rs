@@ -13,6 +13,7 @@ pub mod compare;
 pub mod concepts;
 pub mod design;
 pub mod diglossia;
+pub mod ethos;
 pub mod flavor;
 pub mod form;
 pub mod geography;
@@ -44,6 +45,7 @@ pub use chronicle::{Action, Chronicle, ENGINE_REVISION, FORMAT, Recipe, SetAside
 pub use concepts::{CONCEPTS, Class, Concept, FAMILIES, Field, Iconic, Relation, Tier};
 pub use design::{LanguageDesign, Sound};
 pub use diglossia::{Classical, Fixing, Vernacular};
+pub use ethos::{Axis, Effect, Ethos, FoundingEthos, Pole, TemperCause};
 pub use flavor::Flavor;
 pub use form::{Form, Seg, Syllable};
 pub use geography::{Landmass, LandmassKind, Map, MapSize, Region, Terrain};

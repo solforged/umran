@@ -13,7 +13,13 @@ fn main() {
     let generations: u32 = args.get(1).map_or(200, |s| s.parse().expect("generations"));
 
     let profile = |id: &str| SoundProfile::by_id(id).unwrap();
-    let mut world = World::new(seed, Params::default());
+    let mut world = World::new(
+        seed,
+        Params {
+            ethos_enabled: !args.iter().any(|a| a == "--neutral"),
+            ..Params::default()
+        },
+    );
     let hill = world.found(&profile("familiar"), 0.5, 0.4);
     let coast = world.found(&profile("polynesian"), 0.4, 0.6);
     let empire = world.found(&profile("iranian"), 0.85, 0.3);
@@ -242,6 +248,20 @@ fn main() {
             WorldEvent::Vernacular { variety, .. } => println!(
                 "  gen {generation:>3}  {} is written in its own right",
                 world.language_title(*variety)
+            ),
+            WorldEvent::Temper {
+                community,
+                axis,
+                pole,
+                entered,
+                cause,
+            } => println!(
+                "  gen {generation:>3}  {}: {} {} {} ({})",
+                name(*community),
+                axis.id(),
+                if *entered { "entered" } else { "left" },
+                pole.id(),
+                cause.id()
             ),
         }
     }

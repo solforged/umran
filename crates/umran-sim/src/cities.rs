@@ -3,6 +3,7 @@
 //! forming townsfolk debits those same people exactly once.
 
 use crate::change::{Env, Matcher, Rewrite, SoundChange};
+use crate::ethos::{Effect, Ethos};
 use crate::laws::Law;
 use crate::lexicon::{Entry, Event, LexemeId, Origin, Variant};
 use crate::names::{Name, Naming};
@@ -288,6 +289,12 @@ impl World {
             .expect("largest contributor has residents")
             .0;
         let size = self.city_size(city);
+        let ethos = Ethos::mean(
+            self.cities[city]
+                .residents
+                .iter()
+                .map(|&(c, share)| (self.communities[c].ethos, self.communities[c].size * share)),
+        );
         for &(c, share) in &self.cities[city].residents {
             self.communities[c].size -= self.communities[c].size * share;
         }
@@ -305,6 +312,10 @@ impl World {
             livelihood: source.livelihood,
             faith: source.faith,
             crafts: source.crafts.clone(),
+            ethos,
+            temper_marks: ethos.temper_marks(),
+            ethos_history: vec![(self.generation, ethos)],
+            ethos_challenged: self.generation,
         });
         let state = self.cities[city].state;
         let rulers = self.states[state].rulers;
@@ -492,7 +503,12 @@ impl World {
                     self.seed,
                     &[key("city"), self.generation as u64, a as u64, b as u64],
                 );
-                let pull = (self.city_wave_weight(a, b) - 1.0) * 0.08;
+                let openness = Ethos {
+                    open: (self.communities[a].ethos.open + self.communities[b].ethos.open) / 2.0,
+                    ..Ethos::default()
+                };
+                let pull =
+                    (self.city_wave_weight(a, b) - 1.0) * 0.08 * openness.factor(Effect::Contact);
                 if rng.r#gen::<f32>() < pull {
                     self.connect(a, b, 0.5, ContactKind::Trade);
                 }
@@ -618,6 +634,39 @@ mod tests {
         assert!(world.communities[town].living());
         assert!(world.city_size(0) < size * 0.3);
         assert!(world.city_size(0) >= TOWN);
+    }
+
+    #[test]
+    fn townsfolk_inherit_the_residents_size_weighted_ethos() {
+        let mut world = realm();
+        for (c, value) in world.communities.iter_mut().zip([1.0, -1.0, 0.2]) {
+            c.ethos = Ethos {
+                martial: value,
+                open: -value,
+                pious: value,
+                hierarchical: -value,
+                roving: value,
+                seaward: -value,
+            };
+        }
+        city_steps(&mut world, 4);
+        let town = world.cities[0].townsfolk.unwrap();
+        let ethos = world.communities[town].ethos;
+        for axis in crate::Axis::ALL {
+            let expected = if matches!(
+                axis,
+                crate::Axis::Open | crate::Axis::Hierarchical | crate::Axis::Seaward
+            ) {
+                -0.1
+            } else {
+                0.1
+            };
+            assert!(
+                (ethos.get(axis) - expected).abs() < 1e-6,
+                "{axis:?}: {ethos:?}"
+            );
+        }
+        assert_eq!(world.communities[town].ethos_at(4), ethos);
     }
 
     #[test]

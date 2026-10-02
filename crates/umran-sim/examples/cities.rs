@@ -15,7 +15,13 @@ fn main() {
     }
     let seed = args.first().map_or(42, |s| s.parse().expect("seed"));
     let generations = args.get(1).map_or(80, |s| s.parse().expect("generations"));
-    let mut world = World::new(seed, Params::default());
+    let mut world = World::new(
+        seed,
+        Params {
+            ethos_enabled: !args.iter().any(|a| a == "--neutral"),
+            ..Params::default()
+        },
+    );
     let capital = world
         .map
         .regions
@@ -35,6 +41,7 @@ fn main() {
             0.6,
             Some(capital),
             Some(Livelihood::Farming),
+            None,
         );
         world.communities[c].size = size;
     }
@@ -142,7 +149,13 @@ fn band(seeds: u64, generations: u32) {
     let mut worlds_with_standard = 0;
     for seed in 0..seeds {
         let pick = |i: u64| &presets[((seed * 3 + i) as usize * 7) % presets.len()];
-        let mut world = World::new(seed, Params::default());
+        let mut world = World::new(
+            seed,
+            Params {
+                ethos_enabled: !std::env::args().any(|a| a == "--neutral"),
+                ..Params::default()
+            },
+        );
         let hill = world.found(pick(0), 0.5, 0.4);
         let coast = world.found(pick(1), 0.4, 0.6);
         let empire = world.found(pick(2), 0.85, 0.3);

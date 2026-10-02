@@ -258,7 +258,12 @@ impl Bench {
         let naming: Naming =
             serde_json::from_str(naming).map_err(|e| format!("Malformed naming: {e}"))?;
         naming.validate()?;
-        let variety = Variety::found(u64::from(seed), &design.profile(), Livelihood::Farming);
+        let variety = Variety::found(
+            u64::from(seed),
+            &design.profile(),
+            Livelihood::Farming,
+            Default::default(),
+        );
         let people = naming.coin(&variety, None, 0)?;
         let spelled = variety.title(&people.form);
         let language = umran_sim::names::language_name(&variety, &people, &spelled, 0);
@@ -518,6 +523,7 @@ impl Bench {
                     prestige: c.prestige,
                     power: c.power,
                     openness: c.openness,
+                    ethos: c.ethos_at(generation),
                     region: c.home(),
                     lands: c.lands.clone(),
                     livelihood: c.livelihood,
@@ -892,6 +898,7 @@ impl Bench {
                 | Action::Shift { .. }
                 | Action::State { .. }
                 | Action::Religion { .. }
+                | Action::Temper { .. }
                 | Action::Craft { .. } => continue,
             };
             let kind = match action {
@@ -1023,6 +1030,7 @@ impl Bench {
                 | WorldEvent::Respelled { .. }
                 | WorldEvent::Pilgrimage { .. }
                 | WorldEvent::HolyLand { .. }
+                | WorldEvent::Temper { .. }
                 | WorldEvent::Vernacular { .. } => continue,
             };
             out.push(Marker {
@@ -1949,6 +1957,7 @@ struct CommunityView {
     prestige: f32,
     power: f32,
     openness: f32,
+    ethos: umran_sim::Ethos,
     /// Its heart land, where its name is written on the map.
     region: usize,
     /// Every land it holds, its heart first; for a people that has ended,
@@ -2660,6 +2669,51 @@ mod tests {
     }
 
     #[test]
+    fn ethos_overview_scrubs_and_authored_nudges_report_thresholds() {
+        let mut w = Bench::new(5, "medium").unwrap();
+        let mut action: serde_json::Value =
+            serde_json::from_str(&found("Hill", "familiar")).unwrap();
+        action["ethos"] = serde_json::json!({"martial": 0.4});
+        w.act(&action.to_string()).unwrap();
+        let initial: serde_json::Value = serde_json::from_str(&w.overview(0).unwrap()).unwrap();
+        w.act(r#"{"kind":"run","generations":1}"#).unwrap();
+        w.act(r#"{"kind":"temper","community":0,"axis":"martial","amount":0.4}"#)
+            .unwrap();
+        let now: serde_json::Value = serde_json::from_str(&w.overview(1).unwrap()).unwrap();
+        assert!(now["communities"][0]["ethos"]["martial"].as_f64().unwrap() > 0.75);
+        let past: serde_json::Value = serde_json::from_str(&w.overview(0).unwrap()).unwrap();
+        assert_eq!(
+            past["communities"][0]["ethos"],
+            initial["communities"][0]["ethos"]
+        );
+        let annals = now["annals"].as_array().unwrap();
+        let temper = annals
+            .iter()
+            .find(|a| a["kind"] == "temper" && a["temper"]["cause"] == "fate")
+            .unwrap();
+        assert_eq!(temper["peoples"], serde_json::json!([0]));
+        assert_eq!(
+            temper["temper"],
+            serde_json::json!({"axis":"martial","pole":"high","entered":true,"cause":"fate"})
+        );
+        assert!(
+            annals
+                .iter()
+                .filter(|a| a["kind"] != "temper")
+                .all(|a| a.get("temper") == Some(&serde_json::Value::Null))
+        );
+        assert!(
+            w.act(r#"{"kind":"temper","community":0,"axis":"martial","amount":2}"#)
+                .is_err()
+        );
+        let after: serde_json::Value = serde_json::from_str(&w.overview(1).unwrap()).unwrap();
+        assert_eq!(
+            after["communities"][0]["ethos"],
+            now["communities"][0]["ethos"]
+        );
+    }
+
+    #[test]
     fn landmasses_partition_land_and_identify_islands() {
         let w = Bench::new(5, "large").unwrap();
         let map: serde_json::Value = serde_json::from_str(&w.map().unwrap()).unwrap();
@@ -3078,7 +3132,7 @@ mod tests {
         use umran_sim::StressRule;
         let mut profile = umran_sim::SoundProfile::base();
         profile.stress = Some(StressRule::Final);
-        let mut variety = Variety::found(7, &profile, Livelihood::Farming);
+        let mut variety = Variety::found(7, &profile, Livelihood::Farming, Default::default());
         let word = variety
             .lexicon
             .slot(by_id("water").unwrap())

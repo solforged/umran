@@ -22,7 +22,7 @@ fn main() {
     let profile = flavors.iter().fold(profile, |p, id| {
         p.flavored(&Flavor::by_id(id).unwrap_or_else(|| panic!("unknown flavor {id}")))
     });
-    let variety = Variety::found(seed, &profile, Livelihood::Farming);
+    let variety = Variety::found(seed, &profile, Livelihood::Farming, Default::default());
 
     let ipa = |ids: &[umran_sim::PhonemeId]| -> Vec<&str> {
         ids.iter().map(|id| CATALOG.get(*id).ipa()).collect()

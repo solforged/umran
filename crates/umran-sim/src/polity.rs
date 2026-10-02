@@ -12,6 +12,7 @@
 //! contact. When that contact ends, the subject has thrown off the rule.
 
 use crate::diglossia::{Classical, Vernacular};
+use crate::ethos::Effect;
 use crate::ideas::WRITTEN_PACE;
 use crate::names::{MAX_PEOPLE_NAME, Name, clipped};
 use crate::rng::{key, stream};
@@ -319,7 +320,7 @@ impl World {
         let mut rng = stream(self.seed, &[key("state"), index as u64]);
         // Most standards take words freely; a few guard against them.
         let draw = rng.r#gen::<f32>();
-        let purism = draw * draw;
+        let purism = (draw * draw * self.communities[rulers].ethos.factor(Effect::Purism)).min(1.0);
         let stock = &self.varieties[self.communities[rulers].variety].given;
         let founder = match stock.len() {
             0 => self.communities[rulers].name.clone(),
@@ -398,6 +399,7 @@ impl World {
                 continue;
             }
             self.link(rulers, c, intensity, ContactKind::Rule);
+            self.communities[c].ethos_challenged = self.generation;
             self.states[state].members.push(Member {
                 community: c,
                 joined: self.generation,
@@ -577,7 +579,9 @@ impl World {
                 _ => 1.0,
             };
             let mut rng = self.community_rng(c, "rise");
-            if rng.r#gen::<f32>() < self.params.state_rate * pressure {
+            if rng.r#gen::<f32>()
+                < self.params.state_rate * pressure * k.ethos.factor(Effect::State)
+            {
                 self.raise_state(c, None, Rise::Challenge(challenge));
             }
         }
@@ -604,7 +608,12 @@ impl World {
                     s as u64,
                 ],
             );
-            if rng.r#gen::<f32>() < STANDARD_CHANCE {
+            if rng.r#gen::<f32>()
+                < STANDARD_CHANCE
+                    * self.communities[state.rulers]
+                        .ethos
+                        .factor(Effect::Standard)
+            {
                 self.adopt_standard(s);
             }
         }

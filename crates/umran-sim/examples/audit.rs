@@ -15,7 +15,13 @@ fn main() {
     let mut rows: Vec<Row> = Vec::new();
     for seed in 0..seeds {
         let pick = |i: u64| &presets[((seed * 3 + i) as usize * 7) % presets.len()];
-        let mut world = World::new(seed, Params::default());
+        let mut world = World::new(
+            seed,
+            Params {
+                ethos_enabled: !std::env::args().any(|a| a == "--neutral"),
+                ..Params::default()
+            },
+        );
         let hill = world.found(pick(0), 0.5, 0.4);
         let coast = world.found(pick(1), 0.4, 0.6);
         let empire = world.found(pick(2), 0.85, 0.3);

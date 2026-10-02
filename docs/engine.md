@@ -339,10 +339,11 @@ and integer squares use explicit multiplication.
 - People have given names (`names.rs`). Each language keeps a stock of
   eight in fashion, built from its own words in its own style: one word
   ("Wolf") or two joined ("Wulf-stan", as Germanic, Slavic, and Greek
-  names were). The meanings are weighted by way of life: herders name
-  children for horses, cattle, and spears, farmers for grain and fields.
-  Names go out of fashion and new ones come (`name_turnover`); sound
-  laws change them like any word. A people of a founded faith names for
+  names were). The meanings are weighted by way of life and ethos:
+  herders name children for horses, cattle, and spears, farmers for grain
+  and fields; martial peoples favour weapons and fighting, pious peoples
+  their gods. Names go out of fashion and new ones come (`name_turnover`);
+  sound laws change them like any word. A people of a founded faith names for
   its god four times as often (theophoric names, as Theodore), and
   converts take names from the sacred language. Founders of states and
   faiths are drawn from their people's stock.
@@ -463,6 +464,126 @@ and integer squares use explicit multiplication.
 - Every random draw comes from a ChaCha8 stream keyed by purpose
   (`rng.rs`), so adding a process never shifts existing draws.
 
+## Worldview
+
+`ethos.rs` gives each people six heritable axes in [-1, 1]: `martial`
+(peaceable to martial), `open` (insular to open), `pious` (worldly to
+pious), `hierarchical` (egalitarian to hierarchical), `roving` (rooted to
+roving), and `seaward` (landward to seaward). These are biases, not fixed
+civilizational stages. The author's existing `power` and `openness` remain
+fixed bases; ethos multiplies rates on top, never replaces those bases
+or derives its priors from them.
+
+Founding priors, before independent uniform noise in [-0.3, 0.3):
+
+| Way of life | Martial | Hierarchical | Roving |
+| --- | ---: | ---: | ---: |
+| Foraging | -0.1 | -0.3 | +0.15 |
+| Herding | +0.3 | 0 | +0.4 |
+| Farming | 0 | +0.3 | -0.35 |
+
+Open and pious start at zero before noise; seaward starts at +0.4 on a
+coast, -0.25 inland. Founding actions may supply `ethos`, a partial object
+of any of the six axes; omitted axes retain their draws. Explicit values
+must be finite and in [-1, 1]. Draws are keyed by `ethos`, community, and
+axis, independently of language generation. Given-name weights read ethos
+at founding as well as when new names enter fashion. Existing martial
+name meanings are spear, shield, war, fight, and bow; there is no wolf
+concept in the lexicon.
+
+Every generation, contacts pull each axis simultaneously toward their
+partners, weighted by intensity times `(0.5 + partner prestige)` times
+kind: intermarriage 1, rule 0.9, religion 0.6, neighbours 0.45, trade 0.2.
+The update closes at most 2% of the weighted gap (a maximum absolute
+change of 0.04), scaling down when total contact weight is below one.
+Separate `temper` streams add independent uniform drift in [-0.012, 0.012)
+per axis per generation. A split copies its parent's ethos with uniform
+drift in [-0.04, 0.04); leavers settling elsewhere add +0.06 roving.
+Language shift keeps ethos. Townsfolk inherit the population-weighted
+mean of the actual residents contributing to the koiné, before those
+residents are debited from their sources.
+
+Challenges and responses add small, clamped steps:
+
+- Hardship: +0.06 pious; -0.04 roving, or +0.06 roving when the people's
+  lands were at least 90% full before that generation's hardship.
+- Throwing off a rule contact: +0.12 martial for the former subjects.
+- Ruling at least one subject for twelve generations: +0.004 hierarchical
+  per generation thereafter.
+- Twelve generations without a challenge: -0.003 martial and -0.003 pious
+  per generation. Hardship, displacement, overcrowding, and ongoing rule
+  restart the quiet-span clock.
+- Learning seafaring: +0.12 seaward.
+- Founding a faith: +0.12 pious; conversion: +0.08 pious.
+
+A leaning becomes notable when an axis reaches ±0.5 and stays so until it
+falls back inside ±0.35, so drift around the line is not retold. Each
+change records `WorldEvent::Temper` with axis, pole, whether the people
+entered or left it, and cause; a jump from one pole to the other records
+the leaving first. Founding leanings are marked without an event, and a
+daughter starts from its own marks before its inheritance drift. Causes
+are `drift`, `inheritance`, `contact`, `hardship`, `freed`, `long-rule`,
+`comfort`, `seafaring`, `faith`, and `fate`. The `Temper { community,
+axis, amount }` recipe action nudges rather than overrides; its signed
+amount must be finite and in [-1, 1], and the people must still live.
+Annal kind `temper` exposes `{ axis, pole: "high" | "low", entered,
+cause }`, and other annals expose `temper: null`. End-of-generation ethos
+snapshots use at most one 28-byte entry per changed generation per
+people; `Community::ethos_at` supports historical views and ended peoples
+keep their final ethos.
+
+Every effect uses one arithmetic multiplier `clamp(1 + k * axis, 0.25, 2)`:
+
+| Use | Axis | k |
+| --- | --- | ---: |
+| Conquest hazard | martial | 0.5 |
+| Trade formation, including city trade | open | 0.5 |
+| Borrowing, retention of foreign sounds, craft-word borrowing | open | 0.5 |
+| Purism drawn when a state rises (result capped at 1) | open | -0.5 |
+| Conversion, faith founding, pilgrimage | pious | 0.5 |
+| Schism hazard (population-weighted mean among followers) | pious | 0.5 |
+| State formation, standard adoption (rulers' ethos) | hierarchical | 0.5 |
+| Migration, territorial spread | roving | 0.5 |
+| Cohesion reach | roving | 0.35 |
+| Seafaring invention, overseas colony attraction | seaward | 0.75 |
+| Given-name meaning weights | relevant axis | 0.75 |
+
+Intermarriage remains author-created: there is no automatic formation
+rate to scale; its borrowing and acculturation use ethos normally.
+Colonies likewise have no probabilistic formation rate. Seaward multiplies
+only overseas destinations' existing room/distance score and their room
+comparison against home; land-reached alternatives and travel stay unchanged.
+`Params::static_society()` freezes ethos, including inheritance drift,
+challenge responses, and authored nudges. `Params { ethos_enabled: false,
+..Params::default() }` draws only zero ethos and disables changes, for a
+strict baseline. With `ethos_shifts: false` separately, authored zero
+axes exercise every multiplier as exact floating-point 1.
+
+In the 40-seed, 4,000-year band (`ethos -- --band 40 160`), all worlds
+completed. Each entry below is pooled standard deviation across living
+peoples / mean of each world's within-world standard deviation:
+
+| Setup | Martial | Open | Pious | Hierarchical | Roving | Seaward |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Three-founder | .1623 / .0929 | .1531 / .0802 | .1951 / .1125 | .2297 / .1122 | .2183 / .1229 | .2388 / .1199 |
+| Sample recipe | .1805 / .1035 | .1608 / .0798 | .1781 / .1151 | .2626 / .1424 | .2274 / .1494 | .2416 / .1262 |
+
+Temper events per world: three-founder mean 3.6, median 3, range 0–15
+(144 total); sample mean 4.9, median 5, range 0–15 (196).
+Event means per world, launch HEAD baseline → ethos:
+
+| Setup | Conquests | Migrations | Schisms |
+| --- | ---: | ---: | ---: |
+| Three-founder | 2.350 → 2.025 | .625 → .775 | .025 → .025 |
+| Sample recipe | 1.275 → 1.300 | .275 → .400 | .225 → .250 |
+
+The baseline was built separately at `616cc3c`, without ethos, and its
+band counts match the neutral switch. Neutral `audit 3 160`, `history
+42 160`, and `cities 42 160` reports were byte-identical to that HEAD,
+including names and event ordering (11,044, 19,072, and 3,369 bytes).
+Append `--neutral` after the numeric arguments of those three examples
+to reproduce that comparison without changing the engine's defaults.
+
 ## Studying one mechanism
 
 Each example prints a readable report; profiles are preset ids
@@ -481,6 +602,8 @@ cargo run --release -p umran-sim --example faiths -- [seeds] [years] [first-seed
 cargo run --release -p umran-sim --example stress -- [seed] [generations]
 cargo run --release -p umran-sim --example cities -- [seed] [generations]
 cargo run --release -p umran-sim --example cities -- --band 40 160
+cargo run --release -p umran-sim --example ethos -- [seed] [generations]
+cargo run --release -p umran-sim --example ethos -- --band 40 160
 ```
 
 The faith report's `seeded` setup begins with three peoples sharing one

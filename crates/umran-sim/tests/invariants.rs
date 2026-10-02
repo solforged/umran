@@ -711,6 +711,7 @@ fn recipe(seed: u64) -> Recipe {
             openness: 0.4 + i as f32 * 0.1,
             region: None,
             livelihood: None,
+            ethos: None,
         });
     }
     actions.extend([

@@ -77,9 +77,13 @@ impl Variety {
     /// A new variety at founding: an inventory sampled from the profile,
     /// one root per concept its speakers living by `livelihood` know of
     /// (meanings that wait for a craft or a faith have none yet), and a
-    /// stock of given names. The same seed, profile, and livelihood always
-    /// agree.
-    pub fn found(seed: u64, profile: &SoundProfile, livelihood: Livelihood) -> Self {
+    /// stock of given names weighted by ethos. Identical inputs always agree.
+    pub fn found(
+        seed: u64,
+        profile: &SoundProfile,
+        livelihood: Livelihood,
+        ethos: crate::Ethos,
+    ) -> Self {
         let inventory =
             Inventory::sample(&profile.inventory, &mut stream(seed, &[key("inventory")]));
         let phonotactics = Phonotactics::compile(&profile.phonotactics, &inventory);
@@ -152,7 +156,12 @@ impl Variety {
                 }
             }
         }
-        variety.given = given_stock(&variety, livelihood, &mut stream(seed, &[key("given")]));
+        variety.given = given_stock(
+            &variety,
+            livelihood,
+            ethos,
+            &mut stream(seed, &[key("given")]),
+        );
         variety
     }
 

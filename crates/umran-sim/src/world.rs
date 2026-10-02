@@ -1,6 +1,7 @@
 use crate::adapt::Adapter;
 use crate::concepts::{CONCEPTS, Concept, Field, related};
 use crate::diglossia::{CLASSICAL_PRESTIGE, Vernacular};
+use crate::ethos::{Axis, Effect, Ethos, FoundingEthos, Pole, TemperCause};
 use crate::form::Form;
 use crate::geography::{LandmassKind, Map, MapSize, Terrain};
 use crate::ideas::{Craft, Religion, SACRED_INTENSITY, SACRED_PRESTIGE, living_related};
@@ -264,6 +265,10 @@ pub struct Params {
     /// Fraction of the gap to a city's migrant makeup filled per generation.
     /// Zero disables cities, including in an authored state.
     pub city_rate: f32,
+    /// False pins founding ethos to zero and disables all shifts, for baseline replay.
+    pub ethos_enabled: bool,
+    /// False freezes ethos, including authored nudges and inheritance drift.
+    pub ethos_shifts: bool,
 }
 
 impl Default for Params {
@@ -316,6 +321,8 @@ impl Default for Params {
             pilgrimage_rate: 0.2,
             name_turnover: 0.1,
             city_rate: 0.25,
+            ethos_enabled: true,
+            ethos_shifts: true,
         }
     }
 }
@@ -348,6 +355,7 @@ impl Params {
             pilgrimage_rate: 0.0,
             name_turnover: 0.0,
             city_rate: 0.0,
+            ethos_shifts: false,
             ..Self::default()
         }
     }
@@ -381,6 +389,12 @@ pub struct Community {
     pub faith: Option<usize>,
     /// The crafts it holds, in `Craft` order.
     pub crafts: Vec<Craft>,
+    pub ethos: Ethos,
+    /// Recorded poles in `Axis::ALL` order: high 1, low -1, neither 0.
+    pub(crate) temper_marks: [i8; 6],
+    /// End-of-generation snapshots, at most one per changed generation.
+    pub(crate) ethos_history: Vec<(u32, Ethos)>,
+    pub(crate) ethos_challenged: u32,
 }
 
 impl Community {
@@ -604,6 +618,14 @@ pub enum WorldEvent {
     /// Speakers of `variety` began to write their own speech in place of
     /// a classical form.
     Vernacular { variety: usize, by: Vernacular },
+    /// An axis entered or left a notable pole, with its cause.
+    Temper {
+        community: usize,
+        axis: Axis,
+        pole: Pole,
+        entered: bool,
+        cause: TemperCause,
+    },
 }
 
 /// What kind of bad times strike a land.
@@ -728,6 +750,7 @@ impl World {
             openness,
             None,
             None,
+            None,
         )
     }
 
@@ -747,12 +770,14 @@ impl World {
         openness: f32,
         region: Option<usize>,
         livelihood: Option<Livelihood>,
+        ethos: Option<&FoundingEthos>,
     ) -> usize {
         let index = self.communities.len();
         let region = region.unwrap_or_else(|| self.homeland(index));
         let livelihood =
             livelihood.unwrap_or_else(|| Livelihood::of_land(self.map.regions[region].terrain));
-        let mut variety = Variety::found(variety_seed, profile, livelihood);
+        let ethos = self.founding_ethos(index, region, livelihood, ethos);
+        let mut variety = Variety::found(variety_seed, profile, livelihood, ethos);
         let name = self.coin(&variety, naming, None);
         variety.name = self.language_name(&variety, &name);
         self.varieties.push(variety);
@@ -768,6 +793,10 @@ impl World {
             ended: None,
             faith: None,
             crafts: Vec::new(),
+            ethos,
+            temper_marks: ethos.temper_marks(),
+            ethos_history: vec![(self.generation, ethos)],
+            ethos_challenged: self.generation,
         });
         self.events
             .push((self.generation, WorldEvent::Found { community: index }));
@@ -1053,11 +1082,24 @@ impl World {
         };
         self.communities[community].size = size - gone;
         self.communities[community].lands = kept;
-        let mut new = self.communities[community].clone();
-        new.name = name;
-        new.variety = self.varieties.len() - 1;
-        new.size = gone;
-        new.lands = leaving;
+        let parent = &self.communities[community];
+        let new = Community {
+            name,
+            variety: self.varieties.len() - 1,
+            size: gone,
+            lands: leaving,
+            prestige: parent.prestige,
+            power: parent.power,
+            openness: parent.openness,
+            livelihood: parent.livelihood,
+            ended: None,
+            faith: parent.faith,
+            crafts: parent.crafts.clone(),
+            ethos: parent.ethos,
+            temper_marks: parent.ethos.temper_marks(),
+            ethos_history: Vec::new(),
+            ethos_challenged: parent.ethos_challenged,
+        };
         self.communities.push(new);
         let index = self.communities.len() - 1;
         if intensity > 0.0 {
@@ -1073,6 +1115,7 @@ impl World {
                 to: region,
             },
         ));
+        self.inherit_ethos(index, region != home);
         self.refresh_places();
         index
     }
@@ -1191,6 +1234,7 @@ impl World {
         self.hold_places();
         self.hear_places();
         self.name_continents();
+        self.temper_generation();
     }
 
     /// Which varieties some community still speaks. Unspoken varieties are
@@ -1246,6 +1290,9 @@ impl World {
             let mut rng = self.community_rng(c, "grow");
             let noise = rng.gen_range(-0.05..0.05);
             let (fed, crowd) = self.fed_and_crowd(c, &occupied);
+            if crowd >= fed {
+                self.communities[c].ethos_challenged = self.generation;
+            }
             let room = if fed > 0.0 {
                 (1.0 - crowd / fed).max(-1.0)
             } else {
@@ -1254,7 +1301,7 @@ impl World {
             let rate = self.params.growth_rate * self.communities[c].livelihood.growth();
             self.communities[c].size *= crate::math::exp(rate * room + noise);
         }
-        self.hard_times(occupied.keys().copied().collect());
+        self.hard_times(&occupied);
         for &c in &living {
             if self.communities[c].size < MIN_PEOPLE {
                 self.end(c, None);
@@ -1278,11 +1325,12 @@ impl World {
         }
     }
 
-    /// Famine, plague, or drought strikes some of the `peopled` lands,
+    /// Famine, plague, or drought strikes some of the occupied lands,
     /// killing a share of everyone living there. A people living on that
     /// land alone loses that share of itself; one spread over many lands
     /// loses only what lived there, so small peoples suffer worst.
-    fn hard_times(&mut self, mut peopled: Vec<usize>) {
+    fn hard_times(&mut self, occupied: &HashMap<usize, f32>) {
+        let mut peopled: Vec<_> = occupied.keys().copied().collect();
         peopled.sort_unstable();
         let generation = self.generation;
         for r in peopled {
@@ -1316,6 +1364,10 @@ impl World {
                     .filter(|&(land, _)| land == r)
                     .map(|(_, n)| n * share)
                     .sum();
+                if lost > 0.0 {
+                    let (fed, crowd) = self.fed_and_crowd(c, occupied);
+                    self.hardship_ethos(c, crowd >= fed * 0.9);
+                }
                 self.communities[c].size -= lost;
             }
             self.events.push((
@@ -1358,7 +1410,11 @@ impl World {
             let k = &self.communities[c];
             let livelihood = k.livelihood;
             let mut rng = self.community_rng(c, "spread");
-            if rng.r#gen::<f32>() >= self.params.spread_rate * self.mobility(c) {
+            if rng.r#gen::<f32>()
+                >= self.params.spread_rate
+                    * self.mobility(c)
+                    * self.communities[c].ethos.factor(Effect::Spread)
+            {
                 continue;
             }
             // Settling beside their own, they take only land with room
@@ -1490,6 +1546,7 @@ impl World {
                     by,
                 },
             ));
+            self.communities[c].ethos_challenged = self.generation;
         }
     }
 
@@ -1509,7 +1566,11 @@ impl World {
                 .iter()
                 .map(|&r| self.map.distance(heart, r))
                 .fold(0.0, f32::max);
-            let too_far = reach / (self.params.cohesion_reach * self.mobility(c)) - 1.0;
+            let too_far = reach
+                / (self.params.cohesion_reach
+                    * self.mobility(c)
+                    * k.ethos.factor(Effect::Cohesion))
+                - 1.0;
             let strain = too_large.max(0.0) + too_far.max(0.0);
             if strain <= 0.0 {
                 continue;
@@ -1555,7 +1616,11 @@ impl World {
             let crowding = (size + here) / fed;
             let pushed = if stronger { PUSHED } else { 1.0 };
             let mobility = self.map.regions[home].terrain.mobility() * self.mobility(c);
-            let hazard = self.params.migration_rate * mobility * crowding * pushed;
+            let hazard = self.params.migration_rate
+                * mobility
+                * crowding
+                * pushed
+                * self.communities[c].ethos.factor(Effect::Migration);
             let mut rng = self.community_rng(c, "migrate");
             if rng.r#gen::<f32>() >= hazard {
                 continue;
@@ -2130,7 +2195,12 @@ impl World {
                 (far, leaving, None)
             }
             None => {
-                let region = self.leavers_land(heart, c.livelihood, self.sails(community));
+                let region = self.leavers_land(
+                    heart,
+                    c.livelihood,
+                    self.sails(community),
+                    c.ethos.factor(Effect::Colony),
+                );
                 (region, vec![region], Some(0.5))
             }
         }
@@ -2141,16 +2211,25 @@ impl World {
     /// beside is full, a seafaring coastal people sends them along or over
     /// the sea instead, to the coast with the most room for the voyage, as
     /// Greek cities sent out colonies.
-    fn leavers_land(&self, home: usize, livelihood: Livelihood, sails: bool) -> usize {
+    fn leavers_land(
+        &self,
+        home: usize,
+        livelihood: Livelihood,
+        sails: bool,
+        seaward: f32,
+    ) -> usize {
         let occupied = self.occupation();
         let room = |r: usize| self.feeds(r, livelihood) - occupied.get(&r).copied().unwrap_or(0.0);
         let colony = || {
             let map = &self.map;
+            let attraction = |r| if map.overseas(home, r) { seaward } else { 1.0 };
             (0..map.regions.len())
                 .filter(|&r| sails && map.coastal(home) && map.coastal(r) && r != home)
                 .filter(|&r| !map.regions[home].neighbours.contains(&r))
-                .filter(|&r| map.distance(home, r) <= COLONY_REACH && room(r) > room(home))
-                .map(|r| (r, room(r) / (1.0 + map.distance(home, r))))
+                .filter(|&r| {
+                    map.distance(home, r) <= COLONY_REACH && room(r) * attraction(r) > room(home)
+                })
+                .map(|r| (r, room(r) / (1.0 + map.distance(home, r)) * attraction(r)))
                 .fold(None, |best: Option<(usize, f32)>, (r, score)| match best {
                     Some((_, s)) if s >= score => best,
                     _ => Some((r, score)),
@@ -2465,6 +2544,9 @@ impl World {
             };
             self.events
                 .push((generation, WorldEvent::Parted { a, b, kind }));
+            if kind == ContactKind::Rule {
+                self.freed_ethos(b);
+            }
         }
     }
 
@@ -2495,7 +2577,10 @@ impl World {
                 .into_iter()
                 .filter(|&o| !in_touch(&self.contacts, c, o))
                 .collect();
-            if !strangers.is_empty() && rng.r#gen::<f32>() < self.params.trade_rate {
+            if !strangers.is_empty()
+                && rng.r#gen::<f32>()
+                    < self.params.trade_rate * self.communities[c].ethos.factor(Effect::Contact)
+            {
                 let reach = |o: usize| {
                     let d = self.apart(c, o);
                     1.0 / ((1.0 + d) * (1.0 + d))
@@ -2524,7 +2609,11 @@ impl World {
                         holy_war_checks += 1;
                     }
                     let factor = if holy { 2.0 } else { 1.0 };
-                    let hazard = (self.params.conquest_rate * gap * factor).min(1.0);
+                    let hazard = (self.params.conquest_rate
+                        * gap
+                        * factor
+                        * self.communities[c].ethos.factor(Effect::Conquest))
+                    .min(1.0);
                     (eligible && rng.r#gen::<f32>() < hazard).then_some(i)
                 })
                 .collect();
@@ -3100,8 +3189,12 @@ impl World {
                 * r.openness
                 * crate::math::exp(self.params.prestige_pull * (channel.prestige - r.prestige))
                 * if levelled { LEVELLING } else { 1.0 }
-                * (1.0 - self.purism(r.variety));
-            let keep_foreign = self.params.bilingual_keep * channel.intensity * r.openness;
+                * (1.0 - self.purism(r.variety))
+                * r.ethos.factor(Effect::Borrowing);
+            let keep_foreign = self.params.bilingual_keep
+                * channel.intensity
+                * r.openness
+                * r.ethos.factor(Effect::Borrowing);
             let donor_lexicon = &self.varieties[channel.donor].lexicon;
             let recipient_lexicon = &self.varieties[r.variety].lexicon;
             for (i, concept) in CONCEPTS.iter().enumerate() {
@@ -4363,6 +4456,7 @@ mod tests {
                 0.5,
                 None,
                 Some(Livelihood::Farming),
+                None,
             );
             world.run(300);
             let mut spread = false;
@@ -4553,6 +4647,7 @@ mod tests {
                         0.5,
                         Some(plain),
                         Some(l),
+                        None,
                     )
                 };
                 let foragers = found(&mut world, Livelihood::Foraging);
@@ -4639,6 +4734,7 @@ mod tests {
             0.5,
             Some(region),
             Some(Livelihood::Farming),
+            None,
         )
     }
 
@@ -4778,6 +4874,7 @@ mod tests {
             17,
             &SoundProfile::base(),
             Livelihood::Farming,
+            Default::default(),
         ));
         let mut current = Naming::People
             .coin(&world.varieties[outsider], None, 0)

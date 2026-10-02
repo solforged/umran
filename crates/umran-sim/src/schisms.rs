@@ -1,5 +1,6 @@
 //! Rival faiths, roads to their shrines, and changes of holy-land allegiance.
 use crate::compare::intelligibility;
+use crate::ethos::{Effect, Ethos};
 use crate::ideas::Religion;
 use crate::names::{MAX_PEOPLE_NAME, Name, Naming, clipped, given_name};
 use crate::rng::{index, key, stream, weighted_index};
@@ -169,7 +170,21 @@ impl World {
                 self.seed,
                 &[key("schism"), u64::from(self.generation), parent as u64],
             );
-            if rng.r#gen::<f32>() >= self.params.schism_rate / (1.0 + descendants as f32 * 0.4) {
+            let (pious, size) = self
+                .living()
+                .filter(|&c| self.communities[c].faith == Some(parent))
+                .fold((0.0, 0.0), |(pious, size), c| {
+                    let people = &self.communities[c];
+                    (pious + people.ethos.pious * people.size, size + people.size)
+                });
+            let devotion = Ethos {
+                pious: if size > 0.0 { pious / size } else { 0.0 },
+                ..Ethos::default()
+            };
+            if rng.r#gen::<f32>()
+                >= self.params.schism_rate / (1.0 + descendants as f32 * 0.4)
+                    * devotion.factor(Effect::Schism)
+            {
                 continue;
             }
             let followers: Vec<_> = self
@@ -358,8 +373,15 @@ impl World {
         let name = match named {
             BranchNaming::Leader => {
                 let leader = if variety.given.is_empty() {
-                    given_name(variety, people.livelihood, true, rng, self.generation)
-                        .expect("a living language has words for a given name")
+                    given_name(
+                        variety,
+                        people.livelihood,
+                        true,
+                        people.ethos,
+                        rng,
+                        self.generation,
+                    )
+                    .expect("a living language has words for a given name")
                 } else {
                     variety.given[index(rng, variety.given.len())].name.clone()
                 };
@@ -522,7 +544,10 @@ impl World {
                             to as u64,
                         ],
                     );
-                    if rng.r#gen::<f32>() >= self.params.pilgrimage_rate {
+                    if rng.r#gen::<f32>()
+                        >= self.params.pilgrimage_rate
+                            * self.communities[c].ethos.factor(Effect::Pilgrimage)
+                    {
                         continue;
                     }
                     if let Some(path) = self.pilgrim_path(c, to) {
@@ -604,6 +629,7 @@ mod tests {
             0.5,
             Some(region),
             Some(Livelihood::Farming),
+            None,
         )
     }
 
