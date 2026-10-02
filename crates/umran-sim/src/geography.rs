@@ -50,15 +50,18 @@ struct Geography {
     continents: (usize, usize),
     continent_land: (usize, usize),
     minimum: usize,
+    /// Fixed number of one/two-cell islands; None preserves the regional packs.
+    island_count: Option<usize>,
 }
 
-const GEOGRAPHY: [Geography; 3] = [
+const GEOGRAPHY: [Geography; 4] = [
     Geography {
         cols: 9,
         rows: 7,
         continents: (1, 1),
         continent_land: (20, 27),
         minimum: 20,
+        island_count: None,
     },
     Geography {
         cols: 13,
@@ -66,6 +69,7 @@ const GEOGRAPHY: [Geography; 3] = [
         continents: (1, 2),
         continent_land: (45, 55),
         minimum: 20,
+        island_count: None,
     },
     Geography {
         cols: 18,
@@ -73,6 +77,15 @@ const GEOGRAPHY: [Geography; 3] = [
         continents: (2, 3),
         continent_land: (90, 110),
         minimum: 25,
+        island_count: None,
+    },
+    Geography {
+        cols: 60,
+        rows: 60,
+        continents: (2, 2),
+        continent_land: (1_794, 1_797),
+        minimum: 800,
+        island_count: Some(3),
     },
 ];
 
@@ -84,6 +97,7 @@ pub enum MapSize {
     #[default]
     Medium,
     Large,
+    Vast,
 }
 
 impl MapSize {
@@ -99,8 +113,8 @@ impl MapSize {
 
     /// Fewest regions a body of land needs to count as a continent, one of
     /// the map's main bodies; smaller ones are islands. A region stands for
-    /// land about 100 km across, so a continent here is a country-sized or
-    /// subcontinental body, not an Earth continent.
+    /// land about 100 km across. Regional sizes hold country-sized or
+    /// subcontinental fragments; Vast holds two small-continent-sized bodies.
     pub fn continent_minimum(self) -> usize {
         self.geography().minimum
     }
@@ -308,6 +322,7 @@ pub struct Map {
     /// Land-only walking and sea-interior voyage neighbourhoods to 1800 effort-km.
     walking: RouteRows,
     voyages: RouteRows,
+    feeding: Vec<[f32; 3]>,
 }
 
 impl Map {
@@ -322,7 +337,6 @@ impl Map {
         // Draw once: fallback geometries use the same offsets, not new worlds.
         let offsets: Vec<[f64; 2]> = (0..n)
             .map(|_| [rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)])
-    feeding: Vec<[f32; 3]>,
             .collect();
         let broad = Noise::new(&mut rng, width, height, 3.0);
         let fine = Noise::new(&mut rng, width, height, 1.5);
@@ -341,6 +355,7 @@ impl Map {
             minimum: g.minimum,
             continents: continent_land,
             islands: island_land,
+            island_count: g.island_count,
         };
         let mut island_rng = stream(seed, &[key("continent islands")]);
         let island_order: Vec<f64> = (0..n).map(|_| island_rng.r#gen()).collect();
@@ -361,7 +376,7 @@ impl Map {
             .into_iter()
             .find_map(|jitter| {
                 let sites = sites(g, &offsets, jitter);
-                let cells: Vec<_> = (0..n).map(|i| cell(&sites, i, width, height)).collect();
+                let cells = grid_cells(g, &sites, width, height);
                 let borders = shared_borders(&cells);
                 let neighbours = border_neighbours(n, &borders);
                 let plan = if jitter == 0.0 {
@@ -474,12 +489,16 @@ impl Map {
         );
         assert!(landmasses.iter().all(|m| match m.kind {
             LandmassKind::Continent => m.regions.len() >= g.minimum,
-            LandmassKind::Island => (1..=3).contains(&m.regions.len()),
+            LandmassKind::Island => (1..=if g.island_count.is_some() { 2 } else { 3 }).contains(&m.regions.len()),
         }));
+        if let Some(count) = g.island_count {
+            assert_eq!(landmasses.iter().filter(|m| m.kind == LandmassKind::Island).count(), count);
+        }
         let mut map = Map {
             size,
             width: width as f32,
             height: height as f32,
+            feeding: feeding_factors(&regions),
             regions,
             landmasses,
             edges,
@@ -490,6 +509,10 @@ impl Map {
         map
     }
 
+    pub(crate) fn feeding_factor(&self, region: usize, livelihood: Livelihood) -> f32 {
+        self.feeding[region][livelihood as usize]
+    }
+
     /// Exact least land-only walking effort-km; sea endpoints are unreachable.
     pub fn distance(&self, a: usize, b: usize) -> f32 {
         if !self.regions[a].terrain.is_land() || !self.regions[b].terrain.is_land()
@@ -498,7 +521,6 @@ impl Map {
             return f32::INFINITY;
         }
         self.route_pair(a, b, RouteMode::Walking)
-            feeding: feeding_factors(&regions),
     }
 
     /// Exact coast-to-coast voyage effort-km, with sea-only interiors.
@@ -509,10 +531,6 @@ impl Map {
         }
         self.route_pair(a, b, RouteMode::Voyage)
     }
-    pub(crate) fn feeding_factor(&self, region: usize, livelihood: Livelihood) -> f32 {
-        self.feeding[region][livelihood as usize]
-    }
-
 
     /// ID-sorted reachable land within an inclusive effort-km radius.
     /// Infinity requests the full exact row, not the cached neighbourhood.
@@ -520,9 +538,19 @@ impl Map {
         self.route_row(source, reach, RouteMode::Walking)
     }
 
+    /// Full cached walking neighbourhood. Hot callers filter their own radius.
+    pub(crate) fn walking_cached(&self, source: usize) -> &[(u32, f32)] {
+        self.walking.row(source)
+    }
+
     /// ID-sorted coastal destinations within an inclusive voyage radius.
     pub fn voyage_row(&self, source: usize, reach: f32) -> Cow<'_, [(u32, f32)]> {
         self.route_row(source, reach, RouteMode::Voyage)
+    }
+
+    /// Full cached voyage neighbourhood. Hot callers filter their own radius.
+    pub(crate) fn voyage_cached(&self, source: usize) -> &[(u32, f32)] {
+        self.voyages.row(source)
     }
 
     /// Stored walking and voyage tuple counts, excluding CSR offsets and graph.
@@ -538,21 +566,11 @@ impl Map {
             return effort;
         }
         let mut scratch = RouteScratch::new(self.regions.len());
-    /// Full cached walking neighbourhood. Hot callers filter their own radius.
-    pub(crate) fn walking_cached(&self, source: usize) -> &[(u32, f32)] {
-        self.walking.row(source)
-    }
-
         self.search_routes(source, f32::INFINITY, mode, Some(destination), &mut scratch);
         scratch.distance[destination] as f32
     }
 
     fn route_row(&self, source: usize, reach: f32, mode: RouteMode) -> Cow<'_, [(u32, f32)]> {
-    /// Full cached voyage neighbourhood. Hot callers filter their own radius.
-    pub(crate) fn voyage_cached(&self, source: usize) -> &[(u32, f32)] {
-        self.voyages.row(source)
-    }
-
         let eligible = match mode {
             RouteMode::Walking => self.regions[source].terrain.is_land(),
             RouteMode::Voyage => self.coastal(source),
@@ -674,6 +692,12 @@ impl Map {
     }
 }
 
+fn feeding_factors(regions: &[Region]) -> Vec<[f32; 3]> {
+    regions.iter().map(|r| Livelihood::ALL.map(|l| {
+        l.feeds(r.terrain) * r.area_km2 / REFERENCE_AREA_KM2
+    })).collect()
+}
+
 /// Grid rectangles are only candidate basins, never the finished coastline.
 /// Their outer sea belt also supplies island sites when there is one basin.
 fn layouts(g: &Geography, k: usize) -> Vec<Vec<Option<usize>>> {
@@ -692,12 +716,6 @@ fn layouts(g: &Geography, k: usize) -> Vec<Vec<Option<usize>>> {
             .collect()
     };
     let mut out = Vec::new();
-fn feeding_factors(regions: &[Region]) -> Vec<[f32; 3]> {
-    regions.iter().map(|r| Livelihood::ALL.map(|l| {
-        l.feeds(r.terrain) * r.area_km2 / REFERENCE_AREA_KM2
-    })).collect()
-}
-
     if k == 1 {
         out.push(membership(&|_, _| Some(0)));
     } else if k == 2 {
@@ -790,6 +808,7 @@ struct LandBudget {
     minimum: usize,
     continents: usize,
     islands: usize,
+    island_count: Option<usize>,
 }
 
 struct LandPlan {
@@ -907,7 +926,8 @@ struct IslandSearch<'a> {
 }
 
 impl IslandSearch<'_> {
-    /// Bounded backtracking, with at most ceil(island budget / 3) islands.
+    /// Bounded backtracking. Regional islands use packs up to three cells;
+    /// fixed-count islands distribute their budget into one/two-cell packs.
     /// Equal-size packs have increasing indices, eliminating permutations.
     fn find(
         &self,
@@ -928,9 +948,20 @@ impl IslandSearch<'_> {
             return None;
         }
         if remaining == 0 {
+            if self.budget.island_count.is_some_and(|count| islands.len() != count) {
+                return None;
+            }
             return ocean_backbone(&continents, islands, self.neighbours).then_some(continents);
         }
-        let size = remaining.min(3);
+        let size = if let Some(count) = self.budget.island_count {
+            let slots = count.checked_sub(islands.len())?;
+            if slots == 0 || remaining < slots || remaining > 2 * slots {
+                return None;
+            }
+            if remaining > slots { 2 } else { 1 }
+        } else {
+            remaining.min(3)
+        };
         for (p, pack) in self.packs[size - 1].iter().enumerate().skip(first) {
             if *alternatives == 0 {
                 break;
@@ -948,7 +979,15 @@ impl IslandSearch<'_> {
                 blocked[r] += 1;
             }
             islands.push(pack.clone());
-            let next = if remaining - size >= 3 { p + 1 } else { 0 };
+            let left = remaining - size;
+            let next_size = if left == 0 {
+                0
+            } else if let Some(count) = self.budget.island_count {
+                if left > count - islands.len() { 2 } else { 1 }
+            } else {
+                left.min(3)
+            };
+            let next = if next_size == size { p + 1 } else { 0 };
             if let Some(c) = self.find(remaining - size, next, blocked, islands, alternatives) {
                 return Some(c);
             }
@@ -1307,11 +1346,45 @@ fn area(outline: &[[f64; 2]]) -> f64 {
     }).sum::<f64>().abs() / 2.0
 }
 
+/// The unjittered rectangle is covered within sqrt(1^2 + 0.5^2) of a
+/// grid site: choose the nearest row, then its nearest point. Jitter adds
+/// at most sqrt(2)*0.3, so every true cell lies within 1.55 of its site.
+/// A site supplying a positive Voronoi facet is therefore at most 3.1 away.
+/// Omitted columns (delta >= 5) are at least 5-0.5-0.6 = 3.9 away;
+/// omitted rows are at least 5*ROW-0.6 > 3.7 away. Keeping +/-4 of each
+/// includes every true facet, hence exactly the full half-plane intersection.
+/// Region-ID clipping order remains the same as the exhaustive clipper.
+fn grid_cells(
+    g: &Geography,
+    sites: &[[f64; 2]],
+    width: f64,
+    height: f64,
+) -> Vec<(Vec<[f64; 2]>, Vec<CellBorder>)> {
+    (0..sites.len()).map(|i| {
+        let (c, r) = (i % g.cols, i / g.cols);
+        let candidates = (r.saturating_sub(4)..=(r + 4).min(g.rows - 1)).flat_map(|row| {
+            (c.saturating_sub(4)..=(c + 4).min(g.cols - 1)).map(move |col| row * g.cols + col)
+        });
+        clipped_cell(sites, i, width, height, candidates)
+    }).collect()
+}
+
+#[cfg(test)]
+fn cell(sites: &[[f64; 2]], i: usize, width: f64, height: f64) -> (Vec<[f64; 2]>, Vec<CellBorder>) {
+    clipped_cell(sites, i, width, height, 0..sites.len())
+}
+
 /// The Voronoi cell of site `i` within the map's bounds, and the sites
 /// whose cells it borders: the bounds clipped by the half-plane nearer `i`
 /// than each other site. Each edge of the polygon remembers the site that
 /// cut it, or none for the map's edge.
-fn cell(sites: &[[f64; 2]], i: usize, width: f64, height: f64) -> (Vec<[f64; 2]>, Vec<CellBorder>) {
+fn clipped_cell(
+    sites: &[[f64; 2]],
+    i: usize,
+    width: f64,
+    height: f64,
+    candidates: impl Iterator<Item = usize>,
+) -> (Vec<[f64; 2]>, Vec<CellBorder>) {
     let mut polygon: Vec<([f64; 2], Option<usize>)> = vec![
         ([0.0, 0.0], None),
         ([width, 0.0], None),
@@ -1319,15 +1392,17 @@ fn cell(sites: &[[f64; 2]], i: usize, width: f64, height: f64) -> (Vec<[f64; 2]>
         ([0.0, height], None),
     ];
     let [px, py] = sites[i];
-    for (j, &[qx, qy]) in sites.iter().enumerate() {
+    let mut next = Vec::with_capacity(12);
+    for j in candidates {
         if j == i {
             continue;
         }
+        let [qx, qy] = sites[j];
         // Points p with (p - m)·n <= 0 are nearer site i.
         let (nx, ny) = (qx - px, qy - py);
         let (mx, my) = ((px + qx) / 2.0, (py + qy) / 2.0);
         let side = |[x, y]: [f64; 2]| (x - mx) * nx + (y - my) * ny;
-        let mut next = Vec::with_capacity(polygon.len() + 1);
+        next.clear();
         for k in 0..polygon.len() {
             let (a, label) = polygon[k];
             let (b, _) = polygon[(k + 1) % polygon.len()];
@@ -1346,7 +1421,7 @@ fn cell(sites: &[[f64; 2]], i: usize, width: f64, height: f64) -> (Vec<[f64; 2]>
                 (false, false) => {}
             }
         }
-        polygon = next;
+        std::mem::swap(&mut polygon, &mut next);
     }
     let borders = (0..polygon.len())
         .filter_map(|k| {
@@ -1444,6 +1519,7 @@ mod tests {
     fn border_midpoints_define_reference_and_skewed_effort() {
         let g = Geography {
             cols: 5, rows: 5, continents: (1, 1), continent_land: (1, 1), minimum: 1,
+            island_count: None,
         };
         let points = sites(&g, &[[0.0, 0.0]; 25], 0.0);
         let cells: Vec<_> = (0..points.len()).map(|i| cell(&points, i, 5.5, 4.0 * ROW + 1.0)).collect();
@@ -1469,16 +1545,56 @@ mod tests {
 
 
     #[test]
+    fn bounded_grid_clipping_preserves_exhaustive_areas_and_borders() {
+        for size in [MapSize::Small, MapSize::Medium, MapSize::Large, MapSize::Vast] {
+            let g = size.geography();
+            let n = g.cols * g.rows;
+            let width = g.cols as f64 + 0.5;
+            let height = (g.rows - 1) as f64 * ROW + 1.0;
+            for seed in 0..3 {
+                let mut rng = stream(seed, &[key("clipper oracle")]);
+                let offsets: Vec<_> = (0..n).map(|r| {
+                    if seed == 0 {
+                        // Extreme opposing offsets exercise the exclusion bound,
+                        // including map corners and alternating offset rows.
+                        [if r % 2 == 0 { -1.0 } else { 1.0 },
+                            if (r / g.cols) % 2 == 0 { 1.0 } else { -1.0 }]
+                    } else {
+                        [rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)]
+                    }
+                }).collect();
+                for jitter in [JITTER, JITTER / 2.0, 0.0] {
+                    let sites = sites(g, &offsets, jitter);
+                    let bounded = grid_cells(g, &sites, width, height);
+                    let exhaustive: Vec<_> = (0..n).map(|r| cell(&sites, r, width, height)).collect();
+                    for r in 0..n {
+                        assert!((area(&bounded[r].0) - area(&exhaustive[r].0)).abs() < 1e-9,
+                            "{size:?}, seed {seed}, jitter {jitter}, region {r}");
+                    }
+                    let bounded = shared_borders(&bounded);
+                    let exhaustive = shared_borders(&exhaustive);
+                    assert_eq!(bounded.len(), exhaustive.len());
+                    for (a, b) in bounded.iter().zip(&exhaustive) {
+                        assert_eq!((a.a, a.b), (b.a, b.b));
+                        assert!((a.midpoint[0] - b.midpoint[0]).abs() < 1e-8);
+                        assert!((a.midpoint[1] - b.midpoint[1]).abs() < 1e-8);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn regions_tile_the_map_and_border_each_other_both_ways() {
-        for size in [MapSize::Small, MapSize::Medium, MapSize::Large] {
+        for size in [MapSize::Small, MapSize::Medium, MapSize::Large, MapSize::Vast] {
             let map = Map::generate(7, size);
-            let area: f32 = map.regions.iter().map(|r| polygon_area(&r.outline)).sum();
+            let area: f64 = map.regions.iter().map(|r| centroid(&r.outline).0).sum();
             let physical_area: f64 = map.regions.iter().map(|r| f64::from(r.area_km2)).sum();
             let rectangle = f64::from(map.width) * f64::from(map.height) * 10_000.0;
             assert!((physical_area - rectangle).abs() / rectangle < 1e-6);
             assert!(map.regions.iter().all(|r| r.area_km2 > 0.0));
             assert!(
-                (area - map.width * map.height).abs() < 1e-2,
+                (area - f64::from(map.width) * f64::from(map.height)).abs() < 1e-2,
                 "{size:?}: {area}"
             );
             for (i, r) in map.regions.iter().enumerate() {
@@ -1500,20 +1616,22 @@ mod tests {
             (MapSize::Small, 1..=1, 20..=27, 20),
             (MapSize::Medium, 1..=2, 45..=55, 20),
             (MapSize::Large, 2..=3, 90..=110, 25),
+            (MapSize::Vast, 2..=2, 1_794..=1_797, 800),
         ] {
+            let mut startup_ms = Vec::new();
+            let mut payload_counts = Vec::new();
+            let mut body_sizes = Vec::new();
             for seed in 0..128 {
+                let start = std::time::Instant::now();
                 let map = Map::generate(seed, size);
+                startup_ms.push(start.elapsed().as_secs_f64() * 1_000.0);
+                payload_counts.push(map.route_entry_counts());
                 assert_eq!(map, Map::generate(seed, size), "{size:?}, seed {seed}");
-                let continents: Vec<_> = map
-                    .landmasses
-                    .iter()
-                    .filter(|m| m.kind == LandmassKind::Continent)
-                    .collect();
-                let islands: Vec<_> = map
-                    .landmasses
-                    .iter()
-                    .filter(|m| m.kind == LandmassKind::Island)
-                    .collect();
+                let continents: Vec<_> = map.landmasses.iter()
+                    .filter(|m| m.kind == LandmassKind::Continent).collect();
+                body_sizes.extend(continents.iter().map(|m| m.regions.len()));
+                let islands: Vec<_> = map.landmasses.iter()
+                    .filter(|m| m.kind == LandmassKind::Island).collect();
                 assert!(k_range.contains(&continents.len()), "{size:?}, seed {seed}");
                 assert!(
                     land_range.contains(&continents.iter().map(|m| m.regions.len()).sum::<usize>())
@@ -1521,6 +1639,14 @@ mod tests {
                 assert!(continents.iter().all(|m| m.regions.len() >= minimum));
                 assert!(!islands.is_empty());
                 assert!(islands.iter().all(|m| (1..=3).contains(&m.regions.len())));
+                if size == MapSize::Vast {
+                    assert_eq!(map.regions.len(), 3_600);
+                    assert_eq!(islands.len(), 3);
+                    assert!(islands.iter().all(|m| (1..=2).contains(&m.regions.len())));
+                    let area: f64 = map.regions.iter().map(|r| f64::from(r.area_km2)).sum();
+                    let rectangle = f64::from(map.width) * f64::from(map.height) * 10_000.0;
+                    assert!((area - rectangle).abs() / rectangle < 1e-6);
+                }
                 // The first sea region is on the reserved outer ocean belt.
                 // Every main body must have a coast on that same backbone,
                 // not merely border an isolated inland lake.
@@ -1609,6 +1735,15 @@ mod tests {
                         - share(lowlands, FOREST)
                 );
             }
+            startup_ms.sort_by(f64::total_cmp);
+            eprintln!("{size:?}: 128 seeds, startup median={:.2}ms p95={:.2}ms; \
+                body cells={}..{}; walking tuples={}..{}, voyage tuples={}..{}",
+                startup_ms[64], startup_ms[121],
+                body_sizes.iter().min().unwrap(), body_sizes.iter().max().unwrap(),
+                payload_counts.iter().map(|p| p.0).min().unwrap(),
+                payload_counts.iter().map(|p| p.0).max().unwrap(),
+                payload_counts.iter().map(|p| p.1).min().unwrap(),
+                payload_counts.iter().map(|p| p.1).max().unwrap());
         }
     }
 
@@ -1623,13 +1758,13 @@ mod tests {
 
     #[test]
     fn zero_jitter_is_terminal_for_every_size_count_and_budget() {
-        for size in [MapSize::Small, MapSize::Medium, MapSize::Large] {
+        for size in [MapSize::Small, MapSize::Medium, MapSize::Large, MapSize::Vast] {
             let g = size.geography();
             let n = g.cols * g.rows;
             let sites = sites(g, &vec![[0.0, 0.0]; n], 0.0);
             let width = g.cols as f64 + 0.5;
             let height = (g.rows - 1) as f64 * ROW + 1.0;
-            let cells: Vec<_> = (0..n).map(|r| cell(&sites, r, width, height)).collect();
+            let cells = grid_cells(g, &sites, width, height);
             let neighbours = border_neighbours(n, &shared_borders(&cells));
             for k in g.continents.0..=g.continents.1 {
                 let layouts = layouts(g, k);
@@ -1639,6 +1774,7 @@ mod tests {
                         minimum: g.minimum,
                         continents,
                         islands: n - share(n, SEA) - continents,
+                        island_count: g.island_count,
                     };
                     let order = sweep_order(g, 0);
                     let plan = choose_plan(&layouts, 0, &neighbours, &budget, &order)
@@ -1661,20 +1797,13 @@ mod tests {
                         sizes[m] += 1;
                     }
                     assert_eq!(sizes.iter().filter(|&&s| s >= g.minimum).count(), k);
-                    assert_eq!(
-                        sizes.iter().filter(|&&s| s >= g.minimum).sum::<usize>(),
-                        continents
-                    );
-                    assert!(
-                        sizes
-                            .iter()
-                            .filter(|&&s| s < g.minimum)
-                            .all(|&s| (1..=3).contains(&s))
-                    );
-                    assert_eq!(
-                        plan.islands.iter().map(Vec::len).sum::<usize>(),
-                        budget.islands
-                    );
+                    assert_eq!(sizes.iter().filter(|&&s| s >= g.minimum).sum::<usize>(), continents);
+                    assert!(sizes.iter().filter(|&&s| s < g.minimum).all(|&s| (1..=3).contains(&s)));
+                    assert_eq!(plan.islands.iter().map(Vec::len).sum::<usize>(), budget.islands);
+                    if let Some(count) = g.island_count {
+                        assert_eq!(plan.islands.len(), count);
+                        assert!(plan.islands.iter().all(|island| (1..=2).contains(&island.len())));
+                    }
                     assert!(ocean_backbone(&plan.continents, &plan.islands, &neighbours));
                 }
             }
@@ -1860,6 +1989,7 @@ mod tests {
         }
         let mut map = Map {
             size: MapSize::Small, width: n as f32, height: 1.0,
+            feeding: feeding_factors(&regions),
             landmasses: describe_landmasses(&regions, MapSize::Small), regions, edges,
             walking: RouteRows::default(), voyages: RouteRows::default(),
         };
@@ -1879,16 +2009,4 @@ mod tests {
         );
     }
 
-    fn polygon_area(points: &[[f32; 2]]) -> f32 {
-        let n = points.len();
-        (0..n)
-            .map(|k| {
-                let ([ax, ay], [bx, by]) = (points[k], points[(k + 1) % n]);
-                ax * by - bx * ay
-            })
-            .sum::<f32>()
-            .abs()
-            / 2.0
-    }
 }
-            feeding: feeding_factors(&regions),
