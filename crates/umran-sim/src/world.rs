@@ -970,6 +970,23 @@ impl World {
         best.effort.is_finite().then_some(best)
     }
 
+    pub(crate) fn journey_to_within(&self, community: usize, region: usize, reach: f32) -> Option<Journey> {
+        let mut best = Journey { effort: f32::INFINITY, by_sea: false };
+        for &source in &self.communities[community].lands {
+            for by_sea in [false, true] {
+                if by_sea && !self.sails(community) { continue; }
+                let row = if by_sea { self.map.voyage_row(source, reach) }
+                    else { self.map.walking_row(source, reach) };
+                let effort = row_distance(&row, region);
+                if effort <= reach && (effort < best.effort
+                    || (effort == best.effort && best.by_sea && !by_sea)) {
+                    best = Journey { effort, by_sea };
+                }
+            }
+        }
+        best.effort.is_finite().then_some(best)
+    }
+
     /// Exact access from one people to another. Only the departing side supplies ships.
     pub fn journey_between(&self, a: usize, b: usize) -> Option<Journey> {
         self.journey_between_within(a, b, f32::INFINITY)
@@ -1357,6 +1374,7 @@ impl World {
         self.standardize();
         self.spread_crafts();
         self.found_religions();
+        self.make_pilgrimages();
         self.spread_faiths();
         self.divide_faiths();
         self.send_pilgrims();
@@ -3697,6 +3715,69 @@ mod tests {
         assert!(reverse.by_sea);
         assert!((reverse.effort - voyage.effort).abs() < 0.001);
         assert!(!world.journey_to(a, from).unwrap().by_sea);
+    }
+
+    #[test]
+    fn authored_contacts_refuse_unreachable_pairs_without_mutation() {
+        let (mut world, a, b) = water_pair();
+        let before = world.clone();
+        for kind in [ContactKind::Neighbours, ContactKind::Trade, ContactKind::Rule,
+            ContactKind::Intermarriage, ContactKind::Religion] {
+            assert!(world.connect(a, b, 0.5, kind).is_err());
+            assert_eq!(world.events, before.events);
+            assert_eq!(world.contacts, before.contacts);
+            assert_eq!(world.communities, before.communities);
+            assert_eq!(world.states, before.states);
+        }
+        world.learn(b, Craft::Seafaring, None);
+        let effort = world.apart(a, b);
+        world.params.trade_reach = effort;
+        world.connect(a, b, 0.5, ContactKind::Trade).unwrap();
+        let events = world.events.clone();
+        assert!(world.connect(a, b, 0.8, ContactKind::Rule).is_err());
+        assert_eq!(world.events, events);
+        assert!(world.states.is_empty());
+        assert_eq!(world.contacts[0].kind, ContactKind::Trade);
+        world.params.pilgrimage_reach = effort;
+        world.connect(a, b, 0.5, ContactKind::Religion).unwrap();
+        world.params.conquest_reach = effort;
+        world.connect(a, b, 0.5, ContactKind::Intermarriage).unwrap();
+        world.params.trade_reach = effort - 0.01;
+        assert!(world.connect(a, b, 0.5, ContactKind::Trade).is_err());
+        assert!(world.connect(a, b, 0.5, ContactKind::Neighbours).is_err());
+        world.learn(a, Craft::Seafaring, None);
+        world.connect(a, b, 0.8, ContactKind::Rule).unwrap();
+        assert!(world.rules_over(a, b));
+    }
+
+    #[test]
+    fn pilgrimage_reaches_the_site_not_the_holders_other_lands() {
+        let (mut world, pilgrim, holder) = water_pair();
+        let shrine = world.communities[holder].home();
+        let home = world.communities[pilgrim].home();
+        let faith = world.found_religion(pilgrim, crate::ideas::Revelation::Proclaimed);
+        world.religions[faith].shrine.region = shrine;
+        world.communities[holder].lands.push(home);
+        world.params.pilgrimage_rate = 1.0;
+        world.learn(holder, Craft::Seafaring, None);
+        assert!(world.journey_between(pilgrim, holder).is_some());
+        world.make_pilgrimages();
+        assert!(world.contacts.is_empty());
+        world.learn(pilgrim, Craft::Seafaring, None);
+        let effort = world.map.voyage(home, shrine);
+        world.params.pilgrimage_reach = effort - 0.01;
+        world.make_pilgrimages();
+        assert!(world.contacts.is_empty());
+        world.params.pilgrimage_reach = effort;
+        world.make_pilgrimages();
+        assert_eq!(world.contacts[0].kind, ContactKind::Religion);
+        assert_eq!(world.contacts[0].intensity, 0.3);
+        world.connect(pilgrim, holder, 0.7, ContactKind::Trade).unwrap();
+        let contacts = world.contacts.clone();
+        let events = world.events.clone();
+        world.make_pilgrimages();
+        assert_eq!(world.contacts, contacts);
+        assert_eq!(world.events, events);
     }
 
     fn crowd_walkable_lands(world: &mut World, community: usize) {

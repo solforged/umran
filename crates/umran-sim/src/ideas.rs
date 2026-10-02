@@ -1041,6 +1041,31 @@ impl World {
         }
     }
 
+    /// A shrine is reached directly, not through its holder's other lands.
+    pub(crate) fn make_pilgrimages(&mut self) {
+        if self.params.pilgrimage_rate <= 0.0 { return; }
+        for community in self.living().collect::<Vec<_>>() {
+            let Some(faith) = self.communities[community].faith else { continue };
+            let shrine = self.religions[faith].shrine.region;
+            if self.journey_to_within(community, shrine, self.params.pilgrimage_reach).is_none() {
+                continue;
+            }
+            let holders: Vec<_> = self.living().filter(|&c| c != community)
+                .filter(|&c| !self.contacts.iter().any(|k| {
+                    (k.a, k.b) == (community, c) || (k.a, k.b) == (c, community)
+                }))
+                .filter_map(|c| self.presence(c).into_iter()
+                    .find(|&(r, n)| r == shrine && n > 0.0).map(|(_, n)| (c, n)))
+                .collect();
+            if holders.is_empty() { continue; }
+            let mut rng = self.community_rng(community, "pilgrimage");
+            if rng.r#gen::<f32>() >= self.params.pilgrimage_rate { continue; }
+            let holder = holders[weighted_index(&mut rng, holders.iter().map(|(_, n)| *n))].0;
+            self.connect(community, holder, 0.3, ContactKind::Religion)
+                .expect("the pilgrim reaches land held by the shrine holder");
+        }
+    }
+
     /// `community` takes up faith `religion`, taught by `from`. Converts to
     /// a faith that keeps its sacred language may turn their old god into
     /// a demon and their old priest into a sorcerer, taking the sacred
