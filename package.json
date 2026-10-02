@@ -12,6 +12,7 @@
     "build": "bun run build:wasm && bun run check && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test:core": "cargo test --workspace",
+    "parity": "bun scripts/parity.ts",
     "brand": "bun brand/build.js"
   },
   "dependencies": {
