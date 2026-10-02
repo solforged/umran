@@ -198,6 +198,11 @@ impl Workbench {
             .map_err(fail)
     }
 
+    #[wasm_bindgen(js_name = lawChoices)]
+    pub fn law_choices(&self, point: &str, variety: usize) -> Result<String, JsValue> {
+        self.bench.law_choices(point, variety).map_err(fail)
+    }
+
     pub fn lexicon(&mut self, generation: u32, variety: usize) -> Result<String, JsValue> {
         self.bench.lexicon(generation, variety).map_err(fail)
     }
@@ -273,6 +278,13 @@ impl ReadView {
         self.bench
             .borrow()
             .settlement(point, community, intent, share, destination)
+            .map_err(fail)
+    }
+    #[wasm_bindgen(js_name = lawChoices)]
+    pub fn law_choices(&self, point: &str, variety: usize) -> Result<String, JsValue> {
+        self.bench
+            .borrow()
+            .law_choices(point, variety)
             .map_err(fail)
     }
     pub fn lexicon(&mut self, generation: u32, variety: usize) -> Result<String, JsValue> {
@@ -552,6 +564,41 @@ impl Bench {
                     vec![*community],
                     None,
                 ),
+                Action::Law { variety, law } => {
+                    let label = &world
+                        .law_catalog()
+                        .iter()
+                        .find(|l| l.id == law)
+                        .expect("authored laws are catalog laws")
+                        .label;
+                    let mut chars = label.chars();
+                    let clause: String = match chars.next() {
+                        Some(first) => first.to_lowercase().chain(chars).collect(),
+                        None => String::new(),
+                    };
+                    (
+                    "law",
+                    format!(
+                        "In *{}*, {clause}.",
+                        world.varieties[*variety].title(world.varieties[*variety].name.form_at(generation)),
+                    ),
+                    world.events[..decision.events.start]
+                        .iter()
+                        .filter_map(|(_, event)| match event {
+                            WorldEvent::Found { community } => Some(*community),
+                            WorldEvent::Split { daughter, .. } => Some(*daughter),
+                            _ => None,
+                        })
+                        .filter(|&c| {
+                            spoken(c) == *variety
+                                && !world.events[..decision.events.start].iter().any(
+                                    |(_, event)| matches!(event, WorldEvent::Ended { community, .. } if *community == c),
+                                )
+                        })
+                        .collect(),
+                    Some(*variety),
+                    )
+                }
                 Action::Temper {
                     community,
                     axis,
@@ -575,11 +622,15 @@ impl Bench {
                 text,
                 people,
                 variety,
-                annals: decision
-                    .events
-                    .clone()
-                    .map(annals::world_event_id)
-                    .collect(),
+                annals: if let Action::Law { variety, .. } = action {
+                    vec![format!("sounds:{variety}:{generation}")]
+                } else {
+                    decision
+                        .events
+                        .clone()
+                        .map(annals::world_event_id)
+                        .collect()
+                },
             });
         }
         to_json(&views)
@@ -1224,6 +1275,58 @@ impl Bench {
         })
     }
 
+    /// Eligible catalog laws at an exact reading, without changing the world.
+    /// Specimen `was`/`wasIpa` compare immediately before this choice, unlike
+    /// a sound-change annal's comparison with the previous generation.
+    pub fn law_choices(&self, point: &str, variety: usize) -> Result<String, String> {
+        let point: HistoryPoint = serde_json::from_str(point).map_err(|e| e.to_string())?;
+        let world = self.chronicle.world_at_point(point)?;
+        if !world
+            .communities
+            .iter()
+            .any(|c| c.living() && c.variety == variety)
+        {
+            return Err(format!("language {variety} has no living speakers"));
+        }
+        let speech = &world.varieties[variety];
+        let stress = speech.stress();
+        let mut choices: Vec<LawChoice> = world
+            .law_catalog()
+            .iter()
+            .filter(|law| law.id != "koine-levelling")
+            .filter_map(|law| {
+                law.assess_weighted(
+                    speech.grammar.forms(&speech.lexicon),
+                    &speech.profile.inventory,
+                    speech.minimal,
+                    stress,
+                )?;
+                let words = speech
+                    .lexicon
+                    .living()
+                    .filter(|word| {
+                        let after = law.apply(&word.form, speech.minimal, stress);
+                        law.changes(&word.form, &after, stress)
+                    })
+                    .count();
+                Some(LawChoice {
+                    id: law.id,
+                    label: law.label,
+                    words,
+                    specimen: law_specimen(speech, law),
+                    recent: speech.laws.iter().rev().any(|&(generation, id)| {
+                        id == law.id
+                            && world.generation.saturating_sub(generation)
+                                < umran_sim::world::LAW_RECURRENCE
+                    }),
+                })
+            })
+            .collect();
+        // Stable sorting preserves catalog order when coverage is tied.
+        choices.sort_by_key(|choice| std::cmp::Reverse(choice.words));
+        to_json(&choices)
+    }
+
     /// Communities, varieties, contacts, and the timeline at `generation`.
     pub fn overview(&mut self, generation: u32) -> Result<String, String> {
         self.overview_reading(generation, self.fixed.clone())
@@ -1424,6 +1527,7 @@ impl Bench {
                                     .iter()
                                     .find(|&&(g, w, _)| (g, w) == (generation, law))
                                     .map(|&(_, _, f)| f),
+                                decision: world.authored_laws.get(&(id, generation, law)).copied(),
                             })
                             .collect(),
                         words: v.lexicon.living().count(),
@@ -1875,6 +1979,7 @@ impl Bench {
                 | Action::State { .. }
                 | Action::Religion { .. }
                 | Action::Temper { .. }
+                | Action::Law { .. }
                 | Action::Craft { .. } => continue,
             };
             let kind = match action {
@@ -2110,6 +2215,35 @@ pub(crate) fn specimen(variety: &Variety, generation: u32) -> Vec<SpecimenWord> 
                     .then(|| form.stressed_syllable(stress))
                     .flatten(),
                 spelled,
+            })
+        })
+        .collect()
+}
+
+/// Preview only this law, including a same-year choice after earlier changes.
+fn law_specimen(variety: &Variety, law: &umran_sim::laws::Law) -> Vec<SpecimenWord> {
+    let stress = variety.stress();
+    let next_stress = law.stress.unwrap_or(stress);
+    SPECIMEN
+        .iter()
+        .filter_map(|id| {
+            let concept = by_id(id).expect("specimen meanings are concepts");
+            let word = variety.lexicon.word_for(concept)?;
+            let after = law.apply(&word.form, variety.minimal, stress);
+            let spelled = variety.spell(&after);
+            let ipa = after.ipa_stressed(next_stress);
+            let was = variety.spell(&word.form);
+            let was_ipa = word.form.ipa_stressed(stress);
+            Some(SpecimenWord {
+                concept: concept.id,
+                gloss: concept.gloss,
+                was: (was != spelled).then_some(was),
+                was_ipa: (was_ipa != ipa).then_some(was_ipa),
+                spelled,
+                ipa,
+                stress: (after.vowel_count() > 1)
+                    .then(|| after.stressed_syllable(next_stress))
+                    .flatten(),
             })
         })
         .collect()
@@ -3111,6 +3245,17 @@ struct LawView {
     /// The variety it spread from, if it came as a wave from a neighbour
     /// rather than arising here.
     from: Option<usize>,
+    /// The authored action that applied this law, if any.
+    decision: Option<usize>,
+}
+
+#[derive(Serialize)]
+struct LawChoice {
+    id: &'static str,
+    label: &'static str,
+    words: usize,
+    specimen: Vec<SpecimenWord>,
+    recent: bool,
 }
 
 #[derive(Serialize)]
@@ -4329,6 +4474,197 @@ mod tests {
         let mut action: serde_json::Value = serde_json::from_str(&found(name, preset)).unwrap();
         action["region"] = region.into();
         action.to_string()
+    }
+
+    #[test]
+    fn authored_law_choices_match_application_without_mutating_the_reading() {
+        let mut bench = Bench::new(5, "medium").unwrap();
+        bench.act(&found("Hill", "familiar")).unwrap();
+        let point = to_json(&bench.chronicle.end()).unwrap();
+        let saved = bench.save().unwrap();
+        let before = bench.chronicle.latest().varieties[0].clone();
+        let choices: Vec<serde_json::Value> =
+            serde_json::from_str(&bench.law_choices(&point, 0).unwrap()).unwrap();
+        assert_eq!(bench.save().unwrap(), saved);
+        assert!(bench.law_choices(&point, usize::MAX).is_err());
+        assert!(
+            bench
+                .law_choices(r#"{"action":999,"offset":0}"#, 0)
+                .is_err()
+        );
+        assert!(choices.iter().all(|c| c["id"] != "koine-levelling"));
+        let catalog = catalog();
+        let order =
+            |c: &serde_json::Value| catalog.iter().position(|law| law.id == c["id"]).unwrap();
+        assert!(choices.windows(2).all(|pair| {
+            pair[0]["words"].as_u64() > pair[1]["words"].as_u64()
+                || (pair[0]["words"] == pair[1]["words"] && order(&pair[0]) < order(&pair[1]))
+        }));
+        assert!(choices.iter().any(|c| c["id"] == "spirantization"));
+        for choice in &choices {
+            let mut applied = Bench::load(&saved).unwrap();
+            applied
+                .act(
+                    &serde_json::json!({
+                        "kind": "law", "variety": 0, "law": choice["id"]
+                    })
+                    .to_string(),
+                )
+                .unwrap();
+            let world = applied.chronicle.latest();
+            let after = &world.varieties[0];
+            let changed = before
+                .lexicon
+                .living()
+                .filter(|word| {
+                    let now = after.lexicon.get(word.id);
+                    word.form != now.form
+                        || word.form.stressed_syllable(before.stress())
+                            != now.form.stressed_syllable(after.stress())
+                })
+                .count();
+            assert_eq!(choice["words"], changed, "{}", choice["id"]);
+            let actual = serde_json::to_value(specimen(after, 0)).unwrap();
+            for (preview, current) in choice["specimen"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .zip(actual.as_array().unwrap())
+            {
+                for field in ["concept", "gloss", "spelled", "ipa", "stress"] {
+                    assert_eq!(preview[field], current[field], "{} {field}", choice["id"]);
+                }
+                let original = before
+                    .lexicon
+                    .word_for(by_id(preview["concept"].as_str().unwrap()).unwrap())
+                    .unwrap();
+                let spelling = before.spell(&original.form);
+                let ipa = original.form.ipa_stressed(before.stress());
+                assert_eq!(
+                    preview["was"],
+                    if preview["spelled"] != spelling {
+                        serde_json::json!(spelling)
+                    } else {
+                        serde_json::Value::Null
+                    }
+                );
+                assert_eq!(
+                    preview["wasIpa"],
+                    if preview["ipa"] != ipa {
+                        serde_json::json!(ipa)
+                    } else {
+                        serde_json::Value::Null
+                    }
+                );
+            }
+            assert_eq!(world.decisions.last().unwrap().action, 1);
+            let overview: serde_json::Value =
+                serde_json::from_str(&applied.overview(0).unwrap()).unwrap();
+            assert_eq!(overview["varieties"][0]["laws"][0]["decision"], 1);
+            let annal = overview["annals"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|a| a["kind"] == "law")
+                .unwrap();
+            assert_eq!(annal["decision"], 1);
+            assert_eq!(annal["before"], serde_json::json!({"action":1,"offset":0}));
+            let decisions: serde_json::Value =
+                serde_json::from_str(&applied.decisions().unwrap()).unwrap();
+            assert_eq!(decisions[1]["annals"][0], annal["id"]);
+            assert_eq!(decisions[1]["people"], serde_json::json!([0]));
+            let reloaded = Bench::load(&applied.save().unwrap()).unwrap();
+            assert_eq!(
+                reloaded.chronicle.latest().authored_laws,
+                applied.chronicle.latest().authored_laws
+            );
+        }
+    }
+
+    #[test]
+    fn authored_law_choices_allow_recent_stress_laws_and_resolve_exact_readings() {
+        let mut bench = Bench::new(5, "medium").unwrap();
+        let mut action: serde_json::Value =
+            serde_json::from_str(&found("Hill", "familiar")).unwrap();
+        action["design"]["stress"] = "final".into();
+        bench.act(&action.to_string()).unwrap();
+        let start = to_json(&bench.chronicle.end()).unwrap();
+        let original = bench.law_choices(&start, 0).unwrap();
+        for law in ["initial-stress", "penult-stress"] {
+            bench
+                .act(&serde_json::json!({"kind":"law","variety":0,"law":law}).to_string())
+                .unwrap();
+        }
+        let point = to_json(&bench.chronicle.end()).unwrap();
+        let choices: Vec<serde_json::Value> =
+            serde_json::from_str(&bench.law_choices(&point, 0).unwrap()).unwrap();
+        let initial = choices
+            .iter()
+            .find(|c| c["id"] == "initial-stress")
+            .unwrap();
+        assert_eq!(initial["recent"], true);
+        bench
+            .act(r#"{"kind":"law","variety":0,"law":"initial-stress"}"#)
+            .unwrap();
+        assert_eq!(bench.law_choices(&start, 0).unwrap(), original);
+        assert_eq!(
+            bench.chronicle.latest().authored_laws[&(0, 0, "initial-stress")],
+            3
+        );
+        let overview: serde_json::Value =
+            serde_json::from_str(&bench.overview(0).unwrap()).unwrap();
+        let annal = overview["annals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["kind"] == "law")
+            .unwrap();
+        assert_eq!(annal["decision"], 3);
+        let before = serde_json::to_string(&serde_json::json!({"action":3,"offset":0})).unwrap();
+        let earlier: serde_json::Value =
+            serde_json::from_str(&bench.overview_at(&before).unwrap()).unwrap();
+        assert_eq!(earlier["varieties"][0]["laws"][0]["decision"], 1);
+    }
+
+    #[test]
+    fn authored_law_specimens_preserve_minimal_words_and_show_stress_only_changes() {
+        let mut profile = umran_sim::SoundProfile::base();
+        profile.stress = Some(StressRule::Final);
+        let mut variety = Variety::found(7, &profile, Livelihood::Farming, Default::default());
+        let water = variety
+            .lexicon
+            .word_for(by_id("water").unwrap())
+            .unwrap()
+            .id;
+        variety.lexicon.get_mut(water).form = Form::from_ipa("katata").unwrap();
+        let laws = catalog();
+        let stress = laws.iter().find(|l| l.id == "initial-stress").unwrap();
+        let rows = law_specimen(&variety, stress);
+        let preview = rows.iter().find(|w| w.concept == "water").unwrap();
+        assert_eq!(preview.ipa, "ˈkatata");
+        assert_eq!(preview.was_ipa.as_deref(), Some("kataˈta"));
+        assert_eq!(preview.was, None);
+        assert_eq!(preview.stress, Some(0));
+        assert_eq!(variety.stress(), StressRule::Final);
+
+        let apocope = laws.iter().find(|l| l.id == "apocope").unwrap();
+        variety.minimal = umran_sim::prosody::MinimalWord::TwoSyllables;
+        variety.lexicon.get_mut(water).form = Form::from_ipa("kata").unwrap();
+        let rows = law_specimen(&variety, apocope);
+        let preview = rows.iter().find(|w| w.concept == "water").unwrap();
+        assert_eq!(preview.spelled, "kata");
+        assert_eq!(preview.was, None);
+        assert_eq!(preview.was_ipa, None);
+        variety.minimal = umran_sim::prosody::MinimalWord::Syllable;
+        let rows = law_specimen(&variety, apocope);
+        let preview = rows.iter().find(|w| w.concept == "water").unwrap();
+        assert_eq!(preview.spelled, "kat");
+        assert_eq!(preview.was.as_deref(), Some("kata"));
+        variety.lexicon.get_mut(water).form = Form::from_ipa("ta").unwrap();
+        let rows = law_specimen(&variety, apocope);
+        let preview = rows.iter().find(|w| w.concept == "water").unwrap();
+        assert_eq!(preview.spelled, "ta");
+        assert_eq!(preview.was, None);
     }
 
     fn bench() -> Bench {

@@ -80,6 +80,11 @@ pub enum Action {
         community: usize,
         craft: Craft,
     },
+    /// Applies a catalog sound law to a living language at this reading.
+    Law {
+        variety: usize,
+        law: String,
+    },
     Temper {
         community: usize,
         axis: Axis,
@@ -705,6 +710,40 @@ fn apply(world: &mut World, action: &Action, index: usize) -> Result<(), String>
             }
             world.learn(*c, *craft, None);
         }
+        Action::Law { variety, law } => {
+            let law = world
+                .law_catalog()
+                .iter()
+                .find(|candidate| candidate.id == law)
+                .ok_or_else(|| format!("there is no sound law {law}"))?;
+            if law.id == "koine-levelling" {
+                return Err("koine levelling is not a portable sound law".into());
+            }
+            if !world
+                .communities
+                .iter()
+                .any(|c| c.living() && c.variety == *variety)
+            {
+                return Err(format!("language {variety} has no living speakers"));
+            }
+            let speech = &world.varieties[*variety];
+            if law
+                .assess_weighted(
+                    speech.grammar.forms(&speech.lexicon),
+                    &speech.profile.inventory,
+                    speech.minimal,
+                    speech.stress(),
+                )
+                .is_none()
+            {
+                return Err("the sound law would change no living forms".into());
+            }
+            let law = law.clone();
+            world.apply_law(*variety, &law);
+            world
+                .authored_laws
+                .insert((*variety, world.generation, law.id), index);
+        }
         Action::Temper {
             community,
             axis,
@@ -761,6 +800,118 @@ mod tests {
                 .iter()
                 .zip(&b.varieties)
                 .all(|(x, y)| x.lexicon == y.lexicon)
+    }
+
+    #[test]
+    fn authored_laws_refuse_invalid_or_unspoken_inputs_without_decisions() {
+        let mut world = World::solo(0, &crate::SoundProfile::base(), Params::static_society());
+        let stress = world.varieties[0].stress();
+        let noop = world
+            .law_catalog()
+            .iter()
+            .find(|law| {
+                law.id != "koine-levelling"
+                    && law
+                        .assess_weighted(
+                            world.varieties[0]
+                                .grammar
+                                .forms(&world.varieties[0].lexicon),
+                            &world.varieties[0].profile.inventory,
+                            world.varieties[0].minimal,
+                            stress,
+                        )
+                        .is_none()
+            })
+            .unwrap()
+            .id;
+        for (variety, law) in [
+            (0, "missing-law"),
+            (0, "koine-levelling"),
+            (0, noop),
+            (usize::MAX, "w-fortition"),
+        ] {
+            let before = world.clone();
+            assert!(
+                apply(
+                    &mut world,
+                    &Action::Law {
+                        variety,
+                        law: law.into()
+                    },
+                    0
+                )
+                .is_err()
+            );
+            assert!(same(&world, &before));
+            assert_eq!(world.decisions, before.decisions);
+            assert_eq!(world.authored_laws, before.authored_laws);
+            assert_eq!(world.varieties[0].laws, before.varieties[0].laws);
+        }
+        world.communities[0].ended = Some(0);
+        let before = world.clone();
+        assert!(
+            apply(
+                &mut world,
+                &Action::Law {
+                    variety: 0,
+                    law: "w-fortition".into()
+                },
+                0
+            )
+            .is_err()
+        );
+        assert!(same(&world, &before));
+        assert!(world.decisions.is_empty());
+        assert!(world.authored_laws.is_empty());
+    }
+
+    #[test]
+    fn authored_laws_spread_as_waves_and_can_repeat_without_a_quiet_span() {
+        let params = Params {
+            wave_rate: 1_000_000.0,
+            sound_change_rate: 0.0,
+            loan_rate: 0.0,
+            innovation_rate: 0.0,
+            ..Params::static_society()
+        };
+        let mut world = World::solo(0, &crate::SoundProfile::base(), params);
+        let daughter = world.split(0, None, 0.0);
+        let target = world.communities[daughter].variety;
+        world.communities[daughter].lands = world.communities[0].lands.clone();
+        world
+            .connect(0, daughter, 1.0, ContactKind::Neighbours)
+            .unwrap();
+        let word = world.varieties[0].lexicon.living().next().unwrap().id;
+        let before = crate::Form::from_ipa("wawa").unwrap();
+        let after = crate::Form::from_ipa("vava").unwrap();
+        world.varieties[0].lexicon.get_mut(word).form = before.clone();
+        world.varieties[target].lexicon.get_mut(word).form = before.clone();
+        let action = Action::Law {
+            variety: 0,
+            law: "w-fortition".into(),
+        };
+        apply(&mut world, &action, 0).unwrap();
+        assert_eq!(world.varieties[0].lexicon.get(word).form, after);
+        assert_eq!(world.varieties[target].lexicon.get(word).form, before);
+        world.step();
+        assert_eq!(world.varieties[target].lexicon.get(word).form, after);
+        assert_eq!(world.varieties[target].waves, vec![(1, "w-fortition", 0)]);
+        assert!(
+            !world
+                .authored_laws
+                .contains_key(&(target, 1, "w-fortition"))
+        );
+        world.varieties[0].lexicon.get_mut(word).form = before;
+        apply(&mut world, &action, 1).unwrap();
+        assert_eq!(world.varieties[0].lexicon.get(word).form, after);
+        assert_eq!(
+            world.varieties[0].laws,
+            vec![(0, "w-fortition"), (1, "w-fortition")]
+        );
+        assert_eq!(
+            world.decisions.iter().map(|d| d.action).collect::<Vec<_>>(),
+            vec![0, 1]
+        );
     }
 
     fn settlement(world: &World, intensity: f32) -> Action {

@@ -84,7 +84,7 @@ const WAVE_SPAN: u32 = 10;
 /// hold there again. Kinds of change recur: Germanic consonants shifted
 /// under Grimm's law and again, in High German, some fifteen centuries
 /// later, and vowels lengthen and shorten by turns.
-const LAW_RECURRENCE: u32 = 60;
+pub const LAW_RECURRENCE: u32 = 60;
 /// Generations apart at which two varieties take up each other's sound
 /// changes half as readily as twin dialects do.
 const KIN_SPAN: f32 = 20.0;
@@ -851,6 +851,9 @@ pub struct World {
     pub events: Vec<(u32, WorldEvent)>,
     /// Authored actions, including those that produced no events. Runs are absent.
     pub decisions: Vec<Decision>,
+    /// Authored catalog applications, keyed by language, generation, and law.
+    /// Repeating the same law in one generation retains its latest decision.
+    pub authored_laws: BTreeMap<(usize, u32, &'static str), usize>,
     /// Optional causes by response event index, within this telling.
     pub causes: std::collections::BTreeMap<usize, crate::Cause>,
     pub(crate) triggers: crate::causes::Triggers,
@@ -919,6 +922,7 @@ impl World {
             params,
             events: Vec::new(),
             decisions: Vec::new(),
+            authored_laws: BTreeMap::new(),
             causes: Default::default(),
             triggers: Default::default(),
             states: Vec::new(),
@@ -3726,6 +3730,11 @@ impl World {
         };
         let law = (*law).clone();
         self.apply_law(v, &law);
+    }
+
+    /// Catalog laws shared by natural changes, waves, and authored choices.
+    pub fn law_catalog(&self) -> &[Law] {
+        &self.laws
     }
 
     /// Applies `law` to every living word of variety `v`, and to the names

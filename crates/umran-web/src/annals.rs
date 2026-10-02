@@ -1777,7 +1777,12 @@ fn sound_changes(world: &World) -> Vec<Annal> {
         // A daughter's inherited laws are told in its parent's annals.
         let from = variety.parent.map_or(0, |f| f.generation + 1);
         let mut by_generation: BTreeMap<u32, Vec<&'static str>> = BTreeMap::new();
-        for &(generation, id) in variety.laws.iter().filter(|(g, _)| *g >= from) {
+        for &(generation, id) in variety
+            .laws
+            .iter()
+            .filter(|(g, id)| *g >= from || world.authored_laws.contains_key(&(v, *g, *id)))
+        {
+            // Authored laws at a daughter's founding year are not inherited.
             by_generation.entry(generation).or_default().push(id);
         }
         for (generation, ids) in by_generation {
@@ -1810,6 +1815,11 @@ fn sound_changes(world: &World) -> Vec<Annal> {
                 ),
                 None => label(id),
             };
+            let decision = ids
+                .iter()
+                .filter_map(|&id| world.authored_laws.get(&(v, generation, id)))
+                .copied()
+                .max();
             out.push(Annal {
                 id: format!("sounds:{v}:{generation}"),
                 members: Vec::new(),
@@ -1839,7 +1849,7 @@ fn sound_changes(world: &World) -> Vec<Annal> {
                 climate: None,
                 river_flow: None,
                 settlement: None,
-                decision: None,
+                decision,
                 before: None,
             });
         }

@@ -3,7 +3,7 @@
 How the workbench records, replays, and stores a world.
 
 A history is a seed, a map size, and ordered `Action`s (`chronicle.rs`):
-found, connect, settle, shift, state, religion, craft, temper, run. The
+found, connect, settle, shift, state, religion, craft, law, temper, run. The
 seed draws the map as well as the history. Found records the naming, the
 full design, the language's own seed, the one its preview used, so
 founding gives exactly the previewed words and names, and optionally the
@@ -18,6 +18,12 @@ rule contact makes the more prestigious side rule the other's state.
 Religion raises a founder among a people, and a faith with him; craft has
 a people come upon a craft it lacks; temper nudges one leaning of a
 people's temper, which then drifts and answers events as before.
+A law records the living language's index and a catalog id
+(`{"kind":"law","variety":0,"law":"spirantization"}`), applying it at the
+reading year. `lawChoices(point, variety)` previews eligible laws without
+altering that reading, ordered by changed living words, then catalog order.
+Its `recent` flag reports the usual sixty-generation quiet span, but does
+not prevent an author's repeat application.
 Consecutive runs merge up to the per-action limit, so playback stays a compact
 account. Any past generation is recovered by replaying, with checkpoints every
 10 generations; the timeline needs no separate data. Running to a year
@@ -41,6 +47,15 @@ Settlement evidence remains separate from authorship. The facade's
 order, with its generation, kind, sentence, people, resulting language for
 founding/settlement/shift, and original annal IDs (including grouped members).
 A decision with no emitted events stays in the list with an empty `annals`.
+
+Sound-law annals are synthesized from the language's law ledger rather
+than world events. Authored applications therefore keep a separate
+language/year/law-to-decision record, rebuilt when the recipe replays.
+Both `Law.decision` and the existing yearly sound-change annal read that
+record. Several authored laws in one language/year keep one annal, marked
+with the latest decision; every relevant decision links to it. Repeating
+the same law in that year gives its ledger entries the latest mark too.
+If the same law also arose naturally that year, the author's mark wins.
 
 The book and cards mark authorship from that engine record, not by matching
 entry text or parsing the save. Each decision has a row before the entries

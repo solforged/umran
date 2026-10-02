@@ -14,6 +14,7 @@ import type {
   Destination,
   Kin,
   LanguageDesign,
+  LawChoice,
   LexiconRow,
   MapSize,
   Overview,
@@ -49,6 +50,8 @@ function reader(bench: Workbench | ReadView, save: () => string) {
     overviewAt: (point) => JSON.parse(bench.overviewAt(JSON.stringify(point))) as Overview,
     settlement: (point, community, intent, share, destination) =>
       JSON.parse(bench.settlement(JSON.stringify(point), community, intent, share, destination ?? -1)) as SettlementPreview,
+    lawChoices: (point, variety) =>
+      JSON.parse(bench.lawChoices(JSON.stringify(point), variety)) as LawChoice[],
     latest: () => bench.latest(),
     overview: (generation) => {
       if (cached?.generation !== generation) cached = { generation, view: JSON.parse(bench.overview(generation)) as Overview };
@@ -119,6 +122,7 @@ function wrap(bench: Workbench): Engine {
         decisions: () => get().decisions(),
         latest: () => get().latest(), overview: (g) => get().overview(g), overviewAt: (p) => get().overviewAt(p),
         settlement: (p, c, intent, share, destination) => get().settlement(p, c, intent, share, destination),
+        lawChoices: (p, v) => get().lawChoices(p, v),
         lexicon: (g, v) => get().lexicon(g, v), kin: (g, v) => get().kin(g, v), word: (g, v, c) => get().word(g, v, c),
         story: (g, subject) => get().story(g, subject),
         climate: (g) => get().climate(g), river: (g, id) => get().river(g, id),

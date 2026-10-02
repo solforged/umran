@@ -210,6 +210,17 @@ so the engine revision remains 31.
   geminates, so the two inputs remain distinct. Loss of a preconsonantal
   nasal can lengthen the preceding vowel. Length alone has neutral segment
   preference; assimilation is scored toward the surviving consonant.
+  The author can also apply a catalog law to a living language as a dated
+  decision. The catalog previews its effect on six basic words and counts
+  the living lexemes (individual vocabulary entries) whose current forms
+  would change. Eligibility also considers grammatical forms, such as a
+  plural with an ending; the same minimal-word and last-vowel guards apply.
+  A recent law may be chosen again if it still changes something. Authored
+  laws enter the ordinary ledger, change living names and grammar, and
+  spread to neighbours by the same wave mechanism. Koiné levelling is not
+  offered: its mergers depend on the particular city's speakers, so it is
+  not a portable rule. Revision means returning before the decision, not
+  editing a derived word or removing a law from the ledger.
 - Sound laws also spread as waves (`spread_waves`), as the wave model of
   language change describes: a law that took hold in a variety in the
   last ten generations may pass to a variety in contact with it. The

@@ -94,9 +94,19 @@ export type Action =
   | { kind: "state"; community: number; capital?: number }
   | { kind: "religion"; community: number }
   | { kind: "craft"; community: number; craft: Craft }
+  | { kind: "law"; variety: number; law: string }
   | { kind: "run"; generations: number }
   /// Fate's hand on a people's temper: nudges one axis, by -1 to 1.
   | { kind: "temper"; community: number; axis: EthosAxis; amount: number };
+
+/// One eligible catalog law and its effect at the exact reading point.
+export interface LawChoice {
+  id: string;
+  label: string;
+  words: number;
+  specimen: SpecimenWord[];
+  recent: boolean;
+}
 
 /// A people's temper: six leanings, each from -1 to 1, toward the second
 /// word in each name (peaceable to martial, insular to open, and so on).
@@ -334,6 +344,7 @@ export interface Law {
   id: string;
   label: string;
   from: number | null;
+  decision: number | null;
 }
 
 export interface Variety {
@@ -812,6 +823,7 @@ export interface FoundingPreview {
 export interface ReadEngine {
   overviewAt(point: HistoryPoint): Overview;
   settlement(point: HistoryPoint, community: number, intent: SettlementIntent, share: number, destination: number | null): SettlementPreview;
+  lawChoices(point: HistoryPoint, variety: number): LawChoice[];
   latest(): number;
   overview(generation: number): Overview;
   lexicon(generation: number, variety: number): LexiconRow[];
