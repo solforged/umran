@@ -84,6 +84,31 @@ export function Appendix({
       </header>
 
       <section>
+        <h3>The whole world</h3>
+        <ul className="takeout">
+          <li>
+            <button
+              type="button"
+              onClick={() => download(fileName(title, "json"), engine.save(), "application/json")}
+            >
+              As a save file
+            </button>{" "}
+            <span className="muted">
+              To bring back in from the shelf later, in this or another browser. It holds every telling and the complete notebook.
+            </span>
+          </li>
+          <li>
+            <button type="button" onClick={whole}>
+              As text
+            </button>{" "}
+            <span className="muted">
+              Markdown: peoples, states, religions, crafts, history, glossaries, and every notebook entry, including archived notes.
+            </span>
+          </li>
+        </ul>
+      </section>
+
+      <section>
         <div className="row spread">
           <h3>Names</h3>
           <button type="button" onClick={() => void copy("names", [
@@ -254,30 +279,7 @@ export function Appendix({
         </table>
       </section>
 
-      <section>
-        <h3>The whole world</h3>
-        <ul className="takeout">
-          <li>
-            <button type="button" onClick={whole}>
-              As text
-            </button>{" "}
-            <span className="muted">
-              Markdown: peoples, states, religions, crafts, history, glossaries, and every notebook entry, including archived notes.
-            </span>
-          </li>
-          <li>
-            <button
-              type="button"
-              onClick={() => download(fileName(title, "json"), engine.save(), "application/json")}
-            >
-              As a save file
-            </button>{" "}
-            <span className="muted">
-              To bring back in from the shelf later, in this or another browser. It holds every telling and the complete notebook.
-            </span>
-          </li>
-        </ul>
-      </section>
+
     </main>
   );
 }

@@ -235,6 +235,14 @@ select {
   background: transparent;
 }
 
+/* Every slider, radio, and checkbox, in the dialogs as on the time bar,
+   takes the rubric rather than the browser's blue. */
+input[type="range"],
+input[type="radio"],
+input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
 /* Timeline */
 
 .track {
@@ -244,7 +252,6 @@ select {
 
 .track input[type="range"] {
   width: 100%;
-  accent-color: var(--accent);
   margin: 0;
 }
 
@@ -314,8 +321,9 @@ select {
   transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
 
+/* Names lettered at the shelf's scale, so they stay inside the sheet. */
 .miniature svg {
-  --label: 2.2;
+  --label: 1.5;
 }
 
 /* At this size a people's lands need a stronger wash to show. */
@@ -836,7 +844,6 @@ tbody tr.selected {
 
 .knob input[type="range"] {
   width: 100%;
-  accent-color: var(--accent);
 }
 
 .check {
@@ -1459,15 +1466,15 @@ button.icon,
   white-space: nowrap;
 }
 
+/* More tabs than fit wrap to a second row rather than running off the
+   edge under a hidden scrollbar. */
 .folio-tabs {
   display: flex;
   flex: 1;
+  flex-wrap: wrap;
   min-width: 0;
   gap: 0.1rem;
   margin-bottom: -1px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
 }
 
 .folio-tab {
@@ -1555,11 +1562,14 @@ button.icon,
   background: var(--paper-raised);
 }
 
-/* The last few cards visited, to step back to. */
+/* The last few cards visited, to step back to. Crumbs keep their names;
+   when the row is short the oldest run off its left edge under a fade,
+   so the newest, the ones worth stepping back to, stay readable. */
 .trail {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
+  justify-content: flex-end;
   min-width: 0;
   margin: 0 0 0 0.4rem;
   padding: 0;
@@ -1567,13 +1577,12 @@ button.icon,
   overflow: hidden;
   font-size: 0.85rem;
   color: var(--ink-soft);
+  mask-image: linear-gradient(to right, transparent, #000 1.5rem);
 }
 
 .trail li {
-  min-width: 0;
+  flex: none;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .trail li + li::before {
