@@ -105,8 +105,11 @@ fn main() {
         if lexicon.keeps_founding_word(slot.concept) {
             continue;
         }
+        // Meanings learned after founding had no founding word to replace.
+        let Some(old) = founding.lexicon.word_for(slot.concept) else {
+            continue;
+        };
         replaced += 1;
-        let old = founding.lexicon.word_for(slot.concept).unwrap();
         let how = match now.origin {
             Origin::Founding => format!("extended from '{}'", now.first_sense.gloss),
             Origin::Expressive => format!("new root, gen {}", now.born),
