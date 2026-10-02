@@ -77,6 +77,9 @@ pub(crate) struct Annal {
     pub river_flow: Option<RiverFlow>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub settlement: Option<umran_sim::settlement::SettlementRecord>,
+    /// The authored action that produced this entry, within its telling.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decision: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub before: Option<umran_sim::HistoryPoint>,
 }
@@ -332,6 +335,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
         climate: None,
         river_flow: None,
         settlement: None,
+        decision: None,
         before: None,
     };
     for (position, &(generation, ref event)) in world.events.iter().enumerate() {
@@ -959,6 +963,14 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
         };
         annal.id = world_event_id(position);
         annal.cause = world.causes.get(&position).copied();
+        let next = world
+            .decisions
+            .partition_point(|d| d.events.end <= position);
+        annal.decision = world
+            .decisions
+            .get(next)
+            .filter(|d| d.events.contains(&position))
+            .map(|d| d.action);
         if matches!(annal.kind, "neighbours" | "spread") {
             grouped
                 .entry((annal.kind, generation))
@@ -1022,6 +1034,17 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
     }
     for a in &mut out {
         languages(a, world, &shifts);
+        if let Some(first) = a.members.first() {
+            a.decision = first.decision;
+        }
+        a.before = a
+            .decision
+            .map(|action| umran_sim::HistoryPoint { action, offset: 0 });
+        for member in &mut a.members {
+            member.before = member
+                .decision
+                .map(|action| umran_sim::HistoryPoint { action, offset: 0 });
+        }
     }
     out.sort_by_key(|a| (a.generation, a.kind == "law"));
     out
@@ -1152,6 +1175,7 @@ fn state_annal(world: &World, generation: u32, state: usize, kind: &'static str)
         climate: None,
         river_flow: None,
         settlement: None,
+        decision: None,
         before: None,
     }
 }
@@ -1249,6 +1273,7 @@ fn vernacular_annal(world: &World, generation: u32, variety: usize, by: Vernacul
         climate: None,
         river_flow: None,
         settlement: None,
+        decision: None,
         before: None,
     }
 }
@@ -1373,6 +1398,7 @@ fn faith_annal(world: &World, generation: u32, religion: usize) -> Annal {
         climate: None,
         river_flow: None,
         settlement: None,
+        decision: None,
         before: None,
     }
 }
@@ -1569,6 +1595,7 @@ fn spread_annal(world: &World, generation: u32, spreads: &[(usize, usize)]) -> A
         climate: None,
         river_flow: None,
         settlement: None,
+        decision: None,
         before: None,
     }
 }
@@ -1681,6 +1708,7 @@ fn neighbours_annal(world: &World, generation: u32, n: &Neighbours) -> Annal {
         climate: None,
         river_flow: None,
         settlement: None,
+        decision: None,
         before: None,
     }
 }
@@ -1811,6 +1839,7 @@ fn sound_changes(world: &World) -> Vec<Annal> {
                 climate: None,
                 river_flow: None,
                 settlement: None,
+                decision: None,
                 before: None,
             });
         }
@@ -2031,6 +2060,7 @@ fn grammar_changes(world: &World) -> Vec<Annal> {
                 climate: None,
                 river_flow: None,
                 settlement: None,
+                decision: None,
                 before: None,
             });
         }

@@ -323,7 +323,8 @@ impl Chronicle {
     /// it cannot happen and changes nothing. A run straight after another
     /// run extends it, so playing generation by generation stays one action.
     pub fn act(&mut self, action: Action) -> Result<(), String> {
-        apply(&mut self.latest, &action)?;
+        let index = self.actions().len();
+        apply(&mut self.latest, &action, index)?;
         match (self.actions_mut().last_mut(), &action) {
             (Some(Action::Run { generations }), Action::Run { generations: more })
                 if *generations <= MAX_RUN - more =>
@@ -419,7 +420,7 @@ impl Chronicle {
     fn replay(seed: u64, map: MapSize, actions: &[Action]) -> Result<World, String> {
         let mut world = World::with_map(seed, Params::default(), map);
         for (i, action) in actions.iter().enumerate() {
-            apply(&mut world, action).map_err(|e| format!("action {}: {e}", i + 1))?;
+            apply(&mut world, action, i).map_err(|e| format!("action {}: {e}", i + 1))?;
         }
         Ok(world)
     }
@@ -509,7 +510,8 @@ impl Chronicle {
                     };
                 }
                 other => {
-                    apply(&mut world, &other).expect("recorded actions were valid when taken");
+                    apply(&mut world, &other, cursor.action)
+                        .expect("recorded actions were valid when taken");
                     cursor.action += 1;
                 }
             }
@@ -593,7 +595,8 @@ fn community(world: &World, index: usize) -> Result<(), String> {
 
 /// Checks `action` and only then changes `world`, so a refused action
 /// leaves it as it was.
-fn apply(world: &mut World, action: &Action) -> Result<(), String> {
+fn apply(world: &mut World, action: &Action, index: usize) -> Result<(), String> {
+    let start = world.events.len();
     match action {
         Action::Settle { choice } => {
             world.settle(choice)?;
@@ -714,6 +717,12 @@ fn apply(world: &mut World, action: &Action) -> Result<(), String> {
             world.run(*generations);
         }
     }
+    if !matches!(action, Action::Run { .. }) {
+        world.decisions.push(crate::world::Decision {
+            action: index,
+            events: start..world.events.len(),
+        });
+    }
     Ok(())
 }
 
@@ -830,20 +839,23 @@ mod tests {
             },
             Action::Run { generations: 12 },
         ]);
-        for action in &actions {
-            apply(&mut baseline, action).unwrap();
-            apply(&mut neutral, action).unwrap();
+        for (index, action) in actions.iter().enumerate() {
+            apply(&mut baseline, action, index).unwrap();
+            apply(&mut neutral, action, index).unwrap();
         }
-        for action in [
+        for (offset, action) in [
             settlement(&baseline, 0.5),
             Action::Shift {
                 community: 1,
                 toward: 0,
             },
             Action::Run { generations: 148 },
-        ] {
-            apply(&mut baseline, &action).unwrap();
-            apply(&mut neutral, &action).unwrap();
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            apply(&mut baseline, &action, actions.len() + offset).unwrap();
+            apply(&mut neutral, &action, actions.len() + offset).unwrap();
         }
         assert!(same(&baseline, &neutral));
         assert_eq!(baseline.events, neutral.events);
@@ -993,6 +1005,7 @@ mod tests {
         let mut cold = sample();
         cold.checkpoints.clear();
         assert!(same(&warm, &cold.replay_to(31)));
+        assert_eq!(warm.decisions, cold.replay_to(31).decisions);
     }
 
     #[test]
@@ -1191,6 +1204,7 @@ mod tests {
         let back: Recipe = serde_json::from_str(&json).unwrap();
         let loaded = Chronicle::from_recipe(&back).unwrap();
         assert!(same(loaded.latest(), c.latest()));
+        assert_eq!(loaded.latest().decisions, c.latest().decisions);
         let mut wrong = back.clone();
         wrong.format = "something-else".into();
         assert!(Chronicle::from_recipe(&wrong).is_err());
@@ -1246,5 +1260,63 @@ mod tests {
         assert_eq!(history.world_at_point(reading).unwrap().generation, 3);
         history.branch_at_point(reading).unwrap();
         assert_eq!(history.latest().generation, 3);
+    }
+
+    #[test]
+    fn decisions_follow_exact_prefixes_and_branch_local_indices() {
+        let mut c = sample();
+        let original = c.latest().decisions.clone();
+        assert_eq!(
+            original.iter().map(|d| d.action).collect::<Vec<_>>(),
+            vec![0, 1, 3, 4, 5]
+        );
+        for decision in &original {
+            let before = c
+                .world_at_point(HistoryPoint {
+                    action: decision.action,
+                    offset: 0,
+                })
+                .unwrap();
+            let after = c
+                .world_at_point(HistoryPoint {
+                    action: decision.action + 1,
+                    offset: 0,
+                })
+                .unwrap();
+            assert_eq!(decision.events, before.events.len()..after.events.len());
+            assert_eq!(after.decisions.last(), Some(decision));
+            assert!(before.decisions.iter().all(|d| d.action < decision.action));
+        }
+        let prefix = HistoryPoint {
+            action: 2,
+            offset: 10,
+        };
+        c.act_at(
+            prefix,
+            Action::Temper {
+                community: 0,
+                axis: Axis::Martial,
+                amount: 0.01,
+            },
+        )
+        .unwrap();
+        assert_eq!(c.latest().decisions[..2], original[..2]);
+        assert_eq!(c.latest().decisions.last().unwrap().action, 3);
+        let branch = c.active();
+        let branch_decisions = c.latest().decisions.clone();
+        let before_refusal = c.recipe();
+        assert!(
+            c.act(Action::Shift {
+                community: 0,
+                toward: usize::MAX
+            })
+            .is_err()
+        );
+        assert_eq!(c.recipe(), before_refusal);
+        assert_eq!(c.latest().decisions, branch_decisions);
+        c.restore(0).unwrap();
+        assert_eq!(c.latest().decisions, original);
+        c.restore(branch).unwrap();
+        assert_eq!(c.latest().decisions, branch_decisions);
     }
 }

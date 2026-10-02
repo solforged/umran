@@ -55,4 +55,8 @@ pub(crate) struct Document {
     pub recipe: Recipe,
     #[serde(default)]
     pub notebook: Vec<Note>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub author: Option<String>,
 }

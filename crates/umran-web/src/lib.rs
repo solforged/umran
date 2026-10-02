@@ -59,6 +59,28 @@ impl Workbench {
         self.bench.save().map_err(fail)
     }
 
+    pub fn decisions(&self) -> Result<String, JsValue> {
+        self.bench.decisions().map_err(fail)
+    }
+
+    pub fn title(&self) -> Option<String> {
+        self.bench.title().map(str::to_owned)
+    }
+
+    pub fn author(&self) -> Option<String> {
+        self.bench.author().map(str::to_owned)
+    }
+
+    #[wasm_bindgen(js_name = setTitle)]
+    pub fn set_title(&mut self, title: &str) {
+        self.bench.set_title(title);
+    }
+
+    #[wasm_bindgen(js_name = setAuthor)]
+    pub fn set_author(&mut self, author: &str) {
+        self.bench.set_author(author);
+    }
+
     pub fn notebook(&self) -> Result<String, JsValue> {
         to_json(&self.bench.notebook).map_err(fail)
     }
@@ -71,6 +93,11 @@ impl Workbench {
     #[wasm_bindgen(js_name = resolveNote)]
     pub fn resolve_note(&self, id: &str) -> Result<String, JsValue> {
         self.bench.resolve_note(id).map_err(fail)
+    }
+
+    #[wasm_bindgen(js_name = removeNote)]
+    pub fn remove_note(&mut self, id: &str) {
+        self.bench.remove_note(id);
     }
 
     pub fn catalog() -> Result<String, JsValue> {
@@ -224,6 +251,9 @@ impl ReadView {
     pub fn latest(&self) -> u32 {
         self.bench.borrow().latest()
     }
+    pub fn decisions(&self) -> Result<String, JsValue> {
+        self.bench.borrow().decisions().map_err(fail)
+    }
     pub fn overview(&mut self, generation: u32) -> Result<String, JsValue> {
         self.bench.borrow_mut().overview(generation).map_err(fail)
     }
@@ -298,9 +328,24 @@ struct CachedReading {
     bench: Rc<RefCell<Bench>>,
 }
 
+/// One authored constraint, with links to its original (ungrouped) annals.
+#[derive(Serialize)]
+pub struct DecisionView {
+    pub index: usize,
+    pub generation: u32,
+    pub kind: &'static str,
+    pub text: String,
+    pub people: Vec<usize>,
+    /// The resulting language for founding, settlement, or shift.
+    pub variety: Option<usize>,
+    pub annals: Vec<String>,
+}
+
 pub struct Bench {
     chronicle: Chronicle,
     notebook: Vec<Note>,
+    title: Option<String>,
+    author: Option<String>,
     /// Invalidates previews even when two decisions happen in the same year.
     mutation: u32,
     /// The last world requested, so repeated views of one generation do not
@@ -320,6 +365,8 @@ impl Bench {
         Ok(Bench {
             chronicle: Chronicle::new(u64::from(seed), map),
             notebook: Vec::new(),
+            title: None,
+            author: None,
             mutation: 0,
             cached: None,
             saved_revision: None,
@@ -337,6 +384,8 @@ impl Bench {
         Ok(Bench {
             chronicle,
             notebook: document.notebook,
+            title: document.title,
+            author: document.author,
             mutation: 0,
             cached: None,
             saved_revision: (recipe.revision != ENGINE_REVISION).then_some(recipe.revision),
@@ -349,8 +398,190 @@ impl Bench {
         serde_json::to_string_pretty(&Document {
             recipe: self.chronicle.recipe(),
             notebook: self.notebook.clone(),
+            title: self.title.clone(),
+            author: self.author.clone(),
         })
         .map_err(|e| e.to_string())
+    }
+
+    pub fn title(&self) -> Option<&str> {
+        self.title.as_deref()
+    }
+
+    pub fn author(&self) -> Option<&str> {
+        self.author.as_deref()
+    }
+
+    pub fn set_title(&mut self, title: &str) {
+        self.title = (!title.is_empty()).then(|| title.to_owned());
+        self.readings.get_mut().clear();
+    }
+
+    pub fn set_author(&mut self, author: &str) {
+        self.author = (!author.is_empty()).then(|| author.to_owned());
+        self.readings.get_mut().clear();
+    }
+
+    /// Authored decisions through this reading, including empty event ranges.
+    pub fn decisions(&self) -> Result<String, String> {
+        let world = self
+            .fixed
+            .as_ref()
+            .map_or_else(|| self.chronicle.latest(), |(_, world)| world);
+        let mut generation = 0;
+        let mut actions = self.chronicle.actions().iter().enumerate();
+        let mut views = Vec::with_capacity(world.decisions.len());
+        for decision in &world.decisions {
+            let (_, action) = actions
+                .find(|(index, action)| {
+                    if let Action::Run { generations } = action {
+                        generation += generations;
+                    }
+                    *index == decision.action
+                })
+                .expect("a recorded decision has an action");
+            let name = |c| world.community_name_at(c, generation);
+            let spoken = |c: usize| {
+                world.events[decision.events.end..]
+                    .iter()
+                    .find_map(|(_, event)| match event {
+                        WorldEvent::Shift {
+                            community, from, ..
+                        } if *community == c => Some(*from),
+                        _ => None,
+                    })
+                    .unwrap_or(world.communities[c].variety)
+            };
+            let (kind, text, people, variety) = match action {
+                Action::Found { .. } => {
+                    let c = decision
+                        .events
+                        .clone()
+                        .find_map(|position| match world.events[position].1 {
+                            WorldEvent::Found { community } => Some(community),
+                            _ => None,
+                        })
+                        .expect("founding records its people");
+                    (
+                        "found",
+                        format!("The *{}* were founded.", name(c)),
+                        vec![c],
+                        Some(spoken(c)),
+                    )
+                }
+                Action::Settle { choice } => {
+                    use umran_sim::settlement::SettlementIntent;
+                    let destination = choice.destination + 1;
+                    let text = match choice.intent {
+                        SettlementIntent::Partition => format!(
+                            "The *{}* divided their lands, assigning {:.0}% of their people to land {destination}.",
+                            name(choice.community),
+                            choice.share * 100.0
+                        ),
+                        SettlementIntent::Settlers => format!(
+                            "{:.0}% of the *{}* were sent to settle land {destination}.",
+                            choice.share * 100.0,
+                            name(choice.community)
+                        ),
+                        SettlementIntent::Migration => format!(
+                            "The *{}* were moved together to land {destination}.",
+                            name(choice.community)
+                        ),
+                    };
+                    let daughter = decision.events.clone().find_map(|position| {
+                        match &world.events[position].1 {
+                            WorldEvent::Settlement(record) => record.daughter,
+                            _ => None,
+                        }
+                    });
+                    let mut people = vec![choice.community];
+                    people.extend(daughter);
+                    (
+                        "settle",
+                        text,
+                        people,
+                        Some(spoken(daughter.unwrap_or(choice.community))),
+                    )
+                }
+                Action::Connect { a, b, contact, .. } => {
+                    use umran_sim::world::ContactKind;
+                    let relation = match contact {
+                        ContactKind::Neighbours => "neighbourhood",
+                        ContactKind::Trade => "trade",
+                        ContactKind::Rule => "rule",
+                        ContactKind::Religion => "religious contact",
+                        ContactKind::Intermarriage => "intermarriage",
+                    };
+                    (
+                        "connect",
+                        format!(
+                            "The *{}* and the *{}* were joined by {relation}.",
+                            name(*a),
+                            name(*b)
+                        ),
+                        vec![*a, *b],
+                        None,
+                    )
+                }
+                Action::Shift { community, toward } => (
+                    "shift",
+                    format!(
+                        "The *{}* took up the tongue of the *{}*.",
+                        name(*community),
+                        name(*toward)
+                    ),
+                    vec![*community, *toward],
+                    Some(spoken(*community)),
+                ),
+                Action::State { community, .. } => (
+                    "state",
+                    format!("The *{}* were made a state.", name(*community)),
+                    vec![*community],
+                    None,
+                ),
+                Action::Religion { community } => (
+                    "religion",
+                    format!("A faith was founded among the *{}*.", name(*community)),
+                    vec![*community],
+                    None,
+                ),
+                Action::Craft { community, craft } => (
+                    "craft",
+                    format!("The *{}* were taught {}.", name(*community), craft.label()),
+                    vec![*community],
+                    None,
+                ),
+                Action::Temper {
+                    community,
+                    axis,
+                    amount,
+                } => (
+                    "temper",
+                    format!(
+                        "The {} leaning of the *{}* was turned by {amount}.",
+                        axis.id(),
+                        name(*community)
+                    ),
+                    vec![*community],
+                    None,
+                ),
+                Action::Run { .. } => unreachable!("runs are not decisions"),
+            };
+            views.push(DecisionView {
+                index: decision.action,
+                generation,
+                kind,
+                text,
+                people,
+                variety,
+                annals: decision
+                    .events
+                    .clone()
+                    .map(annals::world_event_id)
+                    .collect(),
+            });
+        }
+        to_json(&views)
     }
 
     pub fn save_note(&mut self, json: &str) -> Result<(), String> {
@@ -430,6 +661,10 @@ impl Bench {
             .ok_or("That note is not in this notebook")?;
         self.validate_note(note)?;
         to_json(&note.target)
+    }
+
+    pub fn remove_note(&mut self, id: &str) {
+        self.notebook.retain(|note| note.id != id);
     }
 
     /// Map sizes, sound profiles, flavors, and contact kinds to offer in forms.
@@ -684,6 +919,8 @@ impl Bench {
         Ok(Bench {
             chronicle,
             notebook: self.notebook.clone(),
+            title: self.title.clone(),
+            author: self.author.clone(),
             mutation: self.mutation,
             cached: None,
             saved_revision: self.saved_revision,
@@ -1006,16 +1243,6 @@ impl Bench {
         let point = exact
             .as_ref()
             .map_or_else(|| self.chronicle.point_at(generation), |(p, _)| *p);
-        let decisions: Vec<_> = self
-            .chronicle
-            .timeline()
-            .into_iter()
-            .enumerate()
-            .filter_map(|(index, (at, action))| match action {
-                Action::Settle { choice } => Some((index, at, choice.clone())),
-                _ => None,
-            })
-            .collect();
         let mutation = self.mutation;
         let timeline = self.timeline();
         let seed = self.chronicle.seed;
@@ -1028,20 +1255,6 @@ impl Bench {
             None => self.world(generation),
         };
         let mut annals = annals(world);
-        for (index, at, choice) in decisions {
-            if let Some(annal) = annals.iter_mut().find(|a| {
-                a.before.is_none()
-                    && a.generation == at
-                    && a.settlement
-                        .as_ref()
-                        .is_some_and(|s| s.plan.choice == choice)
-            }) {
-                annal.before = Some(HistoryPoint {
-                    action: index,
-                    offset: 0,
-                });
-            }
-        }
         // Authored decisions happen after the year's simulation. Keep their
         // exact order so the chronicle's latest moment is the choice just made.
         annals.sort_by_key(|a| (a.generation, a.before.map(|p| p.action)));
@@ -4034,6 +4247,180 @@ mod tests {
             }
         }
         panic!("this fixture needs somewhere to settle");
+    }
+
+    #[test]
+    fn decisions_link_exact_actions_without_claiming_tick_annals() {
+        let mut w = Bench::new(5, "medium").unwrap();
+        w.act(&found("Hill", "familiar")).unwrap();
+        let home = w.chronicle.latest().communities[0].home();
+        w.act(&found_at("Coast", "polynesian", home)).unwrap();
+        w.act(r#"{"kind":"connect","a":0,"b":1,"intensity":0.6,"contact":"trade"}"#)
+            .unwrap();
+        let tick_start = w.chronicle.latest().events.len();
+        w.act(r#"{"kind":"run","generations":40}"#).unwrap();
+        let tick_end = w.chronicle.latest().events.len();
+        let before_shift = w.chronicle.end();
+        w.act(r#"{"kind":"shift","community":1,"toward":0}"#)
+            .unwrap();
+        let world = w.chronicle.latest();
+        let entries = annals(world);
+        let leaves: Vec<_> = entries
+            .iter()
+            .flat_map(|a| {
+                if a.members.is_empty() {
+                    std::slice::from_ref(a)
+                } else {
+                    a.members.as_slice()
+                }
+            })
+            .collect();
+        for a in &leaves {
+            let expected =
+                a.id.strip_prefix("world:")
+                    .map(|p| p.parse::<usize>().unwrap())
+                    .and_then(|p| world.decisions.iter().find(|d| d.events.contains(&p)))
+                    .map(|d| d.action);
+            assert_eq!(a.decision, expected, "{}", a.id);
+            assert_eq!(
+                a.before,
+                expected.map(|action| HistoryPoint { action, offset: 0 })
+            );
+        }
+        for position in tick_start..tick_end {
+            let a = leaves
+                .iter()
+                .find(|a| a.id == annals::world_event_id(position))
+                .unwrap();
+            assert_eq!(a.decision, None);
+        }
+        assert_eq!(
+            leaves
+                .iter()
+                .filter(|a| a.kind == "found")
+                .map(|a| a.decision)
+                .collect::<Vec<_>>(),
+            vec![Some(0), Some(1)]
+        );
+        let decisions: serde_json::Value = serde_json::from_str(&w.decisions().unwrap()).unwrap();
+        let decisions = decisions.as_array().unwrap();
+        assert_eq!(
+            decisions
+                .iter()
+                .map(|d| (
+                    d["index"].as_u64().unwrap(),
+                    d["generation"].as_u64().unwrap(),
+                    d["kind"].as_str().unwrap()
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (0, 0, "found"),
+                (1, 0, "found"),
+                (2, 0, "connect"),
+                (4, 40, "shift")
+            ]
+        );
+        for (view, decision) in decisions.iter().zip(&world.decisions) {
+            let expected: Vec<_> = decision
+                .events
+                .clone()
+                .map(annals::world_event_id)
+                .collect();
+            assert_eq!(view["annals"], serde_json::json!(expected));
+        }
+        assert_eq!(decisions[0]["people"], serde_json::json!([0]));
+        assert_eq!(decisions[1]["variety"], 1);
+        assert_eq!(decisions[2]["people"], serde_json::json!([0, 1]));
+        assert_eq!(decisions[3]["variety"], world.communities[1].variety);
+        let point = to_json(&before_shift).unwrap();
+        let reading = w.read(0, &point).unwrap();
+        let past: serde_json::Value = serde_json::from_str(&reading.decisions().unwrap()).unwrap();
+        assert_eq!(past, serde_json::json!(&decisions[..3]));
+        let overview: serde_json::Value =
+            serde_json::from_str(&w.overview_at(&point).unwrap()).unwrap();
+        assert!(
+            overview["annals"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|a| a["decision"] != 4)
+        );
+        let live: serde_json::Value =
+            serde_json::from_str(&w.overview(w.latest()).unwrap()).unwrap();
+        assert_eq!(
+            live["annals"].as_array().unwrap().last().unwrap()["before"],
+            serde_json::json!({"action":4,"offset":0})
+        );
+    }
+
+    #[test]
+    fn empty_decisions_and_grouped_members_keep_their_own_authorship() {
+        let mut w = Bench::new(5, "medium").unwrap();
+        let mut founder: serde_json::Value =
+            serde_json::from_str(&found("Hill", "familiar")).unwrap();
+        founder["ethos"] = serde_json::json!({"martial":0.0});
+        w.act(&founder.to_string()).unwrap();
+        w.act(r#"{"kind":"temper","community":0,"axis":"martial","amount":0.01}"#)
+            .unwrap();
+        let home = w.chronicle.latest().communities[0].home();
+        w.act(&found_at("Coast", "polynesian", home)).unwrap();
+        w.act(r#"{"kind":"connect","a":0,"b":1,"intensity":0.6,"contact":"neighbours"}"#)
+            .unwrap();
+        w.act(r#"{"kind":"connect","a":0,"b":1,"intensity":0.7,"contact":"neighbours"}"#)
+            .unwrap();
+        let world = w.chronicle.latest();
+        assert!(world.decisions[1].events.is_empty());
+        let entries = annals(world);
+        let group = entries.iter().find(|a| a.kind == "neighbours").unwrap();
+        assert_eq!(group.decision, group.members[0].decision);
+        assert_eq!(group.before, group.members[0].before);
+        for member in &group.members {
+            let position = member
+                .id
+                .strip_prefix("world:")
+                .unwrap()
+                .parse::<usize>()
+                .unwrap();
+            let decision = world
+                .decisions
+                .iter()
+                .find(|d| d.events.contains(&position))
+                .unwrap();
+            assert_eq!(member.decision, Some(decision.action));
+            assert_eq!(member.before.unwrap().action, decision.action);
+        }
+        let views: serde_json::Value = serde_json::from_str(&w.decisions().unwrap()).unwrap();
+        assert_eq!(views[1]["kind"], "temper");
+        assert_eq!(views[1]["annals"], serde_json::json!([]));
+        assert!(views.as_array().unwrap().iter().all(|v| {
+            v["annals"].as_array().unwrap().iter().all(|id| {
+                entries.iter().any(|a| {
+                    a.id == id.as_str().unwrap()
+                        || a.members.iter().any(|m| m.id == id.as_str().unwrap())
+                })
+            })
+        }));
+    }
+
+    #[test]
+    fn document_title_author_round_trip_without_changing_recipe() {
+        let mut w = bench();
+        let recipe = w.chronicle.recipe();
+        w.set_title("Hūhupam");
+        w.set_author("Sol");
+        let saved = w.save().unwrap();
+        let mut loaded = Bench::load(&saved).unwrap();
+        assert_eq!(loaded.title(), Some("Hūhupam"));
+        assert_eq!(loaded.author(), Some("Sol"));
+        assert_eq!(loaded.chronicle.recipe(), recipe);
+        assert_eq!(loaded.read(0, "").unwrap().title(), Some("Hūhupam"));
+        loaded.set_title("");
+        loaded.set_author("");
+        let cleared = Bench::load(&loaded.save().unwrap()).unwrap();
+        assert_eq!((cleared.title(), cleared.author()), (None, None));
+        let legacy = Bench::load(&to_json(&recipe).unwrap()).unwrap();
+        assert_eq!((legacy.title(), legacy.author()), (None, None));
+        assert_eq!(legacy.chronicle.recipe(), recipe);
     }
 
     #[test]

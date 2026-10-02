@@ -9,6 +9,15 @@ than std float methods whose last bits can differ between targets.
 Clippy bans those methods; basic arithmetic and square roots stay native,
 and integer squares use explicit multiplication.
 
+`Chronicle` records each successful authored action in `World::decisions`:
+its telling-local action index and the half-open range of `World::events`
+positions it produced, including an empty range when no event was emitted.
+These records clone with the world and are rebuilt on every replay path,
+including exact readings and checkpoints. `Run` advances the simulation; it
+is not an authored decision, and its events have no decision attribution.
+This bookkeeping makes no random draws and changes no simulation events,
+so the engine revision remains 31.
+
 - `World` (`world.rs`) steps communities, varieties, and contacts through
   25-year generations. `Variety` holds a `SoundProfile` and a `Lexicon` of
   `Slot`s, where words compete for each concept with usage weights. Words

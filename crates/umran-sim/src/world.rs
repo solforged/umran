@@ -826,6 +826,13 @@ pub struct Contact {
     pub cause: Option<crate::Cause>,
 }
 
+/// The event positions produced by one authored action in this telling.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Decision {
+    pub action: usize,
+    pub events: std::ops::Range<usize>,
+}
+
 /// Communities, their varieties, and the contacts between them, stepping
 /// through generations of about 25 years.
 #[derive(Clone, Debug)]
@@ -842,6 +849,8 @@ pub struct World {
     /// Things that happened to communities, with the generation they
     /// happened in.
     pub events: Vec<(u32, WorldEvent)>,
+    /// Authored actions, including those that produced no events. Runs are absent.
+    pub decisions: Vec<Decision>,
     /// Optional causes by response event index, within this telling.
     pub causes: std::collections::BTreeMap<usize, crate::Cause>,
     pub(crate) triggers: crate::causes::Triggers,
@@ -909,6 +918,7 @@ impl World {
             contacts: Vec::new(),
             params,
             events: Vec::new(),
+            decisions: Vec::new(),
             causes: Default::default(),
             triggers: Default::default(),
             states: Vec::new(),
