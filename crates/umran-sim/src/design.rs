@@ -1,8 +1,9 @@
 //! A language as a person designs it before founding: the exact sounds
 //! (each used or favoured), a few knobs for word shape and word building,
-//! and spelling. Presets and drawing by world frequency produce designs; a design then
-//! resolves to the `SoundProfile` the engine runs on.
+//! grammar choices, optional stress, and spelling. Presets and drawing by world frequency
+//! produce designs; a design then resolves to the `SoundProfile` the engine runs on.
 
+use crate::grammar::{GrammarDesign, GrammarPrior};
 use crate::inventory::Inventory;
 use crate::phoneme::{CATALOG, PhonemeId};
 use crate::profile::{MorphologyKind, MorphologyPrior, PhonotacticPrior, SoundProfile, Spelling};
@@ -53,6 +54,9 @@ pub struct LanguageDesign {
     pub suffixing: f32,
     /// 0–1: how often related meanings are built from one another.
     pub derivation: f32,
+    /// Resolved, editable founding choices for plural and past marking.
+    #[serde(default)]
+    pub grammar: GrammarDesign,
     pub spelling: Spelling,
 }
 
@@ -72,9 +76,9 @@ impl LanguageDesign {
         SoundProfile::by_id(id).map(|p| Self::from_profile(&p, seed))
     }
 
-    /// Samples a profile's inventory and copies its knobs. Sounds the
-    /// profile strongly boosts or requires beyond the base are
-    /// marked favoured.
+    /// Samples a profile's inventory, resolves grammar, and copies
+    /// its knobs. Sounds the profile strongly boosts or requires beyond the
+    /// base are marked favoured.
     pub fn from_profile(profile: &SoundProfile, seed: u64) -> Self {
         let inventory = Inventory::sample(&profile.inventory, &mut stream(seed, &[key("design")]));
         let base = SoundProfile::base();
@@ -114,6 +118,7 @@ impl LanguageDesign {
             building: profile.morphology.kind,
             suffixing: profile.morphology.suffixing,
             derivation: profile.morphology.derivation,
+            grammar: profile.grammar.draw(seed, &profile.morphology),
             spelling: profile.spelling.clone(),
         }
     }
@@ -198,6 +203,7 @@ impl LanguageDesign {
         };
         profile.spelling = self.spelling.clone();
         profile.stress = self.stress;
+        profile.grammar = GrammarPrior::fixed(self.grammar);
         profile
     }
 }
@@ -205,7 +211,27 @@ impl LanguageDesign {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::concepts;
+    use crate::grammar::{Category, GrammarChoice, MarkerKind, Side};
     use crate::variety::Variety;
+
+    fn assert_founding_grammar(variety: &Variety, expected: GrammarDesign) {
+        for category in Category::ALL {
+            let marker = variety
+                .grammar
+                .markers
+                .iter()
+                .find(|marker| marker.category == category)
+                .expect("each founding category has a marker");
+            let choice = match (marker.kind, marker.side) {
+                (MarkerKind::Bound, Side::Suffix) => GrammarChoice::Suffix,
+                (MarkerKind::Bound, Side::Prefix) => GrammarChoice::Prefix,
+                (MarkerKind::Particle, _) => GrammarChoice::Particle,
+                (MarkerKind::None, _) => GrammarChoice::None,
+            };
+            assert_eq!(choice, expected.choice(category), "{}", category.id());
+        }
+    }
 
     #[test]
     fn designs_found_exactly_their_sounds() {
@@ -279,5 +305,143 @@ mod tests {
             serde_json::from_str::<LanguageDesign>(&json).unwrap(),
             design
         );
+    }
+
+    #[test]
+    fn old_design_without_grammar_founds_with_suffixes_at_every_seed() {
+        let mut design = LanguageDesign::preset("nahuatl", 9).unwrap();
+        design.grammar = GrammarDesign {
+            plural: GrammarChoice::Particle,
+            past: GrammarChoice::Prefix,
+        };
+        let mut json = serde_json::to_value(&design).unwrap();
+        json.as_object_mut().unwrap().remove("grammar");
+        let loaded: LanguageDesign = serde_json::from_value(json).unwrap();
+        let suffixes = GrammarDesign {
+            plural: GrammarChoice::Suffix,
+            past: GrammarChoice::Suffix,
+        };
+        assert_eq!(
+            loaded,
+            LanguageDesign {
+                grammar: suffixes,
+                ..design
+            }
+        );
+        for seed in [0, 7, u64::MAX] {
+            let variety = Variety::found(
+                seed,
+                &loaded.profile(),
+                crate::Livelihood::Farming,
+                crate::Ethos::default(),
+            );
+            assert_founding_grammar(&variety, suffixes);
+        }
+    }
+
+    #[test]
+    fn preset_and_resolved_design_found_with_the_same_grammar() {
+        for profile in SoundProfile::presets() {
+            for seed in 0..4 {
+                let design = LanguageDesign::from_profile(&profile, seed);
+                let preset = Variety::found(
+                    seed,
+                    &profile,
+                    crate::Livelihood::Farming,
+                    crate::Ethos::default(),
+                );
+                let resolved = Variety::found(
+                    seed,
+                    &design.profile(),
+                    crate::Livelihood::Farming,
+                    crate::Ethos::default(),
+                );
+                assert_founding_grammar(&preset, design.grammar);
+                assert_founding_grammar(&resolved, design.grammar);
+            }
+        }
+    }
+
+    #[test]
+    fn saved_grammar_edits_control_founding_without_inflecting_mass_or_collective_senses() {
+        let mut design = LanguageDesign::preset("germanic", 7).unwrap();
+        let choices = [
+            GrammarChoice::Suffix,
+            GrammarChoice::Prefix,
+            GrammarChoice::Particle,
+            GrammarChoice::None,
+        ];
+        for (i, plural) in choices.into_iter().enumerate() {
+            design.grammar = GrammarDesign {
+                plural,
+                past: choices[(i + 1) % choices.len()],
+            };
+            let json = serde_json::to_string(&design).unwrap();
+            let loaded: LanguageDesign = serde_json::from_str(&json).unwrap();
+            let variety = Variety::found(
+                23,
+                &loaded.profile(),
+                crate::Livelihood::Farming,
+                crate::Ethos::default(),
+            );
+            assert_founding_grammar(&variety, design.grammar);
+            for id in ["water", "people", "blood", "sand", "cattle", "food"] {
+                let word = variety
+                    .lexicon
+                    .word_for(concepts::by_id(id).unwrap())
+                    .expect("ordinary founding meaning");
+                assert!(word.paradigms.is_empty(), "{id} must not inflect");
+            }
+            for (id, category) in [("fish", Category::Plural), ("go", Category::Past)] {
+                let word = variety
+                    .lexicon
+                    .word_for(concepts::by_id(id).unwrap())
+                    .unwrap();
+                assert!(
+                    word.paradigms.iter().any(|paradigm| {
+                        paradigm.category == category
+                            && paradigm
+                                .realizations
+                                .iter()
+                                .any(|form| form.retired.is_none())
+                    }),
+                    "{id} must carry {}",
+                    category.id()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn explicit_design_stress_controls_founding_without_changing_segments() {
+        let mut design = LanguageDesign::preset("germanic", 7).unwrap();
+        let initial = {
+            design.stress = Some(StressRule::Initial);
+            Variety::found(
+                7,
+                &design.profile(),
+                crate::Livelihood::Farming,
+                crate::Ethos::default(),
+            )
+        };
+        design.stress = Some(StressRule::Final);
+        let final_stress = Variety::found(
+            7,
+            &design.profile(),
+            crate::Livelihood::Farming,
+            crate::Ethos::default(),
+        );
+        assert_eq!(initial.stress(), StressRule::Initial);
+        assert_eq!(final_stress.stress(), StressRule::Final);
+        let mut moved = false;
+        for (a, b) in initial.lexicon.living().zip(final_stress.lexicon.living()) {
+            assert_eq!(a.first_sense.id, b.first_sense.id);
+            assert_eq!(a.form.segs, b.form.segs);
+            assert_eq!(a.form.stress, None);
+            assert_eq!(b.form.stress, None);
+            moved |= a.form.stressed_syllable(initial.stress())
+                != b.form.stressed_syllable(final_stress.stress());
+        }
+        assert!(moved);
     }
 }

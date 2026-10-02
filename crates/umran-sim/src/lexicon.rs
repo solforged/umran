@@ -1,5 +1,6 @@
 use crate::concepts::{CONCEPTS, Concept, Relation};
 use crate::form::Form;
+use crate::grammar::Paradigm;
 use crate::root::Minted;
 use std::collections::{HashMap, HashSet};
 
@@ -39,6 +40,8 @@ pub struct Lexeme {
     /// Generation the word stopped being used for any concept.
     pub obsolete: Option<u32>,
     pub log: Vec<Entry>,
+    /// Stored grammatical forms, separate from words competing for meanings.
+    pub paradigms: Vec<Paradigm>,
 }
 
 impl Lexeme {
@@ -184,6 +187,7 @@ impl Lexicon {
             born,
             obsolete: None,
             log: Vec::new(),
+            paradigms: Vec::new(),
         });
         id
     }

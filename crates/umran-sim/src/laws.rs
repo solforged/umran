@@ -25,29 +25,34 @@ pub struct Law {
 /// What a law would do to a lexicon if chosen now.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Assessment {
+    /// Changed forms, not independent lexical evidence or usage support.
     pub words: usize,
-    /// Mean change in preference score per altered segment; positive when
-    /// the law moves sounds toward what the culture prefers. Deletions count
-    /// as neutral; forbidden segments score very low.
+    /// Usage support of changed forms; splitting an alternative's share
+    /// among several forms does not create additional support.
+    pub word_weight: f32,
+    /// Usage-weighted mean change in preference score per altered segment;
+    /// positive when the law moves sounds toward what the culture prefers.
+    /// Deletions count as neutral; forbidden segments score very low.
     pub pull: f32,
-    /// Every segment the law would alter, and what it becomes.
-    pub shifts: Vec<(PhonemeId, Option<PhonemeId>)>,
+    /// Every altered segment, its outcome, and the form's usage weight.
+    pub shifts: Vec<(PhonemeId, Option<PhonemeId>, f32)>,
 }
 
 impl Assessment {
-    /// Mean movement toward the sound set `target`, from -1 to 1: +1 when a
-    /// segment outside it becomes one inside, -1 for the reverse.
-    /// Deletions count as neutral.
+    /// Usage-weighted mean movement toward the sound set `target`, from -1
+    /// to 1: +1 when a segment outside it becomes one inside, -1 for the
+    /// reverse. Deletions count as neutral.
     pub fn toward(&self, target: &HashSet<PhonemeId>) -> f32 {
-        let total: f32 = self
-            .shifts
-            .iter()
-            .map(|&(old, new)| match new {
-                Some(new) => f32::from(target.contains(&new)) - f32::from(target.contains(&old)),
-                None => 0.0,
-            })
-            .sum();
-        total / self.shifts.len().max(1) as f32
+        let (total, weight) =
+            self.shifts
+                .iter()
+                .fold((0.0, 0.0), |(total, weight), &(old, new, contribution)| {
+                    let movement = new.map_or(0.0, |new| {
+                        f32::from(target.contains(&new)) - f32::from(target.contains(&old))
+                    });
+                    (total + contribution * movement, weight + contribution)
+                });
+        if weight > 0.0 { total / weight } else { 0.0 }
     }
 }
 
@@ -80,57 +85,100 @@ impl Law {
         minimal: MinimalWord,
         stress: StressRule,
     ) -> Option<Assessment> {
+        self.assess_weighted(forms.map(|form| (form, 1.0)), prior, minimal, stress)
+    }
+
+    /// Assesses separate words with their usage contributions. Alternatives
+    /// for one use should have weights summing to that use's weight; particles
+    /// stay separate words and are supplied once, not concatenated with hosts.
+    pub fn assess_weighted<'a>(
+        &self,
+        forms: impl Iterator<Item = (&'a Form, f32)>,
+        prior: &InventoryPrior,
+        minimal: MinimalWord,
+        stress: StressRule,
+    ) -> Option<Assessment> {
         if self.stress == Some(stress) {
             return None;
         }
         if let Some(next) = self.stress {
-            let words = forms
-                .filter(|f| f.stressed_syllable(stress) != f.stressed_syllable(next))
-                .count();
+            let (words, word_weight) = forms
+                .filter(|(form, weight)| {
+                    weight.is_finite()
+                        && *weight > 0.0
+                        && form.stressed_syllable(stress) != form.stressed_syllable(next)
+                })
+                .fold((0, 0.0), |(words, weight), (_, contribution)| {
+                    (words + 1, weight + contribution)
+                });
             return (words > 0).then_some(Assessment {
                 words,
+                word_weight,
                 pull: 0.0,
                 shifts: Vec::new(),
             });
         }
-        let (mut words, mut total) = (0, 0.0);
+        let (mut words, mut word_weight) = (0, 0.0);
+        let (mut total, mut total_weight) = (0.0, 0.0);
         let mut shifts = Vec::new();
-        for form in forms {
-            // Keep the original accumulation order, but apply each rule only
-            // once. Roll back its assessment if the full chain cancels out.
+        for (form, weight) in forms {
+            if !weight.is_finite() || weight <= 0.0 {
+                continue;
+            }
+            // Keep the accumulation order and apply each rule only once.
+            // Roll back this word's assessment if the full chain cancels out.
             let before_total = total;
+            let before_weight = total_weight;
             let before_shifts = shifts.len();
             let mut current = Cow::Borrowed(form);
             for rule in &self.rules {
-                let Cow::Owned(next) = rule.apply_borrowed(&current, stress) else {
+                // No-hit forms stay borrowed. Accepted rewrites share the
+                // actual protected survivor mapping with normal application.
+                let Some(outcome) = rule.outcome(&current, stress) else {
                     continue;
                 };
+                let next = SoundChange::from_outcome(&current, &outcome, 0).0;
                 if minimal.blocks(&current, &next) {
                     continue;
                 }
-                for (i, out) in rule.hits(&current, stress) {
-                    let old = current.segs[i].phone;
-                    let out = match rule.result {
-                        Rewrite::GeminateNext => current.segs.get(i + 1).map(|s| s.phone),
+                for (i, &out) in outcome.iter().enumerate() {
+                    let old = current.segs[i];
+                    if out == Some(old) {
+                        continue;
+                    }
+                    let phone = match rule.result {
+                        // Assimilation adopts the following surviving
+                        // consonant's sound as well as its length.
+                        Rewrite::GeminateNext if out.is_none() => {
+                            outcome.get(i + 1).and_then(|s| s.map(|s| s.phone))
+                        }
                         _ => out.map(|s| s.phone),
                     };
-                    if let Some(new) = out {
-                        total += preference(prior, new) - preference(prior, old);
+                    if let Some(new) = phone {
+                        total += weight * (preference(prior, new) - preference(prior, old.phone));
                     }
-                    shifts.push((old, out));
+                    total_weight += weight;
+                    shifts.push((old.phone, phone, weight));
                 }
                 current = Cow::Owned(next);
             }
             if self.changes(form, &current, stress) {
                 words += 1;
+                word_weight += weight;
             } else {
                 total = before_total;
+                total_weight = before_weight;
                 shifts.truncate(before_shifts);
             }
         }
         (words > 0).then(|| Assessment {
             words,
-            pull: total / shifts.len().max(1) as f32,
+            word_weight,
+            pull: if total_weight > 0.0 {
+                total / total_weight
+            } else {
+                0.0
+            },
             shifts,
         })
     }
@@ -929,6 +977,29 @@ pub fn catalog() -> Vec<Law> {
             // catalog change. The resulting variety's later laws can spread.
             Vec::new(),
         ),
+        law(
+            "umlaut",
+            "Vowels front before a front vowel in the next syllable: a > e, o > ø, u > y",
+            0.4,
+            vec![
+                rule(
+                    Matcher::Phone(crate::CATALOG.id_by_ipa("a").unwrap()),
+                    Rewrite::Phone(crate::CATALOG.id_by_ipa("e").unwrap()),
+                    ANY,
+                    Env::FollowingSyllableVowel(vowel(None, Some(Front), None)),
+                ),
+                rule(
+                    vowel(None, Some(Back), Some(true)),
+                    Rewrite::Vowel {
+                        height: None,
+                        backness: Some(Front),
+                        rounded: None,
+                    },
+                    ANY,
+                    Env::FollowingSyllableVowel(vowel(None, Some(Front), None)),
+                ),
+            ],
+        ),
     ]
 }
 
@@ -977,6 +1048,226 @@ mod tests {
         assert_eq!(run("uvular-fronting", "qaχa"), "kaxa");
         assert_eq!(run("lateral-affricate-loss", "tɬatɬ"), "tat");
     }
+    #[test]
+    fn umlaut_crosses_a_bound_ending_but_not_a_separate_particle() {
+        let laws = catalog();
+        let umlaut = laws.iter().find(|law| law.id == "umlaut").unwrap();
+        let apocope = laws.iter().find(|law| law.id == "apocope").unwrap();
+        let base = Form::from_ipa("fot").unwrap();
+        let particle = Form::from_ipa("mi").unwrap();
+        assert_eq!(
+            umlaut.apply(&base, MinimalWord::Syllable, StressRule::Initial),
+            base,
+        );
+        assert_eq!(
+            umlaut.apply(&particle, MinimalWord::Syllable, StressRule::Initial),
+            particle,
+        );
+        let prior = SoundProfile::by_id("polynesian").unwrap().inventory;
+        assert_eq!(
+            umlaut.assess_weighted(
+                [(&base, 1.0), (&particle, 1.0)].into_iter(),
+                &prior,
+                MinimalWord::Syllable,
+                StressRule::Initial,
+            ),
+            None,
+        );
+
+        let mut bound = Form::from_ipa("foti").unwrap();
+        bound.boundaries = vec![3];
+        let marked = umlaut.apply(&bound, MinimalWord::Syllable, StressRule::Initial);
+        assert_eq!(marked.ipa(), "føti");
+        assert_eq!(marked.boundaries, vec![3]);
+        assert_eq!(
+            apocope
+                .apply(&marked, MinimalWord::Syllable, StressRule::Initial)
+                .ipa(),
+            "føt",
+        );
+        assert_eq!(run("umlaut", "anti"), "enti");
+        assert_eq!(run("umlaut", "unti"), "ynti");
+        // Fronting in the second syllable must not feed the first one.
+        assert_eq!(run("umlaut", "uomi"), "uømi");
+        assert_eq!(run("umlaut", "aomi"), "aømi");
+    }
+
+    #[test]
+    fn weighted_alternatives_contribute_their_usage_not_their_count() {
+        let phone = |ipa| crate::CATALOG.id_by_ipa(ipa).unwrap();
+        let law = law(
+            "weighted-correspondences",
+            "Two opposing sound-set movements",
+            1.0,
+            vec![
+                rule(
+                    Matcher::Phone(phone("p")),
+                    Rewrite::Phone(phone("s")),
+                    ANY,
+                    ANY,
+                ),
+                rule(
+                    Matcher::Phone(phone("k")),
+                    Rewrite::Phone(phone("t")),
+                    ANY,
+                    ANY,
+                ),
+            ],
+        );
+        let prior = SoundProfile::by_id("polynesian").unwrap().inventory;
+        let original = Form::from_ipa("pa").unwrap();
+        let competitor_a = Form::from_ipa("pam").unwrap();
+        let competitor_b = Form::from_ipa("pan").unwrap();
+        let other = Form::from_ipa("ka").unwrap();
+        let assess = |forms| {
+            law.assess_weighted(forms, &prior, MinimalWord::Syllable, StressRule::Initial)
+                .unwrap()
+        };
+        let unsplit = assess([(&original, 0.25), (&other, 0.75)].into_iter());
+        let split = law
+            .assess_weighted(
+                [
+                    (&competitor_a, 0.125),
+                    (&competitor_b, 0.125),
+                    (&other, 0.75),
+                ]
+                .into_iter(),
+                &prior,
+                MinimalWord::Syllable,
+                StressRule::Initial,
+            )
+            .unwrap();
+        let target = HashSet::from([phone("s"), phone("k")]);
+        assert!((unsplit.toward(&target) + 0.5).abs() < 1e-6);
+        assert!((split.toward(&target) + 0.5).abs() < 1e-6);
+        let expected_pull = 0.25
+            * (preference(&prior, phone("s")) - preference(&prior, phone("p")))
+            + 0.75 * (preference(&prior, phone("t")) - preference(&prior, phone("k")));
+        assert!((unsplit.pull - expected_pull).abs() < 1e-6);
+        assert!((split.pull - expected_pull).abs() < 1e-6);
+        assert_eq!(unsplit.word_weight, 1.0);
+        assert_eq!(split.word_weight, 1.0);
+
+        let minority = assess([(&competitor_a, 0.125), (&competitor_b, 0.125)].into_iter());
+        assert_eq!(minority.toward(&target), 1.0);
+        assert_eq!(minority.word_weight, 0.25);
+    }
+
+    #[test]
+    fn weighted_assessment_uses_protected_last_vowel_and_size_outcomes() {
+        let law = law(
+            "vowel-loss",
+            "Vowels disappear",
+            1.0,
+            vec![rule(Matcher::AnyVowel, Rewrite::Delete, ANY, ANY)],
+        );
+        let prior = SoundProfile::by_id("polynesian").unwrap().inventory;
+        let form = Form::from_ipa("kata").unwrap();
+        let survivor = Form::from_ipa("ta").unwrap();
+        let assessment = law
+            .assess_weighted(
+                [(&form, 0.25), (&survivor, 0.75)].into_iter(),
+                &prior,
+                MinimalWord::Syllable,
+                StressRule::Initial,
+            )
+            .unwrap();
+        assert_eq!(
+            assessment.shifts,
+            vec![(crate::CATALOG.id_by_ipa("a").unwrap(), None, 0.25)],
+        );
+        assert_eq!(assessment.pull, 0.0);
+        assert_eq!(
+            law.apply(&form, MinimalWord::Syllable, StressRule::Initial)
+                .ipa(),
+            "kta",
+        );
+        assert_eq!(
+            law.assess_weighted(
+                [(&form, 0.25)].into_iter(),
+                &prior,
+                MinimalWord::TwoSyllables,
+                StressRule::Initial,
+            ),
+            None,
+        );
+    }
+
+    #[test]
+    fn cancelling_rule_chains_do_not_add_usage_or_movement() {
+        let p = crate::CATALOG.id_by_ipa("p").unwrap();
+        let s = crate::CATALOG.id_by_ipa("s").unwrap();
+        let a = crate::CATALOG.id_by_ipa("a").unwrap();
+        let law = law(
+            "conditional-cancellation",
+            "Fronting is reversed before a",
+            1.0,
+            vec![
+                rule(Matcher::Phone(p), Rewrite::Phone(s), ANY, ANY),
+                rule(
+                    Matcher::Phone(s),
+                    Rewrite::Phone(p),
+                    ANY,
+                    at(Matcher::Phone(a)),
+                ),
+            ],
+        );
+        let prior = SoundProfile::by_id("polynesian").unwrap().inventory;
+        let changed = Form::from_ipa("pi").unwrap();
+        let cancelled = Form::from_ipa("pa").unwrap();
+        let assessment = law
+            .assess_weighted(
+                [(&changed, 0.25), (&cancelled, 0.75)].into_iter(),
+                &prior,
+                MinimalWord::Syllable,
+                StressRule::Initial,
+            )
+            .unwrap();
+        assert_eq!(assessment.words, 1);
+        assert_eq!(assessment.word_weight, 0.25);
+        assert_eq!(assessment.shifts, vec![(p, Some(s), 0.25)]);
+        assert!((assessment.pull - (preference(&prior, s) - preference(&prior, p))).abs() < 1e-6);
+        assert_eq!(assessment.toward(&HashSet::from([s])), 1.0);
+    }
+
+    #[test]
+    fn weighted_stress_assessment_counts_only_changed_usage() {
+        let law = catalog()
+            .into_iter()
+            .find(|law| law.id == "initial-stress")
+            .unwrap();
+        let prior = SoundProfile::by_id("polynesian").unwrap().inventory;
+        let short = Form::from_ipa("ka").unwrap();
+        let mut first = Form::from_ipa("kata").unwrap();
+        first.stress = Some(0);
+        let mut last = Form::from_ipa("katama").unwrap();
+        last.stress = Some(2);
+        let forms = [(&short, 0.5), (&first, 0.25), (&last, 0.125)];
+        let free = law
+            .assess_weighted(
+                forms.into_iter(),
+                &prior,
+                MinimalWord::Syllable,
+                StressRule::Free,
+            )
+            .unwrap();
+        assert_eq!(free.words, 1);
+        assert_eq!(free.word_weight, 0.125);
+        assert_eq!(free.pull, 0.0);
+        assert!(free.shifts.is_empty());
+
+        // Predictable stress ignores the lexical accent of the first form.
+        let predictable = law
+            .assess_weighted(
+                forms.into_iter(),
+                &prior,
+                MinimalWord::Syllable,
+                StressRule::Final,
+            )
+            .unwrap();
+        assert_eq!(predictable.words, 2);
+        assert_eq!(predictable.word_weight, 0.375);
+    }
 
     #[test]
     fn assessment_ignores_words_unchanged_by_the_complete_chain() {
@@ -1006,7 +1297,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(assessment.words, 1);
-        assert_eq!(assessment.shifts, vec![(id("p"), Some(id("b")))]);
+        assert_eq!(assessment.shifts, vec![(id("p"), Some(id("b")), 1.0)]);
         assert_eq!(
             assessment.pull,
             preference(&prior, id("b")) - preference(&prior, id("p"))

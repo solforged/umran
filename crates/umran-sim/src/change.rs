@@ -66,6 +66,9 @@ pub enum Env {
     Any,
     WordEdge,
     Matcher(Matcher),
+    /// Matches the nucleus of the immediately following syllable in this
+    /// word, across consonants and morpheme boundaries, never another word.
+    FollowingSyllableVowel(Matcher),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -165,13 +168,18 @@ impl Matcher {
 
 impl Env {
     fn needs_syllables(&self) -> bool {
-        matches!(self, Self::Matcher(m) if m.needs_syllables())
+        match self {
+            Self::FollowingSyllableVowel(_) => true,
+            Self::Matcher(m) => m.needs_syllables(),
+            _ => false,
+        }
     }
 
     fn at(
         &self,
         form: &Form,
         i: Option<usize>,
+        target: usize,
         syllables: &[crate::form::Syllable],
         stress: Option<usize>,
     ) -> bool {
@@ -179,6 +187,13 @@ impl Env {
             Self::Any => true,
             Self::WordEdge => i.is_none(),
             Self::Matcher(m) => i.is_some_and(|i| m.at(form, i, syllables, stress)),
+            Self::FollowingSyllableVowel(m) => syllables
+                .iter()
+                .position(|s| {
+                    s.onset.contains(&target) || s.nucleus == target || s.coda.contains(&target)
+                })
+                .and_then(|at| syllables.get(at + 1))
+                .is_some_and(|next| m.at(form, next.nucleus, syllables, stress)),
         }
     }
 }
@@ -262,10 +277,11 @@ impl SoundChange {
         (0..form.segs.len()).filter_map(move |i| {
             let seg = form.segs[i];
             if !self.target.at(form, i, &syllables, stress)
-                || !self.left.at(form, i.checked_sub(1), &syllables, stress)
+                || !self.left.at(form, i.checked_sub(1), i, &syllables, stress)
                 || !self.right.at(
                     form,
                     (i + 1 < form.segs.len()).then_some(i + 1),
+                    i,
                     &syllables,
                     stress,
                 )
@@ -292,6 +308,24 @@ impl SoundChange {
     /// Most candidate laws do not touch a word. Borrow those inputs instead
     /// of allocating an outcome and remapping unchanged segments.
     pub(crate) fn apply_borrowed<'a>(&self, form: &'a Form, rule: StressRule) -> Cow<'a, Form> {
+        match self.outcome(form, rule) {
+            Some(outcome) => Cow::Owned(Self::from_outcome(form, &outcome, 0).0),
+            None => Cow::Borrowed(form),
+        }
+    }
+
+    /// Applies the same protected rewrite while tracking a grammatical edge.
+    /// The edge is the number of input segments before the marker boundary.
+    pub fn apply_with_edge(&self, form: &Form, rule: StressRule, edge: usize) -> (Form, usize) {
+        match self.outcome(form, rule) {
+            Some(outcome) => Self::from_outcome(form, &outcome, edge),
+            None => (form.clone(), edge.min(form.segs.len())),
+        }
+    }
+
+    /// One actual outcome per input segment, including neighbor lengthening
+    /// and last-vowel protection. A validated no-hit input needs no allocation.
+    pub(crate) fn outcome(&self, form: &Form, rule: StressRule) -> Option<Vec<Option<Seg>>> {
         let mut hits = self.hits(form, rule);
         let first = hits.next();
         if first.is_none()
@@ -302,27 +336,24 @@ impl SoundChange {
             && form.boundaries.windows(2).all(|b| b[0] != b[1])
             && form.stress.is_none_or(|s| s < form.vowel_count())
         {
-            return Cow::Borrowed(form);
+            return None;
         }
         let mut outcome: Vec<Option<Seg>> = form.segs.iter().copied().map(Some).collect();
         for (i, out) in first.into_iter().chain(hits) {
             outcome[i] = out;
-        }
-        // Side effects also read the input and never resurrect a deletion.
-        if matches!(self.result, Rewrite::GeminateNext | Rewrite::Compensate) {
-            for (i, _) in self.hits(form, rule) {
-                let neighbor = match self.result {
-                    Rewrite::GeminateNext => {
-                        (i + 1 < form.segs.len() && !form.is_vowel(i + 1)).then_some(i + 1)
-                    }
-                    Rewrite::Compensate => i.checked_sub(1).filter(|&j| form.is_vowel(j)),
-                    _ => None,
-                };
-                if let Some(j) = neighbor
-                    && let Some(seg) = &mut outcome[j]
-                {
-                    seg.long = true;
+            let neighbor = match self.result {
+                Rewrite::GeminateNext => {
+                    (i + 1 < form.segs.len() && !form.is_vowel(i + 1)).then_some(i + 1)
                 }
+                Rewrite::Compensate => i.checked_sub(1).filter(|&j| form.is_vowel(j)),
+                _ => None,
+            };
+            // Side effects never resurrect a deletion. A later matching
+            // neighbor is still deleted by its own input-based rewrite.
+            if let Some(j) = neighbor
+                && let Some(seg) = &mut outcome[j]
+            {
+                seg.long = true;
             }
         }
         let vowel_survives = outcome
@@ -331,16 +362,30 @@ impl SoundChange {
         if !vowel_survives && let Some(i) = (0..form.segs.len()).rev().find(|&i| form.is_vowel(i)) {
             outcome[i] = Some(form.segs[i]);
         }
-        let stress = form.stress_after(&outcome);
+        Some(outcome)
+    }
+
+    pub(crate) fn from_outcome(form: &Form, outcome: &[Option<Seg>], edge: usize) -> (Form, usize) {
+        let stress = form.stress_after(outcome);
         let mut segs = Vec::with_capacity(form.segs.len());
-        let mut new_index = Vec::with_capacity(form.segs.len() + 1);
-        for out in &outcome {
-            new_index.push(segs.len());
+        let mut new_index = if form.boundaries.is_empty() {
+            Vec::new()
+        } else {
+            Vec::with_capacity(form.segs.len() + 1)
+        };
+        let mut mapped_edge = 0;
+        for (i, out) in outcome.iter().enumerate() {
+            if !form.boundaries.is_empty() {
+                new_index.push(segs.len());
+            }
             if let Some(seg) = out {
                 segs.push(*seg);
+                mapped_edge += usize::from(i < edge);
             }
         }
-        new_index.push(segs.len());
+        if !form.boundaries.is_empty() {
+            new_index.push(segs.len());
+        }
         let mut boundaries: Vec<usize> = form
             .boundaries
             .iter()
@@ -348,11 +393,14 @@ impl SoundChange {
             .filter(|&b| b > 0 && b < segs.len())
             .collect();
         boundaries.dedup();
-        Cow::Owned(Form {
-            segs,
-            boundaries,
-            stress,
-        })
+        (
+            Form {
+                segs,
+                boundaries,
+                stress,
+            },
+            mapped_edge,
+        )
     }
 }
 
@@ -431,6 +479,61 @@ mod tests {
     }
 
     #[test]
+    fn following_syllable_vowel_skips_consonants_but_not_syllables() {
+        let rule = SoundChange {
+            id: "o>ø/next-front-vowel".into(),
+            target: Matcher::Phone(id("o")),
+            result: Rewrite::Phone(id("ø")),
+            left: Env::Any,
+            right: Env::FollowingSyllableVowel(Matcher::Vowel {
+                height: None,
+                backness: Some(Backness::Front),
+                rounded: None,
+            }),
+        };
+        assert_eq!(
+            rule.apply(&form("folti"), StressRule::Initial).ipa(),
+            "følti"
+        );
+        assert_eq!(
+            rule.apply(&form("foltu"), StressRule::Initial).ipa(),
+            "foltu"
+        );
+        assert_eq!(
+            rule.apply(&form("foltumi"), StressRule::Initial).ipa(),
+            "foltumi"
+        );
+        assert_eq!(rule.apply(&form("folt"), StressRule::Initial).ipa(), "folt");
+        assert_eq!(
+            rule.apply(&form("folty"), StressRule::Initial).ipa(),
+            "følty"
+        );
+    }
+
+    #[test]
+    fn following_nucleus_matches_derived_stress_and_length() {
+        let rule = SoundChange {
+            id: "o>ø/next-stressed-long-i".into(),
+            target: Matcher::Phone(id("o")),
+            result: Rewrite::Phone(id("ø")),
+            left: Env::Any,
+            right: Env::FollowingSyllableVowel(Matcher::Stressed {
+                target: Box::new(Matcher::Length {
+                    target: Box::new(Matcher::Phone(id("i"))),
+                    long: true,
+                }),
+                stressed: true,
+            }),
+        };
+        let mut word = form("foltiː");
+        word.stress = Some(1);
+        assert_eq!(rule.apply(&word, StressRule::Initial).ipa(), "foltiː");
+        assert_eq!(rule.apply(&word, StressRule::Final).ipa(), "føltiː");
+        assert_eq!(rule.apply(&word, StressRule::Free).ipa(), "føltiː");
+        assert_eq!(rule.apply(&form("folti"), StressRule::Final).ipa(), "folti");
+    }
+
+    #[test]
     fn missing_feature_bundle_keeps_the_segment() {
         let rule = SoundChange {
             id: "no-labiodental-stop".into(),
@@ -478,5 +581,83 @@ mod tests {
             out.boundaries.is_empty(),
             "a boundary at the new word end is dropped"
         );
+    }
+
+    #[test]
+    fn tracked_edges_use_protected_survivors_and_remap_lexical_stress() {
+        let loss = SoundChange {
+            id: "vowel-loss".into(),
+            target: Matcher::AnyVowel,
+            result: Rewrite::Delete,
+            left: Env::Any,
+            right: Env::Any,
+        };
+        let mut word = form("katia");
+        word.boundaries = vec![2, 4];
+        word.stress = Some(1);
+        let (out, edge) = loss.apply_with_edge(&word, StressRule::Free, 4);
+        assert_eq!(out.ipa(), "kta");
+        assert_eq!(edge, 2);
+        assert_eq!(out.boundaries, vec![1, 2]);
+        assert_eq!(out.stress, Some(0));
+
+        // The restored last vowel still lies before an edge at the word end.
+        let (out, edge) = loss.apply_with_edge(&form("ta"), StressRule::Initial, 2);
+        assert_eq!(out.ipa(), "ta");
+        assert_eq!(edge, 2);
+
+        let loss = SoundChange {
+            target: Matcher::Phone(id("a")),
+            ..loss
+        };
+        let mut word = form("katima");
+        word.stress = Some(1);
+        let (out, edge) = loss.apply_with_edge(&word, StressRule::Free, 4);
+        assert_eq!(out.ipa(), "ktim");
+        assert_eq!(edge, 3);
+        assert_eq!(out.stress, Some(0));
+    }
+
+    #[test]
+    fn tracked_edges_include_gemination_and_compensation() {
+        let geminate = SoundChange {
+            id: "cluster-gemination".into(),
+            target: Matcher::Phone(id("k")),
+            result: Rewrite::GeminateNext,
+            left: Env::Any,
+            right: Env::Matcher(Matcher::Phone(id("t"))),
+        };
+        let mut word = form("aktia");
+        word.boundaries = vec![2];
+        word.stress = Some(1);
+        let (out, edge) = geminate.apply_with_edge(&word, StressRule::Free, 2);
+        assert_eq!(out.ipa(), "atːia");
+        assert_eq!(edge, 1);
+        assert_eq!(out.boundaries, vec![1]);
+        assert_eq!(out.stress, Some(1));
+
+        let compensation = SoundChange {
+            id: "compensatory-lengthening".into(),
+            target: Matcher::Phone(id("n")),
+            result: Rewrite::Compensate,
+            left: Env::Matcher(Matcher::AnyVowel),
+            right: Env::Matcher(Matcher::AnyConsonant),
+        };
+        let mut word = form("anta");
+        word.boundaries = vec![2];
+        let (out, edge) = compensation.apply_with_edge(&word, StressRule::Initial, 2);
+        assert_eq!(out.ipa(), "aːta");
+        assert_eq!(edge, 1);
+        assert_eq!(out.boundaries, vec![1]);
+
+        // A lengthened neighbor that also matches is deleted, not restored.
+        let all = SoundChange {
+            target: Matcher::AnyConsonant,
+            right: Env::Any,
+            ..geminate
+        };
+        let (out, edge) = all.apply_with_edge(&form("aktta"), StressRule::Initial, 3);
+        assert_eq!(out.ipa(), "aa");
+        assert_eq!(edge, 1);
     }
 }

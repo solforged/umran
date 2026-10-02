@@ -4,7 +4,7 @@
 //!
 //! cargo run --release -p umran-sim --example family -- [seed] [proto profile] [outsider profile] [generations]
 
-use umran_sim::compare::{Pair, Settings, compare, regular_correspondences};
+use umran_sim::compare::{Pair, Settings, compare_varieties, regular_correspondences};
 use umran_sim::{
     CATALOG, CONCEPTS, ContactKind, Naming, Origin, Params, SoundProfile, World, catalog,
 };
@@ -56,11 +56,7 @@ fn main() {
     }
 
     let concepts: Vec<_> = CONCEPTS.iter().collect();
-    let result = compare(
-        &world.varieties[wv].lexicon,
-        &world.varieties[ev].lexicon,
-        &concepts,
-    );
+    let result = compare_varieties(&world.varieties[wv], &world.varieties[ev], &concepts);
     let truly: Vec<bool> = result
         .rows
         .iter()
@@ -132,8 +128,8 @@ fn main() {
         println!(
             "  {:<10} {:>8} ~ {:<8} {:.2}  {why}",
             row.concept.id,
-            row.a.ipa(),
-            row.b.ipa(),
+            row.a.ipa_stressed(world.varieties[wv].stress()),
+            row.b.ipa_stressed(world.varieties[ev].stress()),
             row.regularity
         );
     }

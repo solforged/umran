@@ -616,6 +616,7 @@ impl World {
             .lexicon
             .slot_mut(concept)
             .introduce(id, 1.0);
+        self.varieties[v].sync_grammar(generation);
     }
 
     /// `from`'s word for `concept`, taken into variety `v` and fitted to its
@@ -969,6 +970,7 @@ impl World {
             }
             lexicon.slot_mut(from).introduce(new, REPLACING_SHARE);
         }
+        self.varieties[v].sync_grammar(generation);
         self.events.push((
             generation,
             WorldEvent::Pejorated {

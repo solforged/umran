@@ -31,7 +31,7 @@ and integer squares use explicit multiplication.
 - Languages are founded from a `LanguageDesign` (`design.rs`): the exact
   sounds, each used or favoured, plus knobs (word length, final consonants,
   inner clusters, repetition, long vowels, geminates, stress, affixes or
-  root-and-pattern, suffixing, derivation) and spelling. It resolves to an internal
+  root-and-pattern, suffixing, derivation), grammar choices, and spelling. It resolves to an internal
   `SoundProfile`: chosen sounds exactly, favoured ones preferred, absent
   ones discouraged but reachable by sound change. There are no named
   culture packs; `SoundProfile::base()` weights sounds by world frequency
@@ -63,6 +63,71 @@ and integer squares use explicit multiplication.
   the language needs. Root-and-pattern derivations use each word's true
   root skeleton, never a surface reading that includes a pattern's prefix.
   New words come from curated semantic shifts (`RELATED`) or fresh roots.
+- Grammar (`grammar.rs`) begins with count noun plural and verb past.
+  Count nouns name separate things, so water and collective people do not
+  take plural forms. Eligibility is explicit for each concept and follows
+  a word's current senses, not only its first meaning. Designs save each
+  category as suffix, prefix, particle, or none. A suffix follows its stem;
+  a prefix precedes it; a particle is a separate grammatical word. Missing
+  choices in older designs deterministically become suffixes. Affix-building
+  profiles draw bound marking, particles, and no marking at weights
+  0.6/0.3/0.1; root-and-pattern profiles use 0.5/0.4/0.1. The suffixing
+  preference divides bound choices between suffixes and prefixes.
+- Eligible words store their complete attached forms and their histories.
+  Particles share one marker form instead of copying it across all nouns.
+  At most three active forms compete for each word and category. A word
+  gains its current native marking when coined, borrowed, or used for a
+  new eligible sense. Existing forms are never rebuilt every generation.
+  Daughters inherit grammar with words. Productive endings for new words
+  follow the usage-weighted dominant surviving edge, including empty edges,
+  rather than repeatedly restoring the founding affix.
+- Sound laws assess and change grammatical forms as well as base words.
+  Alternative forms contribute by usage share, and shared particles count
+  once. An attached ending has no size floor of its own, but its complete
+  word retains last-vowel and minimal-word protection. Separate particles
+  have their own stress and size floor. Umlaut fronts a vowel before a
+  front vowel in the immediately following syllable: a becomes e, o becomes
+  ø, and u becomes y. These sounds already exist in the catalog. Consonants
+  may intervene, but a separate word cannot trigger the change. Ending loss
+  can leave an audible stem alternation, so absence of an ending does not
+  itself mean grammatical contrast has disappeared.
+- Contrast retention compares sounds, length, stress, and word breaks, not
+  spelling or internal morpheme boundaries. Category-wide loss is estimated
+  only with at least five eligible living stems. Increasing loss raises a
+  rare rebuilding chance but never forces recovery. Languages founded with
+  no marking retain only a low baseline chance. Grammaticalization is a
+  lexical word taking a grammatical job: many, all, or people can supply a
+  plural particle; finish or have can supply a past particle. The source
+  keeps its ordinary lexical use, and its copied particle evolves separately.
+- New particles enter at a small share. Usage drifts with a modest advantage
+  for forms that preserve audible contrast. After eight consecutive
+  generations of majority use, a particle becomes eligible for rare fusion
+  into a bound competitor. Fusion joins current sounds without restoring
+  lost ones and derives one word's stress. Rare analogy levels one irregular
+  form toward the dominant productive ending and records both forms. Retired
+  realizations retain histories and stop undergoing sound laws.
+- Loans normally receive native inflection. Strong contact between bilingual
+  speakers can rarely import a current donor base and its marked form,
+  including a shared separate particle, beside a native competitor. Neither
+  acquisition nor fusion makes the foreign marker productive. Productive
+  bound transfer requires at least three imported pairs, eight consecutive
+  strong-contact generations,
+  and a much rarer draw. Language shift mildly and probabilistically favours
+  one productive pattern, while retained substrate words receive native
+  inflection. It does not erase categories.
+- The comparative method supplements lexical evidence with current
+  same-category contrasts, including particles and surviving stem changes.
+  Repetition of one marker pair contributes at most one correspondence
+  support per category, not one clue for every noun. Marker ancestry,
+  grammatical sources, histories, and lineage are never evidence.
+- Language views report contrast retention separately from how synthetic
+  they are: the usage-weighted share of eligible forms with an audible
+  grammatical contrast inside one word. Separate particles score zero for
+  synthesis. Word views carry paradigm shares and histories; grammatical
+  spelling freezes at attestation just as base spelling does. Grammar
+  founding, rebuilding, competition, fusion, analogy, and contact each use
+  independent purpose-keyed random streams. Revision 28 changes replay of
+  older recipes; originals and recovery remain available.
 - Sound laws (`laws.rs`) apply simultaneously and regularly to every living
   word, never to obsolete ones, and never delete a word's last vowel.
   "No change" competes with them, so a culture is never forced into a law.
@@ -665,6 +730,7 @@ cargo run --release -p umran-sim --example cities -- [seed] [generations]
 cargo run --release -p umran-sim --example cities -- --band 40 160
 cargo run --release -p umran-sim --example ethos -- [seed] [generations]
 cargo run --release -p umran-sim --example ethos -- --band 40 160
+cargo run --release -p umran-sim --example endings -- [seeds]
 ```
 
 The faith report's `seeded` setup begins with three peoples sharing one
@@ -687,5 +753,7 @@ can refuse this fixed recipe; the report counts those refusals separately.
 Rivers, climates, fleets, rented ports, mixed inland-and-sea itineraries,
 resolved travel times, globe wrapping, purism within a classical form,
 compounding and derivation after founding beyond renewal and new meanings,
-inflection, tone, vowel harmony, prenasalized stops, syntax and alignment,
-and doctrinal detail beyond the causes of a schism.
+inflection beyond count noun plural and verb past, productive root-and-pattern
+inflection, agreement, case, future marking, tone, vowel harmony beyond
+next-syllable umlaut, prenasalized stops, syntax and alignment, and doctrinal
+detail beyond the causes of a schism.

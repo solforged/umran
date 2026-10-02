@@ -4,6 +4,7 @@ use crate::diglossia::{CLASSICAL_PRESTIGE, Vernacular};
 use crate::ethos::{Axis, Effect, Ethos, FoundingEthos, Pole, TemperCause};
 use crate::form::Form;
 use crate::geography::{CACHE_REACH_KM, LandmassKind, Map, MapSize, REFERENCE_TRAVEL_KM, Terrain};
+use crate::grammar::{Category, ImportedPair, MarkerKind, MarkerOrigin, Side};
 use crate::ideas::{Craft, Religion, SACRED_INTENSITY, SACRED_PRESTIGE, living_related};
 use crate::laws::{Law, catalog};
 use crate::lexicon::{Entry, Event, LexemeId, Lexicon, Origin};
@@ -1755,12 +1756,24 @@ impl World {
         }
         self.spread_waves(&spoken);
         self.borrow();
+        self.grammar_contact(&spoken);
         let prestige = self.variety_prestige();
         for v in (0..self.varieties.len()).filter(|&v| spoken[v]) {
             let clashes = self.varieties[v].lexicon.clashing();
             self.innovate(v, &clashes);
             self.drift(v, &clashes, &prestige);
             self.retire(v);
+            let variety = &mut self.varieties[v];
+            let stress = variety.stress();
+            variety.grammar.evolve(
+                self.seed,
+                v,
+                self.generation,
+                &mut variety.lexicon,
+                &variety.morphology,
+                stress,
+                self.params.speakers,
+            );
             self.renew_names(v);
         }
         self.grow();
@@ -1793,6 +1806,9 @@ impl World {
         self.hear_places();
         self.name_continents();
         self.temper_generation();
+        for variety in &mut self.varieties {
+            variety.sync_grammar(self.generation);
+        }
     }
 
     /// Which varieties some community still speaks. Unspoken varieties are
@@ -3342,6 +3358,15 @@ impl World {
                     });
                 }
             }
+            let law = Law {
+                id: "substrate",
+                label: "Substrate sounds merge",
+                rules: vec![merge],
+                commonness: 0.0,
+                stress: None,
+            };
+            new.grammar
+                .apply_law(&mut new.lexicon, &law, new.minimal, stress, generation);
             new.laws.push((generation, "substrate"));
         }
 
@@ -3406,6 +3431,13 @@ impl World {
                 },
             ));
         }
+        new.sync_grammar(generation);
+        new.grammar.simplify(
+            &mut new.lexicon,
+            stress,
+            self.seed ^ community as u64,
+            generation,
+        );
         // The people keeps its own name and names its new speech after
         // itself, the new language's way: Bulgars gave Slavic speech theirs.
         new.name = self.fresh_language_name(&new, &self.communities[community].name);
@@ -3517,8 +3549,8 @@ impl World {
             .iter()
             .filter(|law| !recent.contains(law.id))
             .filter_map(|law| {
-                let a = law.assess(
-                    variety.lexicon.living().map(|l| &l.form),
+                let a = law.assess_weighted(
+                    variety.grammar.forms(&variety.lexicon),
                     prior,
                     variety.minimal,
                     variety.stress(),
@@ -3566,6 +3598,9 @@ impl World {
                 });
             }
         }
+        variety
+            .grammar
+            .apply_law(&mut variety.lexicon, law, minimal, stress, generation);
         variety.laws.push((generation, law.id));
         if let Some(next) = law.stress {
             variety.stress_history.push((generation, stress));
@@ -3673,8 +3708,8 @@ impl World {
                 .into_iter()
                 .filter_map(|(id, (h, from, _))| {
                     let law = self.laws.iter().find(|l| l.id == id)?;
-                    let a = law.assess(
-                        variety.lexicon.living().map(|l| &l.form),
+                    let a = law.assess_weighted(
+                        variety.grammar.forms(&variety.lexicon),
                         &variety.profile.inventory,
                         variety.minimal,
                         variety.stress(),
@@ -3938,6 +3973,218 @@ impl World {
                 }
             };
             lexicon.slots[loan.concept].introduce(id, self.params.loan_share);
+        }
+    }
+
+    /// Native marking is normal. Strong bilingual contact occasionally carries pairs.
+    fn grammar_contact(&mut self, spoken: &[bool]) {
+        let generation = self.generation;
+        let mut strong: BTreeMap<(usize, usize), f32> = BTreeMap::new();
+        for contact in &self.contacts {
+            if !matches!(
+                contact.kind,
+                ContactKind::Neighbours | ContactKind::Intermarriage | ContactKind::Rule
+            ) || contact.intensity < 0.75
+            {
+                continue;
+            }
+            for (recipient, donor) in [(contact.a, contact.b), (contact.b, contact.a)] {
+                let (r, d) = (&self.communities[recipient], &self.communities[donor]);
+                if r.variety != d.variety && r.openness >= 0.5 {
+                    let entry = strong.entry((r.variety, d.variety)).or_default();
+                    *entry = entry.max(contact.intensity * r.openness);
+                }
+            }
+        }
+        for v in (0..self.varieties.len()).filter(|&v| spoken[v]) {
+            self.varieties[v].sync_grammar(generation);
+            self.varieties[v]
+                .grammar
+                .contact_generations
+                .retain(|from, _| strong.contains_key(&(v, *from)));
+        }
+        for ((recipient, donor), intensity) in strong {
+            let duration = self.varieties[recipient]
+                .grammar
+                .contact_generations
+                .entry(donor)
+                .or_default();
+            *duration += 1;
+            let sustained = *duration >= 8;
+            let new_loans: Vec<_> = self.varieties[recipient]
+                .lexicon
+                .living()
+                .filter(|l| {
+                    l.born == generation
+                        && matches!(l.origin, Origin::Borrowed { from, .. } if from == donor)
+                })
+                .map(|l| l.id)
+                .collect();
+            if !new_loans.is_empty() {
+                let own = &self.varieties[recipient];
+                let adapter = Adapter::new(
+                    own.lexicon.living().map(|l| &l.form),
+                    &own.profile.inventory,
+                );
+                let mut pairs = Vec::new();
+                for id in new_loans {
+                    let Origin::Borrowed { source, .. } = own.lexicon.get(id).origin else {
+                        continue;
+                    };
+                    let donor_word = self.varieties[donor].lexicon.get(source);
+                    for category in Category::ALL {
+                        if !own
+                            .lexicon
+                            .get(id)
+                            .paradigms
+                            .iter()
+                            .any(|p| p.category == category)
+                        {
+                            continue;
+                        }
+                        let mut rng = self.at(recipient).rng(&[
+                            key("grammar imported pair"),
+                            donor as u64,
+                            key(category.id()),
+                            id.0 as u64,
+                        ]);
+                        if rng.r#gen::<f32>() >= 0.04 * intensity {
+                            continue;
+                        }
+                        let Some(paradigm) =
+                            donor_word.paradigms.iter().find(|p| p.category == category)
+                        else {
+                            continue;
+                        };
+                        let Some(realization) = paradigm
+                            .realizations
+                            .iter()
+                            .filter(|r| {
+                                r.retired.is_none()
+                                    && self.varieties[donor].grammar.marker(r.marker).kind
+                                        != MarkerKind::None
+                            })
+                            .max_by(|a, b| a.share.total_cmp(&b.share))
+                        else {
+                            continue;
+                        };
+                        let marker = self.varieties[donor].grammar.marker(realization.marker);
+                        let (form, edge, marker_form, source_form) = match marker.kind {
+                            MarkerKind::Bound => {
+                                let Some(source_form) = realization.form.as_ref() else {
+                                    continue;
+                                };
+                                let form = adapter.adapt(
+                                    source_form,
+                                    self.params.bilingual_keep * intensity,
+                                    &mut rng,
+                                );
+                                let mut input = 0;
+                                let mut output = 0;
+                                let mut edge = 0;
+                                for (left, right) in crate::compare::align(source_form, &form) {
+                                    if input >= realization.edge {
+                                        edge = output;
+                                        break;
+                                    }
+                                    input += usize::from(left.is_some());
+                                    output += usize::from(right.is_some());
+                                    edge = output;
+                                }
+                                let edge = edge.min(form.segs.len());
+                                let edge_form = Form {
+                                    segs: match marker.side {
+                                        Side::Prefix => form.segs[..edge].to_vec(),
+                                        Side::Suffix => form.segs[edge..].to_vec(),
+                                    },
+                                    boundaries: Vec::new(),
+                                    stress: None,
+                                };
+                                (Some(form), edge, edge_form, source_form.clone())
+                            }
+                            MarkerKind::Particle => (
+                                None,
+                                0,
+                                adapter.adapt(
+                                    &marker.form,
+                                    self.params.bilingual_keep * intensity,
+                                    &mut rng,
+                                ),
+                                marker.form.clone(),
+                            ),
+                            MarkerKind::None => unreachable!(),
+                        };
+                        pairs.push((
+                            id,
+                            ImportedPair {
+                                category,
+                                source_marker: marker.id,
+                                kind: marker.kind,
+                                side: marker.side,
+                                marker_form,
+                                source_marker_form: marker.form.clone(),
+                                form,
+                                edge,
+                                source_form,
+                            },
+                        ));
+                    }
+                }
+                let own = &mut self.varieties[recipient];
+                let stress = own.stress();
+                for (id, pair) in pairs {
+                    own.grammar
+                        .import_pair(&mut own.lexicon, id, donor, pair, stress, generation);
+                }
+            }
+            if !sustained {
+                continue;
+            }
+            let own = &self.varieties[recipient];
+            let candidates: Vec<_> = own
+                .grammar
+                .markers
+                .iter()
+                .filter(|m| {
+                    !m.productive
+                        && m.kind == MarkerKind::Bound
+                        && m.retired.is_none()
+                        && matches!(m.origin, MarkerOrigin::Imported { from, .. } if from == donor)
+                })
+                .filter(|m| {
+                    own.lexicon
+                        .living()
+                        .filter(|l| {
+                            l.paradigms.iter().any(|p| {
+                                p.realizations
+                                    .iter()
+                                    .any(|r| r.retired.is_none() && r.marker == m.id)
+                            })
+                        })
+                        .count()
+                        >= 3
+                })
+                .map(|m| m.id)
+                .collect();
+            for marker in candidates {
+                let mut rng = self.at(recipient).rng(&[
+                    key("grammar marker transfer"),
+                    donor as u64,
+                    marker as u64,
+                ]);
+                if rng.r#gen::<f32>() < 0.0002 * intensity {
+                    let own = &mut self.varieties[recipient];
+                    let stress = own.stress();
+                    own.grammar.transfer_marker(
+                        marker,
+                        donor,
+                        &mut own.lexicon,
+                        &own.morphology,
+                        stress,
+                        generation,
+                    );
+                }
+            }
         }
     }
 
@@ -4942,7 +5189,7 @@ mod tests {
     /// cognates show and flags most loans from an unrelated language.
     #[test]
     fn comparative_method_recovers_correspondences_and_flags_loans() {
-        use crate::compare::{Settings, compare, regular_correspondences};
+        use crate::compare::{Settings, compare_varieties, regular_correspondences};
         let profiles = SoundProfile::presets();
         let concepts: Vec<&'static Concept> = CONCEPTS.iter().collect();
         let (mut kept, mut cognates, mut loans_flagged, mut loans) = (0, 0, 0, 0);
@@ -4963,11 +5210,7 @@ mod tests {
                 world.communities[east].variety,
             );
             let out = world.communities[outsiders].variety;
-            let result = compare(
-                &world.varieties[a].lexicon,
-                &world.varieties[b].lexicon,
-                &concepts,
-            );
+            let result = compare_varieties(&world.varieties[a], &world.varieties[b], &concepts);
             let truly: Vec<bool> = result
                 .rows
                 .iter()
@@ -6282,5 +6525,58 @@ mod tests {
         assert_eq!(received.stress(), StressRule::Initial);
         assert_eq!(received.lexicon.get(word).form, form);
         assert!(received.waves.contains(&(8, "initial-stress", v)));
+    }
+
+    #[test]
+    fn initial_stress_suffixes_lose_plural_contrast_more_often() {
+        use crate::{GrammarChoice, GrammarDesign, GrammarPrior, MinimalWord, StressRule};
+        let mut losses = [0.0_f32; 3];
+        for seed in 0..30 {
+            for (i, (stress, choice)) in [
+                (StressRule::Initial, GrammarChoice::Suffix),
+                (StressRule::Final, GrammarChoice::Suffix),
+                (StressRule::Initial, GrammarChoice::Prefix),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let mut profile = SoundProfile::base();
+                profile.stress = Some(stress);
+                profile.grammar = GrammarPrior::fixed(GrammarDesign {
+                    plural: choice,
+                    past: GrammarChoice::None,
+                });
+                let mut world = World::solo(
+                    seed,
+                    &profile,
+                    Params {
+                        sound_change_rate: 1.0,
+                        innovation_rate: 0.0,
+                        preference_pull: 0.0,
+                        name_turnover: 0.0,
+                        ..Params::static_society()
+                    },
+                );
+                world
+                    .laws
+                    .retain(|law| matches!(law.id, "unstressed-reduction" | "unstressed-apocope"));
+                world.varieties[0].minimal = MinimalWord::Syllable;
+                world.run(80);
+                losses[i] +=
+                    1.0 - world.varieties[0].grammar.summary.categories[0].contrast_retention;
+            }
+        }
+        for loss in &mut losses {
+            *loss /= 30.0;
+        }
+        assert!(
+            losses[0] > losses[1] + 0.08,
+            "initial/final/prefix: {losses:?}"
+        );
+        assert!(
+            losses[0] > losses[2] + 0.08,
+            "initial/final/prefix: {losses:?}"
+        );
+        assert!((0.08..=0.85).contains(&losses[0]), "{losses:?}");
     }
 }

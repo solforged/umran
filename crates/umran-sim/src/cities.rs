@@ -489,6 +489,8 @@ impl World {
                     .sum::<f32>()
                     >= 0.5
         });
+        // New loans receive native marking before the city's sound mergers.
+        out.sync_grammar(self.generation);
         out
     }
 
@@ -686,9 +688,20 @@ mod tests {
     fn minority_mergers_are_regular_and_leave_obsolete_words_frozen() {
         let mut world = realm();
         for (i, v) in world.varieties.iter_mut().enumerate() {
+            let form = Form::from_ipa(if i == 0 { "θaθa" } else { "tata" }).unwrap();
             for word in &mut v.lexicon.lexemes {
-                word.form = Form::from_ipa(if i == 0 { "θaθa" } else { "tata" }).unwrap();
+                word.form = form.clone();
+                word.paradigms.clear();
             }
+            // The hypothetical dialect includes its spoken grammatical forms.
+            for marker in &mut v.grammar.markers {
+                marker.form = match marker.kind {
+                    crate::grammar::MarkerKind::Bound => Form::from_ipa("a").unwrap(),
+                    crate::grammar::MarkerKind::Particle => form.clone(),
+                    crate::grammar::MarkerKind::None => Form::default(),
+                };
+            }
+            v.sync_grammar(0);
         }
         let sense = crate::concepts::by_id("water").unwrap();
         let old = world.varieties[0].lexicon.coin(
@@ -706,6 +719,12 @@ mod tests {
             assert_eq!(word.form.ipa(), "tata");
             assert!(word.log.iter().any(|e| matches!(&e.event,
                 Event::SoundLaw { law: "koine-levelling", before } if before.ipa() == "θaθa")));
+        }
+        for (form, _) in v.grammar.forms(&v.lexicon) {
+            assert!(
+                form.phones()
+                    .all(|phone| matches!(crate::CATALOG.get(phone).ipa(), "t" | "a"))
+            );
         }
         assert_eq!(v.lexicon.get(old).form.ipa(), "aθa");
         assert_eq!(v.laws.last(), Some(&(4, "koine-levelling")));

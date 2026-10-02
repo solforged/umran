@@ -1,12 +1,13 @@
 use crate::flavor::Flavor;
+use crate::grammar::GrammarPrior;
 use crate::phoneme::{Backness, Height, Manner, Place};
 use crate::prosody::StressRule;
 use serde::{Deserialize, Serialize};
 
 /// The full numbers behind a sound system: segment preferences, syllable
-/// shapes, word building, and spelling. Languages are founded from a
-/// `LanguageDesign`, which resolves to one of these; presets come from the
-/// base with a flavor applied.
+/// shapes, primary stress, word building, grammar, and spelling. Languages
+/// are founded from a `LanguageDesign`, which resolves to one of these;
+/// presets come from the base with a flavor applied.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SoundProfile {
     pub id: String,
@@ -15,6 +16,10 @@ pub struct SoundProfile {
     pub inventory: InventoryPrior,
     pub phonotactics: PhonotacticPrior,
     pub morphology: MorphologyPrior,
+    /// Independent plural/past founding choices; unpinned categories use
+    /// morphology's weak bound/particle/none and suffix/prefix biases.
+    #[serde(default)]
+    pub grammar: GrammarPrior,
     pub spelling: Spelling,
     /// Absent in a design/profile means draw on a separate founding stream.
     #[serde(default)]
@@ -213,6 +218,7 @@ fn base() -> SoundProfile {
             suffixing: 0.7,
             derivation: 0.5,
         },
+        grammar: GrammarPrior::default(),
         spelling: Spelling {
             overrides: vec![],
             kw_as_qu: false,

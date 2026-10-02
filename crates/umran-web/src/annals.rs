@@ -4,11 +4,15 @@
 //! is drawn from the annals' own stream, so it never moves the world's
 //! draws, and the same history is always told the same way.
 
-use crate::{SpecimenWord, language_label, livelihood_noun, specimen, substrate_label};
+use crate::{
+    GrammarFormView, SpecimenWord, grammar_form_at, grammar_form_view, language_label,
+    livelihood_noun, specimen, substrate_label,
+};
 use serde::Serialize;
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
 use umran_sim::concepts::Concept;
+use umran_sim::grammar::{Marker, MarkerKind, MarkerOrigin, NoticeKind, Side};
 use umran_sim::ideas::{NEEDS, Need};
 use umran_sim::names::PlaceOrigin;
 use umran_sim::rng::{index, key, stream};
@@ -25,7 +29,7 @@ pub(crate) struct Annal {
     /// "neighbours", "conquest", "spread", "displaced", "hardship",
     /// "livelihood", "ended", "rose", "fell", "standard", "classical",
     /// "vernacular", "craft", "faith", "conversion", "meaning",
-    /// "respelling", "schism", "pilgrimage", "holy-land", "temper", or "law".
+    /// "respelling", "schism", "pilgrimage", "holy-land", "temper", "grammar", or "law".
     pub kind: &'static str,
     /// The annalist's words. Words of the language are marked `*thus*`.
     pub text: String,
@@ -51,6 +55,9 @@ pub(crate) struct Annal {
     pub crafts: Vec<Craft>,
     /// For a change of temper, what turned and why.
     pub temper: Option<Temper>,
+    /// Structured grammatical change; absent for all other annal kinds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grammar: Option<GrammarAnnal>,
 }
 
 /// A people's temper turning: a leaning reaching one of its ends
@@ -61,6 +68,39 @@ pub(crate) struct Temper {
     pub pole: Pole,
     pub entered: bool,
     pub cause: TemperCause,
+}
+
+#[derive(Clone, PartialEq, Serialize)]
+pub(crate) struct GrammarAnnal {
+    category: &'static str,
+    #[serde(flatten)]
+    event: GrammarAnnalEvent,
+}
+
+#[derive(Clone, PartialEq, Serialize)]
+#[serde(tag = "event", rename_all = "kebab-case")]
+enum GrammarAnnalEvent {
+    NewMarker {
+        marker: u32,
+    },
+    Fusion {
+        particle: u32,
+        marker: u32,
+    },
+    ContrastLoss,
+    Analogy {
+        lexeme: u32,
+        before: GrammarFormView,
+        after: GrammarFormView,
+    },
+    ImportedPair {
+        lexeme: u32,
+        from: usize,
+    },
+    MarkerTransfer {
+        marker: u32,
+        from: usize,
+    },
 }
 
 const TEMPER_ENTERED: &[&str] = &["{c}, the {p} grew {w}.", "{c}, the {p} turned {w}."];
@@ -239,6 +279,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
         religions: Vec::new(),
         crafts: Vec::new(),
         temper: None,
+        grammar: None,
     };
     for (position, &(generation, ref event)) in world.events.iter().enumerate() {
         let name = |c: usize| world.community_name_at(c, generation);
@@ -708,6 +749,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
             .map(|(generation, s)| spread_annal(world, generation, &s)),
     );
     out.extend(sound_changes(world));
+    out.extend(grammar_changes(world));
     out.sort_by_key(|a| (a.generation, a.kind == "law"));
     out
 }
@@ -827,6 +869,7 @@ fn state_annal(world: &World, generation: u32, state: usize, kind: &'static str)
         religions: Vec::new(),
         crafts: Vec::new(),
         temper: None,
+        grammar: None,
     }
 }
 
@@ -913,6 +956,7 @@ fn vernacular_annal(world: &World, generation: u32, variety: usize, by: Vernacul
         religions,
         crafts: Vec::new(),
         temper: None,
+        grammar: None,
     }
 }
 
@@ -1026,6 +1070,7 @@ fn faith_annal(world: &World, generation: u32, religion: usize) -> Annal {
         religions: vec![religion],
         crafts: Vec::new(),
         temper: None,
+        grammar: None,
     }
 }
 
@@ -1216,6 +1261,7 @@ fn spread_annal(world: &World, generation: u32, spreads: &[(usize, usize)]) -> A
         religions: Vec::new(),
         crafts: Vec::new(),
         temper: None,
+        grammar: None,
     }
 }
 
@@ -1317,6 +1363,7 @@ fn neighbours_annal(world: &World, generation: u32, n: &Neighbours) -> Annal {
         religions: Vec::new(),
         crafts: Vec::new(),
         temper: None,
+        grammar: None,
     }
 }
 
@@ -1433,10 +1480,228 @@ fn sound_changes(world: &World) -> Vec<Annal> {
                 religions: Vec::new(),
                 crafts: Vec::new(),
                 temper: None,
+                grammar: None,
             });
         }
     }
     out
+}
+
+/// Grammatical changes are told from recorded notices, not inferred from
+/// the language's current markers or how its words happen to look.
+fn grammar_changes(world: &World) -> Vec<Annal> {
+    let shifts = Shifts::of(world);
+    let mut out = Vec::new();
+    for (v, variety) in world.varieties.iter().enumerate() {
+        // Inherited events belong to the parent's annals. A daughter can
+        // also acquire grammar during the generation of its own fork.
+        for notice in variety.grammar.events.iter().filter(|notice| {
+            variety.parent.is_none_or(|fork| {
+                notice.generation > fork.generation
+                    || (notice.generation == fork.generation
+                        && !world.varieties[fork.variety]
+                            .grammar
+                            .events
+                            .contains(*notice))
+            })
+        }) {
+            let generation = notice.generation;
+            let people = speakers(world, &shifts, v, generation);
+            let category = notice.category.id();
+            let (text, notes, event, donor) = match &notice.event {
+                NoticeKind::NewMarker { marker } => {
+                    let marker = variety.grammar.marker(*marker);
+                    let phrase = grammatical_marker(variety, marker, generation);
+                    let text = match marker.kind {
+                        MarkerKind::None => format!(
+                            "In {}, {category} had no overt grammatical marker.",
+                            world.language_title_at(v, generation)
+                        ),
+                        _ => format!(
+                            "In those days {people} began marking {category} with {phrase}."
+                        ),
+                    };
+                    let note = match &marker.origin {
+                        MarkerOrigin::Founding => match marker.kind {
+                            MarkerKind::None => {
+                                "No overt marker is a founding choice, not a defective grammar.".into()
+                            }
+                            _ => "This marker was part of the founding grammar.".into(),
+                        },
+                        MarkerOrigin::Grammaticalized {
+                            concept,
+                            source_form,
+                            ..
+                        } => format!(
+                            "The word *{}*, '{}', /{}/, acquired a grammatical job while its lexical use remained. This development is called grammaticalization.",
+                            variety.spell(source_form),
+                            concept.gloss,
+                            source_form.ipa_stressed(variety.stress_at(marker.born))
+                        ),
+                        MarkerOrigin::Fused { particle } => format!(
+                            "The separate grammatical word became attached to its neighbour: {}. This development is called fusion.",
+                            grammatical_marker(
+                                variety,
+                                variety.grammar.marker(*particle),
+                                generation
+                            )
+                        ),
+                        MarkerOrigin::Imported { from, source, .. } => format!(
+                            "Imported from {}, where it was heard as /{}/.",
+                            world.language_title_at(*from, generation),
+                            source.ipa_stressed(world.varieties[*from].stress_at(marker.born))
+                        ),
+                    };
+                    let donor = match &marker.origin {
+                        MarkerOrigin::Imported { from, .. } => Some(*from),
+                        _ => None,
+                    };
+                    (
+                        text,
+                        vec![note],
+                        GrammarAnnalEvent::NewMarker { marker: marker.id },
+                        donor,
+                    )
+                }
+                NoticeKind::Fusion { particle, marker } => {
+                    let old = grammatical_marker(
+                        variety,
+                        variety.grammar.marker(*particle),
+                        generation,
+                    );
+                    let new = grammatical_marker(
+                        variety,
+                        variety.grammar.marker(*marker),
+                        generation,
+                    );
+                    (
+                        format!(
+                            "Among {people}, {old} became attached to its neighbour as {new}, marking {category} within one word."
+                        ),
+                        vec![
+                            "Fusion joins a formerly separate grammatical word to its neighbour. The attached form and the separate form may continue to compete.".into(),
+                        ],
+                        GrammarAnnalEvent::Fusion {
+                            particle: *particle,
+                            marker: *marker,
+                        },
+                        None,
+                    )
+                }
+                NoticeKind::ContrastLoss => (
+                    format!(
+                        "Among {people}, {category} forms increasingly sounded the same as their unmarked words."
+                    ),
+                    vec![
+                        "A grammatical contrast is an audible difference between the base and the marked form. An ending can disappear without losing that contrast if the stem still sounds different; separate grammatical words can preserve it too.".into(),
+                    ],
+                    GrammarAnnalEvent::ContrastLoss,
+                    None,
+                ),
+                NoticeKind::Analogy {
+                    lexeme,
+                    before,
+                    after,
+                } => {
+                    let word = variety.lexicon.get(*lexeme);
+                    (
+                        format!(
+                            "The {category} form for '{}' was reshaped among {people}, from *{}* to *{}*, to follow the pattern used for new words.",
+                            word.first_sense.gloss,
+                            variety.spell(before),
+                            variety.spell(after)
+                        ),
+                        vec![format!(
+                            "Analogy means reshaping a form to match a productive pattern: /{}/ → /{}/. Its unmarked word was not changed.",
+                            before.ipa_stressed(variety.stress_at(generation)),
+                            after.ipa_stressed(variety.stress_at(generation))
+                        )],
+                        GrammarAnnalEvent::Analogy {
+                            lexeme: lexeme.0,
+                            before: grammar_form_view(variety, before, generation),
+                            after: grammar_form_view(variety, after, generation),
+                        },
+                        None,
+                    )
+                }
+                NoticeKind::ImportedPair { lexeme, from } => {
+                    let word = variety.lexicon.get(*lexeme);
+                    let language = world.language_title_at(*from, generation);
+                    (
+                        format!(
+                            "The word for '{}' came to {people} from {language} together with its {category} form.",
+                            word.first_sense.gloss
+                        ),
+                        vec![
+                            "Both the base and its marked form were acquired together. A borrowed plural or past does not by itself make the foreign pattern productive on native words.".into(),
+                        ],
+                        GrammarAnnalEvent::ImportedPair {
+                            lexeme: lexeme.0,
+                            from: *from,
+                        },
+                        Some(*from),
+                    )
+                }
+                NoticeKind::MarkerTransfer { marker, from } => {
+                    let language = world.language_title_at(*from, generation);
+                    let phrase = grammatical_marker(
+                        variety,
+                        variety.grammar.marker(*marker),
+                        generation,
+                    );
+                    (
+                        format!(
+                            "In those days {people} took up {phrase} from {language} as a pattern for marking {category} on new words."
+                        ),
+                        vec![
+                            "Productive marker transfer spreads a grammatical pattern beyond the individual words first borrowed with it.".into(),
+                        ],
+                        GrammarAnnalEvent::MarkerTransfer {
+                            marker: *marker,
+                            from: *from,
+                        },
+                        Some(*from),
+                    )
+                }
+            };
+            out.push(Annal {
+                generation,
+                kind: "grammar",
+                text,
+                notes,
+                variety: Some(v),
+                peoples: (0..world.communities.len())
+                    .filter(|&c| {
+                        let spoken = shifts.spoken_by(world, c, generation);
+                        spoken == v || donor == Some(spoken)
+                    })
+                    .collect(),
+                lands: Vec::new(),
+                laws: Vec::new(),
+                specimen: Vec::new(),
+                states: Vec::new(),
+                religions: Vec::new(),
+                crafts: Vec::new(),
+                temper: None,
+                grammar: Some(GrammarAnnal { category, event }),
+            });
+        }
+    }
+    out
+}
+
+fn grammatical_marker(variety: &Variety, marker: &Marker, generation: u32) -> String {
+    let form = grammar_form_at(&marker.form, &marker.history, generation);
+    let spelled = variety.spell(form);
+    match marker.kind {
+        MarkerKind::None => "no overt marker".into(),
+        MarkerKind::Particle => format!("the separate word *{spelled}*"),
+        MarkerKind::Bound if form.phones().next().is_none() => "a silent attached marker".into(),
+        MarkerKind::Bound => match marker.side {
+            Side::Prefix => format!("the prefix *{spelled}-*"),
+            Side::Suffix => format!("the ending *-{spelled}*"),
+        },
+    }
 }
 
 /// Who spoke variety `v` in `generation`: its people if one people spoke

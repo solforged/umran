@@ -7,7 +7,8 @@
 
 use std::collections::HashSet;
 use std::time::Instant;
-use umran_sim::compare::{compare, intelligibility};
+use umran_sim::compare::{compare, compare_varieties, intelligibility};
+use umran_sim::grammar::{GrammarEntry, GrammarEvent, MarkerKind, MarkerOrigin};
 use umran_sim::prosody::moras;
 use umran_sim::{
     Action, CATALOG, CONCEPTS, Chronicle, ContactKind, ENGINE_REVISION, Entry, Env, Event, FORMAT,
@@ -114,6 +115,7 @@ fn needs_syllables(matcher: &Matcher) -> bool {
 fn environment(
     env: &Env,
     form: &Form,
+    at: usize,
     neighbor: Option<usize>,
     syllables: &[Syllable],
     stress: Option<usize>,
@@ -124,6 +126,11 @@ fn environment(
         Env::Matcher(matcher) => {
             neighbor.is_some_and(|i| contextual(matcher, form, i, syllables, stress))
         }
+        Env::FollowingSyllableVowel(matcher) => syllables
+            .iter()
+            .position(|s| s.onset.contains(&at) || s.nucleus == at || s.coda.contains(&at))
+            .and_then(|n| syllables.get(n + 1))
+            .is_some_and(|s| contextual(matcher, form, s.nucleus, syllables, stress)),
     }
 }
 
@@ -176,9 +183,11 @@ fn replacement(rewrite: &Rewrite, old: Seg) -> Option<Seg> {
 
 fn reference_rule(rule: &SoundChange, before: &Form, stress_rule: StressRule) -> Form {
     let needs = needs_syllables(&rule.target)
-        || [&rule.left, &rule.right]
-            .iter()
-            .any(|env| matches!(env, Env::Matcher(matcher) if needs_syllables(matcher)));
+        || [&rule.left, &rule.right].iter().any(|env| match env {
+            Env::Matcher(matcher) => needs_syllables(matcher),
+            Env::FollowingSyllableVowel(_) => true,
+            Env::Any | Env::WordEdge => false,
+        });
     let syllables = if needs {
         before.syllables()
     } else {
@@ -195,8 +204,8 @@ fn reference_rule(rule: &SoundChange, before: &Form, stress_rule: StressRule) ->
             let left = i.checked_sub(1);
             let right = (i + 1 < before.segs.len()).then_some(i + 1);
             if contextual(&rule.target, before, i, &syllables, stress)
-                && environment(&rule.left, before, left, &syllables, stress)
-                && environment(&rule.right, before, right, &syllables, stress)
+                && environment(&rule.left, before, i, left, &syllables, stress)
+                && environment(&rule.right, before, i, right, &syllables, stress)
             {
                 replacement(&rule.result, seg)
             } else {
@@ -412,6 +421,48 @@ fn assert_form(form: &Form, seed: u64, year: u32) {
     );
 }
 
+fn assert_grammatical_change(
+    before: &Form,
+    after: &Form,
+    history: &[GrammarEntry],
+    laws: &[&Law],
+    constraints: (MinimalWord, StressRule),
+    when: (u64, u32),
+) {
+    let (seed, year) = when;
+    let (expected, log) = expected_changes(before, laws, constraints.0, constraints.1, year / 25);
+    // Analogy follows the sound laws and keeps the form it replaced.
+    let after_laws = history
+        .iter()
+        .find_map(|entry| match &entry.event {
+            GrammarEvent::Analogy { before } => Some(before),
+            _ => None,
+        })
+        .unwrap_or(after);
+    assert_eq!(
+        after_laws, &expected,
+        "seed {seed}, year {year}: irregular grammatical form"
+    );
+    let changes: Vec<_> = history
+        .iter()
+        .filter_map(|entry| match &entry.event {
+            GrammarEvent::SoundLaw { law, before } => Some(Entry {
+                generation: entry.generation,
+                event: Event::SoundLaw {
+                    law,
+                    before: before.clone(),
+                },
+            }),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        changes, log,
+        "seed {seed}, year {year}: incorrect grammatical sound history"
+    );
+    assert_form(after, seed, year);
+}
+
 fn assert_slots(lexicon: &Lexicon, seed: u64, year: u32) {
     let mut in_use = HashSet::new();
     for slot in &lexicon.slots {
@@ -482,6 +533,32 @@ fn sound_laws_are_regular_protect_words_and_freeze_the_record() {
                 .lexemes
                 .iter()
                 .map(|l| (l.form.clone(), l.obsolete.is_some(), l.log.len()))
+                .collect();
+            let mut grammatical = Vec::new();
+            let mut frozen_grammar = Vec::new();
+            for lexeme in &world.varieties[v].lexicon.lexemes {
+                for (p, paradigm) in lexeme.paradigms.iter().enumerate() {
+                    for (r, realization) in paradigm.realizations.iter().enumerate() {
+                        if lexeme.obsolete.is_some() || realization.retired.is_some() {
+                            frozen_grammar.push((lexeme.id, p, r, realization.clone()));
+                        } else if let Some(form) = &realization.form {
+                            grammatical.push((
+                                lexeme.id,
+                                p,
+                                r,
+                                form.clone(),
+                                realization.history.len(),
+                            ));
+                        }
+                    }
+                }
+            }
+            let particles: Vec<_> = world.varieties[v]
+                .grammar
+                .markers
+                .iter()
+                .filter(|marker| marker.kind == MarkerKind::Particle && marker.retired.is_none())
+                .map(|marker| (marker.id, marker.form.clone(), marker.history.len()))
                 .collect();
             let before_names: Vec<_> = names(&world, v)
                 .into_iter()
@@ -592,6 +669,35 @@ fn sound_laws_are_regular_protect_words_and_freeze_the_record() {
                 );
                 assert_form(&after.form, seed, year);
             }
+            for (lexeme, p, r, before) in frozen_grammar {
+                assert_eq!(
+                    world.varieties[v].lexicon.get(lexeme).paradigms[p].realizations[r],
+                    before,
+                    "seed {seed}, year {year}: obsolete or retired grammar changed"
+                );
+            }
+            for (lexeme, p, r, before, log_len) in grammatical {
+                let after = &world.varieties[v].lexicon.get(lexeme).paradigms[p].realizations[r];
+                assert_grammatical_change(
+                    &before,
+                    after.form.as_ref().unwrap(),
+                    &after.history[log_len..],
+                    &applied,
+                    (minimal, stress),
+                    (seed, year),
+                );
+            }
+            for (marker, before, log_len) in particles {
+                let after = world.varieties[v].grammar.marker(marker);
+                assert_grammatical_change(
+                    &before,
+                    &after.form,
+                    &after.history[log_len..],
+                    &applied,
+                    (minimal, stress),
+                    (seed, year),
+                );
+            }
             for lexeme in world.varieties[v].lexicon.living() {
                 assert_form(&lexeme.form, seed, year);
             }
@@ -656,11 +762,14 @@ fn assert_variety_eq(a: &Variety, b: &Variety, seed: u64, year: u32) {
         founding_inventory,
         lexicon,
         morphology,
+        grammar,
         minimal,
         laws,
         stress_history,
         waves,
         parent,
+        koine_of,
+        koine_mergers,
         style,
         given,
         written,
@@ -799,6 +908,24 @@ fn recipes_replay_identical_histories_in_fresh_worlds() {
             assert_slots(&variety.lexicon, seed, fresh.latest().generation * 25);
             for lexeme in variety.lexicon.living() {
                 assert_form(&lexeme.form, seed, fresh.latest().generation * 25);
+                for realization in lexeme
+                    .paradigms
+                    .iter()
+                    .flat_map(|p| &p.realizations)
+                    .filter(|r| r.retired.is_none())
+                {
+                    if let Some(form) = &realization.form {
+                        assert_form(form, seed, fresh.latest().generation * 25);
+                    }
+                }
+            }
+            for marker in variety
+                .grammar
+                .markers
+                .iter()
+                .filter(|m| m.kind == MarkerKind::Particle && m.retired.is_none())
+            {
+                assert_form(&marker.form, seed, fresh.latest().generation * 25);
             }
         }
     }
@@ -812,16 +939,58 @@ fn recipes_replay_identical_histories_in_fresh_worlds() {
     );
 }
 
-fn hide_descent(lexicon: &mut Lexicon) {
-    for lexeme in &mut lexicon.lexemes {
+fn hide_descent(variety: &mut Variety) {
+    variety.parent = None;
+    variety.koine_of.clear();
+    variety.laws.clear();
+    variety.stress_history.clear();
+    variety.waves.clear();
+    variety.grammar.events.clear();
+    for marker in &mut variety.grammar.markers {
+        marker.origin = MarkerOrigin::Founding;
+        marker.born = 0;
+        marker.history.clear();
+    }
+    for lexeme in &mut variety.lexicon.lexemes {
         lexeme.origin = Origin::Founding;
         lexeme.born = 0;
         lexeme.log.clear();
+        for paradigm in &mut lexeme.paradigms {
+            for realization in &mut paradigm.realizations {
+                realization.born = 0;
+                realization.history.clear();
+            }
+        }
     }
 }
 
-fn scramble_descent(lexicon: &mut Lexicon) {
-    for (i, lexeme) in lexicon.lexemes.iter_mut().enumerate() {
+fn scramble_descent(variety: &mut Variety) {
+    variety.parent = Some(umran_sim::variety::Fork {
+        variety: usize::MAX,
+        generation: u32::MAX,
+        inherited: u32::MAX,
+    });
+    variety.koine_of = vec![(usize::MAX, 1.0)];
+    variety.laws = vec![(u32::MAX, "unrelated history")];
+    variety.stress_history = vec![(u32::MAX, StressRule::Final)];
+    variety.waves = vec![(u32::MAX, "unrelated history", usize::MAX)];
+    let history = GrammarEntry {
+        generation: u32::MAX,
+        event: GrammarEvent::Imported {
+            from: usize::MAX,
+            source: Form::default(),
+        },
+    };
+    for marker in &mut variety.grammar.markers {
+        marker.origin = MarkerOrigin::Imported {
+            from: usize::MAX,
+            marker: u32::MAX,
+            source: Form::default(),
+        };
+        marker.born = u32::MAX;
+        marker.history = vec![history.clone()];
+    }
+    for (i, lexeme) in variety.lexicon.lexemes.iter_mut().enumerate() {
         lexeme.origin = if i % 2 == 0 {
             Origin::Borrowed {
                 from: usize::MAX,
@@ -841,6 +1010,12 @@ fn scramble_descent(lexicon: &mut Lexicon) {
                 source: Form::from_phones([]),
             },
         }];
+        for paradigm in &mut lexeme.paradigms {
+            for realization in &mut paradigm.realizations {
+                realization.born = u32::MAX;
+                realization.history = vec![history.clone()];
+            }
+        }
     }
 }
 
@@ -862,34 +1037,42 @@ fn comparative_method_ignores_hidden_and_scrambled_descent() {
         let parent = world.communities[0].variety;
         for other in [daughter, outsider] {
             let other = world.communities[other].variety;
-            let (a, b) = (
-                &world.varieties[parent].lexicon,
-                &world.varieties[other].lexicon,
-            );
-            let expected = compare(a, b, &core);
-            let heard = intelligibility(a, b);
+            let (a, b) = (&world.varieties[parent], &world.varieties[other]);
+            let expected = compare(&a.lexicon, &b.lexicon, &core);
+            let grammatical = compare_varieties(a, b, &core);
+            let heard = intelligibility(&a.lexicon, &b.lexicon);
             let (mut hidden_a, mut hidden_b) = (a.clone(), b.clone());
             hide_descent(&mut hidden_a);
             hide_descent(&mut hidden_b);
             assert_eq!(
-                compare(&hidden_a, &hidden_b, &core),
+                compare(&hidden_a.lexicon, &hidden_b.lexicon, &core),
                 expected,
                 "seed {seed}: hidden descent affected comparison"
             );
             assert_eq!(
-                intelligibility(&hidden_a, &hidden_b),
+                compare_varieties(&hidden_a, &hidden_b, &core),
+                grammatical,
+                "seed {seed}: hidden descent affected grammatical comparison"
+            );
+            assert_eq!(
+                intelligibility(&hidden_a.lexicon, &hidden_b.lexicon),
                 heard,
                 "seed {seed}: hidden descent affected intelligibility"
             );
             scramble_descent(&mut hidden_a);
             scramble_descent(&mut hidden_b);
             assert_eq!(
-                compare(&hidden_a, &hidden_b, &core),
+                compare(&hidden_a.lexicon, &hidden_b.lexicon, &core),
                 expected,
                 "seed {seed}: scrambled descent affected comparison"
             );
             assert_eq!(
-                intelligibility(&hidden_a, &hidden_b),
+                compare_varieties(&hidden_a, &hidden_b, &core),
+                grammatical,
+                "seed {seed}: scrambled descent affected grammatical comparison"
+            );
+            assert_eq!(
+                intelligibility(&hidden_a.lexicon, &hidden_b.lexicon),
                 heard,
                 "seed {seed}: scrambled descent affected intelligibility"
             );

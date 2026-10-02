@@ -1,5 +1,6 @@
 use crate::adapt::ESTABLISHED_SHARE;
 use crate::form::Form;
+use crate::grammar::Grammar;
 use crate::ideas::{Need, need};
 use crate::inventory::Inventory;
 use crate::lexicon::{Lexeme, Lexicon};
@@ -28,6 +29,8 @@ pub struct Variety {
     pub lexicon: Lexicon,
     /// How this language builds words from words.
     pub morphology: Morphology,
+    /// Plural and past markers and their changing realizations.
+    pub grammar: Grammar,
     /// The smallest word sound change may leave.
     pub minimal: MinimalWord,
     /// Sound laws in the order applied, with their generation. A law may
@@ -114,6 +117,7 @@ impl Variety {
             profile: profile.clone(),
             lexicon: Lexicon::found(roots.into_iter().filter(known)),
             morphology,
+            grammar: Grammar::default(),
             minimal: MinimalWord::draw(
                 profile.phonotactics.disyllabic_roots,
                 &mut stream(seed, &[key("minimal word")]),
@@ -156,6 +160,14 @@ impl Variety {
                 }
             }
         }
+        variety.grammar = Grammar::found(
+            seed,
+            profile,
+            &phonotactics,
+            &variety.morphology,
+            variety.stress(),
+            &mut variety.lexicon,
+        );
         variety.given = given_stock(
             &variety,
             livelihood,
@@ -193,6 +205,12 @@ impl Variety {
             .map_or(self.stress(), |(_, before)| *before)
     }
 
+    pub(crate) fn sync_grammar(&mut self, generation: u32) {
+        let stress = self.stress();
+        self.grammar
+            .sync(&mut self.lexicon, &self.morphology, stress, generation);
+    }
+
     /// Segments in at least 2% of living words (and at least two): the
     /// sounds speakers treat as their own rather than marginal.
     pub fn established(&self) -> HashSet<PhonemeId> {
@@ -216,9 +234,9 @@ impl Variety {
     /// Segments used by living words, consonants then vowels, by IPA.
     pub fn inventory(&self) -> (Vec<PhonemeId>, Vec<PhonemeId>) {
         let used: BTreeSet<u16> = self
-            .lexicon
-            .living()
-            .flat_map(|l| l.form.phones().map(|p| p.0))
+            .grammar
+            .forms(&self.lexicon)
+            .flat_map(|(form, _)| form.phones().map(|p| p.0))
             .collect();
         let mut ids: Vec<PhonemeId> = used.into_iter().map(PhonemeId).collect();
         ids.sort_by_key(|id| crate::CATALOG.get(*id).ipa());

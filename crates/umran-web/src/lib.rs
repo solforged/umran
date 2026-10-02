@@ -9,6 +9,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use umran_sim::compare::intelligibility;
 use umran_sim::concepts::{Concept, by_id, related};
 use umran_sim::geography::{KM_PER_UNIT, LandmassKind};
+use umran_sim::grammar::{
+    Category, GrammarChoice, GrammarEntry, GrammarEvent, Marker as GrammarMarker, MarkerOrigin,
+};
 use umran_sim::ideas::{NEEDS, Need, SacredKind};
 use umran_sim::morphology::Slot;
 use umran_sim::names::{Name, PlaceOrigin};
@@ -17,7 +20,7 @@ use umran_sim::schisms::{BranchNaming, HolyLand, Pilgrimage, SchismCause};
 use umran_sim::{
     Action, CATALOG, CONCEPTS, Challenge, Chronicle, Craft, ENGINE_REVISION, Event, FORMAT, Fall,
     Flavor, Form, Lexeme, LexemeId, Livelihood, MapSize, NameStyle, Origin, PhonemeId, Recipe,
-    Revelation, Rise, SetAside, Terrain, World, WorldEvent, catalog,
+    Revelation, Rise, SetAside, StressRule, Terrain, World, WorldEvent, catalog,
 };
 use umran_sim::{LanguageDesign, MorphologyKind, Naming, Segment, Variety};
 use wasm_bindgen::prelude::*;
@@ -204,6 +207,15 @@ impl Bench {
                     description: f.brief,
                 })
                 .collect(),
+            grammar_choices: [
+                GrammarChoice::Suffix,
+                GrammarChoice::Prefix,
+                GrammarChoice::Particle,
+                GrammarChoice::None,
+            ]
+            .into_iter()
+            .map(grammar_choice)
+            .collect(),
             contacts: [
                 (
                     "neighbours",
@@ -606,6 +618,9 @@ impl Bench {
                                 .any(|s| s.long && !CATALOG.get(s.phone).is_vowel())
                         }),
                         specimen: specimen(v, world.generation),
+                        how_synthetic: v.grammar.summary.how_synthetic,
+                        contrast_retention: v.grammar.summary.contrast_retention,
+                        grammar: grammar_view(world, id),
                         standard_of: standards[id],
                         own_words: own_words(world, id),
                         names: v
@@ -774,6 +789,7 @@ impl Bench {
                     origin: origin_view(world, variety, word),
                     senses: v.lexicon.senses(word.id).map(|c| c.gloss).collect(),
                     history: history(world, variety, word),
+                    paradigms: paradigm_views(world, variety, word),
                 }
             })
             .collect();
@@ -1635,6 +1651,32 @@ struct Choice {
     description: String,
 }
 
+fn grammar_choice(choice: GrammarChoice) -> Choice {
+    let (name, description) = match choice {
+        GrammarChoice::Suffix => (
+            "Suffix",
+            "A grammatical ending follows the word: one word marks plural or past.",
+        ),
+        GrammarChoice::Prefix => (
+            "Prefix",
+            "A grammatical beginning precedes the word: one word marks plural or past.",
+        ),
+        GrammarChoice::Particle => (
+            "Separate word",
+            "A separate grammatical word marks plural or past.",
+        ),
+        GrammarChoice::None => (
+            "No marker",
+            "Plural or past has no overt marker at founding; marking may develop later.",
+        ),
+    };
+    Choice {
+        id: choice.id().into(),
+        name: name.into(),
+        description: description.into(),
+    }
+}
+
 #[derive(Serialize)]
 struct NameView {
     name: String,
@@ -1672,6 +1714,7 @@ struct CatalogView {
     manners: Vec<&'static str>,
     heights: Vec<&'static str>,
     presets: Vec<Choice>,
+    grammar_choices: Vec<Choice>,
     contacts: Vec<Choice>,
     /// What a people can be named for, and the epithets it can take.
     name_places: Vec<&'static str>,
@@ -2029,6 +2072,11 @@ struct VarietyView {
     geminates: bool,
     /// A few basic words, to know the language by.
     specimen: Vec<SpecimenWord>,
+    /// Grammar expressed within one audible word, across eligible uses.
+    how_synthetic: f32,
+    /// Eligible uses whose plural or past still sounds different from the base.
+    contrast_retention: f32,
+    grammar: GrammarView,
     /// The standing state whose standard it is, if any.
     standard_of: Option<usize>,
     /// How many of its meanings it says with words of its own.
@@ -2356,6 +2404,319 @@ pub(crate) fn language_label(world: &World, variety: usize) -> String {
     }
 }
 
+fn grammar_view(world: &World, variety: usize) -> GrammarView {
+    let v = &world.varieties[variety];
+    GrammarView {
+        markers: v
+            .grammar
+            .markers
+            .iter()
+            .map(|marker| {
+                let form = v.spell(&marker.form);
+                let spelled = v.written.map_or_else(
+                    || form.clone(),
+                    |g| {
+                        let g = marker.retired.map_or(g, |retired| g.min(retired));
+                        v.spell(grammar_form_at(
+                            &marker.form,
+                            &marker.history,
+                            g.max(marker.born),
+                        ))
+                    },
+                );
+                let said = (spelled != form).then(|| form.clone());
+                GrammarMarkerView {
+                    id: marker.id,
+                    category: marker.category.id(),
+                    kind: marker.kind.id(),
+                    side: marker.side.id(),
+                    form,
+                    spelled,
+                    said,
+                    ipa: marker
+                        .form
+                        .ipa_stressed(marker.retired.map_or(v.stress(), |g| v.stress_at(g))),
+                    share: v.grammar.marker_share(marker.id),
+                    origin: grammar_origin_view(world, variety, marker),
+                    born: marker.born,
+                    retired: marker.retired,
+                    productive: marker.productive,
+                    history: grammar_history(
+                        world,
+                        variety,
+                        &marker.history,
+                        Some(&marker.form),
+                        "marker",
+                    ),
+                }
+            })
+            .collect(),
+        categories: Category::ALL
+            .into_iter()
+            .enumerate()
+            .map(|(index, category)| {
+                let summary = &v.grammar.summary.categories[index];
+                GrammarCategoryView {
+                    category: category.id(),
+                    label: category.label(),
+                    description: match category {
+                        Category::Plural => "Plural marks more than one countable thing.",
+                        Category::Past => "Past marks an event before the present.",
+                    },
+                    eligible: summary.eligible,
+                    how_synthetic: summary.how_synthetic,
+                    contrast_retention: summary.contrast_retention,
+                }
+            })
+            .collect(),
+    }
+}
+
+fn grammar_origin_view(world: &World, variety: usize, marker: &GrammarMarker) -> GrammarOriginView {
+    let v = &world.varieties[variety];
+    match &marker.origin {
+        MarkerOrigin::Founding => GrammarOriginView::Founding,
+        MarkerOrigin::Grammaticalized {
+            source,
+            concept,
+            source_form,
+        } => GrammarOriginView::Grammaticalized {
+            source: source.0,
+            concept: concept.id,
+            gloss: concept.gloss,
+            source_form: grammar_form_view(v, source_form, marker.born),
+        },
+        MarkerOrigin::Fused { particle } => GrammarOriginView::Fused {
+            particle: *particle,
+        },
+        MarkerOrigin::Imported {
+            from,
+            marker: donor_marker,
+            source,
+        } => GrammarOriginView::Imported {
+            from: *from,
+            language: language_label(world, *from),
+            marker: *donor_marker,
+            source: grammar_form_view(&world.varieties[*from], source, marker.born),
+        },
+    }
+}
+
+fn paradigm_views(world: &World, variety: usize, word: &Lexeme) -> Vec<ParadigmView> {
+    let v = &world.varieties[variety];
+    word.paradigms
+        .iter()
+        .map(|paradigm| ParadigmView {
+            category: paradigm.category.id(),
+            label: paradigm.category.label(),
+            realizations: paradigm
+                .realizations
+                .iter()
+                .map(|realization| {
+                    let marker = v.grammar.marker(realization.marker);
+                    let current = match realization.retired {
+                        Some(generation) => {
+                            v.grammar
+                                .surface_at(word.form_at(generation), realization, generation)
+                        }
+                        None => v.grammar.surface(&word.form, realization),
+                    };
+                    let form = spell_surface(v, &current);
+                    let spelled = v.written.map_or_else(
+                        || form.clone(),
+                        |g| {
+                            let generation = g.max(word.born).max(realization.born);
+                            let generation = realization
+                                .retired
+                                .map_or(generation, |retired| generation.min(retired));
+                            let at = v.grammar.surface_at(
+                                word.form_at(generation),
+                                realization,
+                                generation,
+                            );
+                            spell_surface(v, &at)
+                        },
+                    );
+                    let said = (spelled != form).then(|| form.clone());
+                    RealizationView {
+                        marker: marker.id,
+                        kind: marker.kind.id(),
+                        side: marker.side.id(),
+                        form,
+                        spelled,
+                        said,
+                        ipa: ipa_surface(
+                            &current,
+                            realization.retired.map_or(v.stress(), |g| v.stress_at(g)),
+                        ),
+                        share: realization.share,
+                        born: realization.born,
+                        retired: realization.retired,
+                        history: grammar_history(
+                            world,
+                            variety,
+                            &realization.history,
+                            realization.form.as_ref(),
+                            "form",
+                        ),
+                        marker_history: grammar_history(
+                            world,
+                            variety,
+                            &marker.history,
+                            Some(&marker.form),
+                            "marker",
+                        ),
+                    }
+                })
+                .collect(),
+        })
+        .collect()
+}
+
+fn spell_surface(variety: &Variety, forms: &[Form]) -> String {
+    let mut out = String::new();
+    for (index, form) in forms.iter().enumerate() {
+        if index > 0 {
+            out.push(' ');
+        }
+        out.push_str(&variety.spell(form));
+    }
+    out
+}
+
+fn ipa_surface(forms: &[Form], stress: StressRule) -> String {
+    let mut out = String::new();
+    for (index, form) in forms.iter().enumerate() {
+        if index > 0 {
+            out.push(' ');
+        }
+        out.push_str(&form.ipa_stressed(stress));
+    }
+    out
+}
+
+pub(crate) fn grammar_form_view(
+    variety: &Variety,
+    form: &Form,
+    generation: u32,
+) -> GrammarFormView {
+    GrammarFormView {
+        form: variety.spell(form),
+        ipa: form.ipa_stressed(variety.stress_at(generation)),
+    }
+}
+
+/// A stored grammatical form after a generation, before later changes.
+pub(crate) fn grammar_form_at<'a>(
+    current: &'a Form,
+    entries: &'a [GrammarEntry],
+    generation: u32,
+) -> &'a Form {
+    entries
+        .iter()
+        .filter(|entry| entry.generation > generation)
+        .find_map(|entry| match &entry.event {
+            GrammarEvent::SoundLaw { before, .. } | GrammarEvent::Analogy { before } => {
+                Some(before)
+            }
+            _ => None,
+        })
+        .unwrap_or(current)
+}
+
+fn grammar_history(
+    world: &World,
+    variety: usize,
+    entries: &[GrammarEntry],
+    current: Option<&Form>,
+    subject: &str,
+) -> Vec<HistoryLine> {
+    let laws = catalog();
+    let v = &world.varieties[variety];
+    let mut out = Vec::with_capacity(entries.len());
+    let mut after = current;
+    for entry in entries.iter().rev() {
+        let stress = v.stress_at(entry.generation);
+        let text = match &entry.event {
+            GrammarEvent::Created => match after {
+                Some(form) => format!(
+                    "Introduced this grammatical {subject} as /{}/",
+                    form.ipa_stressed(stress)
+                ),
+                None => format!("Introduced this grammatical {subject}"),
+            },
+            GrammarEvent::SoundLaw { law, before } => {
+                let initial = v.stress_at(entry.generation.saturating_sub(1));
+                let mut prior = initial;
+                // Several laws can move stress during one generation.
+                // Each row needs the rules immediately before and after its law.
+                let transition = v
+                    .laws
+                    .iter()
+                    .filter(|(generation, _)| *generation == entry.generation)
+                    .find_map(|(_, id)| {
+                        let before = prior;
+                        prior = laws
+                            .iter()
+                            .find(|law| law.id == *id)
+                            .and_then(|law| law.stress)
+                            .unwrap_or(prior);
+                        (*id == *law).then_some((before, prior))
+                    });
+                let (before_stress, after_stress) = transition.unwrap_or((initial, stress));
+                let before = before.ipa_stressed(before_stress);
+                let label = laws
+                    .iter()
+                    .find(|l| l.id == *law)
+                    .map_or_else(|| substrate_label(law), |law| law.label.to_string());
+                match after {
+                    Some(form) => format!(
+                        "{label}: /{before}/ → /{}/",
+                        form.ipa_stressed(after_stress)
+                    ),
+                    None => format!("{label}: changed /{before}/"),
+                }
+            }
+            GrammarEvent::Analogy { before } => match after {
+                Some(form) => format!(
+                    "Reshaped to match the pattern used for new words: /{}/ → /{}/",
+                    before.ipa_stressed(stress),
+                    form.ipa_stressed(stress)
+                ),
+                None => format!(
+                    "Reshaped /{}/ to match the pattern used for new words",
+                    before.ipa_stressed(stress)
+                ),
+            },
+            GrammarEvent::Imported { from, source } => {
+                let language = world.language_title_at(*from, entry.generation);
+                let source =
+                    source.ipa_stressed(world.varieties[*from].stress_at(entry.generation));
+                match after {
+                    Some(form) => format!(
+                        "Imported from {language}, heard as /{source}/ and adapted to /{}/",
+                        form.ipa_stressed(stress)
+                    ),
+                    None => format!("Imported from {language}, heard as /{source}/"),
+                }
+            }
+            GrammarEvent::Retired => format!("This grammatical {subject} fell out of use"),
+        };
+        out.push(HistoryLine {
+            generation: entry.generation,
+            text,
+        });
+        match &entry.event {
+            GrammarEvent::SoundLaw { before, .. } | GrammarEvent::Analogy { before } => {
+                after = Some(before);
+            }
+            _ => {}
+        }
+    }
+    out.reverse();
+    out
+}
+
 /// A word as written and, when writing has fallen behind speech, as said.
 fn written_and_said(variety: &Variety, word: &Lexeme) -> (String, Option<String>) {
     let written = variety.written_word(word);
@@ -2584,6 +2945,101 @@ struct HistoryLine {
 }
 
 #[derive(Serialize)]
+struct GrammarView {
+    markers: Vec<GrammarMarkerView>,
+    categories: Vec<GrammarCategoryView>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GrammarCategoryView {
+    category: &'static str,
+    label: &'static str,
+    description: &'static str,
+    eligible: usize,
+    how_synthetic: f32,
+    contrast_retention: f32,
+}
+
+#[derive(Serialize)]
+struct GrammarMarkerView {
+    id: u32,
+    category: &'static str,
+    kind: &'static str,
+    side: &'static str,
+    /// Current spoken form, rendered in the language's spelling.
+    form: String,
+    /// Spelling frozen when the marker was first written or last respelled.
+    spelled: String,
+    said: Option<String>,
+    ipa: String,
+    share: f32,
+    origin: GrammarOriginView,
+    born: u32,
+    retired: Option<u32>,
+    productive: bool,
+    history: Vec<HistoryLine>,
+}
+
+#[derive(Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
+enum GrammarOriginView {
+    Founding,
+    Grammaticalized {
+        source: u32,
+        concept: &'static str,
+        gloss: &'static str,
+        source_form: GrammarFormView,
+    },
+    Fused {
+        particle: u32,
+    },
+    Imported {
+        from: usize,
+        language: String,
+        marker: u32,
+        source: GrammarFormView,
+    },
+}
+
+#[derive(Clone, PartialEq, Serialize)]
+pub(crate) struct GrammarFormView {
+    form: String,
+    ipa: String,
+}
+
+#[derive(Serialize)]
+struct ParadigmView {
+    category: &'static str,
+    label: &'static str,
+    realizations: Vec<RealizationView>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RealizationView {
+    marker: u32,
+    kind: &'static str,
+    side: &'static str,
+    /// Current complete form, with spaces separating a particle from its word.
+    form: String,
+    /// Complete form frozen at writing or the realization's later birth.
+    spelled: String,
+    said: Option<String>,
+    ipa: String,
+    share: f32,
+    born: u32,
+    retired: Option<u32>,
+    history: Vec<HistoryLine>,
+    /// The shared marker's own history, especially for separate particles.
+    marker_history: Vec<HistoryLine>,
+}
+
+#[derive(Serialize)]
 struct VariantView {
     spelled: String,
     said: Option<String>,
@@ -2592,6 +3048,7 @@ struct VariantView {
     origin: OriginView,
     senses: Vec<&'static str>,
     history: Vec<HistoryLine>,
+    paradigms: Vec<ParadigmView>,
 }
 
 #[derive(Serialize)]
@@ -3245,5 +3702,349 @@ mod tests {
         let water = earlier.iter().find(|w| w.concept == "water").unwrap();
         assert_eq!(water.ipa, "katːaˈta");
         assert!(water.was_ipa.is_none());
+    }
+
+    #[test]
+    fn grammatical_spelling_preserves_attestation_and_retired_particle_forms() {
+        use umran_sim::grammar::{MarkerKind, Paradigm, Realization, Side};
+        use umran_sim::lexicon::Entry;
+
+        let form = |ipa: &str| Form::from_ipa(ipa).unwrap();
+        let created = |generation| GrammarEntry {
+            generation,
+            event: GrammarEvent::Created,
+        };
+        let change = |generation, before: &str| GrammarEntry {
+            generation,
+            event: GrammarEvent::SoundLaw {
+                law: "fixture-law",
+                before: form(before),
+            },
+        };
+        let mut bench = Bench::new(5, "medium").unwrap();
+        bench.act(&found("Hill", "familiar")).unwrap();
+        bench.act(&found("Lowland", "familiar")).unwrap();
+        let mut world = bench.world(0).clone();
+        world.generation = 10;
+        world.varieties[1].profile.stress = Some(StressRule::Final);
+        world.varieties[1].stress_history = vec![(8, StressRule::Initial)];
+        let v = &mut world.varieties[0];
+        v.written = Some(1);
+        v.profile.stress = Some(StressRule::Initial);
+        v.stress_history = vec![(8, StressRule::Final)];
+        v.grammar.markers = vec![
+            GrammarMarker {
+                id: 0,
+                category: Category::Plural,
+                kind: MarkerKind::Bound,
+                side: Side::Suffix,
+                form: form("i"),
+                born: 0,
+                origin: MarkerOrigin::Founding,
+                productive: true,
+                majority_generations: 0,
+                retired: None,
+                history: vec![created(0)],
+            },
+            GrammarMarker {
+                id: 1,
+                category: Category::Plural,
+                kind: MarkerKind::Particle,
+                side: Side::Suffix,
+                form: form("meme"),
+                born: 0,
+                origin: MarkerOrigin::Imported {
+                    from: 1,
+                    marker: 9,
+                    source: form("mimi"),
+                },
+                productive: false,
+                majority_generations: 0,
+                retired: None,
+                history: vec![
+                    GrammarEntry {
+                        generation: 0,
+                        event: GrammarEvent::Imported {
+                            from: 1,
+                            source: form("mimi"),
+                        },
+                    },
+                    change(8, "mimi"),
+                    change(9, "mimi"),
+                ],
+            },
+        ];
+        let stone = by_id("stone").unwrap();
+        let id = v.lexicon.word_for(stone).unwrap().id;
+        v.grammar.markers[0].origin = MarkerOrigin::Grammaticalized {
+            source: id,
+            concept: stone,
+            source_form: form("kaka"),
+        };
+        let word = v.lexicon.get_mut(id);
+        word.born = 0;
+        word.form = form("tete");
+        word.log = vec![
+            Entry {
+                generation: 6,
+                event: Event::SoundLaw {
+                    law: "fixture-law",
+                    before: form("kaka"),
+                },
+            },
+            Entry {
+                generation: 9,
+                event: Event::SoundLaw {
+                    law: "fixture-law",
+                    before: form("tata"),
+                },
+            },
+        ];
+        word.paradigms = vec![Paradigm {
+            category: Category::Plural,
+            realizations: vec![
+                Realization {
+                    marker: 0,
+                    form: Some(form("tet")),
+                    edge: 3,
+                    share: 0.4,
+                    born: 0,
+                    retired: None,
+                    history: vec![created(0), change(6, "kati")],
+                },
+                Realization {
+                    marker: 1,
+                    form: None,
+                    edge: 0,
+                    share: 0.3,
+                    born: 0,
+                    retired: None,
+                    history: vec![GrammarEntry {
+                        generation: 0,
+                        event: GrammarEvent::Imported {
+                            from: 1,
+                            source: form("mimi"),
+                        },
+                    }],
+                },
+                Realization {
+                    marker: 0,
+                    form: Some(form("tei")),
+                    edge: 2,
+                    share: 0.3,
+                    born: 7,
+                    retired: None,
+                    history: vec![created(7), change(9, "tai")],
+                },
+                Realization {
+                    marker: 1,
+                    form: None,
+                    edge: 0,
+                    share: 0.0,
+                    born: 0,
+                    retired: Some(7),
+                    history: vec![
+                        created(0),
+                        GrammarEntry {
+                            generation: 7,
+                            event: GrammarEvent::Retired,
+                        },
+                    ],
+                },
+            ],
+        }];
+        let word = world.varieties[0].lexicon.get(id);
+        let views = paradigm_views(&world, 0, word);
+        let rows = &views[0].realizations;
+        // An attached form keeps its own sound history, not base + today's marker.
+        assert_eq!(rows[0].form, "tet");
+        assert_eq!(rows[0].spelled, "kati");
+        assert_eq!(rows[0].ipa, "tet");
+        // A separate marker's shared history and the base's history both matter.
+        assert_eq!(rows[1].form, "tete meme");
+        assert_eq!(rows[1].spelled, "kaka mimi");
+        assert_eq!(rows[1].ipa, "ˈtete ˈmeme");
+        // A form first used after writing freezes at its own birth, not generation 1.
+        assert_eq!(rows[2].form, "tei");
+        assert_eq!(rows[2].spelled, "tai");
+        // A retired particle pair stops changing even while the shared marker lives.
+        assert_eq!(rows[3].form, "tata mimi");
+        assert_eq!(rows[3].spelled, "kaka mimi");
+        assert_eq!(rows[3].ipa, "taˈta miˈmi");
+        assert!(rows[1].history[0].text.contains("/ˈmimi/"));
+        assert!(rows[1].marker_history[1].text.contains("/miˈmi/"));
+        assert!(rows[1].marker_history[1].text.contains("/ˈmimi/"));
+        assert!(rows[1].marker_history[2].text.contains("/ˈmeme/"));
+        let grammar = serde_json::to_value(grammar_view(&world, 0)).unwrap();
+        assert_eq!(
+            grammar["markers"][0]["origin"]["sourceForm"]["ipa"],
+            "kaˈka"
+        );
+        assert_eq!(grammar["markers"][1]["origin"]["source"]["ipa"], "ˈmimi");
+        // Later respelling cannot update a retired particle's host or marker.
+        world.varieties[0].written = Some(10);
+        let word = world.varieties[0].lexicon.get(id);
+        let views = paradigm_views(&world, 0, word);
+        assert_eq!(views[0].realizations[3].spelled, "tata mimi");
+    }
+
+    #[test]
+    fn grammar_histories_preserve_each_stress_transition_within_one_generation() {
+        use umran_sim::grammar::{MarkerKind, Paradigm, Realization, Side};
+
+        let form = |ipa: &str| Form::from_ipa(ipa).unwrap();
+        let created = || GrammarEntry {
+            generation: 0,
+            event: GrammarEvent::Created,
+        };
+        let mut bench = Bench::new(5, "medium").unwrap();
+        bench.act(&found("Hill", "familiar")).unwrap();
+        let mut world = bench.world(0).clone();
+        world.generation = 5;
+        let v = &mut world.varieties[0];
+        v.profile.stress = Some(StressRule::Final);
+        v.stress_history.clear();
+        v.laws.clear();
+        for word in &mut v.lexicon.lexemes {
+            word.paradigms.clear();
+        }
+        v.grammar.markers = vec![
+            GrammarMarker {
+                id: 0,
+                category: Category::Plural,
+                kind: MarkerKind::Bound,
+                side: Side::Suffix,
+                form: form("ta"),
+                born: 0,
+                origin: MarkerOrigin::Founding,
+                productive: true,
+                majority_generations: 0,
+                retired: None,
+                history: vec![created()],
+            },
+            GrammarMarker {
+                id: 1,
+                category: Category::Plural,
+                kind: MarkerKind::Particle,
+                side: Side::Suffix,
+                form: form("mamimi"),
+                born: 0,
+                origin: MarkerOrigin::Founding,
+                productive: false,
+                majority_generations: 0,
+                retired: None,
+                history: vec![created()],
+            },
+        ];
+        let id = v.lexicon.word_for(by_id("person").unwrap()).unwrap().id;
+        let word = v.lexicon.get_mut(id);
+        word.form = form("kata");
+        word.paradigms = vec![Paradigm {
+            category: Category::Plural,
+            realizations: vec![Realization {
+                marker: 0,
+                form: Some(form("katata")),
+                edge: 4,
+                share: 1.0,
+                born: 0,
+                retired: None,
+                history: vec![created()],
+            }],
+        }];
+        let laws = catalog();
+        for (law_id, syllables) in [("initial-stress", (2, 0)), ("penult-stress", (0, 1))] {
+            let law = laws.iter().find(|law| law.id == law_id).unwrap();
+            let prior = v.stress();
+            let before = v.lexicon.get(id).paradigms[0].realizations[0]
+                .form
+                .as_ref()
+                .unwrap();
+            let after = law.apply(before, v.minimal, prior);
+            assert!(law.changes(before, &after, prior));
+            assert_eq!(
+                (
+                    before.stressed_syllable(prior).unwrap(),
+                    after.stressed_syllable(law.stress.unwrap()).unwrap(),
+                ),
+                syllables,
+            );
+            v.grammar
+                .apply_law(&mut v.lexicon, law, v.minimal, prior, 5);
+            v.laws.push((5, law.id));
+            v.stress_history.push((5, prior));
+            v.profile.stress = law.stress;
+        }
+        let word = world.varieties[0].lexicon.get(id);
+        let paradigms = serde_json::to_value(paradigm_views(&world, 0, word)).unwrap();
+        let history = &paradigms[0]["realizations"][0]["history"];
+        assert!(
+            history[1]["text"]
+                .as_str()
+                .unwrap()
+                .ends_with("/kataˈta/ → /ˈkatata/")
+        );
+        assert!(
+            history[2]["text"]
+                .as_str()
+                .unwrap()
+                .ends_with("/ˈkatata/ → /kaˈtata/")
+        );
+        let grammar = serde_json::to_value(grammar_view(&world, 0)).unwrap();
+        let history = &grammar["markers"][1]["history"];
+        assert!(
+            history[1]["text"]
+                .as_str()
+                .unwrap()
+                .ends_with("/mamiˈmi/ → /ˈmamimi/")
+        );
+        assert!(
+            history[2]["text"]
+                .as_str()
+                .unwrap()
+                .ends_with("/ˈmamimi/ → /maˈmimi/")
+        );
+    }
+
+    #[test]
+    fn grammar_annals_keep_daughter_events_at_fork_without_retelling_inherited_events() {
+        use umran_sim::grammar::{GrammarNotice, NoticeKind};
+
+        let mut bench = Bench::new(5, "medium").unwrap();
+        bench.act(&found("Hill", "familiar")).unwrap();
+        let mut world = bench.world(0).clone();
+        world.generation = 5;
+        world.varieties[0].grammar.events = vec![GrammarNotice {
+            generation: 5,
+            category: Category::Plural,
+            event: NoticeKind::ContrastLoss,
+        }];
+        let mut daughter = world.varieties[0].fork(0, 5);
+        daughter.grammar.events.push(GrammarNotice {
+            generation: 5,
+            category: Category::Past,
+            event: NoticeKind::ContrastLoss,
+        });
+        world.varieties.push(daughter);
+        let entries = annals(&world);
+        let grammar: Vec<_> = entries
+            .iter()
+            .filter_map(|entry| {
+                entry.grammar.as_ref().map(|grammar| {
+                    let data = serde_json::to_value(grammar).unwrap();
+                    (
+                        entry.variety.unwrap(),
+                        data["category"].as_str().unwrap().to_string(),
+                        data["event"].as_str().unwrap().to_string(),
+                    )
+                })
+            })
+            .collect();
+        assert_eq!(
+            grammar,
+            vec![
+                (0, "plural".to_string(), "contrast-loss".to_string()),
+                (1, "past".to_string(), "contrast-loss".to_string()),
+            ]
+        );
     }
 }

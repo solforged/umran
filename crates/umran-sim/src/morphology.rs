@@ -282,7 +282,7 @@ impl Morphology {
     /// the second, or, when it is all the affix has, get a glide between
     /// them; two consonants meeting get the link vowel in a language that
     /// keeps syllables open inside words.
-    fn join(&self, left: &Form, right: &Form) -> Form {
+    pub(crate) fn join(&self, left: &Form, right: &Form) -> Form {
         let vowel = |f: &Form, i: usize| CATALOG.get(f.segs[i].phone).is_vowel();
         let mut segs: Vec<Seg> = left.segs.clone();
         let mut tail: Vec<Seg> = right.segs.clone();

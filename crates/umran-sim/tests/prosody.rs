@@ -39,6 +39,41 @@ fn geminates_share_a_boundary_and_supply_weight() {
 }
 
 #[test]
+fn following_syllable_vowels_use_current_stress_and_shared_geminate_membership() {
+    let i = CATALOG.id_by_ipa("i").unwrap();
+    let lengthen = SoundChange {
+        id: "lengthen-before-stressed-i".into(),
+        target: Matcher::AnyVowel,
+        result: Rewrite::Length(true),
+        left: Env::Any,
+        right: Env::FollowingSyllableVowel(Matcher::Stressed {
+            target: Box::new(Matcher::Phone(i)),
+            stressed: true,
+        }),
+    };
+    let mut source = form("poltika");
+    source.stress = Some(1);
+    let after = lengthen.apply(&source, StressRule::Free);
+    assert_eq!(after.ipa_stressed(StressRule::Free), "poːlˈtika");
+    assert_eq!(after.stress, Some(1));
+    assert_eq!(lengthen.apply(&source, StressRule::Final), source);
+
+    let voice = SoundChange {
+        id: "voice-before-next-i".into(),
+        target: Matcher::Phone(CATALOG.id_by_ipa("t").unwrap()),
+        result: Rewrite::Phone(CATALOG.id_by_ipa("d").unwrap()),
+        left: Env::Any,
+        right: Env::FollowingSyllableVowel(Matcher::Phone(i)),
+    };
+    // The shared consonant belongs to its preceding coda first. The next
+    // syllable therefore has i, not the final a.
+    assert_eq!(
+        voice.apply(&form("katːika"), StressRule::Initial),
+        form("kadːika")
+    );
+}
+
+#[test]
 fn unstressed_erosion_respects_stress_and_both_guards() {
     let syncope = law("unstressed-syncope");
     assert_eq!(
