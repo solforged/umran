@@ -720,6 +720,24 @@ export interface WordMap {
   }[];
 }
 
+/// Pure year-zero travel evidence for the founding accounts.
+export interface FoundingPreview {
+  pairs: {
+    a: number;
+    b: number;
+    walk: number | null;
+    voyage: number | null;
+    reach: "neighbours" | "walking" | "sea" | "apart";
+    sameLandmass: boolean;
+  }[];
+  peoples: {
+    community: number;
+    coastal: boolean;
+    landmass: number;
+    nearestOther: number | null;
+  }[];
+}
+
 export interface ReadEngine {
   overviewAt(point: HistoryPoint): Overview;
   settlement(point: HistoryPoint, community: number, intent: SettlementIntent, share: number, destination: number | null): SettlementPreview;
@@ -734,6 +752,7 @@ export interface ReadEngine {
   save(): string;
 }
 export interface Engine extends ReadEngine {
+  foundingPreview(): FoundingPreview;
   notebook(): NotebookNote[];
   saveNote(note: NotebookNote): void;
   resolveNote(id: string): Destination | null;

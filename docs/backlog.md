@@ -168,6 +168,15 @@ Acceptance: create three recognizably different peoples, understand why they
 may or may not meet, revise the second one without losing the others, and
 begin with a short set of people/place/word trails worth following.
 
+Delivered: one open account with five visible stages, a pinned keyboard
+contents line, and a founding charter comparing peoples, specimen words,
+and first journeys. The year-zero facade preview reuses actual neighbour
+and merchant reach rules without draws or mutation. Three to five optional
+questions become exact people/place/word/language references in the field
+notebook on Begin; immediate random founding remains available. Desktop
+and phone clickthroughs in both lights cover revising the second account
+without changing the other two, and following a saved question to its card.
+
 ## 5. Give geography a believable scale and shape
 
 The vast theatre has 3,600 regions at the existing physical scale. Larger is

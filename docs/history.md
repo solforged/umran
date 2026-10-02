@@ -89,6 +89,16 @@ local to the browser, not synced. The sample world (`web/src/sample.ts`)
 is a fixed recipe of four thousand years, offered on the shelf and at the
 top of world setup; opening it puts a fresh copy on the shelf.
 
+Founding setup keeps one account open beside the chart, with independent
+homeland, livelihood, temper, speech, and identity choices. The optional
+charter compares the founders and their possible first journeys. On Begin,
+three to five questions are kept by default through the existing notebook
+save path, each with a `question` kind and a destination at the exact
+year-zero reading. Their people, land, language, and word references open
+from the field notebook and travel with the saved world. Unchecking
+"Keep these questions in the notebook" skips them; the charter itself is
+never required to begin.
+
 The first visit opens the shelf, even when it is empty; setup and the
 sample are explicit choices there. Later visits resume the world left
 open, including one reopened without making changes. Returning to the

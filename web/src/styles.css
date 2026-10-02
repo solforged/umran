@@ -2414,11 +2414,6 @@ button.chronicle-latest:hover {
   font-style: normal;
 }
 
-.accounts {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
 
 /* One people as the historian reports them; the open account is marked by
    a rule in its people's colour. */
@@ -2438,11 +2433,6 @@ button.chronicle-latest:hover {
   background: var(--tone, var(--accent));
 }
 
-.account-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-}
 
 .account-number {
   font-size: 0.75rem;
@@ -2451,12 +2441,6 @@ button.chronicle-latest:hover {
   color: var(--ink-soft);
 }
 
-.account-top .strike {
-  font-size: 0.85rem;
-  font-style: italic;
-  color: var(--ink-soft);
-  text-decoration: none;
-}
 
 .setup .account-name {
   display: block;
@@ -2481,10 +2465,6 @@ button.chronicle-latest:hover {
   line-height: 1.5;
 }
 
-.account:not(.chosen) .account-text {
-  font-size: 0.95em;
-  color: var(--ink-soft);
-}
 
 /* Choices sit in the sentence as phrases, underlined to show they can be
    changed. */
@@ -2516,13 +2496,6 @@ button.chronicle-latest:hover {
   margin-top: 0.4rem;
 }
 
-.add-account {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  align-self: flex-start;
-  margin-top: 0.9rem;
-}
 
 .setup-foot {
   justify-content: space-between;

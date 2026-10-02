@@ -93,6 +93,11 @@ impl Workbench {
         Bench::preview(design, seed, naming).map_err(fail)
     }
 
+    #[wasm_bindgen(js_name = foundingPreview)]
+    pub fn founding_preview(&self) -> Result<String, JsValue> {
+        self.bench.founding_preview().map_err(fail)
+    }
+
     pub fn act(&mut self, action: &str) -> Result<(), JsValue> {
         self.bench.act(action).map_err(fail)
     }
@@ -829,6 +834,97 @@ impl Bench {
 
     pub fn latest(&self) -> u32 {
         self.chronicle.latest().generation
+    }
+
+    /// Possible first encounters, using the same nearness and merchant reach
+    /// as contact formation. This is a query on the authored year-zero world.
+    pub fn founding_preview(&self) -> Result<String, String> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Pair {
+            a: usize,
+            b: usize,
+            walk: Option<f32>,
+            voyage: Option<f32>,
+            reach: &'static str,
+            same_landmass: bool,
+        }
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct People {
+            community: usize,
+            coastal: bool,
+            landmass: usize,
+            nearest_other: Option<usize>,
+        }
+        #[derive(Serialize)]
+        struct Preview {
+            pairs: Vec<Pair>,
+            peoples: Vec<People>,
+        }
+        let world = self.chronicle.latest();
+        if world.generation != 0 {
+            return Err("The founding preview belongs to year zero.".into());
+        }
+        let finite = |distance: f32| distance.is_finite().then_some(distance);
+        let mut pairs = Vec::new();
+        for a in world.living() {
+            for b in world.living().filter(|&b| b > a) {
+                let mut walk = f32::INFINITY;
+                let mut voyage = f32::INFINITY;
+                for &source in &world.communities[a].lands {
+                    for &destination in &world.communities[b].lands {
+                        walk = walk.min(world.map.distance(source, destination));
+                        voyage = voyage.min(world.map.voyage(source, destination));
+                    }
+                }
+                let reach = if world.nearness(a, b) > 0.0 {
+                    "neighbours"
+                } else if walk <= world.params.trade_reach {
+                    "walking"
+                } else if voyage <= world.params.trade_reach {
+                    "sea"
+                } else {
+                    "apart"
+                };
+                pairs.push(Pair {
+                    a,
+                    b,
+                    walk: finite(walk),
+                    voyage: finite(voyage),
+                    reach,
+                    same_landmass: world.map.regions[world.communities[a].home()].landmass
+                        == world.map.regions[world.communities[b].home()].landmass,
+                });
+            }
+        }
+        let peoples = world
+            .living()
+            .map(|community| People {
+                community,
+                coastal: world.communities[community]
+                    .lands
+                    .iter()
+                    .any(|&r| world.map.coastal(r)),
+                landmass: world.map.regions[world.communities[community].home()]
+                    .landmass
+                    .expect("founders inhabit land"),
+                nearest_other: pairs
+                    .iter()
+                    .filter(|pair| pair.a == community || pair.b == community)
+                    .filter_map(|pair| {
+                        let other = if pair.a == community { pair.b } else { pair.a };
+                        let effort = pair
+                            .walk
+                            .unwrap_or(f32::INFINITY)
+                            .min(pair.voyage.unwrap_or(f32::INFINITY));
+                        effort.is_finite().then_some((other, effort))
+                    })
+                    .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)))
+                    .map(|(other, _)| other),
+            })
+            .collect();
+        to_json(&Preview { pairs, peoples })
     }
 
     pub fn settlement(
@@ -4492,6 +4588,136 @@ mod tests {
         assert_eq!(damaged.tellings().len(), 2);
         assert!(damaged.read(original, "").is_err());
         assert!(damaged.save().unwrap().contains("99"));
+    }
+
+    #[test]
+    fn founding_preview_is_pure_and_neighbours_form_real_contacts() {
+        use umran_sim::world::Params;
+        let mut w = Bench::new(5, "medium").unwrap();
+        w.act(&found("Hill", "familiar")).unwrap();
+        let alone: serde_json::Value =
+            serde_json::from_str(&w.founding_preview().unwrap()).unwrap();
+        assert!(alone["peoples"][0]["nearestOther"].is_null());
+        let home = w.chronicle.latest().communities[0].home();
+        let adjacent = w.chronicle.latest().map.regions[home]
+            .neighbours
+            .iter()
+            .copied()
+            .find(|&r| w.chronicle.latest().map.regions[r].terrain.is_land())
+            .unwrap();
+        w.act(&found_at("Coast", "polynesian", adjacent)).unwrap();
+        let distant = w
+            .chronicle
+            .latest()
+            .map
+            .regions
+            .iter()
+            .enumerate()
+            .find(|&(r, land)| {
+                land.terrain.is_land()
+                    && w.chronicle.latest().map.closeness(home, r) == 0.0
+                    && w.chronicle.latest().map.closeness(adjacent, r) == 0.0
+            })
+            .unwrap()
+            .0;
+        w.act(&found_at("Far", "indic", distant)).unwrap();
+        w.act(&found_at("Same", "semitic", home)).unwrap();
+        let save = w.save().unwrap();
+        let view = w.overview(0).unwrap();
+        let preview = w.founding_preview().unwrap();
+        assert_eq!(w.founding_preview().unwrap(), preview);
+        assert_eq!(w.save().unwrap(), save);
+        assert_eq!(w.overview(0).unwrap(), view);
+        let preview: serde_json::Value = serde_json::from_str(&preview).unwrap();
+        assert_eq!(preview["peoples"][0]["nearestOther"], 3);
+        assert_eq!(preview["peoples"][3]["nearestOther"], 0);
+        let mut world = w.chronicle.latest().clone();
+        world.params = Params::static_society();
+        world.params.neighbour_rate = 1000.0;
+        world.step();
+        for pair in preview["pairs"].as_array().unwrap() {
+            let a = pair["a"].as_u64().unwrap() as usize;
+            let b = pair["b"].as_u64().unwrap() as usize;
+            assert_eq!(
+                pair["reach"] == "neighbours",
+                world.contacts.iter().any(|c| c.a == a && c.b == b),
+                "first neighbour encounters agree with the preview"
+            );
+        }
+        let mut unqueried = Bench::load(&save).unwrap();
+        w.act(r#"{"kind":"run","generations":4}"#).unwrap();
+        unqueried.act(r#"{"kind":"run","generations":4}"#).unwrap();
+        let mut queried: serde_json::Value = serde_json::from_str(&w.overview(4).unwrap()).unwrap();
+        let mut untouched: serde_json::Value =
+            serde_json::from_str(&unqueried.overview(4).unwrap()).unwrap();
+        queried.as_object_mut().unwrap().remove("mutation");
+        untouched.as_object_mut().unwrap().remove("mutation");
+        assert_eq!(queried, untouched);
+        assert!(w.founding_preview().is_err());
+    }
+
+    #[test]
+    fn founding_preview_keeps_route_evidence_and_merchant_reach() {
+        let mut w = Bench::new(5, "vast").unwrap();
+        let world = w.chronicle.latest();
+        let map = &world.map;
+        let reach = world.params.trade_reach;
+        let (coast, across) = map
+            .regions
+            .iter()
+            .enumerate()
+            .filter(|&(r, land)| {
+                map.coastal(r)
+                    && land
+                        .landmass
+                        .is_some_and(|mass| map.landmasses[mass].kind == LandmassKind::Continent)
+            })
+            .find_map(|(source, land)| {
+                map.voyage_row(source, reach)
+                    .iter()
+                    .find(|&&(r, _)| map.regions[r as usize].landmass != land.landmass)
+                    .map(|&(r, _)| (source, r as usize))
+            })
+            .unwrap();
+        let walking = map
+            .walking_row(coast, reach)
+            .iter()
+            .find(|&&(r, _)| map.closeness(coast, r as usize) == 0.0)
+            .unwrap()
+            .0 as usize;
+        let far = map
+            .regions
+            .iter()
+            .enumerate()
+            .find(|&(r, land)| {
+                land.terrain.is_land()
+                    && land.landmass == map.regions[coast].landmass
+                    && map.distance(coast, r) > reach
+                    && map.voyage(coast, r) > reach
+            })
+            .unwrap()
+            .0;
+        let far_walk = map.distance(coast, far);
+        let sea_effort = map.voyage(coast, across);
+        for (i, region) in [coast, walking, across, far].into_iter().enumerate() {
+            w.act(&found_at(&format!("Founder{i}"), "familiar", region))
+                .unwrap();
+        }
+        let preview: serde_json::Value =
+            serde_json::from_str(&w.founding_preview().unwrap()).unwrap();
+        let pairs = preview["pairs"].as_array().unwrap();
+        let walk = pairs.iter().find(|p| p["a"] == 0 && p["b"] == 1).unwrap();
+        let sea = pairs.iter().find(|p| p["a"] == 0 && p["b"] == 2).unwrap();
+        let apart = pairs.iter().find(|p| p["a"] == 0 && p["b"] == 3).unwrap();
+        assert_eq!(walk["reach"], "walking");
+        assert_eq!(sea["reach"], "sea");
+        assert!(sea["walk"].is_null());
+        assert_eq!(sea["voyage"].as_f64().unwrap() as f32, sea_effort);
+        assert_eq!(sea["sameLandmass"], false);
+        assert_eq!(apart["reach"], "apart");
+        assert_eq!(apart["walk"].as_f64().unwrap() as f32, far_walk);
+        assert_eq!(apart["sameLandmass"], true);
+        assert_eq!(preview["peoples"][0]["coastal"], true);
     }
 
     #[test]

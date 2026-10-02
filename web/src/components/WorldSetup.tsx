@@ -1,27 +1,17 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Feather, Plus } from "lucide-react";
 import { createEngine, message, presetDesign } from "../engine";
-import type { Catalog, Engine, EthosAxis, Livelihood, MapSize, Naming, Overview, Terrain, WorldMap } from "../model";
+import type { Catalog, Engine, EthosAxis, FoundingPreview, Livelihood, MapSize, Naming, Overview, Subject, WorldMap } from "../model";
 import { ETHOS_AXES, ETHOS_POLES, hue, LIVELIHOOD_NAME, temperament, TERRAIN_NAME } from "../lore";
 import { Designer, randomSeed, type Founding } from "./Designer";
 import { MapView } from "./MapView";
 import { Modal } from "./Modal";
 import { NamingSelect } from "./NamingSelect";
 import { Specimen } from "./Specimen";
+import { makeNote } from "./Notebook";
 
 /// Each account is numbered as a historian would: the first, the second.
 const ORDINAL = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth"];
-
-/// Whether a people lives on a land or in it.
-const AMID: Record<Terrain, string> = {
-  plains: "on the",
-  steppe: "on the",
-  forest: "in the",
-  hills: "in the",
-  mountains: "in the",
-  desert: "in the",
-  sea: "on the",
-};
 
 /// A choice's name as it reads mid-sentence.
 function lower(name: string): string {
@@ -53,6 +43,10 @@ interface Founder extends Founding {
 interface Built {
   map: WorldMap;
   overview: Overview;
+  preview: FoundingPreview;
+  founders: Founder[];
+  seed: number;
+  size: MapSize;
 }
 
 function pick<T>(list: T[]): T {
@@ -86,6 +80,69 @@ function drawFounder(catalog: Catalog, key: number): Founder {
   };
 }
 
+type FoundingPair = FoundingPreview["pairs"][number];
+const REACH_GROUPS = [
+  { id: "walking", title: "Within walking reach" },
+  { id: "sea", title: "Across the water" },
+  { id: "apart", title: "Far apart" },
+] as const;
+const LIVELIHOOD_PHRASE: Record<Livelihood, string> = {
+  farming: "farming",
+  herding: "herding",
+  foraging: "foraging",
+};
+
+function pairEvidence(pair: FoundingPair): string {
+  const routes = [
+    pair.walk === null ? null : `${Math.round(pair.walk).toLocaleString()} effort-km on foot`,
+    pair.voyage === null ? null : `${Math.round(pair.voyage).toLocaleString()} effort-km by sea`,
+  ].filter(Boolean).join("; ");
+  if (pair.reach === "neighbours") return `may meet as neighbours · ${routes}`;
+  if (pair.reach === "walking") return `may meet on foot · ${routes}`;
+  if (pair.reach === "sea") return `would need boats · ${routes}`;
+  return routes ? `beyond first journeys · ${routes}` : "no land route or coast-to-coast voyage";
+}
+
+function placeName(overview: Overview, region: number): string {
+  return overview.places.find((p) => p.region === region)?.names.at(-1)?.spelled ?? "unnamed land";
+}
+
+/// Questions use the engine's people, places, routes, and existing specimens.
+/// Their subjects become exact notebook destinations only when Begin is pressed.
+function foundingQuestions(overview: Overview, preview: FoundingPreview): { title: string; label: string; subject: Subject }[] {
+  const questions: { title: string; label: string; subject: Subject }[] = [];
+  for (const pair of preview.pairs.slice(0, 2)) {
+    const a = overview.communities.find((c) => c.id === pair.a)!;
+    const b = overview.communities.find((c) => c.id === pair.b)!;
+    questions.push({
+      title: pair.reach === "sea" ? `Will the ${a.name} and the ${b.name} meet across the water?`
+        : pair.reach === "apart" ? `Will the ${a.name} and the ${b.name} ever meet?`
+          : `Will the ${a.name} and the ${b.name} meet in ${placeName(overview, a.region)}?`,
+      label: a.name, subject: { kind: "people", id: a.id },
+    });
+  }
+  const coast = preview.peoples.find((p) => p.coastal);
+  const first = overview.communities[0];
+  if (!first) return questions;
+  const land = coast ? overview.communities.find((c) => c.id === coast.community)! : first;
+  questions.push({
+    title: coast ? `Who will first cross the water from ${placeName(overview, land.region)}?`
+      : `Who will come to live in ${placeName(overview, land.region)}?`,
+    label: placeName(overview, land.region), subject: { kind: "land", region: land.region },
+  });
+  const language = overview.varieties.find((v) => v.id === first.variety)!;
+  const water = language.specimen.find((word) => word.concept === "water");
+  if (water) questions.push({
+    title: `Will the ${first.name}'s word for water stay ${water.spelled}?`,
+    label: `${language.name} · water`, subject: { kind: "word", variety: language.id, concept: water.concept },
+  });
+  questions.push({
+    title: `How will ${language.name} sound as the years pass?`,
+    label: language.name, subject: { kind: "language", variety: language.id },
+  });
+  return questions.slice(0, 5);
+}
+
 /// A new world, set up on its map: how wide it is, who lives in it, how
 /// each people sounds, and where each one starts. Every choice is shown at
 /// once as the world would begin, with real names and words, because the
@@ -110,6 +167,8 @@ export function WorldSetup({
     Array.from({ length: FIRST_PEOPLES }, (_, key) => drawFounder(catalog, key)),
   );
   const [selected, setSelected] = useState(0);
+  const [charter, setCharter] = useState(false);
+  const [keepQuestions, setKeepQuestions] = useState(true);
   const [adjusting, setAdjusting] = useState(false);
   const [built, setBuilt] = useState<Built | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -117,6 +176,9 @@ export function WorldSetup({
   const engine = useRef<Engine | null>(null);
   const handedOver = useRef(false);
   const nextKey = useRef(FIRST_PEOPLES);
+  const book = useRef<HTMLElement>(null);
+
+  useEffect(() => { book.current?.scrollTo(0, 0); }, [selected, charter]);
 
   useEffect(() => {
     let live = true;
@@ -145,7 +207,7 @@ export function WorldSetup({
         const overview = next.overview(0);
         engine.current?.dispose();
         engine.current = next;
-        setBuilt({ map: next.map(), overview });
+        setBuilt({ map: next.map(), overview, preview: next.foundingPreview(), founders, seed: worldSeed, size });
         setError(null);
         // Keep the lands the world chose, so later choices leave them be.
         if (founders.some((f) => f.region === null)) {
@@ -173,6 +235,7 @@ export function WorldSetup({
   const add = () => {
     setFounders((all) => [...all, drawFounder(catalog, nextKey.current++)]);
     setSelected(founders.length);
+    setCharter(false);
   };
   const remove = (i: number) => {
     setFounders((all) => all.filter((_, j) => j !== i));
@@ -182,9 +245,13 @@ export function WorldSetup({
   const overview = built?.overview;
   const map = built?.map;
   const current = founders[selected];
+  const c = overview?.communities[selected];
+  const v = c ? overview?.varieties[c.variety] : undefined;
+  const currentBuild = built?.founders === founders && built.seed === worldSeed && built.size === size;
+  const questions = built ? foundingQuestions(built.overview, built.preview) : [];
+  const openAccount = (i: number) => { setSelected(i); setCharter(false); };
   const lands = map ? map.regions.filter((r) => r.terrain !== "sea").length : 0;
-  const landName = (region: number) =>
-    overview?.places.find((p) => p.region === region)?.names.at(-1)?.spelled ?? "unnamed land";
+  const landName = (region: number) => overview ? placeName(overview, region) : "unnamed land";
 
   return (
     <div className="stage setup">
@@ -207,9 +274,12 @@ export function WorldSetup({
             chosen={new Set([selected])}
             lands={new Set(current?.region === null || !current ? [] : [current.region])}
             zoomable
-            onPeople={setSelected}
+            onPeople={openAccount}
             onLand={(region) => {
-              if (map.regions[region].terrain !== "sea" && current) update(selected, { region });
+              if (map.regions[region].terrain !== "sea" && current) {
+                setCharter(false);
+                update(selected, { region });
+              }
             }}
           />
         ) : null}
@@ -254,7 +324,42 @@ export function WorldSetup({
         <p className="map-hint">Choose an account, then touch a land to set its people there.</p>
       </section>
 
-      <aside className="pedia setup-panel" aria-label="Peoples">
+      <aside ref={book} className="pedia setup-panel" aria-label="Book of accounts" aria-busy={!currentBuild}>
+        <div className="founding-contents">
+          <div role="tablist" aria-label="Founding accounts" className="founding-tabs" onKeyDown={(event) => {
+            const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+            const index = tabs.indexOf(event.target as HTMLButtonElement);
+            if (index < 0) return;
+            const next = event.key === "ArrowRight" ? (index + 1) % tabs.length
+              : event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length
+                : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : null;
+            if (next === null) return;
+            event.preventDefault();
+            tabs[next].click();
+            tabs[next].focus();
+          }}>
+            {founders.map((f, i) => {
+              const people = overview?.communities[i];
+              const speech = people ? overview?.varieties[people.variety] : undefined;
+              return <button type="button" role="tab" key={f.key} id={`founding-tab-${f.key}`}
+                aria-controls={`founding-account-${f.key}`} aria-selected={!charter && selected === i}
+                tabIndex={!charter && selected === i ? 0 : -1} onClick={() => openAccount(i)}>
+                <span className="swatch" style={speech ? { background: hue(speech.family) } : undefined} aria-hidden="true" />
+                <span className={speech ? `hand-${speech.family % 5}` : undefined}>{people?.name ?? `The ${ORDINAL[i]} people`}</span>
+              </button>;
+            })}
+            <button type="button" role="tab" id="founding-tab-charter" aria-controls="founding-charter"
+              aria-selected={charter} tabIndex={charter ? 0 : -1} onClick={() => setCharter(true)}>The charter</button>
+          </div>
+          <div className="founding-contents-acts">
+            <button type="button" className="link" disabled={founders.length >= MOST_PEOPLES} onClick={add}>
+              <Plus size={13} aria-hidden="true" /> Another people
+            </button>
+            {founders.length > 1 && !charter ? <button type="button" className="link" onClick={() => remove(selected)}>
+              Leave this people out
+            </button> : null}
+          </div>
+        </div>
         <header className="book-head">
           <div className="book-kicker">Book I</div>
           <h2>Of the peoples at the beginning</h2>
@@ -281,126 +386,134 @@ export function WorldSetup({
           </p>
         </header>
 
-        <ol className="accounts">
-          {founders.map((f, i) => {
-            const c = overview?.communities[i];
-            const v = c ? overview?.varieties[c.variety] : undefined;
-            const chosen = i === selected;
-            const where =
-              c && map
-                ? `${AMID[map.regions[c.region].terrain]} ${map.regions[c.region].coastal ? "coastal " : ""}${TERRAIN_NAME[map.regions[c.region].terrain].toLowerCase()} of `
-                : "";
-            return (
-              <li
-                key={f.key}
-                className={chosen ? "account chosen" : "account"}
-                style={v ? ({ "--tone": hue(v.family) } as CSSProperties) : undefined}
-              >
-                <div className="account-top">
-                  <span className="account-number">The {ORDINAL[i]} account</span>
-                  {founders.length > 1 ? (
-                    <button type="button" className="link strike" title="Leave this people out" onClick={() => remove(i)}>
-                      strike out
-                    </button>
-                  ) : null}
-                </div>
-                <button type="button" className="account-name" onClick={() => setSelected(i)} aria-expanded={chosen}>
-                  {c && v ? (
-                    <>
-                      <span className={`hand-${v.family % 5}`}>{c.name}</span> <span className="meaning">“{c.meaning}”</span>
-                    </>
-                  ) : (
-                    <span className="muted">Settling…</span>
-                  )}
-                </button>
-                {c && v && map ? (
-                  chosen ? (
-                    <p className="account-text">
-                      They call themselves <b>{c.name}</b>,{" "}
-                      <NamingSelect catalog={catalog} value={f.naming} onChange={(n) => n && update(i, { naming: n })} />.
-                      They live as{" "}
-                      <select
-                        aria-label="Way of life"
-                        value={f.livelihood ?? ""}
-                        onChange={(e) => update(i, { livelihood: e.target.value === "" ? null : (e.target.value as Livelihood) })}
-                      >
-                        <option value="">{lower(LIVELIHOOD_NAME[c.livelihood])}, as the land suits</option>
-                        {(Object.keys(LIVELIHOOD_NAME) as Livelihood[]).map((livelihood) => (
-                          <option key={livelihood} value={livelihood}>
-                            {lower(LIVELIHOOD_NAME[livelihood])}
-                          </option>
-                        ))}
-                      </select>{" "}
-                      {where}
-                      <i>{landName(c.region)}</i>. Their speech, <i>{v.name}</i>, is{" "}
-                      <select
-                        aria-label="Sounds"
-                        value={f.preset ?? ""}
-                        onChange={(e) => update(i, { preset: e.target.value, design: presetDesign(e.target.value, f.seed) })}
-                      >
-                        {f.preset === null ? <option value="">their own, shaped by hand</option> : null}
-                        {catalog.presets.map((p) => (
-                          <option key={p.id} value={p.id} title={p.description}>
-                            {lower(p.name)}
-                          </option>
-                        ))}
-                      </select>
-                      . By temper they are{" "}
-                      <select
-                        aria-label="Temper"
-                        value={f.bent ? `${f.bent.axis} ${f.bent.toward}` : ""}
-                        onChange={(e) => {
-                          const [axis, toward] = e.target.value.split(" ");
-                          update(i, { bent: e.target.value === "" ? null : { axis: axis as EthosAxis, toward: Number(toward) as 1 | -1 } });
-                        }}
-                      >
-                        {f.bent === null ? (
-                          <option value="">{temperament(c.ethos, 2).join(" and ") || "even-tempered"}, as their land and life make them</option>
-                        ) : (
-                          <option value="">as their land and life make them</option>
-                        )}
-                        {ETHOS_AXES.flatMap((axis) => [1, -1].map((toward) => (
-                          <option key={`${axis} ${toward}`} value={`${axis} ${toward}`}>
-                            {ETHOS_POLES[axis][toward > 0 ? 1 : 0]}
-                          </option>
-                        )))}
-                      </select>
-                      .
-                    </p>
-                  ) : (
-                    <p className="account-text">
-                      {LIVELIHOOD_NAME[c.livelihood]} {where}
-                      <i>{landName(c.region)}</i>, speaking <i>{v.name}</i>.
-                    </p>
-                  )
-                ) : null}
-                {v ? <Specimen words={v.specimen} /> : null}
-                {chosen ? (
-                  <div className="account-acts">
-                    <button
-                      type="button"
-                      className="link"
-                      onClick={() => {
-                        const seed = randomSeed();
-                        update(i, { seed, design: f.preset === null ? f.design : presetDesign(f.preset, seed) });
-                      }}
-                    >
-                      Hear other words
-                    </button>
-                    <button type="button" className="link" onClick={() => setAdjusting(true)}>
-                      Adjust their sounds…
-                    </button>
-                  </div>
-                ) : null}
-              </li>
-            );
-          })}
-        </ol>
-        {founders.length < MOST_PEOPLES ? (
-          <button type="button" className="link add-account" onClick={add}>
-            <Plus size={15} aria-hidden="true" /> Add an account of another people
-          </button>
-        ) : null}
+        {charter && overview && built ? (
+          <article className="founding-charter" id="founding-charter" role="tabpanel" aria-labelledby="founding-tab-charter" tabIndex={0}>
+            <h2>The founding charter</h2>
+            <section>
+              <h3>Who lives where</h3>
+              <ul className="charter-peoples">{overview.communities.map((people) => (
+                <li key={people.id}><strong>{people.name}</strong> live in <i>{landName(people.region)}</i>, by{" "}
+                  {LIVELIHOOD_PHRASE[people.livelihood]}; among them, {temperament(people.ethos, 2).join(" and ") || "an even temper"}.</li>
+              ))}</ul>
+            </section>
+            <section>
+              <h3>How their speech differs</h3>
+              <div className="table-wrap charter-specimens">
+                <table>
+                  <thead><tr><th scope="col">Word for</th>{overview.communities.map((people) => (
+                    <th scope="col" key={people.id}>{people.name}</th>
+                  ))}</tr></thead>
+                  <tbody>{overview.varieties[overview.communities[0].variety].specimen.map((word) => (
+                    <tr key={word.concept}><th scope="row" title={word.gloss}>{word.concept}</th>
+                      {overview.communities.map((people) => {
+                        const specimen = overview.varieties[people.variety].specimen.find((w) => w.concept === word.concept);
+                        return <td key={people.id}><span className="word" title={specimen ? `/${specimen.ipa}/` : undefined}>{specimen?.spelled ?? "—"}</span></td>;
+                      })}
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </section>
+            <section>
+              <h3>Who may meet</h3>
+              <p className="muted small">These are possible first journeys, not promises. Crossing water needs seafaring, which no founder yet knows.</p>
+              {REACH_GROUPS.map((group) => {
+                const pairs = built.preview.pairs.filter((pair) => group.id === "walking"
+                  ? pair.reach === "walking" || pair.reach === "neighbours" : pair.reach === group.id);
+                return <div className="founding-reach" key={group.id}><h4>{group.title}</h4>
+                  {pairs.length ? <ul>{pairs.map((pair) => <li key={`${pair.a}:${pair.b}`}>
+                    <strong>{overview.communities.find((p) => p.id === pair.a)?.name}</strong> and{" "}
+                    <strong>{overview.communities.find((p) => p.id === pair.b)?.name}</strong>: {pairEvidence(pair)}.
+                  </li>)}</ul> : <p className="muted small">No founding pair.</p>}
+                </div>;
+              })}
+            </section>
+            <section>
+              <h3>Questions to follow</h3>
+              <ul className="founding-questions">{questions.map((question) => <li key={question.title}>{question.title}</li>)}</ul>
+              <label className="founding-keep"><input type="checkbox" checked={keepQuestions} onChange={(event) => setKeepQuestions(event.target.checked)} />
+                Keep these questions in the notebook</label>
+              <p className="muted small">After beginning, follow each question from the field notebook to its people, place, or word.</p>
+            </section>
+          </article>
+        ) : current && c && v && map ? (
+          <article className="account chosen" id={`founding-account-${current.key}`} role="tabpanel"
+            aria-labelledby={`founding-tab-${current.key}`} tabIndex={0} style={{ "--tone": hue(v.family) } as CSSProperties}>
+            <div className="account-number">The {ORDINAL[selected]} account</div>
+            <h2 className="account-name"><span className={`hand-${v.family % 5}`}>{c.name}</span> <span className="meaning">“{c.meaning}”</span></h2>
+            <section className="founding-stage">
+              <h3 className="eyebrow">1 · Homeland</h3>
+              <p className="account-text">They live in{" "}
+                <select aria-label="Homeland" value={current.region ?? c.region} onChange={(event) => update(selected, { region: Number(event.target.value) })}>
+                  {map.regions.filter((region) => region.terrain !== "sea").map((region) => (
+                    <option key={region.id} value={region.id} title={lower(TERRAIN_NAME[region.terrain])}>
+                      {landName(region.id) === "unnamed land" ? `land ${region.id + 1}` : landName(region.id)}
+                    </option>
+                  ))}
+                </select>, {lower(TERRAIN_NAME[map.regions[c.region].terrain])}, {map.regions[c.region].coastal ? "coastal" : "inland"}.
+              </p>
+              <p className="muted small">Choose a land here or on the chart.</p>
+              <ul className="founding-neighbours" aria-label="Possible first encounters">
+                {built?.preview.pairs.filter((pair) => pair.a === c.id || pair.b === c.id).map((pair) => {
+                  const other = overview?.communities.find((people) => people.id === (pair.a === c.id ? pair.b : pair.a));
+                  return <li key={`${pair.a}:${pair.b}`}><strong>{other?.name}</strong>: {pairEvidence(pair)}.</li>;
+                })}
+              </ul>
+              {founders.length === 1 ? <p className="muted small">No other founding people yet.</p> : null}
+            </section>
+            <section className="founding-stage">
+              <h3 className="eyebrow">2 · Livelihood</h3>
+              <p className="account-text">They live{" "}
+                <select aria-label="Way of life" value={current.livelihood ?? ""} onChange={(event) =>
+                  update(selected, { livelihood: event.target.value === "" ? null : event.target.value as Livelihood })}>
+                  <option value="">as their land suggests ({LIVELIHOOD_PHRASE[c.livelihood]})</option>
+                  {(Object.keys(LIVELIHOOD_NAME) as Livelihood[]).map((livelihood) => (
+                    <option key={livelihood} value={livelihood}>by {LIVELIHOOD_PHRASE[livelihood]}</option>
+                  ))}
+                </select>.
+              </p>
+            </section>
+            <section className="founding-stage">
+              <h3 className="eyebrow">3 · Temper</h3>
+              <p className="account-text">Among them,{" "}
+                <select aria-label="Temper" value={current.bent ? `${current.bent.axis} ${current.bent.toward}` : ""} onChange={(event) => {
+                  const [axis, toward] = event.target.value.split(" ");
+                  update(selected, { bent: event.target.value === "" ? null : { axis: axis as EthosAxis, toward: Number(toward) as 1 | -1 } });
+                }}>
+                  <option value="">as their land and life make them</option>
+                  {ETHOS_AXES.flatMap((axis) => [1, -1].map((toward) => (
+                    <option key={`${axis} ${toward}`} value={`${axis} ${toward}`}>{ETHOS_POLES[axis][toward > 0 ? 1 : 0]}</option>
+                  )))}
+                </select>{current.bent === null ? ` (${temperament(c.ethos, 2).join(" and ") || "even-tempered"})` : ""}.
+              </p>
+            </section>
+            <section className="founding-stage">
+              <h3 className="eyebrow">4 · Speech</h3>
+              <Specimen words={v.specimen} />
+              <p className="account-text">Their speech is{" "}
+                <select aria-label="Sounds" value={current.preset ?? ""} onChange={(event) =>
+                  update(selected, { preset: event.target.value, design: presetDesign(event.target.value, current.seed) })}>
+                  {current.preset === null ? <option value="">their own, shaped by hand</option> : null}
+                  {catalog.presets.map((preset) => <option key={preset.id} value={preset.id} title={preset.description}>{lower(preset.name)}</option>)}
+                </select>.
+              </p>
+              <div className="account-acts">
+                <button type="button" className="link" onClick={() => {
+                  const seed = randomSeed();
+                  update(selected, { seed, design: current.preset === null ? current.design : presetDesign(current.preset, seed) });
+                }}>Hear other words</button>
+                <button type="button" className="link" onClick={() => setAdjusting(true)}>Adjust their sounds…</button>
+              </div>
+            </section>
+            <section className="founding-stage">
+              <h3 className="eyebrow">5 · Identity</h3>
+              <p className="account-text">They name themselves{" "}
+                <NamingSelect catalog={catalog} value={current.naming} onChange={(naming) => naming && update(selected, { naming })} />,
+                <b> {c.name}</b>. They call their speech <i>{v.name}</i>.
+              </p>
+            </section>
+          </article>
+        ) : <p className="muted">Settling…</p>}
       </aside>
 
       <footer className="timebar setup-foot">
@@ -420,11 +533,19 @@ export function WorldSetup({
           <button
             type="button"
             className="primary begin"
-            disabled={!engine.current || !overview || overview.communities.length !== founders.length}
+            disabled={!engine.current || !currentBuild || !overview || overview.communities.length !== founders.length}
             onClick={() => {
-              if (!engine.current) return;
-              handedOver.current = true;
-              onBegin(engine.current);
+              if (!engine.current || !overview || !currentBuild) return;
+              try {
+                if (keepQuestions) for (const question of questions) {
+                  const note = makeNote(overview, question.subject, question.label, "question");
+                  engine.current.saveNote({ ...note, title: question.title });
+                }
+                handedOver.current = true;
+                onBegin(engine.current);
+              } catch (failure) {
+                setError(message(failure));
+              }
             }}
           >
             <Feather size={18} aria-hidden="true" /> Begin the chronicle

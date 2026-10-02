@@ -718,6 +718,18 @@ The colony ceiling intentionally rises from the old eight steps to
 twelve, while embarkation adds overhead. On reference plain shores,
 three intervening sea cells cost 1,200 effort-km rather than the old 1,000.
 
+The facade's pure year-zero `founding_preview` reports each pair's exact
+walking and coast-to-coast voyage effort, retaining routes beyond first
+contact range. `neighbours` means `World::nearness > 0`, the shared/bordering
+land predicate used by `make_contacts`. Otherwise, `walking` means a land
+journey within `Params::trade_reach` (1,800 effort-km by default); `sea`
+means a voyage within that same merchant range when walking is not within
+it; `apart` means neither first journey qualifies. A voyage remains only
+a possibility until someone learns Seafaring. Coastal status, homeland
+landmass, and the nearest other founder accompany the pairs; nearest means
+the smallest finite walking or voyage effort, breaking ties by community ID.
+This preview does not predict later territorial spread or consume draws.
+
 The immutable map stores sparse walking and voyage rows out to 1,800
 effort-km. Missing cached destinations are outside a bounded query,
 not necessarily unreachable. Exact pair queries use Dijkstra beyond
