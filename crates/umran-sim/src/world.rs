@@ -1033,11 +1033,22 @@ impl World {
     pub fn nearness(&self, a: usize, b: usize) -> f32 {
         let (la, lb) = (&self.communities[a].lands, &self.communities[b].lands);
         let (small, large) = if la.len() <= lb.len() { (la, lb) } else { (lb, la) };
+        self.near_held(small, |r| large.contains(&r))
+    }
+
+    fn nearness_indexed(&self, a: usize, b: usize, spatial: &Spatial) -> f32 {
+        let (small, other) = if self.communities[a].lands.len() <= self.communities[b].lands.len() {
+            (&self.communities[a].lands, b)
+        } else { (&self.communities[b].lands, a) };
+        self.near_held(small, |r| spatial.dwellers[r].binary_search_by_key(&other, |&(c, _)| c).is_ok())
+    }
+
+    fn near_held(&self, lands: &[usize], contains: impl Fn(usize) -> bool) -> f32 {
         let mut near: f32 = 0.0;
-        for &r in small {
-            if large.contains(&r) { return self.map.closeness(r, r); }
+        for &r in lands {
+            if contains(r) { return self.map.closeness(r, r); }
             for &n in &self.map.regions[r].neighbours {
-                if large.contains(&n) { near = near.max(self.map.closeness(r, n)); }
+                if contains(n) { near = near.max(self.map.closeness(r, n)); }
             }
         }
         near
@@ -2887,7 +2898,7 @@ impl World {
             }
             neighbours.sort_unstable();
             for &other in &neighbours {
-                let near = self.nearness(c, other);
+                let near = self.nearness_indexed(c, other, &spatial);
                 if near > 0.0 && rng.r#gen::<f32>() < self.params.neighbour_rate * near {
                     let intensity = rng.gen_range(0.3..0.7) * near;
                     self.connect(c, other, intensity, ContactKind::Neighbours)
