@@ -566,6 +566,9 @@ export interface Comparison {
   right: Overview;
 }
 
+/// Why a zone's weather or a river's flow changed, as the engine records it.
+export type ClimateCause = "drought" | "cold-spell" | "recovery" | "long-drying";
+
 /// One chronicle entry; `variety` is set for a sound law.
 export interface Annal {
   id: string;
@@ -574,7 +577,7 @@ export interface Annal {
   settlement?: SettlementRecord;
   before?: HistoryPoint;
   generation: number;
-  kind: "found" | "split" | "settlement" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper" | "grammar";
+  kind: "found" | "split" | "settlement" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "climate" | "river-flow" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper" | "grammar";
   /// The annalist's words; words of the language are marked *thus*.
   text: string;
   /// The apparatus: what a linguist would note, such as sound laws.
@@ -596,6 +599,14 @@ export interface Annal {
   /// people came to lean that way or ceased to, and the engine's id for
   /// what caused it.
   temper: { axis: EthosAxis; pole: "high" | "low"; entered: boolean; cause: string } | null;
+  /// Climate zones and rivers it tells of.
+  zones: number[];
+  rivers: number[];
+  /// For a change of climate: the zone, the engine's cause, and how far
+  /// rain and warmth departed from the zone's usual weather.
+  climate: { zone: number; cause: ClimateCause; change: "onset" | "worsening" | "recovery"; severity: number; wetness: number; warmth: number } | null;
+  /// For a river's flow weakening or recovering.
+  riverFlow: { river: number; cause: ClimateCause; flowing: boolean } | null;
 }
 
 export interface Origin {
