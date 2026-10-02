@@ -4,9 +4,9 @@ import { createPortal } from "react-dom";
 export type PopoverSide = "bottom" | "top";
 export type PopoverAlign = "start" | "end";
 
-/** Spread these props onto the trigger button. */
-export interface TriggerProps {
-  ref: RefObject<HTMLButtonElement | null>;
+/** Spread these props onto the focusable trigger. */
+export interface TriggerProps<T extends HTMLElement = HTMLButtonElement> {
+  ref: RefObject<T | null>;
   onClick: () => void;
   "aria-expanded": boolean;
   "aria-haspopup": "menu" | "dialog";
@@ -22,7 +22,7 @@ function focusables(panel: HTMLElement): HTMLElement[] {
       && getComputedStyle(element).visibility !== "hidden");
 }
 
-export function Popover({
+export function Popover<T extends HTMLElement = HTMLButtonElement>({
   label,
   role = "menu",
   side = "bottom",
@@ -35,17 +35,17 @@ export function Popover({
   role?: "menu" | "dialog";
   side?: PopoverSide;
   align?: PopoverAlign;
-  trigger: (props: TriggerProps, open: boolean) => ReactNode;
+  trigger: (props: TriggerProps<T>, open: boolean) => ReactNode;
   children: (close: () => void) => ReactNode;
   onOpenChange?: (open: boolean) => void;
 }): ReactNode {
   const id = useId();
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<T>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const openRef = useRef(false);
   const onOpenChangeRef = useRef(onOpenChange);
   const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState({ top: 0, left: 0, side });
+  const [position, setPosition] = useState<{ top: number; left: number; side: PopoverSide; maxHeight: number | undefined }>({ top: 0, left: 0, side, maxHeight: undefined });
 
   useLayoutEffect(() => {
     onOpenChangeRef.current = onOpenChange;
@@ -86,15 +86,22 @@ export function Popover({
       const panel = panelRef.current;
       if (!button || !panel) return;
       const anchor = button.getBoundingClientRect();
+      // Measure the panel at its natural height, not a height clamped before.
+      panel.style.maxHeight = "";
       const { width, height } = panel.getBoundingClientRect();
-      const preferredTop = side === "bottom" ? anchor.bottom + 4 : anchor.top - height - 4;
-      const overflows = side === "bottom" ? preferredTop + height > window.innerHeight : preferredTop < 0;
-      const actualSide = overflows ? (side === "bottom" ? "top" : "bottom") : side;
-      const top = actualSide === "bottom" ? anchor.bottom + 4 : anchor.top - height - 4;
+      const below = window.innerHeight - anchor.bottom - 4 - 8;
+      const above = anchor.top - 4 - 8;
+      const room = { bottom: below, top: above };
+      const other: PopoverSide = side === "bottom" ? "top" : "bottom";
+      // The preferred side if it fits, else the other if it fits, else
+      // whichever has more room, with the panel shortened to that room.
+      const actualSide = room[side] >= height ? side : room[other] >= height ? other : room[side] >= room[other] ? side : other;
+      const maxHeight = Math.min(height, Math.max(room[actualSide], 80));
+      const top = actualSide === "bottom" ? anchor.bottom + 4 : Math.max(8, anchor.top - maxHeight - 4);
       const alignedLeft = align === "start" ? anchor.left : anchor.right - width;
       const left = Math.max(8, Math.min(alignedLeft, window.innerWidth - width - 8));
-      setPosition((current) => current.top === top && current.left === left && current.side === actualSide
-        ? current : { top, left, side: actualSide });
+      setPosition((current) => current.top === top && current.left === left && current.side === actualSide && current.maxHeight === maxHeight
+        ? current : { top, left, side: actualSide, maxHeight });
     };
     measure();
     window.addEventListener("resize", measure);
@@ -149,7 +156,7 @@ export function Popover({
           id={id}
           data-side={position.side}
           data-align={align}
-          style={{ top: position.top, left: position.left }}
+          style={{ top: position.top, left: position.left, maxHeight: position.maxHeight }}
           onKeyDown={(event) => {
             if (role !== "menu" || !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
             const items = focusables(event.currentTarget);

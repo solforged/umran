@@ -6,7 +6,8 @@ import { ETHOS_AXES, ETHOS_POLES, hue, LIVELIHOOD_NAME, temperament, TERRAIN_NAM
 import { Designer, randomSeed, type Founding } from "./Designer";
 import { MapView } from "./MapView";
 import { Modal } from "./Modal";
-import { NamingSelect } from "./NamingSelect";
+import { decodeNaming, encodeNaming, namingChoices } from "./NamingSelect";
+import { Phrase } from "./Phrase";
 import { Specimen } from "./Specimen";
 import { makeNote } from "./Notebook";
 
@@ -465,38 +466,47 @@ export function WorldSetup({
             <section className="founding-stage">
               <h3 className="eyebrow">2 · Livelihood</h3>
               <p className="account-text">They live{" "}
-                <select aria-label="Way of life" value={current.livelihood ?? ""} onChange={(event) =>
-                  update(selected, { livelihood: event.target.value === "" ? null : event.target.value as Livelihood })}>
-                  <option value="">as their land suggests ({LIVELIHOOD_PHRASE[c.livelihood]})</option>
-                  {(Object.keys(LIVELIHOOD_NAME) as Livelihood[]).map((livelihood) => (
-                    <option key={livelihood} value={livelihood}>by {LIVELIHOOD_PHRASE[livelihood]}</option>
-                  ))}
-                </select>.
+                <Phrase
+                  label="Way of life"
+                  value={current.livelihood ?? ""}
+                  choices={[
+                    { key: "", text: `as their land suggests (${LIVELIHOOD_PHRASE[c.livelihood]})` },
+                    ...(Object.keys(LIVELIHOOD_NAME) as Livelihood[]).map((livelihood) => ({ key: livelihood, text: `by ${LIVELIHOOD_PHRASE[livelihood]}` })),
+                  ]}
+                  onChange={(key) => update(selected, { livelihood: key === "" ? null : (key as Livelihood) })}
+                />.
               </p>
             </section>
             <section className="founding-stage">
               <h3 className="eyebrow">3 · Temper</h3>
               <p className="account-text">Among them,{" "}
-                <select aria-label="Temper" value={current.bent ? `${current.bent.axis} ${current.bent.toward}` : ""} onChange={(event) => {
-                  const [axis, toward] = event.target.value.split(" ");
-                  update(selected, { bent: event.target.value === "" ? null : { axis: axis as EthosAxis, toward: Number(toward) as 1 | -1 } });
-                }}>
-                  <option value="">as their land and life make them</option>
-                  {ETHOS_AXES.flatMap((axis) => [1, -1].map((toward) => (
-                    <option key={`${axis} ${toward}`} value={`${axis} ${toward}`}>{ETHOS_POLES[axis][toward > 0 ? 1 : 0]}</option>
-                  )))}
-                </select>{current.bent === null ? ` (${temperament(c.ethos, 2).join(" and ") || "even-tempered"})` : ""}.
+                <Phrase
+                  label="Temper"
+                  value={current.bent ? `${current.bent.axis} ${current.bent.toward}` : ""}
+                  choices={[
+                    { key: "", text: "as their land and life make them" },
+                    ...ETHOS_AXES.flatMap((axis) => [1, -1].map((toward) => ({ key: `${axis} ${toward}`, text: ETHOS_POLES[axis][toward > 0 ? 1 : 0] }))),
+                  ]}
+                  onChange={(key) => {
+                    const [axis, toward] = key.split(" ");
+                    update(selected, { bent: key === "" ? null : { axis: axis as EthosAxis, toward: Number(toward) as 1 | -1 } });
+                  }}
+                />{current.bent === null ? ` (${temperament(c.ethos, 2).join(" and ") || "even-tempered"})` : ""}.
               </p>
             </section>
             <section className="founding-stage">
               <h3 className="eyebrow">4 · Speech</h3>
               <Specimen words={v.specimen} />
               <p className="account-text">Their speech is{" "}
-                <select aria-label="Sounds" value={current.preset ?? ""} onChange={(event) =>
-                  update(selected, { preset: event.target.value, design: presetDesign(event.target.value, current.seed) })}>
-                  {current.preset === null ? <option value="">their own, shaped by hand</option> : null}
-                  {catalog.presets.map((preset) => <option key={preset.id} value={preset.id} title={preset.description}>{lower(preset.name)}</option>)}
-                </select>.
+                <Phrase
+                  label="Sounds"
+                  value={current.preset ?? ""}
+                  choices={[
+                    ...(current.preset === null ? [{ key: "", text: "their own, shaped by hand" }] : []),
+                    ...catalog.presets.map((preset) => ({ key: preset.id, text: lower(preset.name), title: preset.description })),
+                  ]}
+                  onChange={(key) => update(selected, { preset: key, design: presetDesign(key, current.seed) })}
+                />.
               </p>
               <div className="account-acts">
                 <button type="button" className="link" onClick={() => {
@@ -509,7 +519,12 @@ export function WorldSetup({
             <section className="founding-stage">
               <h3 className="eyebrow">5 · Identity</h3>
               <p className="account-text">They name themselves{" "}
-                <NamingSelect catalog={catalog} value={current.naming} onChange={(naming) => naming && update(selected, { naming })} />,
+                <Phrase
+                  label="Name"
+                  value={encodeNaming(current.naming)}
+                  choices={namingChoices(catalog)}
+                  onChange={(key) => { const naming = decodeNaming(key); if (naming) update(selected, { naming }); }}
+                />,
                 <b> {c.name}</b>. They call their speech <i>{v.name}</i>.
               </p>
             </section>

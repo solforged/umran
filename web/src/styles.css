@@ -2539,22 +2539,47 @@ button.chronicle-latest:hover {
 
 /* Choices sit in the sentence as phrases, underlined to show they can be
    changed. */
-.setup .account-text select {
-  appearance: none;
-  field-sizing: content;
-  max-width: 100%;
+:root .setup .account-text .phrase {
+  display: inline;
   padding: 0;
   border: 0;
-  border-bottom: 1px dashed var(--tone, var(--accent));
   border-radius: 0;
   background: none;
   font: inherit;
   color: inherit;
+  letter-spacing: inherit;
+  font-variant: inherit;
+  text-decoration: underline dashed var(--tone, var(--accent));
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
   cursor: pointer;
+  text-align: inherit;
+  white-space: normal;
 }
 
-.setup .account-text select:hover {
+:root .setup .account-text .phrase:is(:hover, [aria-expanded="true"]) {
   background: color-mix(in srgb, var(--tone, var(--accent)) 12%, transparent);
+}
+
+:root .setup .account-text .phrase:focus-visible {
+  outline: 1px solid var(--tone, var(--accent));
+  outline-offset: 2px;
+}
+
+.phrase-group {
+  display: block;
+  padding: 0.4rem 0.6rem 0.1rem;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+}
+
+.phrase-choice::before {
+  content: "";
+  flex: 0 0 0.65em;
+}
+
+.phrase-choice[aria-checked="true"]::before {
+  content: "•";
 }
 
 .account .specimen {
