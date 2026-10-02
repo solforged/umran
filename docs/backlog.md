@@ -54,7 +54,7 @@ The current engine has three related behaviors (`world.rs`):
   or an available sea colony, falling back to the same home.
 
 The former `Split` action had no destination, partition, or population-share
-field. Revision 29 replaces it with `Settle`: an explicit intent, destination,
+field. Revision 30 replaces it with `Settle`: an explicit intent, destination,
 share and naming/contact choices. “Half leave” was misleading, especially
 for a territorial split.
 

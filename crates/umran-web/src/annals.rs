@@ -549,21 +549,43 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 &[region],
             ),
             WorldEvent::Climate {
-                zone, cause, change, severity, wetness, warmth, ref lands, ref peoples,
+                zone,
+                cause,
+                change,
+                severity,
+                wetness,
+                warmth,
+                ref lands,
+                ref peoples,
             } => {
                 let text = match change {
-                    ClimateChange::Onset => "The climate changed, reducing what the lands could feed.",
-                    ClimateChange::Worsening => "The lands could feed fewer people as conditions worsened.",
+                    ClimateChange::Onset => {
+                        "The climate changed, reducing what the lands could feed."
+                    }
+                    ClimateChange::Worsening => {
+                        "The lands could feed fewer people as conditions worsened."
+                    }
                     ClimateChange::Recovery => "The lands began to recover their feeding capacity.",
                 };
                 let mut annal = entry(generation, "climate", text.into(), peoples, lands);
                 annal.zones.push(zone);
                 annal.climate = Some(Climate {
-                    zone, cause, change, severity, wetness, warmth,
+                    zone,
+                    cause,
+                    change,
+                    severity,
+                    wetness,
+                    warmth,
                 });
                 annal
             }
-            WorldEvent::RiverFlow { river, flowing, cause, ref lands, ref peoples } => {
+            WorldEvent::RiverFlow {
+                river,
+                flowing,
+                cause,
+                ref lands,
+                ref peoples,
+            } => {
                 let text = if flowing {
                     "The river's flow recovered."
                 } else {
@@ -571,7 +593,11 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 };
                 let mut annal = entry(generation, "river-flow", text.into(), peoples, lands);
                 annal.rivers.push(river);
-                annal.river_flow = Some(RiverFlow { river, cause, flowing });
+                annal.river_flow = Some(RiverFlow {
+                    river,
+                    cause,
+                    flowing,
+                });
                 annal
             }
             WorldEvent::Adopted {
