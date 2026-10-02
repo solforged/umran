@@ -9,6 +9,7 @@ pub mod adapt;
 pub mod change;
 pub mod chronicle;
 pub mod cities;
+pub mod climate;
 pub mod compare;
 pub mod concepts;
 pub mod design;
@@ -42,6 +43,7 @@ pub mod wold;
 pub mod world;
 
 pub use change::{Env, Matcher, Rewrite, SoundChange, apply_all};
+pub use climate::{Climate, ClimateCause, ClimateChange, RegionClimate, ZoneClimate};
 pub use chronicle::{Action, Chronicle, ENGINE_REVISION, FORMAT, Recipe, SetAside, Telling};
 pub use concepts::{CONCEPTS, Class, Concept, FAMILIES, Field, Iconic, Relation, Tier};
 pub use design::{LanguageDesign, Sound};

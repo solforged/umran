@@ -301,10 +301,8 @@ impl World {
         } else {
             1.0
         };
-        let hard = if self.communities[rulers]
-            .lands
-            .iter()
-            .any(|r| struck.contains(r))
+        let hard = if self.climate_challenged(rulers)
+            || self.communities[rulers].lands.iter().any(|r| struck.contains(r))
         {
             HARD_HOLD
         } else {
@@ -313,8 +311,8 @@ impl World {
         standard * hard
     }
 
-    /// `rulers` raise a state with its court at `capital`, or their heart
-    /// land; returns its index.
+    /// `rulers` raise a state at an authored capital or their best-fed held land.
+    /// Usable river access breaks a food tie without guaranteeing a state.
     pub fn raise_state(&mut self, rulers: usize, capital: Option<usize>, how: Rise) -> usize {
         let index = self.states.len();
         let mut rng = stream(self.seed, &[key("state"), index as u64]);
@@ -335,7 +333,17 @@ impl World {
             },
             rulers,
             members: Vec::new(),
-            capital: capital.unwrap_or_else(|| self.communities[rulers].home()),
+            capital: capital.unwrap_or_else(|| {
+                self.communities[rulers].lands.iter().copied().max_by(|&a, &b| {
+                    self.feeds(a, self.communities[rulers].livelihood)
+                        .total_cmp(&self.feeds(b, self.communities[rulers].livelihood))
+                        .then_with(|| {
+                            (self.climate.regions[a].river_flow >= crate::geography::RIVER_TRAVEL_FLOW)
+                                .cmp(&(self.climate.regions[b].river_flow >= crate::geography::RIVER_TRAVEL_FLOW))
+                        })
+                        .then_with(|| b.cmp(&a))
+                }).expect("a living ruler holds land")
+            }),
             rose: self.generation,
             how,
             fell: None,
@@ -496,10 +504,8 @@ impl World {
                 continue;
             }
             let mut hazard = self.params.collapse_rate;
-            if self.communities[rulers]
-                .lands
-                .iter()
-                .any(|r| struck.contains(r))
+            if self.climate_challenged(rulers)
+                || self.communities[rulers].lands.iter().any(|r| struck.contains(r))
             {
                 hazard *= HARD_COLLAPSE;
             }
@@ -537,6 +543,8 @@ impl World {
     pub(crate) fn recent_challenges(&self) -> (HashSet<usize>, HashSet<usize>) {
         let since = self.generation.saturating_sub(CHALLENGE_SPAN);
         let (mut struck, mut crowded) = (HashSet::new(), HashSet::new());
+        struck.extend(self.climate.regions.iter().enumerate()
+            .filter_map(|(r, climate)| climate.severe.then_some(r)));
         for (g, event) in self.events.iter().rev() {
             if *g < since {
                 break;
@@ -579,7 +587,7 @@ impl World {
                 self.state_of(other).is_some()
                     && self.communities[other].prestige > self.communities[c].prestige
             });
-            let challenge = if k.lands.iter().any(|r| struck.contains(r)) {
+            let challenge = if self.climate_challenged(c) || k.lands.iter().any(|r| struck.contains(r)) {
                 Challenge::HardTimes
             } else if crowded.contains(&c) {
                 Challenge::Crowded

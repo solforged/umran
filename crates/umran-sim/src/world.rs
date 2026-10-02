@@ -190,8 +190,7 @@ pub struct Params {
     /// Chance per generation that a people with no room left takes land
     /// beside its own, scaled by how mobile its way of life makes it.
     pub spread_rate: f32,
-    /// Chance per generation that bad times (famine, plague, drought)
-    /// strike a peopled land.
+    /// Chance per generation that famine or plague strikes a peopled land.
     pub hardship_rate: f32,
     /// Chance per generation that a people takes up a better way of
     /// living it knows of, from its own past or a people it deals with,
@@ -274,6 +273,8 @@ pub struct Params {
     pub ethos_enabled: bool,
     /// False freezes ethos, including authored nudges and inheritance drift.
     pub ethos_shifts: bool,
+    /// False freezes seeded regional climate histories at their baseline.
+    pub climate_enabled: bool,
 }
 
 impl Default for Params {
@@ -334,6 +335,7 @@ impl Default for Params {
             city_rate: 0.25,
             ethos_enabled: true,
             ethos_shifts: true,
+            climate_enabled: true,
         }
     }
 }
@@ -367,6 +369,7 @@ impl Params {
             name_turnover: 0.0,
             city_rate: 0.0,
             ethos_shifts: false,
+            climate_enabled: false,
             ..Self::default()
         }
     }
@@ -682,6 +685,25 @@ pub enum WorldEvent {
         kind: Hardship,
         share: f32,
     },
+    /// A regional climate shift changes harvests, not a recorded death toll.
+    Climate {
+        zone: usize,
+        cause: crate::climate::ClimateCause,
+        change: crate::climate::ClimateChange,
+        severity: u8,
+        wetness: f32,
+        warmth: f32,
+        lands: Vec<usize>,
+        peoples: Vec<usize>,
+    },
+    /// A fixed river course becomes usable or dries below its flow threshold.
+    RiverFlow {
+        river: usize,
+        flowing: bool,
+        cause: crate::climate::ClimateCause,
+        lands: Vec<usize>,
+        peoples: Vec<usize>,
+    },
     /// `community` took up a new way of living, learnt from `from`, or
     /// found by itself or remembered from its past when `None`.
     Adopted {
@@ -782,8 +804,6 @@ pub enum WorldEvent {
 pub enum Hardship {
     Famine,
     Plague,
-    /// Only on dry land: steppe and desert.
-    Drought,
 }
 
 /// Ongoing contact between two communities, in both directions.
@@ -804,8 +824,9 @@ pub struct Contact {
 pub struct World {
     pub seed: u64,
     pub generation: u32,
-    /// The land, drawn from the seed. Shared, since it never changes.
+    /// The fixed geography and route rows for currently usable river valleys.
     pub map: Arc<Map>,
+    pub climate: crate::climate::Climate,
     pub communities: Vec<Community>,
     pub varieties: Vec<Variety>,
     pub contacts: Vec<Contact>,
@@ -857,13 +878,16 @@ impl World {
 
     /// A world on a map of `size`, drawn from `seed`.
     pub fn with_map(seed: u64, params: Params, size: MapSize) -> Self {
-        let map = Map::generate(seed, size);
+        let mut map = Map::generate(seed, size);
+        let climate = crate::climate::Climate::new(seed, &map);
+        map.set_valley_flows(&climate.flows);
         Self {
             seed,
             generation: 0,
             places: vec![Vec::new(); map.regions.len()],
             continent_names: vec![None; map.landmasses.len()],
             map: Arc::new(map),
+            climate,
             communities: Vec::new(),
             varieties: Vec::new(),
             contacts: Vec::new(),
@@ -922,8 +946,7 @@ impl World {
     ) -> usize {
         let index = self.communities.len();
         let region = region.unwrap_or_else(|| self.homeland(index));
-        let livelihood =
-            livelihood.unwrap_or_else(|| Livelihood::of_land(self.map.regions[region].terrain));
+        let livelihood = livelihood.unwrap_or_else(|| self.default_livelihood(region));
         let ethos = self.founding_ethos(index, region, livelihood, ethos);
         let mut variety = Variety::found(variety_seed, profile, livelihood, ethos);
         let name = self.coin(&variety, naming, None);
@@ -988,7 +1011,7 @@ impl World {
             }
         }
         let weight = |r: usize| {
-            let fertility = self.map.regions[r].terrain.fertility();
+            let fertility = self.feeds(r, self.default_livelihood(r)) / self.params.capacity;
             let apart = nearest[r];
             fertility * fertility * apart
         };
@@ -998,7 +1021,19 @@ impl World {
 
     /// How many `region` feeds a people living by `livelihood`.
     pub fn feeds(&self, region: usize, livelihood: Livelihood) -> f32 {
-        self.params.capacity * self.map.feeding_factor(region, livelihood)
+        self.params.capacity * self.climate.regions[region].feeding[livelihood as usize]
+    }
+
+    /// River valleys can invite farming even where the surrounding land is dry.
+    fn default_livelihood(&self, region: usize) -> Livelihood {
+        let baseline = Livelihood::of_land(self.map.regions[region].terrain);
+        if self.map.river_regions[region].is_some()
+            && self.feeds(region, Livelihood::Farming) > self.feeds(region, baseline) * 1.5
+        {
+            Livelihood::Farming
+        } else {
+            baseline
+        }
     }
 
     /// How many of `community` live on each of its lands: its people are
@@ -1747,6 +1782,7 @@ impl World {
         self.reconcile_contacts();
         self.preserve_places();
         self.generation += 1;
+        self.advance_climate();
         let spoken = self.spoken();
         let areal = self.areal_targets();
         for (v, targets) in areal.iter().enumerate() {
@@ -1895,7 +1931,7 @@ impl World {
         }
     }
 
-    /// Famine, plague, or drought strikes some of the occupied lands,
+    /// Famine or plague strikes some of the occupied lands,
     /// killing a share of everyone living there. A people living on that
     /// land alone loses that share of itself; one spread over many lands
     /// loses only what lived there, so small peoples suffer worst.
@@ -1921,15 +1957,7 @@ impl World {
             if rng.r#gen::<f32>() >= self.params.hardship_rate {
                 continue;
             }
-            let dry = matches!(
-                self.map.regions[r].terrain,
-                Terrain::Steppe | Terrain::Desert
-            );
-            let kinds: &[Hardship] = if dry {
-                &[Hardship::Famine, Hardship::Plague, Hardship::Drought]
-            } else {
-                &[Hardship::Famine, Hardship::Plague]
-            };
+            let kinds = [Hardship::Famine, Hardship::Plague];
             let kind = kinds[crate::rng::index(&mut rng, kinds.len())];
             let share = rng.gen_range(0.2..0.5);
             for &(c, _) in &dwellers[r] {
@@ -2266,7 +2294,7 @@ impl World {
     /// own lands once they know of it: from a people they deal with,
     /// likelier the closer the dealings; herding from their own farming,
     /// since farmers keep animals; and, rarely, farming of their own accord
-    /// on open plain, as it began in a few places in the world.
+    /// on suitable plains or river valleys.
     fn adopt(&mut self) {
         let contacts = self.contact_index();
         for c in self.living().collect::<Vec<_>>() {
@@ -2284,7 +2312,12 @@ impl World {
                 Livelihood::Farming => {
                     options.push((Livelihood::Herding, None, self.params.adoption_rate / 2.0))
                 }
-                Livelihood::Foraging if self.map.regions[k.home()].terrain == Terrain::Plains => {
+                Livelihood::Foraging | Livelihood::Herding
+                    if self.map.regions[k.home()].terrain == Terrain::Plains
+                        || (self.map.river_regions[k.home()].is_some()
+                            && self.feeds(k.home(), Livelihood::Farming)
+                                >= ADOPT_GAIN * self.feeds(k.home(), own)) =>
+                {
                     options.push((
                         Livelihood::Farming,
                         None,
@@ -4711,7 +4744,7 @@ mod tests {
             .regions
             .iter()
             .enumerate()
-            .filter(|(_, r)| r.terrain == Terrain::Plains)
+            .filter(|(id, r)| r.terrain == Terrain::Plains && world.map.river_regions[*id].is_none())
             .map(|(r, _)| r)
             .take(2)
             .collect();
@@ -5770,7 +5803,11 @@ mod tests {
     #[test]
     fn peoples_spread_but_never_outgrow_what_their_lands_feed_them() {
         for seed in [8, 9, 10] {
-            let mut world = World::new(seed, Params::default());
+            let mut world = World::new(seed, Params {
+                growth_rate: Params::default().growth_rate,
+                spread_rate: Params::default().spread_rate,
+                ..Params::static_society()
+            });
             let design = SoundProfile::base();
             world.found_seeded(
                 &Naming::People,

@@ -66,8 +66,8 @@ pub enum Action {
         community: usize,
         toward: usize,
     },
-    /// A people organizes itself into a state, with its court at
-    /// `capital`, one of its lands, or its heart land if `None`.
+    /// A people organizes itself at `capital`, one of its lands, or its
+    /// best-fed held land if no capital is supplied.
     State {
         community: usize,
         #[serde(default, skip_serializing_if = "Option::is_none")]
