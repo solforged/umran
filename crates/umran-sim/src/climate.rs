@@ -308,9 +308,9 @@ impl World {
                 .is_some_and(|s| self.states[s].subjects().any(exposed))
     }
 
-    pub(crate) fn advance_climate(&mut self) {
+    pub(crate) fn advance_climate(&mut self) -> bool {
         if !self.params.climate_enabled {
-            return;
+            return false;
         }
         let changes = self.climate.advance(self.seed, self.generation, &self.map);
         self.climate.exposure.resize(self.communities.len(), None);
@@ -411,6 +411,9 @@ impl World {
         // Only threshold crossings need new sparse rows, not every rain change.
         if self.map.valley_flows_changed(&self.climate.flows) {
             std::sync::Arc::make_mut(&mut self.map).set_valley_flows(&self.climate.flows);
+            true
+        } else {
+            false
         }
     }
 }
@@ -567,5 +570,49 @@ mod tests {
             "dry {dry_moves}, quiet {quiet_moves}, cohort {cohort}"
         );
         assert!(exposed >= cohort * 3 / 4, "exposed {exposed}/{cohort}");
+    }
+
+    #[test]
+    fn drying_a_valley_ends_inaccessible_trade_before_words_are_borrowed() {
+        let mut world = World::new(0, Params {
+            climate_enabled: true, sound_change_rate: 0.0, innovation_rate: 0.0,
+            loan_rate: 0.0, ..Params::static_society()
+        });
+        let course = &world.map.rivers.iter().find(|r| r.course.len() >= 2).unwrap().course;
+        let (a, b) = (course[0], course[1]);
+        for (seed, region) in [(10, a), (20, b)] {
+            world.found_seeded(&Naming::People, &SoundProfile::base(), seed,
+                0.5, 1.0, Some(region), Some(Livelihood::Farming), None);
+        }
+        world.params.trade_reach = world.map.distance(a, b) * 1.001;
+        world.connect(0, 1, 1.0, crate::ContactKind::Trade).unwrap();
+        for zone in &mut world.climate.zones {
+            zone.remaining = 100;
+            zone.target_wetness = -0.7;
+            zone.cause = ClimateCause::Drought;
+        }
+        let borrowed = |world: &World| {
+            world.varieties.iter().any(|v| v.lexicon.lexemes.iter().any(|l| {
+                l.born == world.generation && matches!(l.origin, crate::Origin::Borrowed { .. })
+            }))
+        };
+        for _ in 0..20 {
+            let mut preview = world.clone();
+            preview.step();
+            if preview.map.distance(a, b) > world.params.trade_reach {
+                let mut quiet = world.clone();
+                quiet.params.climate_enabled = false;
+                quiet.params.loan_rate = 100.0;
+                quiet.step();
+                assert!(borrowed(&quiet), "reachable trade must carry a loan in this fixture");
+                world.params.loan_rate = 100.0;
+                world.step();
+                assert!(world.contacts.is_empty());
+                assert!(!borrowed(&world), "a dried route cannot carry loans during its closing generation");
+                return;
+            }
+            world = preview;
+        }
+        panic!("the drought did not close the valley route");
     }
 }

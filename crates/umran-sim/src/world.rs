@@ -1811,7 +1811,9 @@ impl World {
         self.reconcile_contacts();
         self.preserve_places();
         self.generation += 1;
-        self.advance_climate();
+        if self.advance_climate() {
+            self.reconcile_contacts();
+        }
         let spoken = self.spoken();
         let areal = self.areal_targets();
         for (v, targets) in areal.iter().enumerate() {
