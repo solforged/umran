@@ -11,6 +11,7 @@ use crate::{
 use serde::Serialize;
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
+use umran_sim::climate::{ClimateCause, ClimateChange};
 use umran_sim::concepts::Concept;
 use umran_sim::grammar::{Marker, MarkerKind, MarkerOrigin, NoticeKind, Side};
 use umran_sim::ideas::{NEEDS, Need};
@@ -29,7 +30,8 @@ pub(crate) struct Annal {
     /// "neighbours", "conquest", "spread", "displaced", "hardship",
     /// "livelihood", "ended", "rose", "fell", "standard", "classical",
     /// "vernacular", "craft", "faith", "conversion", "meaning",
-    /// "respelling", "schism", "pilgrimage", "holy-land", "temper", "grammar", or "law".
+    /// "respelling", "schism", "pilgrimage", "holy-land", "temper", "grammar",
+    /// "climate", "river-flow", or "law".
     pub kind: &'static str,
     /// The annalist's words. Words of the language are marked `*thus*`.
     pub text: String,
@@ -58,6 +60,13 @@ pub(crate) struct Annal {
     /// Structured grammatical change; absent for all other annal kinds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grammar: Option<GrammarAnnal>,
+    /// Climate zones and rivers it tells of, independently of land ids.
+    pub zones: Vec<usize>,
+    pub rivers: Vec<usize>,
+    /// The climate transition, without inferring deaths from yield loss.
+    pub climate: Option<Climate>,
+    #[serde(rename = "riverFlow")]
+    pub river_flow: Option<RiverFlow>,
 }
 
 /// A people's temper turning: a leaning reaching one of its ends
@@ -101,6 +110,23 @@ enum GrammarAnnalEvent {
         marker: u32,
         from: usize,
     },
+}
+
+#[derive(Clone, PartialEq, Serialize)]
+pub(crate) struct Climate {
+    pub zone: usize,
+    pub cause: ClimateCause,
+    pub change: ClimateChange,
+    pub severity: u8,
+    pub wetness: f32,
+    pub warmth: f32,
+}
+
+#[derive(Clone, PartialEq, Serialize)]
+pub(crate) struct RiverFlow {
+    pub river: usize,
+    pub cause: ClimateCause,
+    pub flowing: bool,
 }
 
 const TEMPER_ENTERED: &[&str] = &["{c}, the {p} grew {w}.", "{c}, the {p} turned {w}."];
@@ -280,6 +306,10 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
         crafts: Vec::new(),
         temper: None,
         grammar: None,
+        zones: Vec::new(),
+        rivers: Vec::new(),
+        climate: None,
+        river_flow: None,
     };
     for (position, &(generation, ref event)) in world.events.iter().enumerate() {
         let name = |c: usize| world.community_name_at(c, generation);
@@ -452,7 +482,6 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     match kind {
                         Hardship::Famine => FAMINE,
                         Hardship::Plague => PLAGUE,
-                        Hardship::Drought => DROUGHT,
                     },
                     &[
                         ("land", &place(world, region, generation)),
@@ -462,6 +491,32 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 &[],
                 &[region],
             ),
+            WorldEvent::Climate {
+                zone, cause, change, severity, wetness, warmth, ref lands, ref peoples,
+            } => {
+                let text = match change {
+                    ClimateChange::Onset => "The climate changed, reducing what the lands could feed.",
+                    ClimateChange::Worsening => "The lands could feed fewer people as conditions worsened.",
+                    ClimateChange::Recovery => "The lands began to recover their feeding capacity.",
+                };
+                let mut annal = entry(generation, "climate", text.into(), peoples, lands);
+                annal.zones.push(zone);
+                annal.climate = Some(Climate {
+                    zone, cause, change, severity, wetness, warmth,
+                });
+                annal
+            }
+            WorldEvent::RiverFlow { river, flowing, cause, ref lands, ref peoples } => {
+                let text = if flowing {
+                    "The river's flow recovered."
+                } else {
+                    "The river's flow weakened."
+                };
+                let mut annal = entry(generation, "river-flow", text.into(), peoples, lands);
+                annal.rivers.push(river);
+                annal.river_flow = Some(RiverFlow { river, cause, flowing });
+                annal
+            }
             WorldEvent::Adopted {
                 community,
                 livelihood,
@@ -870,6 +925,10 @@ fn state_annal(world: &World, generation: u32, state: usize, kind: &'static str)
         crafts: Vec::new(),
         temper: None,
         grammar: None,
+        zones: Vec::new(),
+        rivers: Vec::new(),
+        climate: None,
+        river_flow: None,
     }
 }
 
@@ -957,6 +1016,10 @@ fn vernacular_annal(world: &World, generation: u32, variety: usize, by: Vernacul
         crafts: Vec::new(),
         temper: None,
         grammar: None,
+        zones: Vec::new(),
+        rivers: Vec::new(),
+        climate: None,
+        river_flow: None,
     }
 }
 
@@ -1071,6 +1134,10 @@ fn faith_annal(world: &World, generation: u32, religion: usize) -> Annal {
         crafts: Vec::new(),
         temper: None,
         grammar: None,
+        zones: Vec::new(),
+        rivers: Vec::new(),
+        climate: None,
+        river_flow: None,
     }
 }
 
@@ -1160,11 +1227,6 @@ const FAMINE: &[&str] = &[
 const PLAGUE: &[&str] = &[
     "A plague swept through {land}, and {share} of its people died.",
     "Sickness came to {land} and carried off {share} of those who lived there.",
-];
-
-const DROUGHT: &[&str] = &[
-    "The rains failed in {land}, and {share} of its people died of thirst and hunger.",
-    "Drought lay on {land}; {share} of those who lived there perished.",
 ];
 
 const LEARNED: &[&str] = &[
@@ -1262,6 +1324,10 @@ fn spread_annal(world: &World, generation: u32, spreads: &[(usize, usize)]) -> A
         crafts: Vec::new(),
         temper: None,
         grammar: None,
+        zones: Vec::new(),
+        rivers: Vec::new(),
+        climate: None,
+        river_flow: None,
     }
 }
 
@@ -1364,6 +1430,10 @@ fn neighbours_annal(world: &World, generation: u32, n: &Neighbours) -> Annal {
         crafts: Vec::new(),
         temper: None,
         grammar: None,
+        zones: Vec::new(),
+        rivers: Vec::new(),
+        climate: None,
+        river_flow: None,
     }
 }
 
@@ -1481,6 +1551,10 @@ fn sound_changes(world: &World) -> Vec<Annal> {
                 crafts: Vec::new(),
                 temper: None,
                 grammar: None,
+                zones: Vec::new(),
+                rivers: Vec::new(),
+                climate: None,
+                river_flow: None,
             });
         }
     }
