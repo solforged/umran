@@ -16,6 +16,7 @@
   --loan: #2f4a8a;
   --coined: #8a5a0f;
   --event: #9b2c1c;
+  --faith: #7a4fa8;
   --serif: "EB Garamond", "Iowan Old Style", Palatino, Georgia, serif;
   --sans: "EB Garamond", "Iowan Old Style", Palatino, Georgia, serif;
   --mono: "Gentium Book Plus", "EB Garamond", Georgia, serif;
@@ -28,6 +29,14 @@
   --desk-ink: #d8c8a4;
   --vignette: rgb(120 80 30 / 0.22);
   --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.45 0 0 0 0 0.32 0 0 0 0 0.15 0 0 0 0.1 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+  /* Terrain washes: a pigment, and how much of it goes into the paper. */
+  --wash-plains: color-mix(in srgb, #b8a860 14%, var(--paper));
+  --wash-forest: color-mix(in srgb, #6f8a4a 18%, var(--paper));
+  --wash-steppe: color-mix(in srgb, #c9b060 18%, var(--paper));
+  --wash-hills: color-mix(in srgb, #a07e50 18%, var(--paper));
+  --wash-mountains: color-mix(in srgb, #7a6a5a 22%, var(--paper));
+  --wash-desert: color-mix(in srgb, #d9b46a 26%, var(--paper));
+  --claim-opacity: 0.16;
   color-scheme: light;
 }
 
@@ -48,12 +57,22 @@
     --loan: #93acea;
     --coined: #d9a54a;
     --event: #e07a52;
+    --faith: #b89be0;
     --gold: #d6aa48;
     --sea: #201b14;
     --desk: #110d08;
     --desk-ink: #b8a684;
     --vignette: rgb(0 0 0 / 0.5);
     --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.9 0 0 0 0 0.75 0 0 0 0 0.5 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+    /* Day's pigments vanish into dark paper; lamplight washes are
+       lighter and more distinct so the land still reads by its kind. */
+    --wash-plains: color-mix(in srgb, #9a9650 30%, var(--paper));
+    --wash-forest: color-mix(in srgb, #4a7a44 38%, var(--paper));
+    --wash-steppe: color-mix(in srgb, #b8a456 30%, var(--paper));
+    --wash-hills: color-mix(in srgb, #9c7446 36%, var(--paper));
+    --wash-mountains: color-mix(in srgb, #7a7482 38%, var(--paper));
+    --wash-desert: color-mix(in srgb, #d0ac5e 36%, var(--paper));
+    --claim-opacity: 0.24;
     color-scheme: dark;
   }
 }
@@ -72,12 +91,20 @@
   --loan: #93acea;
   --coined: #d9a54a;
   --event: #e07a52;
+  --faith: #b89be0;
   --gold: #d6aa48;
   --sea: #201b14;
   --desk: #110d08;
   --desk-ink: #b8a684;
   --vignette: rgb(0 0 0 / 0.5);
   --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.9 0 0 0 0 0.75 0 0 0 0 0.5 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+  --wash-plains: color-mix(in srgb, #9a9650 30%, var(--paper));
+  --wash-forest: color-mix(in srgb, #4a7a44 38%, var(--paper));
+  --wash-steppe: color-mix(in srgb, #b8a456 30%, var(--paper));
+  --wash-hills: color-mix(in srgb, #9c7446 36%, var(--paper));
+  --wash-mountains: color-mix(in srgb, #7a7482 38%, var(--paper));
+  --wash-desert: color-mix(in srgb, #d0ac5e 36%, var(--paper));
+  --claim-opacity: 0.24;
   color-scheme: dark;
 }
 
@@ -652,6 +679,18 @@ tbody tr.selected {
   margin: 0;
 }
 
+:root dialog.modal .modal-head h2::first-letter {
+  font-family: var(--initial);
+  font-variant: normal;
+  font-size: 1.45em;
+  line-height: 1;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border: 2px solid var(--gold);
+  padding: 0.02em 0.14em 0.06em;
+  margin-right: 0.08em;
+}
+
 .modal-foot {
   justify-content: flex-end;
   border-top: 1px solid var(--line);
@@ -731,6 +770,7 @@ tbody tr.selected {
 
 .designer-controls {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.75rem;
   min-width: 0;
 }
@@ -743,7 +783,7 @@ tbody tr.selected {
 }
 
 .designer-row label,
-.section > label {
+.section > label:not(.check) {
   display: grid;
   gap: 0.2rem;
 }
@@ -769,7 +809,12 @@ tbody tr.selected {
 }
 
 .chart-wrap {
+  min-width: 0;
   overflow-x: auto;
+}
+
+.chart-wrap.has-more {
+  mask-image: linear-gradient(to right, #000 calc(100% - 2rem), transparent);
 }
 
 .chart {
@@ -784,8 +829,14 @@ tbody tr.selected {
   letter-spacing: 0;
   position: static;
   background: none;
-  padding: 0.15rem 0.3rem;
-  white-space: nowrap;
+  padding: 0.15rem 0.2rem;
+  white-space: normal;
+}
+
+/* Place names wrap between words, never inside one. */
+.chart thead th {
+  font-size: 0.68rem;
+  vertical-align: bottom;
 }
 
 .chart tbody th {
@@ -794,18 +845,22 @@ tbody tr.selected {
 
 .chart td {
   border: 1px solid var(--line);
-  padding: 0.15rem;
+  padding: 0.1rem;
   vertical-align: top;
-  min-width: 2.4rem;
+  min-width: 1.8rem;
 }
 
-.chip {
+/* IPA keeps its own case: the chart's small-caps buttons would turn
+   a voiceless /ts/ into TS. */
+:root .chip {
   font-family: var(--mono);
   font-size: 0.9rem;
-  padding: 0.05rem 0.3rem;
+  font-variant: normal;
+  letter-spacing: 0;
+  padding: 0.05rem 0.15rem;
   margin: 0.05rem;
   border-radius: 4px;
-  min-width: 1.8rem;
+  min-width: 1.4rem;
 }
 
 .chip.off {
@@ -878,7 +933,8 @@ tbody tr.selected {
   border-radius: 8px;
   padding: 0.6rem 0.8rem;
   background: var(--paper-raised);
-  max-height: calc(100vh - 6rem);
+  /* Leave room for the modal body's padding and the sticky action row. */
+  max-height: calc(70vh - 6rem);
   overflow: auto;
 }
 
@@ -893,6 +949,7 @@ tbody tr.selected {
 
 table.preview td {
   padding: 0.1rem 0.4rem;
+  line-height: 1.05;
 }
 
 table.preview tr {
@@ -901,18 +958,20 @@ table.preview tr {
 }
 
 .designer-actions {
+  grid-column: 1 / -1;
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  background: var(--paper-raised);
+  border-top: 1px solid var(--line);
+  margin: 0 -1rem -1rem;
+  padding: 0.75rem 1rem;
   justify-content: flex-end;
-  margin-top: 0.75rem;
 }
 
 @media (max-width: 960px) {
   .designer {
     grid-template-columns: 1fr;
-  }
-
-  .designer-preview {
-    position: static;
-    max-height: none;
   }
 
   .knob {
@@ -1039,26 +1098,26 @@ table.preview tr {
   stroke: none;
 }
 .terrain-plains {
-  fill: color-mix(in srgb, #b8a860 14%, var(--paper));
+  fill: var(--wash-plains);
 }
 .terrain-forest {
-  fill: color-mix(in srgb, #6f8a4a 18%, var(--paper));
+  fill: var(--wash-forest);
 }
 .terrain-steppe {
-  fill: color-mix(in srgb, #c9b060 18%, var(--paper));
+  fill: var(--wash-steppe);
 }
 .terrain-hills {
-  fill: color-mix(in srgb, #a07e50 18%, var(--paper));
+  fill: var(--wash-hills);
 }
 .terrain-mountains {
-  fill: color-mix(in srgb, #7a6a5a 22%, var(--paper));
+  fill: var(--wash-mountains);
 }
 .terrain-desert {
-  fill: color-mix(in srgb, #d9b46a 26%, var(--paper));
+  fill: var(--wash-desert);
 }
 
 .claim {
-  fill-opacity: 0.16;
+  fill-opacity: var(--claim-opacity);
   pointer-events: none;
 }
 
@@ -1523,13 +1582,29 @@ button.icon,
   cursor: pointer;
 }
 
+/* The book mark is a quiet cue: it shows when the title is hovered,
+   focused, or already open, so a card's rubrics read as rubrics. */
 .leaf-title svg {
-  opacity: 0.6;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+
+.leaf-title:hover svg,
+.leaf-title:focus-visible svg,
+.leaf.open .leaf-title svg {
+  opacity: 0.7;
 }
 
 .leaf-title:hover,
+.leaf-title:focus-visible,
 .leaf.open .leaf-title {
   color: var(--accent);
+}
+
+@media (hover: none) {
+  .leaf-title svg {
+    opacity: 0.5;
+  }
 }
 
 .leaf-summary p {
@@ -2085,11 +2160,20 @@ button.icon,
   stroke-width: 6;
 }
 
+.family-tree .axis line {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
 .family-tree .axis text {
   font-size: 9px;
   fill: var(--ink-soft);
-  text-anchor: start;
+  text-anchor: middle;
   cursor: default;
+}
+
+.family-tree .axis text[text-anchor="start"] {
+  text-anchor: start;
 }
 
 .family-tree .axis text[text-anchor="end"] {
@@ -2525,4 +2609,56 @@ button.chronicle-latest:hover {
     border-top: 1px solid var(--line);
     border-left: 0;
   }
+}
+
+/* Popovers */
+.popover-panel {
+  position: fixed;
+  z-index: 40;
+  min-width: 12rem;
+  max-width: min(24rem, calc(100vw - 1rem));
+  max-height: calc(100vh - 1rem);
+  overflow: auto;
+  padding: 0.35rem;
+  background: var(--paper-raised);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+}
+
+:root .popover-panel button {
+  border-color: var(--line);
+  font-variant: normal;
+  letter-spacing: normal;
+}
+
+:root .popover-panel[role="menu"] > button,
+:root .popover-panel[role="menu"] > label {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  border: 0;
+  border-radius: 2px;
+  background: none;
+  text-align: left;
+  font: inherit;
+  font-variant: normal;
+  letter-spacing: normal;
+}
+
+:root .popover-panel[role="menu"] > :is(button, label):is(:hover, :focus-visible) {
+  background: var(--accent-mute);
+}
+
+.popover-panel[role="menu"] > [disabled] {
+  opacity: 0.5;
+}
+
+.popover-panel hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 0.3rem 0;
 }

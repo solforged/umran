@@ -34,7 +34,7 @@ import { Told } from "./Told";
 import { Dictionary, INITIAL_DICTIONARY, type DictionaryView } from "./Dictionary";
 import { peoplesByRegion, riverLength } from "./MapView";
 import { Specimen } from "./Specimen";
-import { DescentChart, FamilyTree, type Lineage } from "./FamilyTree";
+import { DescentChart, FamilyForest, FamilyTree, type Lineage } from "./FamilyTree";
 import { WordGloss } from "./WordGloss";
 import { Renderings } from "./Renderings";
 import { closeClosingDialogs, emphasizeInk, reducedMotion, useLiftedValue } from "../motion";
@@ -1202,15 +1202,11 @@ function FamilyTrees({ context }: { context: Context }) {
         </p>
       }
     >
-      {families.map((f) => (
-        <FamilyTree
-          key={f}
-          overview={overview}
-          family={f}
-          chosen={-1}
-          onOpen={(id) => context.go({ kind: "language", variety: id })}
-        />
-      ))}
+      <FamilyForest
+        overview={overview}
+        families={families}
+        onOpen={(id) => context.go({ kind: "language", variety: id })}
+      />
     </Leaf>
   );
 }

@@ -1,0 +1,147 @@
+.timeline {
+  position: relative;
+  width: 100%;
+  user-select: none;
+  touch-action: none;
+}
+
+.timeline:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.timeline-track,
+.timeline-ruler {
+  position: relative;
+}
+
+.timeline-track.main {
+  height: 18px;
+}
+
+.timeline-track.sounds {
+  height: 8px;
+}
+
+:root .timeline .mark {
+  position: absolute;
+  bottom: 0;
+  height: 10px;
+  transform: translate(-50%, calc(var(--stack, 0) * -7px));
+  transform-origin: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  line-height: 0;
+  font-variant: normal;
+  letter-spacing: normal;
+  cursor: pointer;
+}
+
+:root .timeline .mark:is(:hover, :focus-visible) {
+  transform: translate(-50%, calc(var(--stack, 0) * -7px)) scale(1.4);
+  z-index: 1;
+}
+
+.timeline .mark svg {
+  display: block;
+  fill: currentColor;
+}
+
+.timeline .mark-found,
+.timeline .mark-split {
+  color: var(--accent);
+}
+
+.timeline .mark-shift {
+  color: var(--loan);
+}
+
+.timeline .mark-conquest,
+.timeline .mark-rose,
+.timeline .mark-fell {
+  color: var(--gold);
+}
+
+.timeline .mark-fell svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.timeline .mark-craft {
+  color: var(--coined);
+}
+
+.timeline .mark-faith {
+  color: var(--faith, #a07cc8);
+}
+
+:root .timeline .mark-more {
+  color: var(--ink-soft);
+  font-size: 0.68rem;
+  line-height: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline .sound {
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  height: 6px;
+  background: var(--ink-soft);
+  opacity: calc(0.35 + 0.15 * min(var(--count), 4));
+}
+
+.timeline .ahead {
+  opacity: 0.35;
+}
+
+.timeline-ruler {
+  height: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.timeline-tick {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 3px;
+  background: var(--line);
+}
+
+.timeline-tick small {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  transform: translateX(-50%);
+  color: var(--ink-soft);
+  font-size: 0.68rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline-tick:first-child small {
+  transform: none;
+}
+
+.timeline-cursor {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--ink);
+  pointer-events: none;
+}
+
+.timeline-cursor::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 6px;
+  height: 5px;
+  background: var(--accent);
+  clip-path: polygon(0 0, 100% 0, 70% 50%, 100% 100%, 0 100%);
+}

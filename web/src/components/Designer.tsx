@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { frequencyDesign, presetDesign, preview } from "../engine";
 import type { Catalog, LanguageDesign, LongVowelStyle, Naming, SoundInfo } from "../model";
 import { NamingSelect } from "./NamingSelect";
@@ -43,6 +43,22 @@ export function Designer({
   const [power, setPower] = useState(initial?.power ?? 0.5);
   const [openness, setOpenness] = useState(initial?.openness ?? 0.5);
   const result = useMemo(() => preview(design, seed, naming), [design, seed, naming]);
+  const chartRef = useRef<HTMLDivElement>(null);
+  const [moreSounds, setMoreSounds] = useState(false);
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const update = () => setMoreSounds(chart.scrollWidth - chart.clientWidth - chart.scrollLeft > 1);
+    const observer = new ResizeObserver(update);
+    observer.observe(chart);
+    if (chart.firstElementChild) observer.observe(chart.firstElementChild);
+    chart.addEventListener("scroll", update);
+    update();
+    return () => {
+      observer.disconnect();
+      chart.removeEventListener("scroll", update);
+    };
+  }, []);
   const set = (patch: Partial<LanguageDesign>) => setDesign((d) => ({ ...d, ...patch }));
 
   const state = (ipa: string) => design.sounds.find((s) => s.ipa === ipa);
@@ -147,7 +163,7 @@ export function Designer({
 
         <Section title={`Consonants · ${sounds - chosenVowels} chosen`}>
           <p className="muted small">Click a sound: not used → used → favoured. Favoured sounds appear more often and sound changes lean toward them.</p>
-          <div className="chart-wrap">
+          <div ref={chartRef} className={`chart-wrap${moreSounds ? " has-more" : ""}`}>
             <table className="chart">
               <thead>
                 <tr>
@@ -326,17 +342,17 @@ export function Designer({
             ) : null}
           </>
         )}
-        <div className="row designer-actions">
-          {onCancel ? (
-            <button type="button" onClick={onCancel}>
-              Cancel
-            </button>
-          ) : null}
-          <button type="submit" className="primary" disabled={typeof result === "string"}>
-            {submit}
-          </button>
-        </div>
       </aside>
+      <div className="row designer-actions">
+        {onCancel ? (
+          <button type="button" onClick={onCancel}>
+            Cancel
+          </button>
+        ) : null}
+        <button type="submit" className="primary" disabled={typeof result === "string"}>
+          {submit}
+        </button>
+      </div>
     </form>
   );
 }
