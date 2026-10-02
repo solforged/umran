@@ -177,7 +177,9 @@ export function ActionDialog({
           </>
         );
       case "connect":
-        return (
+        return communities.length < 2 ? (
+          <p className="muted">There is no other living people to meet. Let a people part, or wait for one to.</p>
+        ) : (
           <>
             {pick("Community", community, setCommunity)}
             {pick("With", other, setOther, community)}
@@ -201,7 +203,9 @@ export function ActionDialog({
           </>
         );
       case "shift":
-        return (
+        return communities.length < 2 ? (
+          <p className="muted">There is no other living people whose language they could take up.</p>
+        ) : (
           <>
             {pick("Community", community, setCommunity)}
             {pick("Adopts the language of", other, setOther, community)}
