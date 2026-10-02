@@ -318,7 +318,8 @@ impl World {
         let index = self.states.len();
         let mut rng = stream(self.seed, &[key("state"), index as u64]);
         // Most standards take words freely; a few guard against them.
-        let purism = rng.r#gen::<f32>().powi(2);
+        let draw = rng.r#gen::<f32>();
+        let purism = draw * draw;
         let stock = &self.varieties[self.communities[rulers].variety].given;
         let founder = match stock.len() {
             0 => self.communities[rulers].name.clone(),

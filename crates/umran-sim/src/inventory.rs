@@ -22,7 +22,7 @@ const USAGE_TYPICALITY: f32 = 0.7;
 /// Frequency multiplier relative to a segment found in half of all
 /// languages, raised to `strength`.
 fn typicality(id: PhonemeId, strength: f32) -> f32 {
-    (crate::typology::share(id) / 0.5).powf(strength)
+    crate::math::pow(crate::typology::share(id) / 0.5, strength)
 }
 
 /// Score for a manner or height a prior does not list.
@@ -154,7 +154,7 @@ pub fn preference(prior: &InventoryPrior, id: PhonemeId) -> f32 {
     if prior.forbidden.iter().any(|f| f == seg.ipa()) {
         FORBIDDEN_SCORE
     } else {
-        score(prior, seg) + CHANGE_TYPICALITY * (crate::typology::share(id) / 0.5).ln()
+        score(prior, seg) + CHANGE_TYPICALITY * crate::math::ln(crate::typology::share(id) / 0.5)
     }
 }
 

@@ -62,7 +62,8 @@ impl MinimalWord {
     /// Languages whose roots are mostly disyllabic tend to require two
     /// syllables; the rest usually require a heavy one.
     pub fn draw(disyllabic_roots: f32, rng: &mut impl Rng) -> Self {
-        let two = disyllabic_roots.clamp(0.0, 1.0).powi(2);
+        let roots = disyllabic_roots.clamp(0.0, 1.0);
+        let two = roots * roots;
         if rng.r#gen::<f32>() < two {
             Self::TwoSyllables
         } else if rng.r#gen::<f32>() < LIGHT_SHARE {

@@ -146,7 +146,7 @@ impl Concept {
     /// ranks were derived from WOLD borrowing data at the meaning level.
     pub fn borrowability(&self) -> f32 {
         match (self.stability, self.tier) {
-            (Some(rank), _) => 0.02 * 7.5_f32.powf(f32::from(rank - 1) / 99.0),
+            (Some(rank), _) => 0.02 * crate::math::pow(7.5, f32::from(rank - 1) / 99.0),
             (None, Some(Tier::Basic)) => 0.25,
             (None, Some(Tier::Everyday)) => 0.6,
             (None, Some(Tier::Specialized)) | (None, None) => 1.0,

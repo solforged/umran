@@ -3,6 +3,8 @@
 //! competition, splits, and language shift. See AGENTS.md for the model
 //! and the design doc it links for plans and results.
 
+#![deny(clippy::disallowed_methods)]
+
 pub mod adapt;
 pub mod change;
 pub mod chronicle;
@@ -19,6 +21,7 @@ pub mod inventory;
 pub mod laws;
 pub mod lexicon;
 pub mod livelihood;
+mod math;
 pub mod morphology;
 pub mod names;
 pub mod palettes;

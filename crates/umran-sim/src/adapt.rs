@@ -200,7 +200,7 @@ impl Adapter {
     /// 0–1: how readily speakers keep a foreign segment, a logistic curve
     /// on their preference score centred where inventories stop sampling.
     fn acceptance(&self, id: PhonemeId) -> f32 {
-        1.0 / (1.0 + (-(preference(&self.prior, id) - ACCEPTANCE_MIDPOINT)).exp())
+        1.0 / (1.0 + crate::math::exp(-(preference(&self.prior, id) - ACCEPTANCE_MIDPOINT)))
     }
 
     fn nearest(&self, id: PhonemeId) -> PhonemeId {

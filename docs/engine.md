@@ -3,6 +3,12 @@
 How `crates/umran-sim` models language change. The rules that must
 always hold are summarized in `AGENTS.md`; this is the fuller picture.
 
+Histories replay identically natively and in WASM on the same engine
+revision. Transcendental math goes through `math.rs`, using `libm` rather
+than std float methods whose last bits can differ between targets.
+Clippy bans those methods; basic arithmetic and square roots stay native,
+and integer squares use explicit multiplication.
+
 - `World` (`world.rs`) steps communities, varieties, and contacts through
   25-year generations. `Variety` holds a `SoundProfile` and a `Lexicon` of
   `Slot`s, where words compete for each concept with usage weights. Words

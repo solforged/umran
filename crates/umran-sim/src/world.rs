@@ -1252,7 +1252,7 @@ impl World {
                 -1.0
             };
             let rate = self.params.growth_rate * self.communities[c].livelihood.growth();
-            self.communities[c].size *= (rate * room + noise).exp();
+            self.communities[c].size *= crate::math::exp(rate * room + noise);
         }
         self.hard_times(occupied.keys().copied().collect());
         for &c in &living {
@@ -1267,13 +1267,13 @@ impl World {
         let n = living.len() as f32;
         let mean = living
             .iter()
-            .map(|&c| self.communities[c].size.ln())
+            .map(|&c| crate::math::ln(self.communities[c].size))
             .sum::<f32>()
             / n;
         for c in living {
             let might = self.might(c);
             let community = &mut self.communities[c];
-            let relative = self.params.size_prestige * (community.size.ln() - mean);
+            let relative = self.params.size_prestige * (crate::math::ln(community.size) - mean);
             community.prestige = (community.power + relative + might).clamp(0.0, 1.0);
         }
     }
@@ -2756,7 +2756,8 @@ impl World {
     /// Per-generation chance that `concept` gains a native competitor.
     pub fn innovation_hazard(&self, concept: &Concept) -> f32 {
         let rank = concept.stability.map_or(CULTURAL_RANK, f32::from);
-        self.params.innovation_rate * self.params.stability_spread.powf((rank - 50.5) / 99.0)
+        self.params.innovation_rate
+            * crate::math::pow(self.params.stability_spread, (rank - 50.5) / 99.0)
     }
 
     /// Maybe applies one new sound law to every living word. Laws that
@@ -2784,9 +2785,10 @@ impl World {
                     variety.stress(),
                 )?;
                 let areal: f32 = areal.iter().map(|(target, w)| w * a.toward(target)).sum();
-                let bias = (self.params.preference_pull * a.pull.clamp(-5.0, 3.0)
-                    + self.params.areal_pull * areal)
-                    .exp();
+                let bias = crate::math::exp(
+                    self.params.preference_pull * a.pull.clamp(-5.0, 3.0)
+                        + self.params.areal_pull * areal,
+                );
                 Some((law, law.commonness * bias))
             })
             .collect();
@@ -2938,9 +2940,9 @@ impl World {
                         variety.minimal,
                         variety.stress(),
                     )?;
-                    let taste = (self.params.preference_pull * a.pull.clamp(-5.0, 3.0))
-                        .exp()
-                        .min(3.0);
+                    let taste =
+                        crate::math::exp(self.params.preference_pull * a.pull.clamp(-5.0, 3.0))
+                            .min(3.0);
                     Some((law, from, h * taste))
                 })
                 .collect();
@@ -3096,7 +3098,7 @@ impl World {
             let base = self.params.loan_rate
                 * channel.intensity
                 * r.openness
-                * (self.params.prestige_pull * (channel.prestige - r.prestige)).exp()
+                * crate::math::exp(self.params.prestige_pull * (channel.prestige - r.prestige))
                 * if levelled { LEVELLING } else { 1.0 }
                 * (1.0 - self.purism(r.variety));
             let keep_foreign = self.params.bilingual_keep * channel.intensity * r.openness;

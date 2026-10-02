@@ -1000,7 +1000,8 @@ impl World {
                         Some(_) => RIVAL,
                         None => 1.0,
                     };
-                    let pull = (self.params.prestige_pull * (other.prestige - k.prestige)).exp();
+                    let pull =
+                        crate::math::exp(self.params.prestige_pull * (other.prestige - k.prestige));
                     let w = self.params.conversion_rate * intensity * carried * open * rival * pull;
                     Some((o, r, w))
                 })

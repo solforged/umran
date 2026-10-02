@@ -61,6 +61,8 @@ rules. Bun manages frontend dependencies; Rust is pinned in
 - Draw indices with `rng::index`, never `gen_range` over `usize`: `usize`
   ranges sample 64 bits natively but 32 in WASM, so histories would differ
   between tests and the browser.
+- Use `math.rs`'s `libm` functions for transcendental math, never std float
+  methods, so native and WASM histories match.
 - Sound laws apply regularly to every living word and name, never to
   obsolete words, never delete a word's last vowel, and never wear a word
   below its language's minimal word.

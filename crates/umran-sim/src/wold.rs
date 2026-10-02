@@ -67,7 +67,14 @@ pub fn spearman(pairs: &[(f32, f32)]) -> f32 {
         .zip(&ry)
         .map(|(a, b)| (a - mean) * (b - mean))
         .sum();
-    let var = |r: &[f32]| r.iter().map(|a| (a - mean).powi(2)).sum::<f32>();
+    let var = |r: &[f32]| {
+        r.iter()
+            .map(|a| {
+                let delta = a - mean;
+                delta * delta
+            })
+            .sum::<f32>()
+    };
     cov / (var(&rx) * var(&ry)).sqrt()
 }
 
