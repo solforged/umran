@@ -436,7 +436,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     generation,
                     "koine",
                     format!(
-                        "In {} the speech of many peoples ran together, and its townsfolk, the {}, came to speak {} of their own.",
+                        "In {} the speech of many peoples ran together, and its townsfolk, the {}, came to speak a tongue of their own, {}.",
                         place(world, city.region, generation),
                         name(community),
                         world.language_title_at(variety, generation),

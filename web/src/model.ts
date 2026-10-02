@@ -158,6 +158,26 @@ export interface MemberView {
   left: number | null;
 }
 
+/// A great city: a state's capital once its people passed the threshold.
+export interface CityView {
+  id: number;
+  state: number;
+  region: number;
+  name: NameView;
+  size: number;
+  /// The generation it became a great city.
+  since: number;
+  /// The people its townsfolk became, once their speech was their own.
+  townsfolk: number | null;
+  /// What its people speak now, largest share first.
+  makeup: Share[];
+}
+
+export interface Share {
+  variety: number;
+  share: number;
+}
+
 export interface StateView {
   id: number;
   name: string;
@@ -302,6 +322,9 @@ export interface Variety {
   meaning: string;
   parent: number | null;
   forkedAt: number | null;
+  /// The languages a city's townsfolk levelled into this one, and each
+  /// one's share of the city then, largest first; null if it is no koiné.
+  koineOf: Share[] | null;
   family: number;
   spoken: boolean;
   /// The generation it arose: founded, parted from its parent, or taken up
@@ -388,6 +411,8 @@ export interface Overview {
   communities: Community[];
   varieties: Variety[];
   states: StateView[];
+  /// Every great city that has grown, standing or fallen.
+  cities: CityView[];
   religions: ReligionView[];
   crafts: CraftView[];
   contacts: Contact[];
@@ -480,7 +505,7 @@ export interface TellingView {
 /// One chronicle entry; `variety` is set for a sound law.
 export interface Annal {
   generation: number;
-  kind: "found" | "split" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land";
+  kind: "found" | "split" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine";
   /// The annalist's words; words of the language are marked *thus*.
   text: string;
   /// The apparatus: what a linguist would note, such as sound laws.

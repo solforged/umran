@@ -5,6 +5,8 @@
 
 import {
   AudioLines,
+  Blend,
+  Castle,
   CircleX,
   CloudRain,
   Crown,
@@ -62,6 +64,8 @@ export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string 
   schism: { icon: Split, name: "A faith divides" },
   pilgrimage: { icon: Route, name: "Pilgrims cross the sea" },
   "holy-land": { icon: MapPinned, name: "A holy land changes hands" },
+  city: { icon: Castle, name: "A great city grows" },
+  koine: { icon: Blend, name: "A city's speech forms" },
 };
 
 export const TERRAIN_NAME: Record<Terrain, string> = {
@@ -225,6 +229,8 @@ export const TERMS = {
     "The extra force one syllable of a word gets. Where it falls shapes sound change: unstressed vowels weaken and drop, as Latin calidus became Italian caldo.",
   geminate:
     "A long, or doubled, consonant, as the tt in Italian fatto “done”. Many arise when one consonant assimilates to the next, as Latin factum became fatto.",
+  koiné:
+    "The new speech that forms where speakers of related dialects or languages crowd together, keeping what most of them share and dropping what few do. Hellenistic Greek and early London English formed this way.",
   diglossia:
     "Two forms of one language for different purposes: a fixed, written high form for law, worship, and learning, and the everyday speech everyone grows up with. Latin beside the early Romance languages and Classical Arabic beside the spoken dialects are examples.",
   "classical language":

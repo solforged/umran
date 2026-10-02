@@ -1272,7 +1272,7 @@ function StateCard({ state, context }: { state: StateView; context: Context }) {
         ["Rulers", <PeopleLink c={rulers} context={context} />],
         ["Founder", <><span className="word">{state.founder.name}</span>, “{state.founder.meaning}” <span className="ipa">/{state.founder.ipa}/</span></>],
         ["Capital", <LandLink region={state.capital} context={context} />],
-        ["City", `${Math.round(state.city).toLocaleString()} souls`],
+        ["City", <GreatCity state={state} context={context} />],
         ["Arose", <>year <Year generation={state.rose} context={context} />, {RISE_NAME[state.rise]}</>],
         ["Fell", state.fell === null ? null : (
           <>year <Year generation={state.fell} context={context} />{state.fall ? `, ${FALL_NAME[state.fall]}` : ""}
@@ -1306,6 +1306,26 @@ function StateCard({ state, context }: { state: StateView; context: Context }) {
           {state.fell === null ? "draws" : "drew"} kindred dialects towards it through <Explained term="dialect levelling">dialect levelling</Explained>.</>}
       </p>
       <StoryLeaf title="Its story" annals={told} context={context} />
+    </>
+  );
+}
+
+/// A state's capital city: its number, and once great, its name and
+/// whose speech fills its streets.
+function GreatCity({ state, context }: { state: StateView; context: Context }) {
+  const { overview } = context;
+  const city = overview.cities.findLast((c) => c.state === state.id);
+  const souls = `${Math.round(city?.size ?? state.city).toLocaleString()} souls`;
+  if (!city) return <>{souls}</>;
+  const townsfolk = city.townsfolk === null ? null : overview.communities[city.townsfolk];
+  return (
+    <>
+      <span className="word">{city.name.name}</span>, “{city.name.meaning}”, {souls}, great since year{" "}
+      <Year generation={city.since} context={context} />; its people speak{" "}
+      <Joined items={city.makeup.slice(0, 3)}
+        link={(m) => <><LanguageLink variety={m.variety} context={context} /> {Math.round(m.share * 100)}%</>} />
+      {townsfolk ? <>; its townsfolk, the <PeopleLink c={townsfolk} context={context} />, speak a{" "}
+        <Explained term="koiné">koiné</Explained> of their own</> : null}
     </>
   );
 }
@@ -1530,6 +1550,12 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
             <><Explained term="spelling vs pronunciation">{respelled ? "last respelled" : "written"}</Explained>{" "}
               {respelled ? "in" : "since"} year <Year generation={v.written} context={context} /></>],
           ["Name style", v.nameStyle === "double" ? <Explained term="dithematic name">two-part names</Explained> : "one-word names"],
+          ["Formed as", v.koineOf === null ? null : (
+            <>a <Explained term="koiné">koiné</Explained> of{" "}
+              <Joined items={v.koineOf}
+                link={(m) => <><LanguageLink variety={m.variety} context={context} /> {Math.round(m.share * 100)}%</>} />
+            </>
+          )],
           [
             "Parent",
             v.parent === null ? null : (
