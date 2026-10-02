@@ -117,11 +117,10 @@ saving.
 
 ## Install and use offline
 
-Umran is a progressive web app. Open it online once and wait for
-"Umran is ready offline"; the app and its WebAssembly engine can then
-reopen and run without a connection.
+Umran is a progressive web app. After one online visit, the app and its
+WebAssembly engine can reopen and run without a connection.
 
-- **Chrome or Edge:** choose "Install Umran" when offered, or use the
+- **Chrome or Edge:** use the install icon in the address bar or the
   browser's install menu.
 - **iPhone or iPad:** open it in Safari, then choose Share → Add to Home
   Screen.
