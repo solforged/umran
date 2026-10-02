@@ -768,7 +768,7 @@ mod tests {
             5,
             0.5,
             0.5,
-            None,
+            Some(direct.communities[0].home()),
             None,
             None,
         );
@@ -903,19 +903,32 @@ mod tests {
         let mut c = Chronicle::new(7, MapSize::Medium);
         let map = &c.latest().map;
         let shores: Vec<_> = (0..map.regions.len()).filter(|&r| map.coastal(r)).collect();
-        let (a, b) = shores.iter().find_map(|&a| shores.iter().find_map(|&b| {
-            (map.overseas(a, b) && map.voyage(a, b).is_finite()).then_some((a, b))
-        })).unwrap();
+        let (a, b) = shores
+            .iter()
+            .find_map(|&a| {
+                shores.iter().find_map(|&b| {
+                    (map.overseas(a, b) && map.voyage(a, b).is_finite()).then_some((a, b))
+                })
+            })
+            .unwrap();
         for region_id in [a, b] {
             let mut action = found("Coast", "familiar");
-            if let Action::Found { region, .. } = &mut action { *region = Some(region_id); }
+            if let Action::Found { region, .. } = &mut action {
+                *region = Some(region_id);
+            }
             c.act(action).unwrap();
         }
         let before = c.latest().clone();
         let recipe = c.recipe();
-        assert!(c.act(Action::Connect {
-            a: 0, b: 1, intensity: 0.8, contact: ContactKind::Rule,
-        }).is_err());
+        assert!(
+            c.act(Action::Connect {
+                a: 0,
+                b: 1,
+                intensity: 0.8,
+                contact: ContactKind::Rule,
+            })
+            .is_err()
+        );
         assert_eq!(c.recipe(), recipe);
         assert_eq!(c.latest().communities, before.communities);
         assert_eq!(c.latest().events, before.events);

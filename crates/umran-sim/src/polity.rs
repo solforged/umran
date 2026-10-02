@@ -760,7 +760,9 @@ mod tests {
         let rulers = found_at(&mut world, home, 0.9);
         let parent = found_at(&mut world, home, 0.6);
         let daughter = found_at(&mut world, overseas, 0.3);
-        world.connect(rulers, parent, 0.8, ContactKind::Rule).unwrap();
+        world
+            .connect(rulers, parent, 0.8, ContactKind::Rule)
+            .unwrap();
         let state = world.rules(rulers).unwrap();
         world.communities[parent].crafts.push(Craft::Seafaring);
         assert!(world.can_rule(parent, daughter));
@@ -768,10 +770,16 @@ mod tests {
 
         world.inherit_state(parent, daughter);
         assert_eq!(world.state_of(daughter), None);
-        assert_eq!(world.states[state].subjects().collect::<Vec<_>>(), vec![parent]);
-        assert!(!world.contacts.iter().any(|k| {
-            k.kind == ContactKind::Rule && (k.a == daughter || k.b == daughter)
-        }));
+        assert_eq!(
+            world.states[state].subjects().collect::<Vec<_>>(),
+            vec![parent]
+        );
+        assert!(
+            !world
+                .contacts
+                .iter()
+                .any(|k| { k.kind == ContactKind::Rule && (k.a == daughter || k.b == daughter) })
+        );
 
         world.communities[rulers].crafts.push(Craft::Seafaring);
         world.inherit_state(parent, daughter);
@@ -787,22 +795,34 @@ mod tests {
         let remote = found_at(&mut world, overseas, 0.3);
         let local = found_at(&mut world, home, 0.2);
         world.communities[rulers].crafts.push(Craft::Seafaring);
-        world.connect(rulers, remote, 0.8, ContactKind::Rule).unwrap();
-        world.connect(rulers, local, 0.8, ContactKind::Rule).unwrap();
+        world
+            .connect(rulers, remote, 0.8, ContactKind::Rule)
+            .unwrap();
+        world
+            .connect(rulers, local, 0.8, ContactKind::Rule)
+            .unwrap();
         let old = world.rules(rulers).unwrap();
 
-        world.connect(conquerors, rulers, 0.8, ContactKind::Rule).unwrap();
+        world
+            .connect(conquerors, rulers, 0.8, ContactKind::Rule)
+            .unwrap();
         let new = world.rules(conquerors).unwrap();
         assert_eq!(
             world.states[old].fell.map(|(_, how)| how),
             Some(Fall::Conquered { by: conquerors })
         );
         assert_eq!(world.states[old].subjects().count(), 0);
-        assert_eq!(world.states[new].subjects().collect::<Vec<_>>(), vec![rulers, local]);
+        assert_eq!(
+            world.states[new].subjects().collect::<Vec<_>>(),
+            vec![rulers, local]
+        );
         assert_eq!(world.state_of(remote), None);
-        assert!(!world.contacts.iter().any(|k| {
-            k.kind == ContactKind::Rule && (k.a == remote || k.b == remote)
-        }));
+        assert!(
+            !world
+                .contacts
+                .iter()
+                .any(|k| { k.kind == ContactKind::Rule && (k.a == remote || k.b == remote) })
+        );
     }
 
     #[test]
@@ -811,27 +831,35 @@ mod tests {
         let rulers = found_at(&mut world, home, 0.9);
         let subject = found_at(&mut world, overseas, 0.3);
         world.communities[rulers].crafts.push(Craft::Seafaring);
-        world.connect(rulers, subject, 0.8, ContactKind::Rule).unwrap();
+        world
+            .connect(rulers, subject, 0.8, ContactKind::Rule)
+            .unwrap();
         let state = world.rules(rulers).unwrap();
         assert_eq!(world.nearness(rulers, subject), 0.0);
 
         world.leave(state, subject);
         assert_eq!(world.ruled_by(subject), None);
         assert_eq!(world.states[state].members[0].left, Some(world.generation));
-        assert!(!world.contacts.iter().any(|k| {
-            (k.a, k.b) == (rulers, subject) || (k.a, k.b) == (subject, rulers)
-        }));
+        assert!(
+            !world
+                .contacts
+                .iter()
+                .any(|k| { (k.a, k.b) == (rulers, subject) || (k.a, k.b) == (subject, rulers) })
+        );
 
         world.communities[subject].lands = vec![home];
-        world.connect(rulers, subject, 0.8, ContactKind::Rule).unwrap();
+        world
+            .connect(rulers, subject, 0.8, ContactKind::Rule)
+            .unwrap();
         world.leave(state, subject);
-        let contact = world.contacts.iter().find(|k| {
-            (k.a, k.b) == (rulers, subject) || (k.a, k.b) == (subject, rulers)
-        }).expect("shared land retains neighbour contact");
+        let contact = world
+            .contacts
+            .iter()
+            .find(|k| (k.a, k.b) == (rulers, subject) || (k.a, k.b) == (subject, rulers))
+            .expect("shared land retains neighbour contact");
         assert_eq!(contact.kind, ContactKind::Neighbours);
         assert_eq!(contact.intensity, 0.4);
     }
-
 
     #[test]
     fn a_standard_levels_its_kindred_dialects() {

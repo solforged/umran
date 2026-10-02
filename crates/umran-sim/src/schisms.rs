@@ -435,9 +435,13 @@ impl World {
     pub fn pilgrim_path(&self, community: usize, to: usize) -> Option<Vec<usize>> {
         let reach = self.params.pilgrimage_reach;
         let journey = self.journey_to_within(community, to, reach)?;
-        let from = self.communities[community].lands.iter().copied().find(|&r| {
-            row_distance(&route_row(&self.map, r, reach, journey.by_sea), to) == journey.effort
-        })?;
+        let from = self.communities[community]
+            .lands
+            .iter()
+            .copied()
+            .find(|&r| {
+                row_distance(&route_row(&self.map, r, reach, journey.by_sea), to) == journey.effort
+            })?;
         self.map.route_path(from, to, journey.by_sea, reach)
     }
 
@@ -449,28 +453,54 @@ impl World {
             routes.retain(|p| {
                 if !self.communities[p.people].living()
                     || self.communities[p.people].faith != Some(religion)
-                    || !self.communities[p.people].lands.contains(&p.from) {
+                    || !self.communities[p.people].lands.contains(&p.from)
+                {
                     return false;
                 }
-                let by_sea = p.path.iter().any(|&r| !self.map.regions[r].terrain.is_land());
-                let effort = if by_sea && self.sails(p.people) { self.map.voyage(p.from, p.to) }
-                    else if !by_sea { self.map.distance(p.from, p.to) }
-                    else { f32::INFINITY };
+                let by_sea = p
+                    .path
+                    .iter()
+                    .any(|&r| !self.map.regions[r].terrain.is_land());
+                let effort = if by_sea && self.sails(p.people) {
+                    self.map.voyage(p.from, p.to)
+                } else if !by_sea {
+                    self.map.distance(p.from, p.to)
+                } else {
+                    f32::INFINITY
+                };
                 effort <= self.params.pilgrimage_reach
             });
-            let shrines: Vec<_> = self.religions[religion].shrines().map(|s| s.region).collect();
-            let faithful: Vec<_> = self.living()
-                .filter(|&c| self.communities[c].faith == Some(religion)).collect();
+            let shrines: Vec<_> = self.religions[religion]
+                .shrines()
+                .map(|s| s.region)
+                .collect();
+            let faithful: Vec<_> = self
+                .living()
+                .filter(|&c| self.communities[c].faith == Some(religion))
+                .collect();
             for c in faithful {
                 for &to in &shrines {
-                    if self.params.pilgrimage_rate <= 0.0 { continue; }
+                    if self.params.pilgrimage_rate <= 0.0 {
+                        continue;
+                    }
                     let Some(journey) = self.journey_to_within(c, to, self.params.pilgrimage_reach)
-                        else { continue };
+                    else {
+                        continue;
+                    };
                     let existing = routes.iter().any(|p| p.people == c && p.to == to);
-                    let holders: Vec<_> = spatial.dwellers[to].iter().copied()
-                        .filter(|&(holder, n)| holder != c && n > 0.0 && !contacts.contains(c, holder))
+                    let holders: Vec<_> = spatial.dwellers[to]
+                        .iter()
+                        .copied()
+                        .filter(|&(holder, n)| {
+                            holder != c
+                                && n > 0.0
+                                && !contacts.contains(c, holder)
+                                && self.contact_eligible(c, holder, ContactKind::Religion)
+                        })
                         .collect();
-                    if holders.is_empty() && (existing || journey.effort == 0.0) { continue; }
+                    if holders.is_empty() && (existing || journey.effort == 0.0) {
+                        continue;
+                    }
                     let mut rng = stream(
                         self.seed,
                         &[
@@ -488,13 +518,20 @@ impl World {
                         continue;
                     }
                     if !existing && journey.effort > 0.0 {
-                        let path = self.pilgrim_path(c, to).expect("the bounded journey has a path");
+                        let path = self
+                            .pilgrim_path(c, to)
+                            .expect("the bounded journey has a path");
                         routes.push(Pilgrimage {
-                            people: c, from: path[0], to, path, since: self.generation,
+                            people: c,
+                            from: path[0],
+                            to,
+                            path,
+                            since: self.generation,
                         });
                     }
                     if !holders.is_empty() {
-                        let holder = holders[weighted_index(&mut rng, holders.iter().map(|(_, n)| *n))].0;
+                        let holder =
+                            holders[weighted_index(&mut rng, holders.iter().map(|(_, n)| *n))].0;
                         self.connect(c, holder, 0.3, ContactKind::Religion)
                             .expect("the pilgrim reaches land held by the shrine holder");
                         contacts.insert(*self.contacts.last().unwrap());
@@ -579,8 +616,12 @@ mod tests {
         let other_faith = settled(&mut world, home);
         world.convert(subject, parent, None);
         world.convert(outsider, parent, None);
-        world.connect(ruler, subject, 0.6, ContactKind::Rule).unwrap();
-        world.connect(ruler, other_faith, 0.6, ContactKind::Rule).unwrap();
+        world
+            .connect(ruler, subject, 0.6, ContactKind::Rule)
+            .unwrap();
+        world
+            .connect(ruler, other_faith, 0.6, ContactKind::Rule)
+            .unwrap();
         let branch = world.schism(ruler, SchismCause::Rule).unwrap();
         assert_eq!(world.communities[ruler].faith, Some(branch));
         assert_eq!(world.communities[subject].faith, Some(branch));
@@ -681,7 +722,11 @@ mod tests {
         let route = &world.religions[religion].pilgrims[0];
         assert_eq!(route.path.first(), Some(&remote));
         assert_eq!(route.path.last(), Some(&home));
-        assert!(route.path[1..route.path.len()-1].iter().all(|&r| !world.map.regions[r].terrain.is_land()));
+        assert!(
+            route.path[1..route.path.len() - 1]
+                .iter()
+                .all(|&r| !world.map.regions[r].terrain.is_land())
+        );
         for pair in route.path.windows(2) {
             assert!(world.map.regions[pair[0]].neighbours.contains(&pair[1]));
         }

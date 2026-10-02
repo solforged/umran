@@ -383,7 +383,8 @@ impl World {
                 if self.communities[c].crafts.contains(&craft) {
                     continue;
                 }
-                let teachers: Vec<(usize, f32)> = contacts.partners(c)
+                let teachers: Vec<(usize, f32)> = contacts
+                    .partners(c)
                     .filter(|&(o, _, _)| self.communities[o].crafts.contains(&craft))
                     .map(|(o, intensity, kind)| {
                         (o, self.params.idea_rate * intensity * craft.carried(kind))
@@ -992,7 +993,8 @@ impl World {
         let contacts = self.contact_index();
         for c in self.living().collect::<Vec<_>>() {
             let k = &self.communities[c];
-            let teachers: Vec<(usize, usize, f32)> = contacts.partners(c)
+            let teachers: Vec<(usize, usize, f32)> = contacts
+                .partners(c)
                 .filter_map(|(o, intensity, kind)| {
                     let other = &self.communities[o];
                     let r = other.faith?;
@@ -1254,7 +1256,9 @@ mod tests {
                     None,
                 );
                 world.communities[learners].lands = world.communities[smiths].lands.clone();
-                world.connect(smiths, learners, 0.6, ContactKind::Trade).unwrap();
+                world
+                    .connect(smiths, learners, 0.6, ContactKind::Trade)
+                    .unwrap();
                 world.learn(smiths, Craft::Metalworking, None);
                 world.learn_words();
                 world.learn(learners, Craft::Metalworking, Some(smiths));

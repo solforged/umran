@@ -25,16 +25,30 @@ fn main() {
         let hill = world.found(pick(0), 0.5, 0.4);
         let home = world.communities[hill].home();
         let coast = world.found_seeded(
-            &Naming::People, pick(1), seed.wrapping_add(1),
-            0.4, 0.6, Some(home), None,
+            &Naming::People,
+            pick(1),
+            seed.wrapping_add(1),
+            0.4,
+            0.6,
+            Some(home),
+            None,
         );
         let empire = world.found_seeded(
-            &Naming::People, pick(2), seed.wrapping_add(2),
-            0.85, 0.3, Some(home), None,
+            &Naming::People,
+            pick(2),
+            seed.wrapping_add(2),
+            0.85,
+            0.3,
+            Some(home),
+            None,
         );
         world.connect(hill, coast, 0.5, ContactKind::Trade).unwrap();
-        world.connect(empire, coast, 0.8, ContactKind::Rule).unwrap();
-        world.connect(empire, hill, 0.3, ContactKind::Neighbours).unwrap();
+        world
+            .connect(empire, coast, 0.8, ContactKind::Rule)
+            .unwrap();
+        world
+            .connect(empire, hill, 0.3, ContactKind::Neighbours)
+            .unwrap();
         world.run(last);
         let spoken = world.spoken();
         for (v, variety) in world

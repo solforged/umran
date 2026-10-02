@@ -812,17 +812,6 @@ impl Bench {
             width: map.width,
             height: map.height,
             km_per_unit: KM_PER_UNIT,
-            landmasses: map
-                .landmasses
-                .iter()
-                .enumerate()
-                .map(|(id, landmass)| LandmassView {
-                    id,
-                    kind: landmass.kind,
-                    regions: landmass.regions.clone(),
-                    anchor: landmass.anchor,
-                })
-                .collect(),
             regions: map
                 .regions
                 .iter()
@@ -836,7 +825,6 @@ impl Bench {
                     outline: r.outline.clone(),
                     coastal: map.coastal(id),
                     island: map.island(id),
-                    landmass: r.landmass,
                     neighbours: r.neighbours.clone(),
                 })
                 .collect(),
@@ -1346,7 +1334,11 @@ fn move_views(world: &World) -> Vec<MoveView> {
                     by_sea,
                 } => (community, from, to, "migration", by_sea),
                 WorldEvent::Split {
-                    daughter, from, to, by_sea, ..
+                    daughter,
+                    from,
+                    to,
+                    by_sea,
+                    ..
                 } if from != to => (daughter, from, to, "split", by_sea),
                 _ => return None,
             };
@@ -2629,17 +2621,8 @@ struct MapView {
     height: f32,
     /// Drawing coordinates remain in map units.
     km_per_unit: f32,
-    landmasses: Vec<LandmassView>,
     regions: Vec<RegionView>,
     landmasses: Vec<LandmassView>,
-}
-
-#[derive(Serialize)]
-struct LandmassView {
-    id: usize,
-    kind: LandmassKind,
-    regions: Vec<usize>,
-    anchor: usize,
 }
 
 #[derive(Serialize)]
@@ -2655,7 +2638,6 @@ struct RegionView {
     coastal: bool,
     /// Land on an island rather than a continent.
     island: bool,
-    landmass: Option<usize>,
     /// Regions sharing a border with it.
     neighbours: Vec<usize>,
 }
@@ -3178,13 +3160,21 @@ mod tests {
             });
             assert!(w.act(&action.to_string()).is_err(), "{contact}");
             assert_eq!(w.save().unwrap(), saved, "{contact} changed the recipe");
-            assert_eq!(w.overview(0).unwrap(), before, "{contact} changed the world");
+            assert_eq!(
+                w.overview(0).unwrap(),
+                before,
+                "{contact} changed the world"
+            );
         }
         // The refusal does not prevent a later physically valid action.
-        w.act(r#"{"kind":"split","community":0,"intensity":0}"#).unwrap();
+        w.act(r#"{"kind":"split","community":0,"intensity":0}"#)
+            .unwrap();
         w.act(r#"{"kind":"connect","a":0,"b":2,"intensity":0.6,"contact":"trade"}"#)
             .unwrap();
-        assert_eq!(w.chronicle.latest().contacts[0].kind, umran_sim::ContactKind::Trade);
+        assert_eq!(
+            w.chronicle.latest().contacts[0].kind,
+            umran_sim::ContactKind::Trade
+        );
     }
 
     #[test]
@@ -3199,7 +3189,9 @@ mod tests {
         assert_eq!(loaded.map().unwrap(), map);
         assert_eq!(loaded.overview(2).unwrap(), w.overview(2).unwrap());
         loaded.branch(1);
-        loaded.act(r#"{"kind":"craft","community":0,"craft":"writing"}"#).unwrap();
+        loaded
+            .act(r#"{"kind":"craft","community":0,"craft":"writing"}"#)
+            .unwrap();
         loaded.act(r#"{"kind":"run","generations":2}"#).unwrap();
         let recipe: Recipe = serde_json::from_str(&loaded.save().unwrap()).unwrap();
         assert_eq!(recipe.map, MapSize::Vast);

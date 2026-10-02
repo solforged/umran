@@ -234,7 +234,8 @@ impl RouteRows {
     fn get(&self, source: usize, destination: usize) -> Option<f32> {
         let row = self.row(source);
         row.binary_search_by_key(&(destination as u32), |&(r, _)| r)
-            .ok().map(|i| row[i].1)
+            .ok()
+            .map(|i| row[i].1)
     }
 }
 
@@ -254,7 +255,10 @@ impl Eq for RouteVisit {}
 
 impl Ord for RouteVisit {
     fn cmp(&self, other: &Self) -> Ordering {
-        other.effort.total_cmp(&self.effort).then(other.region.cmp(&self.region))
+        other
+            .effort
+            .total_cmp(&self.effort)
+            .then(other.region.cmp(&self.region))
     }
 }
 
@@ -304,12 +308,24 @@ impl RouteScratch {
         self.heap.push(RouteVisit { effort, region });
     }
 
-    fn append_row(&mut self, map: &Map, source: usize, mode: RouteMode, entries: &mut Vec<(u32, f32)>) {
+    fn append_row(
+        &mut self,
+        map: &Map,
+        source: usize,
+        mode: RouteMode,
+        entries: &mut Vec<(u32, f32)>,
+    ) {
         self.touched.sort_unstable();
-        entries.extend(self.touched.iter().copied().filter(|&r| {
-            map.regions[r as usize].terrain.is_land()
-                && (mode == RouteMode::Walking || r as usize != source)
-        }).map(|r| (r, self.distance[r as usize] as f32)));
+        entries.extend(
+            self.touched
+                .iter()
+                .copied()
+                .filter(|&r| {
+                    map.regions[r as usize].terrain.is_land()
+                        && (mode == RouteMode::Walking || r as usize != source)
+                })
+                .map(|r| (r, self.distance[r as usize] as f32)),
+        );
     }
 }
 
@@ -494,10 +510,17 @@ impl Map {
         );
         assert!(landmasses.iter().all(|m| match m.kind {
             LandmassKind::Continent => m.regions.len() >= g.minimum,
-            LandmassKind::Island => (1..=if g.island_count.is_some() { 2 } else { 3 }).contains(&m.regions.len()),
+            LandmassKind::Island =>
+                (1..=if g.island_count.is_some() { 2 } else { 3 }).contains(&m.regions.len()),
         }));
         if let Some(count) = g.island_count {
-            assert_eq!(landmasses.iter().filter(|m| m.kind == LandmassKind::Island).count(), count);
+            assert_eq!(
+                landmasses
+                    .iter()
+                    .filter(|m| m.kind == LandmassKind::Island)
+                    .count(),
+                count
+            );
         }
         let mut map = Map {
             size,
@@ -520,7 +543,8 @@ impl Map {
 
     /// Exact least land-only walking effort-km; sea endpoints are unreachable.
     pub fn distance(&self, a: usize, b: usize) -> f32 {
-        if !self.regions[a].terrain.is_land() || !self.regions[b].terrain.is_land()
+        if !self.regions[a].terrain.is_land()
+            || !self.regions[b].terrain.is_land()
             || self.regions[a].landmass != self.regions[b].landmass
         {
             return f32::INFINITY;
@@ -538,19 +562,34 @@ impl Map {
     }
 
     /// Builds a path only for consumers that display an actual journey.
-    pub(crate) fn route_path(&self, source: usize, target: usize, by_sea: bool, reach: f32) -> Option<Vec<usize>> {
-        let mode = if by_sea { RouteMode::Voyage } else { RouteMode::Walking };
+    pub(crate) fn route_path(
+        &self,
+        source: usize,
+        target: usize,
+        by_sea: bool,
+        reach: f32,
+    ) -> Option<Vec<usize>> {
+        let mode = if by_sea {
+            RouteMode::Voyage
+        } else {
+            RouteMode::Walking
+        };
         let eligible = if by_sea {
             source != target && self.coastal(source) && self.coastal(target)
         } else {
-            self.regions[source].terrain.is_land() && self.regions[target].terrain.is_land()
+            self.regions[source].terrain.is_land()
+                && self.regions[target].terrain.is_land()
                 && self.regions[source].landmass == self.regions[target].landmass
         };
-        if !eligible || !(reach >= 0.0) { return None; }
+        if !eligible || reach.is_nan() || reach < 0.0 {
+            return None;
+        }
         let mut scratch = RouteScratch::new(self.regions.len());
         scratch.predecessor = Some(vec![u32::MAX; self.regions.len()]);
         self.search_routes(source, reach, mode, Some(target), &mut scratch);
-        if !scratch.distance[target].is_finite() { return None; }
+        if !scratch.distance[target].is_finite() {
+            return None;
+        }
         let parents = scratch.predecessor.as_ref().unwrap();
         let mut path = vec![target];
         let mut at = target;
@@ -591,7 +630,10 @@ impl Map {
     fn route_pair(&self, a: usize, b: usize, mode: RouteMode) -> f32 {
         // One orientation gives bit-identical answers even beyond cache coverage.
         let (source, destination) = (a.min(b), a.max(b));
-        let rows = match mode { RouteMode::Walking => &self.walking, RouteMode::Voyage => &self.voyages };
+        let rows = match mode {
+            RouteMode::Walking => &self.walking,
+            RouteMode::Voyage => &self.voyages,
+        };
         if let Some(effort) = rows.get(source, destination) {
             return effort;
         }
@@ -605,7 +647,7 @@ impl Map {
             RouteMode::Walking => self.regions[source].terrain.is_land(),
             RouteMode::Voyage => self.coastal(source),
         };
-        if !eligible || !(reach >= 0.0) {
+        if !eligible || reach.is_nan() || reach < 0.0 {
             return Cow::Borrowed(&[]);
         }
         if reach <= CACHE_REACH_KM {
@@ -616,7 +658,12 @@ impl Map {
             if row.iter().all(|&(_, effort)| effort <= reach) {
                 return Cow::Borrowed(row);
             }
-            return Cow::Owned(row.iter().copied().filter(|&(_, effort)| effort <= reach).collect());
+            return Cow::Owned(
+                row.iter()
+                    .copied()
+                    .filter(|&(_, effort)| effort <= reach)
+                    .collect(),
+            );
         }
         let mut scratch = RouteScratch::new(self.regions.len());
         self.search_routes(source, reach, mode, None, &mut scratch);
@@ -627,19 +674,37 @@ impl Map {
 
     fn cache_routes(&self) -> (RouteRows, RouteRows) {
         let n = self.regions.len();
-        let mut walking = RouteRows { offsets: Vec::with_capacity(n + 1), entries: Vec::new() };
-        let mut voyages = RouteRows { offsets: Vec::with_capacity(n + 1), entries: Vec::new() };
+        let mut walking = RouteRows {
+            offsets: Vec::with_capacity(n + 1),
+            entries: Vec::new(),
+        };
+        let mut voyages = RouteRows {
+            offsets: Vec::with_capacity(n + 1),
+            entries: Vec::new(),
+        };
         let mut scratch = RouteScratch::new(n);
         walking.offsets.push(0);
         voyages.offsets.push(0);
         for source in 0..n {
             if self.regions[source].terrain.is_land() {
-                self.search_routes(source, CACHE_REACH_KM, RouteMode::Walking, None, &mut scratch);
+                self.search_routes(
+                    source,
+                    CACHE_REACH_KM,
+                    RouteMode::Walking,
+                    None,
+                    &mut scratch,
+                );
                 scratch.append_row(self, source, RouteMode::Walking, &mut walking.entries);
             }
             walking.offsets.push(walking.entries.len());
             if self.coastal(source) {
-                self.search_routes(source, CACHE_REACH_KM, RouteMode::Voyage, None, &mut scratch);
+                self.search_routes(
+                    source,
+                    CACHE_REACH_KM,
+                    RouteMode::Voyage,
+                    None,
+                    &mut scratch,
+                );
                 scratch.append_row(self, source, RouteMode::Voyage, &mut voyages.entries);
             }
             voyages.offsets.push(voyages.entries.len());
@@ -679,7 +744,12 @@ impl Map {
                     RouteMode::Voyage if land != next_land => f64::from(EMBARK),
                     RouteMode::Voyage => 0.0,
                 };
-                scratch.relax(next, effort + f64::from(edge_effort) + surcharge, reach, region);
+                scratch.relax(
+                    next,
+                    effort + f64::from(edge_effort) + surcharge,
+                    reach,
+                    region,
+                );
             }
         }
     }
@@ -695,7 +765,10 @@ impl Map {
         if !ra.terrain.is_land() || !rb.terrain.is_land() || !ra.neighbours.contains(&b) {
             return 0.0;
         }
-        let effort = self.edges.get(a, b).expect("a neighbour has a retained shared border");
+        let effort = self
+            .edges
+            .get(a, b)
+            .expect("a neighbour has a retained shared border");
         (PLAIN_CLOSENESS * REFERENCE_TRAVEL_KM / effort).min(MAX_CLOSENESS)
     }
 
@@ -723,9 +796,10 @@ impl Map {
 }
 
 fn feeding_factors(regions: &[Region]) -> Vec<[f32; 3]> {
-    regions.iter().map(|r| Livelihood::ALL.map(|l| {
-        l.feeds(r.terrain) * r.area_km2 / REFERENCE_AREA_KM2
-    })).collect()
+    regions
+        .iter()
+        .map(|r| Livelihood::ALL.map(|l| l.feeds(r.terrain) * r.area_km2 / REFERENCE_AREA_KM2))
+        .collect()
 }
 
 /// Grid rectangles are only candidate basins, never the finished coastline.
@@ -978,7 +1052,11 @@ impl IslandSearch<'_> {
             return None;
         }
         if remaining == 0 {
-            if self.budget.island_count.is_some_and(|count| islands.len() != count) {
+            if self
+                .budget
+                .island_count
+                .is_some_and(|count| islands.len() != count)
+            {
                 return None;
             }
             return ocean_backbone(&continents, islands, self.neighbours).then_some(continents);
@@ -1370,10 +1448,16 @@ struct SharedBorder {
 }
 
 fn area(outline: &[[f64; 2]]) -> f64 {
-    outline.iter().enumerate().map(|(i, &[x0, y0])| {
-        let [x1, y1] = outline[(i + 1) % outline.len()];
-        x0 * y1 - x1 * y0
-    }).sum::<f64>().abs() / 2.0
+    outline
+        .iter()
+        .enumerate()
+        .map(|(i, &[x0, y0])| {
+            let [x1, y1] = outline[(i + 1) % outline.len()];
+            x0 * y1 - x1 * y0
+        })
+        .sum::<f64>()
+        .abs()
+        / 2.0
 }
 
 /// The unjittered rectangle is covered within sqrt(1^2 + 0.5^2) of a
@@ -1390,13 +1474,15 @@ fn grid_cells(
     width: f64,
     height: f64,
 ) -> Vec<(Vec<[f64; 2]>, Vec<CellBorder>)> {
-    (0..sites.len()).map(|i| {
-        let (c, r) = (i % g.cols, i / g.cols);
-        let candidates = (r.saturating_sub(4)..=(r + 4).min(g.rows - 1)).flat_map(|row| {
-            (c.saturating_sub(4)..=(c + 4).min(g.cols - 1)).map(move |col| row * g.cols + col)
-        });
-        clipped_cell(sites, i, width, height, candidates)
-    }).collect()
+    (0..sites.len())
+        .map(|i| {
+            let (c, r) = (i % g.cols, i / g.cols);
+            let candidates = (r.saturating_sub(4)..=(r + 4).min(g.rows - 1)).flat_map(|row| {
+                (c.saturating_sub(4)..=(c + 4).min(g.cols - 1)).map(move |col| row * g.cols + col)
+            });
+            clipped_cell(sites, i, width, height, candidates)
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -1460,8 +1546,12 @@ fn clipped_cell(
             let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
             // Keep the existing sliver cutoff, but apply it to unrounded
             // labelled edges. A surviving side supplies the canonical border.
-            label.filter(|_| dx * dx + dy * dy > 1e-6)
-                .map(|neighbour| CellBorder { neighbour, ends: [a, b] })
+            label
+                .filter(|_| dx * dx + dy * dy > 1e-6)
+                .map(|neighbour| CellBorder {
+                    neighbour,
+                    ends: [a, b],
+                })
         })
         .collect();
     (polygon.into_iter().map(|(p, _)| p).collect(), borders)
@@ -1471,16 +1561,30 @@ fn clipped_cell(
 /// Prefer the lower-ID cell's side; a one-sided clipping sliver still yields
 /// exactly one symmetric edge rather than independently recovered geometry.
 fn shared_borders(cells: &[(Vec<[f64; 2]>, Vec<CellBorder>)]) -> Vec<SharedBorder> {
-    let mut sides: Vec<_> = cells.iter().enumerate().flat_map(|(i, (_, borders))| {
-        borders.iter().map(move |border| {
-            (i.min(border.neighbour), i.max(border.neighbour), i, border.ends)
+    let mut sides: Vec<_> = cells
+        .iter()
+        .enumerate()
+        .flat_map(|(i, (_, borders))| {
+            borders.iter().map(move |border| {
+                (
+                    i.min(border.neighbour),
+                    i.max(border.neighbour),
+                    i,
+                    border.ends,
+                )
+            })
         })
-    }).collect();
+        .collect();
     sides.sort_unstable_by_key(|&(a, b, source, _)| (a, b, source));
     sides.dedup_by_key(|side| (side.0, side.1));
-    sides.into_iter().map(|(a, b, _, [p, q])| SharedBorder {
-        a, b, midpoint: [(p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0],
-    }).collect()
+    sides
+        .into_iter()
+        .map(|(a, b, _, [p, q])| SharedBorder {
+            a,
+            b,
+            midpoint: [(p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0],
+        })
+        .collect()
 }
 
 fn border_neighbours(n: usize, borders: &[SharedBorder]) -> Vec<Vec<usize>> {
@@ -1495,11 +1599,7 @@ fn border_neighbours(n: usize, borders: &[SharedBorder]) -> Vec<Vec<usize>> {
     neighbours
 }
 
-fn travel_edges(
-    sites: &[[f64; 2]],
-    terrain: &[Terrain],
-    borders: &[SharedBorder],
-) -> RouteRows {
+fn travel_edges(sites: &[[f64; 2]], terrain: &[Terrain], borders: &[SharedBorder]) -> RouteRows {
     let mut offsets = vec![0; sites.len() + 1];
     for border in borders {
         offsets[border.a + 1] += 1;
@@ -1518,7 +1618,8 @@ fn travel_edges(
         };
         let effort = (f64::from(KM_PER_UNIT)
             * (leg(border.a) * f64::from(terrain[border.a].travel())
-                + leg(border.b) * f64::from(terrain[border.b].travel()))) as f32;
+                + leg(border.b) * f64::from(terrain[border.b].travel())))
+            as f32;
         for (from, to) in [(border.a, border.b), (border.b, border.a)] {
             entries[cursor[from]] = (to as u32, effort);
             cursor[from] += 1;
@@ -1541,18 +1642,23 @@ fn share(len: usize, fraction: f64) -> usize {
     (len as f64 * fraction + 0.5) as usize
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn border_midpoints_define_reference_and_skewed_effort() {
         let g = Geography {
-            cols: 5, rows: 5, continents: (1, 1), continent_land: (1, 1), minimum: 1,
+            cols: 5,
+            rows: 5,
+            continents: (1, 1),
+            continent_land: (1, 1),
+            minimum: 1,
             island_count: None,
         };
         let points = sites(&g, &[[0.0, 0.0]; 25], 0.0);
-        let cells: Vec<_> = (0..points.len()).map(|i| cell(&points, i, 5.5, 4.0 * ROW + 1.0)).collect();
+        let cells: Vec<_> = (0..points.len())
+            .map(|i| cell(&points, i, 5.5, 4.0 * ROW + 1.0))
+            .collect();
         let borders = shared_borders(&cells);
         for (terrain, expected) in [(Terrain::Plains, 100.0), (Terrain::Steppe, 80.0)] {
             let edges = travel_edges(&points, &vec![terrain; points.len()], &borders);
@@ -1561,45 +1667,62 @@ mod tests {
         }
 
         let points = [[0.5, 0.5], [1.5, 0.5], [1.0, 1.4]];
-        let cells: Vec<_> = (0..points.len()).map(|i| cell(&points, i, 2.0, 2.0)).collect();
+        let cells: Vec<_> = (0..points.len())
+            .map(|i| cell(&points, i, 2.0, 2.0))
+            .collect();
         let borders = shared_borders(&cells);
         let border = borders.iter().find(|b| (b.a, b.b) == (0, 1)).unwrap();
         let [mx, my] = border.midpoint;
         let leg = ((mx - 0.5).powi(2) + (my - 0.5).powi(2)).sqrt();
         assert!(leg > 0.5);
-        let edges = travel_edges(&points, &[Terrain::Plains, Terrain::Hills, Terrain::Sea], &borders);
+        let edges = travel_edges(
+            &points,
+            &[Terrain::Plains, Terrain::Hills, Terrain::Sea],
+            &borders,
+        );
         let effort = edges.get(0, 1).unwrap();
         assert!((f64::from(effort) - 100.0 * leg * 3.0).abs() < 1e-4);
         assert_eq!(effort, edges.get(1, 0).unwrap());
     }
 
-
     #[test]
     fn bounded_grid_clipping_preserves_exhaustive_areas_and_borders() {
-        for size in [MapSize::Small, MapSize::Medium, MapSize::Large, MapSize::Vast] {
+        for size in [
+            MapSize::Small,
+            MapSize::Medium,
+            MapSize::Large,
+            MapSize::Vast,
+        ] {
             let g = size.geography();
             let n = g.cols * g.rows;
             let width = g.cols as f64 + 0.5;
             let height = (g.rows - 1) as f64 * ROW + 1.0;
             for seed in 0..3 {
                 let mut rng = stream(seed, &[key("clipper oracle")]);
-                let offsets: Vec<_> = (0..n).map(|r| {
-                    if seed == 0 {
-                        // Extreme opposing offsets exercise the exclusion bound,
-                        // including map corners and alternating offset rows.
-                        [if r % 2 == 0 { -1.0 } else { 1.0 },
-                            if (r / g.cols) % 2 == 0 { 1.0 } else { -1.0 }]
-                    } else {
-                        [rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)]
-                    }
-                }).collect();
+                let offsets: Vec<_> = (0..n)
+                    .map(|r| {
+                        if seed == 0 {
+                            // Extreme opposing offsets exercise the exclusion bound,
+                            // including map corners and alternating offset rows.
+                            [
+                                if r % 2 == 0 { -1.0 } else { 1.0 },
+                                if (r / g.cols) % 2 == 0 { 1.0 } else { -1.0 },
+                            ]
+                        } else {
+                            [rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)]
+                        }
+                    })
+                    .collect();
                 for jitter in [JITTER, JITTER / 2.0, 0.0] {
                     let sites = sites(g, &offsets, jitter);
                     let bounded = grid_cells(g, &sites, width, height);
-                    let exhaustive: Vec<_> = (0..n).map(|r| cell(&sites, r, width, height)).collect();
+                    let exhaustive: Vec<_> =
+                        (0..n).map(|r| cell(&sites, r, width, height)).collect();
                     for r in 0..n {
-                        assert!((area(&bounded[r].0) - area(&exhaustive[r].0)).abs() < 1e-9,
-                            "{size:?}, seed {seed}, jitter {jitter}, region {r}");
+                        assert!(
+                            (area(&bounded[r].0) - area(&exhaustive[r].0)).abs() < 1e-9,
+                            "{size:?}, seed {seed}, jitter {jitter}, region {r}"
+                        );
                     }
                     let bounded = shared_borders(&bounded);
                     let exhaustive = shared_borders(&exhaustive);
@@ -1616,7 +1739,12 @@ mod tests {
 
     #[test]
     fn regions_tile_the_map_and_border_each_other_both_ways() {
-        for size in [MapSize::Small, MapSize::Medium, MapSize::Large, MapSize::Vast] {
+        for size in [
+            MapSize::Small,
+            MapSize::Medium,
+            MapSize::Large,
+            MapSize::Vast,
+        ] {
             let map = Map::generate(7, size);
             let area: f64 = map.regions.iter().map(|r| centroid(&r.outline).0).sum();
             let physical_area: f64 = map.regions.iter().map(|r| f64::from(r.area_km2)).sum();
@@ -1657,11 +1785,17 @@ mod tests {
                 startup_ms.push(start.elapsed().as_secs_f64() * 1_000.0);
                 payload_counts.push(map.route_entry_counts());
                 assert_eq!(map, Map::generate(seed, size), "{size:?}, seed {seed}");
-                let continents: Vec<_> = map.landmasses.iter()
-                    .filter(|m| m.kind == LandmassKind::Continent).collect();
+                let continents: Vec<_> = map
+                    .landmasses
+                    .iter()
+                    .filter(|m| m.kind == LandmassKind::Continent)
+                    .collect();
                 body_sizes.extend(continents.iter().map(|m| m.regions.len()));
-                let islands: Vec<_> = map.landmasses.iter()
-                    .filter(|m| m.kind == LandmassKind::Island).collect();
+                let islands: Vec<_> = map
+                    .landmasses
+                    .iter()
+                    .filter(|m| m.kind == LandmassKind::Island)
+                    .collect();
                 assert!(k_range.contains(&continents.len()), "{size:?}, seed {seed}");
                 assert!(
                     land_range.contains(&continents.iter().map(|m| m.regions.len()).sum::<usize>())
@@ -1766,14 +1900,18 @@ mod tests {
                 );
             }
             startup_ms.sort_by(f64::total_cmp);
-            eprintln!("{size:?}: 128 seeds, startup median={:.2}ms p95={:.2}ms; \
+            eprintln!(
+                "{size:?}: 128 seeds, startup median={:.2}ms p95={:.2}ms; \
                 body cells={}..{}; walking tuples={}..{}, voyage tuples={}..{}",
-                startup_ms[64], startup_ms[121],
-                body_sizes.iter().min().unwrap(), body_sizes.iter().max().unwrap(),
+                startup_ms[64],
+                startup_ms[121],
+                body_sizes.iter().min().unwrap(),
+                body_sizes.iter().max().unwrap(),
                 payload_counts.iter().map(|p| p.0).min().unwrap(),
                 payload_counts.iter().map(|p| p.0).max().unwrap(),
                 payload_counts.iter().map(|p| p.1).min().unwrap(),
-                payload_counts.iter().map(|p| p.1).max().unwrap());
+                payload_counts.iter().map(|p| p.1).max().unwrap()
+            );
         }
     }
 
@@ -1788,7 +1926,12 @@ mod tests {
 
     #[test]
     fn zero_jitter_is_terminal_for_every_size_count_and_budget() {
-        for size in [MapSize::Small, MapSize::Medium, MapSize::Large, MapSize::Vast] {
+        for size in [
+            MapSize::Small,
+            MapSize::Medium,
+            MapSize::Large,
+            MapSize::Vast,
+        ] {
             let g = size.geography();
             let n = g.cols * g.rows;
             let sites = sites(g, &vec![[0.0, 0.0]; n], 0.0);
@@ -1827,12 +1970,27 @@ mod tests {
                         sizes[m] += 1;
                     }
                     assert_eq!(sizes.iter().filter(|&&s| s >= g.minimum).count(), k);
-                    assert_eq!(sizes.iter().filter(|&&s| s >= g.minimum).sum::<usize>(), continents);
-                    assert!(sizes.iter().filter(|&&s| s < g.minimum).all(|&s| (1..=3).contains(&s)));
-                    assert_eq!(plan.islands.iter().map(Vec::len).sum::<usize>(), budget.islands);
+                    assert_eq!(
+                        sizes.iter().filter(|&&s| s >= g.minimum).sum::<usize>(),
+                        continents
+                    );
+                    assert!(
+                        sizes
+                            .iter()
+                            .filter(|&&s| s < g.minimum)
+                            .all(|&s| (1..=3).contains(&s))
+                    );
+                    assert_eq!(
+                        plan.islands.iter().map(Vec::len).sum::<usize>(),
+                        budget.islands
+                    );
                     if let Some(count) = g.island_count {
                         assert_eq!(plan.islands.len(), count);
-                        assert!(plan.islands.iter().all(|island| (1..=2).contains(&island.len())));
+                        assert!(
+                            plan.islands
+                                .iter()
+                                .all(|island| (1..=2).contains(&island.len()))
+                        );
                     }
                     assert!(ocean_backbone(&plan.continents, &plan.islands, &neighbours));
                 }
@@ -1862,25 +2020,45 @@ mod tests {
             let mut voyages = vec![f32::INFINITY; n];
             if map.coastal(source) {
                 for (destination, effort) in voyages.iter_mut().enumerate() {
-                    if source == destination || !map.coastal(destination) { continue; }
+                    if source == destination || !map.coastal(destination) {
+                        continue;
+                    }
                     for &(depart, first) in map.edges.row(source) {
-                        if map.regions[depart as usize].terrain.is_land() { continue; }
+                        if map.regions[depart as usize].terrain.is_land() {
+                            continue;
+                        }
                         for &(arrive, last) in map.edges.row(destination) {
-                            if map.regions[arrive as usize].terrain.is_land() { continue; }
-                            let total = f64::from(first) + 100.0
+                            if map.regions[arrive as usize].terrain.is_land() {
+                                continue;
+                            }
+                            let total = f64::from(first)
+                                + 100.0
                                 + sea[depart as usize * n + arrive as usize]
-                                + f64::from(last) + 100.0;
+                                + f64::from(last)
+                                + 100.0;
                             *effort = effort.min(total as f32);
                         }
                     }
                 }
             }
             for destination in 0..n {
-                assert_eq!(map.distance(source, destination), walk[source * n + destination] as f32);
-                assert_eq!(map.distance(source, destination), map.distance(destination, source));
+                assert_eq!(
+                    map.distance(source, destination),
+                    walk[source * n + destination] as f32
+                );
+                assert_eq!(
+                    map.distance(source, destination),
+                    map.distance(destination, source)
+                );
                 assert_eq!(map.voyage(source, destination), voyages[destination]);
-                assert_eq!(map.voyage(source, destination), map.voyage(destination, source));
-                for (by_sea, expected) in [(false, walk[source * n + destination] as f32), (true, voyages[destination])] {
+                assert_eq!(
+                    map.voyage(source, destination),
+                    map.voyage(destination, source)
+                );
+                for (by_sea, expected) in [
+                    (false, walk[source * n + destination] as f32),
+                    (true, voyages[destination]),
+                ] {
                     let path = map.route_path(source, destination, by_sea, CACHE_REACH_KM);
                     if !expected.is_finite() || expected > CACHE_REACH_KM {
                         assert!(path.is_none());
@@ -1890,27 +2068,44 @@ mod tests {
                     assert_eq!(path.first(), Some(&source));
                     assert_eq!(path.last(), Some(&destination));
                     if by_sea {
-                        assert!(path[1..path.len()-1].iter().all(|&r| !map.regions[r].terrain.is_land()));
+                        assert!(
+                            path[1..path.len() - 1]
+                                .iter()
+                                .all(|&r| !map.regions[r].terrain.is_land())
+                        );
                     } else {
                         assert!(path.iter().all(|&r| map.regions[r].terrain.is_land()));
                     }
-                    let cost: f64 = path.windows(2).map(|p| {
-                        let embark = if map.regions[p[0]].terrain.is_land() != map.regions[p[1]].terrain.is_land() {
-                            f64::from(EMBARK)
-                        } else { 0.0 };
-                        f64::from(map.edges.get(p[0], p[1]).unwrap()) + embark
-                    }).sum();
+                    let cost: f64 = path
+                        .windows(2)
+                        .map(|p| {
+                            let embark = if map.regions[p[0]].terrain.is_land()
+                                != map.regions[p[1]].terrain.is_land()
+                            {
+                                f64::from(EMBARK)
+                            } else {
+                                0.0
+                            };
+                            f64::from(map.edges.get(p[0], p[1]).unwrap()) + embark
+                        })
+                        .sum();
                     assert_eq!(cost as f32, expected);
                 }
             }
             for reach in [0.0, 400.0, CACHE_REACH_KM, f32::INFINITY] {
-                let expected_walk: Vec<_> = (0..n).filter_map(|r| {
-                    let effort = walk[source * n + r] as f32;
-                    (effort.is_finite() && effort <= reach).then_some((r as u32, effort))
-                }).collect();
-                let expected_voyage: Vec<_> = voyages.iter().enumerate().filter_map(|(r, &effort)| {
-                    (effort.is_finite() && effort <= reach).then_some((r as u32, effort))
-                }).collect();
+                let expected_walk: Vec<_> = (0..n)
+                    .filter_map(|r| {
+                        let effort = walk[source * n + r] as f32;
+                        (effort.is_finite() && effort <= reach).then_some((r as u32, effort))
+                    })
+                    .collect();
+                let expected_voyage: Vec<_> = voyages
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(r, &effort)| {
+                        (effort.is_finite() && effort <= reach).then_some((r as u32, effort))
+                    })
+                    .collect();
                 assert_eq!(map.walking_row(source, reach).as_ref(), expected_walk);
                 assert_eq!(map.voyage_row(source, reach).as_ref(), expected_voyage);
             }
@@ -1920,10 +2115,23 @@ mod tests {
     #[test]
     fn walking_takes_the_land_detour_and_exact_fallback_exceeds_cache() {
         let map = route_fixture(
-            &[Terrain::Plains, Terrain::Sea, Terrain::Plains, Terrain::Plains,
-                Terrain::Plains, Terrain::Plains, Terrain::Plains],
-            &[(0, 1, 200.0), (1, 2, 200.0), (0, 3, 100.0), (3, 4, 100.0),
-                (4, 5, 100.0), (5, 2, 100.0)],
+            &[
+                Terrain::Plains,
+                Terrain::Sea,
+                Terrain::Plains,
+                Terrain::Plains,
+                Terrain::Plains,
+                Terrain::Plains,
+                Terrain::Plains,
+            ],
+            &[
+                (0, 1, 200.0),
+                (1, 2, 200.0),
+                (0, 3, 100.0),
+                (3, 4, 100.0),
+                (4, 5, 100.0),
+                (5, 2, 100.0),
+            ],
         );
         assert_eq!(map.distance(0, 2), 400.0);
         assert_eq!(map.regions[0].landmass, map.regions[2].landmass);
@@ -1938,7 +2146,11 @@ mod tests {
         let map = linear_map(&[Terrain::Plains; 25]);
         assert_eq!(map.distance(0, 24), 2_400.0);
         assert_eq!(map.distance(24, 0), 2_400.0);
-        assert!(!map.walking_row(0, CACHE_REACH_KM).iter().any(|&(r, _)| r == 24));
+        assert!(
+            !map.walking_row(0, CACHE_REACH_KM)
+                .iter()
+                .any(|&(r, _)| r == 24)
+        );
         assert!(map.walking_row(0, 2_400.0).contains(&(24, 2_400.0)));
         assert!(!map.walking_row(0, 2_399.0).iter().any(|&(r, _)| r == 24));
         assert!(map.walking_row(0, f32::INFINITY).contains(&(24, 2_400.0)));
@@ -1957,22 +2169,35 @@ mod tests {
             assert!(map.distance(0, end).is_infinite());
             assert!(map.voyage(0, 0).is_infinite());
             assert!(map.voyage(1, end).is_infinite());
-            assert!(map.voyage_row(0, expected).contains(&(end as u32, expected)));
+            assert!(
+                map.voyage_row(0, expected)
+                    .contains(&(end as u32, expected))
+            );
             assert!(map.voyage_row(0, expected - 1.0).is_empty());
             if expected > CACHE_REACH_KM {
                 assert!(map.voyage_row(0, CACHE_REACH_KM).is_empty());
-                assert!(map.voyage_row(0, f32::INFINITY).contains(&(end as u32, expected)));
+                assert!(
+                    map.voyage_row(0, f32::INFINITY)
+                        .contains(&(end as u32, expected))
+                );
             }
             terrain[0] = Terrain::Mountains;
             assert_eq!(linear_map(&terrain).voyage(0, end), expected + 150.0);
         }
         let port = linear_map(&[
-            Terrain::Plains, Terrain::Sea, Terrain::Plains, Terrain::Sea, Terrain::Plains,
+            Terrain::Plains,
+            Terrain::Sea,
+            Terrain::Plains,
+            Terrain::Sea,
+            Terrain::Plains,
         ]);
         assert_eq!(port.voyage(0, 2), 600.0);
         assert!(port.voyage(0, 4).is_infinite());
         let inland = linear_map(&[
-            Terrain::Plains, Terrain::Plains, Terrain::Sea, Terrain::Plains,
+            Terrain::Plains,
+            Terrain::Plains,
+            Terrain::Sea,
+            Terrain::Plains,
         ]);
         assert!(inland.voyage(0, 3).is_infinite());
         assert_eq!(inland.voyage(1, 3), 600.0);
@@ -1982,7 +2207,9 @@ mod tests {
         let n = map.regions.len();
         let mut distance = vec![f64::INFINITY; n * n];
         for r in 0..n {
-            if map.regions[r].terrain.is_land() != land { continue; }
+            if map.regions[r].terrain.is_land() != land {
+                continue;
+            }
             distance[r * n + r] = 0.0;
             for &(s, effort) in map.edges.row(r) {
                 if map.regions[s as usize].terrain.is_land() == land {
@@ -1993,8 +2220,8 @@ mod tests {
         for k in 0..n {
             for a in 0..n {
                 for b in 0..n {
-                    distance[a * n + b] = distance[a * n + b]
-                        .min(distance[a * n + k] + distance[k * n + b]);
+                    distance[a * n + b] =
+                        distance[a * n + b].min(distance[a * n + k] + distance[k * n + b]);
                 }
             }
         }
@@ -2003,13 +2230,21 @@ mod tests {
 
     fn linear_map(terrain: &[Terrain]) -> Map {
         let sites: Vec<_> = (0..terrain.len()).map(|r| [r as f64 + 0.5, 0.5]).collect();
-        let cells: Vec<_> = (0..terrain.len()).map(|r| cell(&sites, r, terrain.len() as f64, 1.0)).collect();
+        let cells: Vec<_> = (0..terrain.len())
+            .map(|r| cell(&sites, r, terrain.len() as f64, 1.0))
+            .collect();
         let borders = shared_borders(&cells);
         let edges = travel_edges(&sites, terrain, &borders);
-        let links: Vec<_> = (0..terrain.len()).flat_map(|r| {
-            edges.row(r).iter().copied().filter(move |&(s, _)| r < s as usize)
-                .map(move |(s, effort)| (r, s as usize, effort))
-        }).collect();
+        let links: Vec<_> = (0..terrain.len())
+            .flat_map(|r| {
+                edges
+                    .row(r)
+                    .iter()
+                    .copied()
+                    .filter(move |&(s, _)| r < s as usize)
+                    .map(move |(s, effort)| (r, s as usize, effort))
+            })
+            .collect();
         route_fixture(terrain, &links)
     }
 
@@ -2020,30 +2255,47 @@ mod tests {
             adjacent[a].push((b as u32, effort));
             adjacent[b].push((a as u32, effort));
         }
-        for row in &mut adjacent { row.sort_unstable_by_key(|&(r, _)| r); }
-        let neighbours: Vec<Vec<_>> = adjacent.iter().map(|row| {
-            row.iter().map(|&(r, _)| r as usize).collect()
-        }).collect();
+        for row in &mut adjacent {
+            row.sort_unstable_by_key(|&(r, _)| r);
+        }
+        let neighbours: Vec<Vec<_>> = adjacent
+            .iter()
+            .map(|row| row.iter().map(|&(r, _)| r as usize).collect())
+            .collect();
         let masses = landmasses(terrain, &neighbours);
-        let regions: Vec<_> = (0..n).map(|r| Region {
-            site: [r as f32, 0.0],
-            outline: vec![[r as f32, 0.0], [r as f32 + 1.0, 0.0],
-                [r as f32 + 1.0, 1.0], [r as f32, 1.0]],
-            area_km2: REFERENCE_AREA_KM2,
-            terrain: terrain[r],
-            neighbours: neighbours[r].clone(),
-            landmass: masses[r],
-        }).collect();
-        let mut edges = RouteRows { offsets: vec![0], entries: Vec::new() };
+        let regions: Vec<_> = (0..n)
+            .map(|r| Region {
+                site: [r as f32, 0.0],
+                outline: vec![
+                    [r as f32, 0.0],
+                    [r as f32 + 1.0, 0.0],
+                    [r as f32 + 1.0, 1.0],
+                    [r as f32, 1.0],
+                ],
+                area_km2: REFERENCE_AREA_KM2,
+                terrain: terrain[r],
+                neighbours: neighbours[r].clone(),
+                landmass: masses[r],
+            })
+            .collect();
+        let mut edges = RouteRows {
+            offsets: vec![0],
+            entries: Vec::new(),
+        };
         for row in adjacent {
             edges.entries.extend(row);
             edges.offsets.push(edges.entries.len());
         }
         let mut map = Map {
-            size: MapSize::Small, width: n as f32, height: 1.0,
+            size: MapSize::Small,
+            width: n as f32,
+            height: 1.0,
             feeding: feeding_factors(&regions),
-            landmasses: describe_landmasses(&regions, MapSize::Small), regions, edges,
-            walking: RouteRows::default(), voyages: RouteRows::default(),
+            landmasses: describe_landmasses(&regions, MapSize::Small),
+            regions,
+            edges,
+            walking: RouteRows::default(),
+            voyages: RouteRows::default(),
         };
         (map.walking, map.voyages) = map.cache_routes();
         map
@@ -2060,5 +2312,4 @@ mod tests {
             Map::generate(12, MapSize::Small).regions
         );
     }
-
 }

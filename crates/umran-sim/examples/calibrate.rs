@@ -39,7 +39,11 @@ fn geography(mut args: impl Iterator<Item = String>) {
         let mut world = World::with_map(seed as u64, Params::default(), size);
         startup.push(start.elapsed().as_secs_f64() * 1000.0);
         for i in 0..founders {
-            world.found(&profiles[i % profiles.len()], 0.25 + (i % 6) as f32 * 0.12, 0.5);
+            world.found(
+                &profiles[i % profiles.len()],
+                0.25 + (i % 6) as f32 * 0.12,
+                0.5,
+            );
         }
         for _ in 0..generations {
             let start = Instant::now();
@@ -56,22 +60,37 @@ fn geography(mut args: impl Iterator<Item = String>) {
             count(|e| matches!(e, WorldEvent::Migrated { .. })),
             world.states.iter().filter(|s| s.fell.is_none()).count() as f64,
             world.contacts.len() as f64,
-            living.iter().map(|&c| world.communities[c].size as f64).sum(),
+            living
+                .iter()
+                .map(|&c| world.communities[c].size as f64)
+                .sum(),
             count(|e| matches!(e, WorldEvent::Split { by_sea: true, .. })),
             count(|e| matches!(e, WorldEvent::Migrated { by_sea: true, .. })),
-            living.iter().map(|&c| world.communities[c].lands.len()).sum::<usize>() as f64,
+            living
+                .iter()
+                .map(|&c| world.communities[c].lands.len())
+                .sum::<usize>() as f64,
         ];
         for (sum, value) in sums.iter_mut().zip(row) {
             *sum += value;
         }
         let first_ship = world.events.iter().find_map(|(g, e)| {
-            matches!(e, WorldEvent::Learnt { craft: Craft::Seafaring, .. }).then_some(*g)
+            matches!(
+                e,
+                WorldEvent::Learnt {
+                    craft: Craft::Seafaring,
+                    ..
+                }
+            )
+            .then_some(*g)
         });
         println!("seed {seed}: {row:?}, first_seafaring={first_ship:?}");
     }
     startup.sort_by(f64::total_cmp);
     steps.sort_by(f64::total_cmp);
-    println!("means peoples spread migrations states contacts population sea_colonies sea_migrations holdings:");
+    println!(
+        "means peoples spread migrations states contacts population sea_colonies sea_migrations holdings:"
+    );
     println!("{:?}", sums.map(|x| x / seeds as f64));
     println!(
         "startup median {:.2} ms; step median {:.2} ms p95 {:.2} ms; mean {:.2} years/s",

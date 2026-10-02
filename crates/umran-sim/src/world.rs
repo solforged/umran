@@ -3,9 +3,7 @@ use crate::concepts::{CONCEPTS, Concept, Field, related};
 use crate::diglossia::{CLASSICAL_PRESTIGE, Vernacular};
 use crate::ethos::{Axis, Effect, Ethos, FoundingEthos, Pole, TemperCause};
 use crate::form::Form;
-use crate::geography::{
-    CACHE_REACH_KM, LandmassKind, Map, MapSize, REFERENCE_TRAVEL_KM, Terrain,
-};
+use crate::geography::{CACHE_REACH_KM, LandmassKind, Map, MapSize, REFERENCE_TRAVEL_KM, Terrain};
 use crate::ideas::{Craft, Religion, SACRED_INTENSITY, SACRED_PRESTIGE, living_related};
 use crate::laws::{Law, catalog};
 use crate::lexicon::{Entry, Event, LexemeId, Lexicon, Origin};
@@ -17,7 +15,8 @@ use crate::names::{
 use crate::phoneme::PhonemeId;
 use crate::phonotactics::Phonotactics;
 use crate::polity::{
-    Fall, LEVEL_FLOOR, LEVELLING, PURIST_COST, PURIST_PRESSURE, STANDARD_PRESTIGE, STANDARD_SHIFT, State,
+    Fall, LEVEL_FLOOR, LEVELLING, PURIST_COST, PURIST_PRESSURE, STANDARD_PRESTIGE, STANDARD_SHIFT,
+    State,
 };
 use crate::profile::SoundProfile;
 use crate::rng::{index, key, stream, weighted_index};
@@ -388,10 +387,23 @@ fn pair(a: usize, b: usize) -> (usize, usize) {
     (a.min(b), a.max(b))
 }
 
-pub(crate) fn route_row(map: &Map, source: usize, reach: f32, by_sea: bool) -> Cow<'_, [(u32, f32)]> {
+pub(crate) fn route_row(
+    map: &Map,
+    source: usize,
+    reach: f32,
+    by_sea: bool,
+) -> Cow<'_, [(u32, f32)]> {
     if reach <= CACHE_REACH_KM {
-        Cow::Borrowed(if by_sea { map.voyage_cached(source) } else { map.walking_cached(source) })
-    } else if by_sea { map.voyage_row(source, reach) } else { map.walking_row(source, reach) }
+        Cow::Borrowed(if by_sea {
+            map.voyage_cached(source)
+        } else {
+            map.walking_cached(source)
+        })
+    } else if by_sea {
+        map.voyage_row(source, reach)
+    } else {
+        map.walking_row(source, reach)
+    }
 }
 
 struct JourneyScratch {
@@ -403,7 +415,13 @@ struct JourneyScratch {
 impl JourneyScratch {
     fn new(regions: usize) -> Self {
         Self {
-            best: vec![Journey { effort: f32::INFINITY, by_sea: false }; regions],
+            best: vec![
+                Journey {
+                    effort: f32::INFINITY,
+                    by_sea: false
+                };
+                regions
+            ],
             touched: Vec::new(),
             rows: HashMap::new(),
         }
@@ -417,6 +435,7 @@ impl JourneyScratch {
 pub(crate) struct Spatial {
     pub occupied: Vec<f32>,
     pub dwellers: Vec<Vec<(usize, f32)>>,
+    held: Vec<Vec<usize>>,
 }
 
 impl Spatial {
@@ -424,12 +443,20 @@ impl Spatial {
         for &(r, n) in old {
             self.occupied[r] -= n;
             self.dwellers[r].retain(|&(c, _)| c != community);
+            self.held[r].retain(|&c| c != community);
         }
         for (r, n) in world.presence_iter(community) {
             self.occupied[r] += n;
             let row = &mut self.dwellers[r];
-            let index = row.binary_search_by_key(&community, |&(c, _)| c).unwrap_err();
+            let index = row
+                .binary_search_by_key(&community, |&(c, _)| c)
+                .unwrap_err();
             row.insert(index, (community, n));
+        }
+        for &r in &world.communities[community].lands {
+            let row = &mut self.held[r];
+            let index = row.binary_search(&community).unwrap_err();
+            row.insert(index, community);
         }
     }
 
@@ -437,6 +464,9 @@ impl Spatial {
         for (r, n) in world.presence_iter(community) {
             self.occupied[r] += n;
             self.dwellers[r].push((community, n));
+        }
+        for &r in &world.communities[community].lands {
+            self.held[r].push(community);
         }
     }
 }
@@ -462,9 +492,16 @@ impl ContactIndex {
         }
     }
 
-    pub(crate) fn partners(&self, community: usize) -> impl Iterator<Item = (usize, f32, ContactKind)> + '_ {
+    pub(crate) fn partners(
+        &self,
+        community: usize,
+    ) -> impl Iterator<Item = (usize, f32, ContactKind)> + '_ {
         self.adjacent[community].iter().map(move |k| {
-            (if k.a == community { k.b } else { k.a }, k.intensity, k.kind)
+            (
+                if k.a == community { k.b } else { k.a },
+                k.intensity,
+                k.kind,
+            )
         })
     }
 }
@@ -944,7 +981,8 @@ impl World {
         }
         let mut nearest = vec![self.params.settle_apart; self.map.regions.len()];
         for &source in &peopled {
-            for &(r, effort) in route_row(&self.map, source, self.params.settle_apart, false).iter() {
+            for &(r, effort) in route_row(&self.map, source, self.params.settle_apart, false).iter()
+            {
                 nearest[r as usize] = nearest[r as usize].min(effort);
             }
         }
@@ -968,36 +1006,58 @@ impl World {
         self.presence_iter(community).collect()
     }
 
-    pub(crate) fn presence_iter(&self, community: usize) -> impl Iterator<Item = (usize, f32)> + '_ {
+    pub(crate) fn presence_iter(
+        &self,
+        community: usize,
+    ) -> impl Iterator<Item = (usize, f32)> + '_ {
         let c = &self.communities[community];
         let residence = self.city_residence(community);
         let urban = residence.map_or(0.0, |(_, n)| n);
         let total: f32 = c.lands.iter().map(|&r| self.feeds(r, c.livelihood)).sum();
         let extra = residence.filter(|(r, _)| !c.lands.contains(r));
-        c.lands.iter().copied().map(move |r| {
-            let share = if total > 0.0 { self.feeds(r, c.livelihood) / total }
-                else { 1.0 / c.lands.len() as f32 };
-            let local = residence.filter(|&(site, _)| site == r).map_or(0.0, |(_, n)| n);
-            (r, (c.size - urban) * share + local)
-        }).chain(extra).filter(move |_| c.living())
+        c.lands
+            .iter()
+            .copied()
+            .map(move |r| {
+                let share = if total > 0.0 {
+                    self.feeds(r, c.livelihood) / total
+                } else {
+                    1.0 / c.lands.len() as f32
+                };
+                let local = residence
+                    .filter(|&(site, _)| site == r)
+                    .map_or(0.0, |(_, n)| n);
+                (r, (c.size - urban) * share + local)
+            })
+            .chain(extra)
+            .filter(move |_| c.living())
     }
 
     /// Population living on each region.
     fn occupation(&self) -> Vec<f32> {
         let mut out = vec![0.0; self.map.regions.len()];
         for c in self.living() {
-            for (r, n) in self.presence_iter(c) { out[r] += n; }
+            for (r, n) in self.presence_iter(c) {
+                out[r] += n;
+            }
         }
         out
     }
 
     pub(crate) fn spatial(&self) -> Spatial {
         let n = self.map.regions.len();
-        let mut view = Spatial { occupied: vec![0.0; n], dwellers: vec![Vec::new(); n] };
+        let mut view = Spatial {
+            occupied: vec![0.0; n],
+            dwellers: vec![Vec::new(); n],
+            held: vec![Vec::new(); n],
+        };
         for c in self.living() {
             for (r, n) in self.presence_iter(c) {
                 view.occupied[r] += n;
                 view.dwellers[r].push((c, n));
+            }
+            for &r in &self.communities[c].lands {
+                view.held[r].push(c);
             }
         }
         view
@@ -1008,7 +1068,9 @@ impl World {
             pairs: HashSet::with_capacity(self.contacts.len()),
             adjacent: vec![Vec::new(); self.communities.len()],
         };
-        for &contact in &self.contacts { view.insert(contact); }
+        for &contact in &self.contacts {
+            view.insert(contact);
+        }
         view
     }
 
@@ -1032,23 +1094,33 @@ impl World {
     /// 1 when they share land.
     pub fn nearness(&self, a: usize, b: usize) -> f32 {
         let (la, lb) = (&self.communities[a].lands, &self.communities[b].lands);
-        let (small, large) = if la.len() <= lb.len() { (la, lb) } else { (lb, la) };
+        let (small, large) = if la.len() <= lb.len() {
+            (la, lb)
+        } else {
+            (lb, la)
+        };
         self.near_held(small, |r| large.contains(&r))
     }
 
     fn nearness_indexed(&self, a: usize, b: usize, spatial: &Spatial) -> f32 {
         let (small, other) = if self.communities[a].lands.len() <= self.communities[b].lands.len() {
             (&self.communities[a].lands, b)
-        } else { (&self.communities[b].lands, a) };
-        self.near_held(small, |r| spatial.dwellers[r].binary_search_by_key(&other, |&(c, _)| c).is_ok())
+        } else {
+            (&self.communities[b].lands, a)
+        };
+        self.near_held(small, |r| spatial.held[r].binary_search(&other).is_ok())
     }
 
     fn near_held(&self, lands: &[usize], contains: impl Fn(usize) -> bool) -> f32 {
         let mut near: f32 = 0.0;
         for &r in lands {
-            if contains(r) { return self.map.closeness(r, r); }
+            if contains(r) {
+                return self.map.closeness(r, r);
+            }
             for &n in &self.map.regions[r].neighbours {
-                if contains(n) { near = near.max(self.map.closeness(r, n)); }
+                if contains(n) {
+                    near = near.max(self.map.closeness(r, n));
+                }
             }
         }
         near
@@ -1056,31 +1128,51 @@ impl World {
 
     /// Exact directed access to a destination, using only the traveller's ships.
     pub fn journey_to(&self, community: usize, region: usize) -> Option<Journey> {
-        let mut best = Journey { effort: f32::INFINITY, by_sea: false };
+        let mut best = Journey {
+            effort: f32::INFINITY,
+            by_sea: false,
+        };
         for &source in &self.communities[community].lands {
             let walk = self.map.distance(source, region);
             if walk < best.effort || (walk == best.effort && best.by_sea) {
-                best = Journey { effort: walk, by_sea: false };
+                best = Journey {
+                    effort: walk,
+                    by_sea: false,
+                };
             }
             if self.sails(community) {
                 let sea = self.map.voyage(source, region);
                 if sea < best.effort {
-                    best = Journey { effort: sea, by_sea: true };
+                    best = Journey {
+                        effort: sea,
+                        by_sea: true,
+                    };
                 }
             }
         }
         best.effort.is_finite().then_some(best)
     }
 
-    pub(crate) fn journey_to_within(&self, community: usize, region: usize, reach: f32) -> Option<Journey> {
-        let mut best = Journey { effort: f32::INFINITY, by_sea: false };
+    pub(crate) fn journey_to_within(
+        &self,
+        community: usize,
+        region: usize,
+        reach: f32,
+    ) -> Option<Journey> {
+        let mut best = Journey {
+            effort: f32::INFINITY,
+            by_sea: false,
+        };
         for &source in &self.communities[community].lands {
             for by_sea in [false, true] {
-                if by_sea && !self.sails(community) { continue; }
+                if by_sea && !self.sails(community) {
+                    continue;
+                }
                 let row = route_row(&self.map, source, reach, by_sea);
                 let effort = row_distance(&row, region);
-                if effort <= reach && (effort < best.effort
-                    || (effort == best.effort && best.by_sea && !by_sea)) {
+                if effort <= reach
+                    && (effort < best.effort || (effort == best.effort && best.by_sea && !by_sea))
+                {
                     best = Journey { effort, by_sea };
                 }
             }
@@ -1094,13 +1186,21 @@ impl World {
     }
 
     fn journey_between_within(&self, a: usize, b: usize, reach: f32) -> Option<Journey> {
-        let mut best = Journey { effort: f32::INFINITY, by_sea: false };
+        let mut best = Journey {
+            effort: f32::INFINITY,
+            by_sea: false,
+        };
         for &source in &self.communities[a].lands {
             let row = route_row(&self.map, source, reach, false);
             for &destination in &self.communities[b].lands {
                 let effort = row_distance(&row, destination);
-                if effort <= reach && (effort < best.effort || (effort == best.effort && best.by_sea)) {
-                    best = Journey { effort, by_sea: false };
+                if effort <= reach
+                    && (effort < best.effort || (effort == best.effort && best.by_sea))
+                {
+                    best = Journey {
+                        effort,
+                        by_sea: false,
+                    };
                 }
             }
             if self.sails(a) {
@@ -1108,7 +1208,10 @@ impl World {
                 for &destination in &self.communities[b].lands {
                     let effort = row_distance(&row, destination);
                     if effort <= reach && effort < best.effort {
-                        best = Journey { effort, by_sea: true };
+                        best = Journey {
+                            effort,
+                            by_sea: true,
+                        };
                     }
                 }
             }
@@ -1118,8 +1221,14 @@ impl World {
 
     /// Merchant or passenger access can be supplied by either side.
     fn apart_within(&self, a: usize, b: usize, reach: f32) -> f32 {
-        [self.journey_between_within(a, b, reach), self.journey_between_within(b, a, reach)]
-            .into_iter().flatten().map(|j| j.effort).fold(f32::INFINITY, f32::min)
+        [
+            self.journey_between_within(a, b, reach),
+            self.journey_between_within(b, a, reach),
+        ]
+        .into_iter()
+        .flatten()
+        .map(|j| j.effort)
+        .fold(f32::INFINITY, f32::min)
     }
 
     /// Exact symmetric journey effort between the peoples' nearest holdings.
@@ -1129,7 +1238,8 @@ impl World {
 
     /// Directed reach belongs to the actual ruler, not the subjects.
     pub(crate) fn can_rule(&self, ruler: usize, subject: usize) -> bool {
-        self.journey_between_within(ruler, subject, self.params.conquest_reach).is_some()
+        self.journey_between_within(ruler, subject, self.params.conquest_reach)
+            .is_some()
     }
 
     /// Reachable destinations in region order, keeping the chosen travel mode.
@@ -1142,20 +1252,36 @@ impl World {
 
     fn fill_journeys(&self, community: usize, reach: f32, scratch: &mut JourneyScratch) {
         for r in scratch.touched.drain(..) {
-            scratch.best[r] = Journey { effort: f32::INFINITY, by_sea: false };
+            scratch.best[r] = Journey {
+                effort: f32::INFINITY,
+                by_sea: false,
+            };
         }
         for &source in &self.communities[community].lands {
             for by_sea in [false, true] {
-                if by_sea && !self.sails(community) { continue; }
+                if by_sea && !self.sails(community) {
+                    continue;
+                }
                 let row = if reach > CACHE_REACH_KM {
-                    Cow::Borrowed(scratch.rows.entry((source, by_sea))
-                        .or_insert_with(|| route_row(&self.map, source, reach, by_sea).into_owned()).as_slice())
-                } else { route_row(&self.map, source, reach, by_sea) };
+                    Cow::Borrowed(
+                        scratch
+                            .rows
+                            .entry((source, by_sea))
+                            .or_insert_with(|| {
+                                route_row(&self.map, source, reach, by_sea).into_owned()
+                            })
+                            .as_slice(),
+                    )
+                } else {
+                    route_row(&self.map, source, reach, by_sea)
+                };
                 for &(r, effort) in row.iter().filter(|(_, d)| *d <= reach) {
                     let r = r as usize;
                     let old = &mut scratch.best[r];
                     if effort < old.effort || (effort == old.effort && old.by_sea && !by_sea) {
-                        if !old.effort.is_finite() { scratch.touched.push(r); }
+                        if !old.effort.is_finite() {
+                            scratch.touched.push(r);
+                        }
                         *old = Journey { effort, by_sea };
                     }
                 }
@@ -1182,8 +1308,13 @@ impl World {
         self.split_with_spatial(community, naming, intensity, None)
     }
 
-    fn split_with_spatial(&mut self, community: usize, naming: Option<&Naming>, intensity: f32,
-        mut spatial: Option<&mut Spatial>) -> usize {
+    fn split_with_spatial(
+        &mut self,
+        community: usize,
+        naming: Option<&Naming>,
+        intensity: f32,
+        spatial: Option<&mut Spatial>,
+    ) -> usize {
         let affected = self.communities[community].lands.clone();
         if let Some(view) = spatial.as_deref() {
             let contacts = self.contact_index();
@@ -1347,7 +1478,10 @@ impl World {
         if intensity > 0.0 {
             if !by_sea && self.nearness(community, index) > 0.0 {
                 self.link(community, index, intensity, ContactKind::Neighbours);
-            } else if self.apart_within(community, index, self.params.trade_reach).is_finite() {
+            } else if self
+                .apart_within(community, index, self.params.trade_reach)
+                .is_finite()
+            {
                 self.link(community, index, intensity, ContactKind::Trade);
             }
         }
@@ -1364,7 +1498,7 @@ impl World {
         ));
         self.inherit_ethos(index, region != home);
         self.reconcile_contacts();
-        if let Some(view) = spatial.as_deref_mut() {
+        if let Some(view) = spatial {
             view.replace(self, community, &presence);
             view.add(self, index);
             let mut affected = affected;
@@ -1405,19 +1539,28 @@ impl World {
 
     /// Authoring overrides chance, never physical access.
     pub(crate) fn contact_eligible(&self, a: usize, b: usize, kind: ContactKind) -> bool {
-        if a == b || !self.communities.get(a).is_some_and(Community::living)
-            || !self.communities.get(b).is_some_and(Community::living) {
+        if a == b
+            || !self.communities.get(a).is_some_and(Community::living)
+            || !self.communities.get(b).is_some_and(Community::living)
+        {
             return false;
         }
         match kind {
             ContactKind::Neighbours => self.nearness(a, b) > 0.0,
             ContactKind::Trade => self.apart_within(a, b, self.params.trade_reach).is_finite(),
-            ContactKind::Intermarriage => self.apart_within(a, b, self.params.conquest_reach).is_finite(),
-            ContactKind::Religion => self.apart_within(a, b, self.params.pilgrimage_reach).is_finite(),
+            ContactKind::Intermarriage => self
+                .apart_within(a, b, self.params.conquest_reach)
+                .is_finite(),
+            ContactKind::Religion => self
+                .apart_within(a, b, self.params.pilgrimage_reach)
+                .is_finite(),
             ContactKind::Rule => {
-                let (ruler, subject) = if self.communities[a].prestige >= self.communities[b].prestige {
-                    (a, b)
-                } else { (b, a) };
+                let (ruler, subject) =
+                    if self.communities[a].prestige >= self.communities[b].prestige {
+                        (a, b)
+                    } else {
+                        (b, a)
+                    };
                 self.can_rule(ruler, subject)
             }
         }
@@ -1426,13 +1569,23 @@ impl World {
     /// Brings `a` and `b` into contact, as an event of the world's history.
     /// Rule goes to the more prestigious side (`a` on a tie), whose state
     /// the other joins.
-    pub fn connect(&mut self, a: usize, b: usize, intensity: f32, kind: ContactKind) -> Result<(), String> {
+    pub fn connect(
+        &mut self,
+        a: usize,
+        b: usize,
+        intensity: f32,
+        kind: ContactKind,
+    ) -> Result<(), String> {
         if !self.contact_eligible(a, b, kind) {
-            return Err(format!("these peoples cannot sustain {kind:?} contact within physical reach"));
+            return Err(format!(
+                "these peoples cannot sustain {kind:?} contact within physical reach"
+            ));
         }
-        let changes_rule = kind == ContactKind::Rule || self.contacts.iter().any(|k| {
-            k.kind == ContactKind::Rule && pair(k.a, k.b) == pair(a, b)
-        });
+        let changes_rule = kind == ContactKind::Rule
+            || self
+                .contacts
+                .iter()
+                .any(|k| k.kind == ContactKind::Rule && pair(k.a, k.b) == pair(a, b));
         self.events
             .push((self.generation, WorldEvent::Met { a, b, kind }));
         if kind == ContactKind::Rule {
@@ -1445,7 +1598,9 @@ impl World {
         } else {
             self.link(a, b, intensity, kind);
         }
-        if changes_rule { self.reconcile_contacts(); }
+        if changes_rule {
+            self.reconcile_contacts();
+        }
         Ok(())
     }
 
@@ -1467,7 +1622,8 @@ impl World {
     fn rule_relation(&self, contact: &Contact) -> Option<(usize, usize, usize)> {
         for (ruler, subject) in [(contact.a, contact.b), (contact.b, contact.a)] {
             if let Some(state) = self.ruled_by(subject)
-                && self.states[state].rulers == ruler {
+                && self.states[state].rulers == ruler
+            {
                 return Some((state, ruler, subject));
             }
         }
@@ -1475,19 +1631,30 @@ impl World {
     }
 
     fn part_contact(&mut self, contact: Contact) {
-        let Some(index) = self.contacts.iter().position(|k| {
-            k.kind == contact.kind && pair(k.a, k.b) == pair(contact.a, contact.b)
-        }) else { return };
+        let Some(index) = self
+            .contacts
+            .iter()
+            .position(|k| k.kind == contact.kind && pair(k.a, k.b) == pair(contact.a, contact.b))
+        else {
+            return;
+        };
         let relation = (contact.kind == ContactKind::Rule)
-            .then(|| self.rule_relation(&contact)).flatten();
+            .then(|| self.rule_relation(&contact))
+            .flatten();
         let (a, b) = if let Some((state, ruler, subject)) = relation {
             self.leave(state, subject);
             (ruler, subject)
         } else {
             self.contacts.remove(index);
             if matches!(contact.kind, ContactKind::Rule | ContactKind::Intermarriage)
-                && self.contact_eligible(contact.a, contact.b, ContactKind::Neighbours) {
-                self.link(contact.a, contact.b, contact.intensity / 2.0, ContactKind::Neighbours);
+                && self.contact_eligible(contact.a, contact.b, ContactKind::Neighbours)
+            {
+                self.link(
+                    contact.a,
+                    contact.b,
+                    contact.intensity / 2.0,
+                    ContactKind::Neighbours,
+                );
             }
             (contact.a, contact.b)
         };
@@ -1499,37 +1666,62 @@ impl World {
 
     /// Territorial changes end inaccessible relations, even without turnover.
     fn reconcile_contacts(&mut self) {
-        let invalid: Vec<_> = self.contacts.iter().copied().filter(|k| {
-            if k.kind == ContactKind::Rule {
-                !self.communities[k.a].living() || !self.communities[k.b].living()
-                    || self.rule_relation(k).is_none_or(|(_, ruler, subject)| !self.can_rule(ruler, subject))
-            } else { !self.contact_eligible(k.a, k.b, k.kind) }
-        }).collect();
-        for contact in invalid { self.part_contact(contact); }
+        let invalid: Vec<_> = self
+            .contacts
+            .iter()
+            .copied()
+            .filter(|k| {
+                if k.kind == ContactKind::Rule {
+                    !self.communities[k.a].living()
+                        || !self.communities[k.b].living()
+                        || self
+                            .rule_relation(k)
+                            .is_none_or(|(_, ruler, subject)| !self.can_rule(ruler, subject))
+                } else {
+                    !self.contact_eligible(k.a, k.b, k.kind)
+                }
+            })
+            .collect();
+        for contact in invalid {
+            self.part_contact(contact);
+        }
         self.reconcile_memberships();
         for state in 0..self.states.len() {
-            if !self.states[state].standing() { continue; }
+            if !self.states[state].standing() {
+                continue;
+            }
             let ruler = self.states[state].rulers;
             if !self.communities[ruler].living() {
                 self.fall(state, Fall::RulersEnded);
-            } else if !self.communities[ruler].lands.contains(&self.states[state].capital) {
+            } else if !self.communities[ruler]
+                .lands
+                .contains(&self.states[state].capital)
+            {
                 self.fall(state, Fall::CapitalLost);
             }
         }
     }
 
     fn reconcile_memberships(&mut self) {
-        let rules: HashSet<_> = self.contacts.iter().filter(|k| k.kind == ContactKind::Rule)
-            .map(|k| pair(k.a, k.b)).collect();
+        let rules: HashSet<_> = self
+            .contacts
+            .iter()
+            .filter(|k| k.kind == ContactKind::Rule)
+            .map(|k| pair(k.a, k.b))
+            .collect();
         let mut orphaned = Vec::new();
         for (state, s) in self.states.iter().enumerate().filter(|(_, s)| s.standing()) {
             for community in s.subjects() {
-                if !self.communities[community].living() || !rules.contains(&pair(s.rulers, community)) {
+                if !self.communities[community].living()
+                    || !rules.contains(&pair(s.rulers, community))
+                {
                     orphaned.push((state, community));
                 }
             }
         }
-        for (state, community) in orphaned { self.leave(state, community); }
+        for (state, community) in orphaned {
+            self.leave(state, community);
+        }
     }
 
     /// The home variety of `community`.
@@ -1629,11 +1821,7 @@ impl World {
             .map(|&r| self.feeds(r, k.livelihood))
             .sum::<f32>()
             + self.tribute(community);
-        let crowd = k
-            .lands
-            .iter()
-            .map(|&r| occupied[r])
-            .sum();
+        let crowd = k.lands.iter().map(|&r| occupied[r]).sum();
         (fed, crowd)
     }
 
@@ -1784,7 +1972,9 @@ impl World {
             let heart = k.home();
             let distances = self.map.walking_row(heart, f32::INFINITY);
             let mark = c + 1;
-            for &r in &k.lands { marks[r] = mark; }
+            for &r in &k.lands {
+                marks[r] = mark;
+            }
             let mut beside = Vec::new();
             for &r in &k.lands {
                 for &n in &self.map.regions[r].neighbours {
@@ -1799,7 +1989,12 @@ impl World {
                 .into_iter()
                 .map(|r| (r, room(r)))
                 .filter(|&(r, f)| f > SPREAD_ROOM * self.feeds(r, livelihood))
-                .map(|(r, f)| (r, f / (1.0 + row_distance(&distances, r) / REFERENCE_TRAVEL_KM)))
+                .map(|(r, f)| {
+                    (
+                        r,
+                        f / (1.0 + row_distance(&distances, r) / REFERENCE_TRAVEL_KM),
+                    )
+                })
                 .collect();
             if options.is_empty() {
                 continue;
@@ -1820,17 +2015,37 @@ impl World {
     /// only in part, since the locals make room, or are made to.
     fn free_room(&self, community: usize, region: usize, spatial: &Spatial) -> f32 {
         let me = &self.communities[community];
-        let held: f32 = spatial.dwellers[region].iter().filter(|&&(c, _)| c != community)
-            .map(|&(c, n)| n * if self.communities[c].prestige >= me.prestige { 1.0 } else { YIELD }).sum();
+        let held: f32 = spatial.dwellers[region]
+            .iter()
+            .filter(|&&(c, _)| c != community)
+            .map(|&(c, n)| {
+                n * if self.communities[c].prestige >= me.prestige {
+                    1.0
+                } else {
+                    YIELD
+                }
+            })
+            .sum();
         self.feeds(region, me.livelihood) - held
     }
 
     /// `community`, newly come to land `to`, deals with those already there
     /// as neighbours.
-    fn meet_locals(&mut self, community: usize, to: usize, rng: &mut ChaCha8Rng,
-        spatial: &Spatial, contacts: &mut ContactIndex) {
+    fn meet_locals(
+        &mut self,
+        community: usize,
+        to: usize,
+        rng: &mut ChaCha8Rng,
+        spatial: &Spatial,
+        contacts: &mut ContactIndex,
+    ) {
         for &(other, _) in &spatial.dwellers[to] {
-            if other == community || contacts.contains(community, other) { continue; }
+            if other == community
+                || contacts.contains(community, other)
+                || self.nearness(community, other) <= 0.0
+            {
+                continue;
+            }
             let intensity = rng.gen_range(0.3..0.7);
             self.connect(community, other, intensity, ContactKind::Neighbours)
                 .expect("arrivals share land with the locals");
@@ -1840,7 +2055,13 @@ impl World {
 
     /// Who lives on each land, and how many of them.
     fn dwellers(&self) -> Vec<Vec<(usize, f32)>> {
-        self.spatial().dwellers
+        let mut dwellers = vec![Vec::new(); self.map.regions.len()];
+        for c in self.living() {
+            for (r, n) in self.presence_iter(c) {
+                dwellers[r].push((c, n));
+            }
+        }
+        dwellers
     }
 
     /// A people on several lands gives one up when a stronger people
@@ -1976,11 +2197,14 @@ impl World {
             }
             let stay = fed - here;
             self.fill_journeys(c, self.params.migration_reach, &mut journeys);
-            let options: Vec<(usize, Journey, f32)> = journeys.iter()
+            let options: Vec<(usize, Journey, f32)> = journeys
+                .iter()
                 .filter(|&(r, _)| r != home)
                 .filter_map(|(r, journey)| {
                     let room = self.free_room(c, r, &spatial);
-                    if room <= stay || room < size / 2.0 { return None; }
+                    if room <= stay || room < size / 2.0 {
+                        return None;
+                    }
                     let d = journey.effort / REFERENCE_TRAVEL_KM;
                     Some((r, journey, (room - stay) / ((1.0 + d) * (1.0 + d))))
                 })
@@ -2021,11 +2245,7 @@ impl World {
             for (other, intensity, _) in contacts.partners(c) {
                 let theirs = self.communities[other].livelihood;
                 if theirs != own {
-                    options.push((
-                        theirs,
-                        Some(other),
-                        self.params.adoption_rate * intensity,
-                    ));
+                    options.push((theirs, Some(other), self.params.adoption_rate * intensity));
                 }
             }
             match own {
@@ -2158,12 +2378,18 @@ impl World {
         self.preserve_places_indexed(None, &dwellers);
     }
 
-    fn preserve_places_indexed(&mut self, affected: Option<&[usize]>, dwellers: &[Vec<(usize, f32)>]) {
+    fn preserve_places_indexed(
+        &mut self,
+        affected: Option<&[usize]>,
+        dwellers: &[Vec<(usize, f32)>],
+    ) {
         let count = affected.map_or(dwellers.len(), <[usize]>::len);
         for index in 0..count {
             let region = affected.map_or(index, |regions| regions[index]);
             if let Some(place) = self.places[region].last()
-                && !dwellers[region].iter().any(|&(c, _)| self.communities[c].variety == place.variety)
+                && !dwellers[region]
+                    .iter()
+                    .any(|&(c, _)| self.communities[c].variety == place.variety)
             {
                 self.remember_place(region);
             }
@@ -2249,8 +2475,12 @@ impl World {
         self.hold_places_indexed(None, &dwellers, &contacts);
     }
 
-    fn hold_places_indexed(&mut self, affected: Option<&[usize]>, dwellers: &[Vec<(usize, f32)>],
-        contacts: &ContactIndex) {
+    fn hold_places_indexed(
+        &mut self,
+        affected: Option<&[usize]>,
+        dwellers: &[Vec<(usize, f32)>],
+        contacts: &ContactIndex,
+    ) {
         self.preserve_places_indexed(affected, dwellers);
         let generation = self.generation;
         let count = affected.map_or(dwellers.len(), <[usize]>::len);
@@ -2290,7 +2520,8 @@ impl World {
                         Some(PlaceOrigin::Inherited)
                     } else {
                         let knew = namers > 0.0
-                            || contacts.partners(holder)
+                            || contacts
+                                .partners(holder)
                                 .any(|(other, _, _)| self.communities[other].variety == p.variety);
                         let keep = if knew {
                             PLACE_KEEP_KNOWN
@@ -2394,8 +2625,12 @@ impl World {
         for (r, names) in self.places.iter().enumerate() {
             known.extend(names.iter().map(|p| (p.variety, r)));
         }
-        for &(v, r) in &known { knowledge[v].push(r); }
-        for row in &mut knowledge { row.sort_unstable(); }
+        for &(v, r) in &known {
+            knowledge[v].push(r);
+        }
+        for row in &mut knowledge {
+            row.sort_unstable();
+        }
         for c in self.living() {
             let v = self.communities[c].variety;
             let mut near: Vec<usize> = self.communities[c]
@@ -2472,9 +2707,16 @@ impl World {
         if reports {
             for &(a, b) in &contacts {
                 for (direction, (speaker, listener)) in [(a, b), (b, a)].into_iter().enumerate() {
-                    let (source, receiver) = (self.communities[speaker].variety, self.communities[listener].variety);
-                    let candidates: Vec<usize> = knowledge[source].iter().copied()
-                        .filter(|&r| !known.contains(&(receiver, r)) && !heard.contains_key(&(receiver, r)))
+                    let (source, receiver) = (
+                        self.communities[speaker].variety,
+                        self.communities[listener].variety,
+                    );
+                    let candidates: Vec<usize> = knowledge[source]
+                        .iter()
+                        .copied()
+                        .filter(|&r| {
+                            !known.contains(&(receiver, r)) && !heard.contains_key(&(receiver, r))
+                        })
                         .collect();
                     if candidates.is_empty() {
                         continue;
@@ -2522,9 +2764,10 @@ impl World {
         let c = &self.communities[community];
         let heart = c.home();
         let heart_row = self.map.walking_row(heart, f32::INFINITY);
-        let far = c.lands[1..].iter().copied().max_by(|&a, &b| {
-            row_distance(&heart_row, a).total_cmp(&row_distance(&heart_row, b))
-        });
+        let far = c.lands[1..]
+            .iter()
+            .copied()
+            .max_by(|&a, &b| row_distance(&heart_row, a).total_cmp(&row_distance(&heart_row, b)));
         match far {
             Some(far) => {
                 let far_row = self.map.walking_row(far, f32::INFINITY);
@@ -2565,7 +2808,8 @@ impl World {
         let room = |r: usize| self.feeds(r, livelihood) - occupied[r];
         let attraction = |r| if self.map.overseas(home, r) { seaward } else { 1.0 };
         if let Some(beside) = self.roomiest(&self.map.regions[home].neighbours, livelihood)
-            && room(beside) > room(home) {
+            && room(beside) > room(home)
+        {
             return (beside, false);
         }
         if !sails || !self.map.coastal(home) {
@@ -2884,11 +3128,16 @@ impl World {
             let mut rng = self.community_rng(c, "contact");
             neighbours.clear();
             for &r in &self.communities[c].lands {
-                for land in std::iter::once(r).chain(self.map.regions[r].neighbours.iter().copied()) {
-                    if !self.map.regions[land].terrain.is_land() { continue; }
-                    for &(other, _) in &spatial.dwellers[land] {
-                        if other > c && neighbour_marks[other] != c + 1
-                            && !contacts.contains(c, other) {
+                for land in std::iter::once(r).chain(self.map.regions[r].neighbours.iter().copied())
+                {
+                    if !self.map.regions[land].terrain.is_land() {
+                        continue;
+                    }
+                    for &other in &spatial.held[land] {
+                        if other > c
+                            && neighbour_marks[other] != c + 1
+                            && !contacts.contains(c, other)
+                        {
                             neighbour_marks[other] = c + 1;
                             neighbours.push(other);
                         }
@@ -2905,24 +3154,41 @@ impl World {
                     contacts.insert(*self.contacts.last().unwrap());
                 }
             }
-            for other in partners.drain(..) { effort[other] = f32::INFINITY; }
+            for other in partners.drain(..) {
+                effort[other] = f32::INFINITY;
+            }
             self.fill_journeys(c, self.params.trade_reach, &mut journeys);
             let mut offer = |region: usize, distance: f32, incoming: bool| {
-                for &(other, _) in &spatial.dwellers[region] {
-                    if other == c || contacts.contains(c, other) || (incoming && !self.sails(other)) {
+                for &other in &spatial.held[region] {
+                    if other == c || contacts.contains(c, other) || (incoming && !self.sails(other))
+                    {
                         continue;
                     }
-                    if !effort[other].is_finite() { partners.push(other); }
+                    if !effort[other].is_finite() {
+                        partners.push(other);
+                    }
                     effort[other] = effort[other].min(distance);
                 }
             };
-            for (region, journey) in journeys.iter() { offer(region, journey.effort, false); }
+            for (region, journey) in journeys.iter() {
+                offer(region, journey.effort, false);
+            }
             // The partner may carry the initiating people's merchants.
             for &source in &self.communities[c].lands {
                 let row = if self.params.trade_reach > CACHE_REACH_KM {
-                    Cow::Borrowed(journeys.rows.entry((source, true))
-                        .or_insert_with(|| route_row(&self.map, source, self.params.trade_reach, true).into_owned()).as_slice())
-                } else { route_row(&self.map, source, self.params.trade_reach, true) };
+                    Cow::Borrowed(
+                        journeys
+                            .rows
+                            .entry((source, true))
+                            .or_insert_with(|| {
+                                route_row(&self.map, source, self.params.trade_reach, true)
+                                    .into_owned()
+                            })
+                            .as_slice(),
+                    )
+                } else {
+                    route_row(&self.map, source, self.params.trade_reach, true)
+                };
                 for &(r, distance) in row.iter().filter(|(_, d)| *d <= self.params.trade_reach) {
                     offer(r as usize, distance, true);
                 }
@@ -2941,16 +3207,23 @@ impl World {
                     .expect("trade candidates are physically eligible");
                 contacts.insert(*self.contacts.last().unwrap());
             }
-            if self.ruled_by(c).is_some() { continue; }
+            if self.ruled_by(c).is_some() {
+                continue;
+            }
             let me = self.communities[c].prestige;
             let mut conquered = None;
             for &contact in &contacts.adjacent[c] {
-                if contact.kind == ContactKind::Rule { continue; }
+                if contact.kind == ContactKind::Rule {
+                    continue;
+                }
                 let other = if contact.a == c { contact.b } else { contact.a };
                 let gap = me - self.communities[other].prestige - CONQUEST_MIN_GAP;
-                let eligible = gap > 0.0 && self.ruled_by(other).is_none() && self.can_rule(c, other);
+                let eligible =
+                    gap > 0.0 && self.ruled_by(other).is_none() && self.can_rule(c, other);
                 let holy = eligible && self.holy_war_target(c, other);
-                if holy { self.holy_war_checks += 1; }
+                if holy {
+                    self.holy_war_checks += 1;
+                }
                 let factor = if holy { 2.0 } else { 1.0 };
                 let hazard = (self.params.conquest_rate
                     * gap
@@ -2963,7 +3236,8 @@ impl World {
             }
             if let Some(contact) = conquered {
                 let ruled = if contact.a == c { contact.b } else { contact.a };
-                self.events.push((self.generation, WorldEvent::Conquered { ruler: c, ruled }));
+                self.events
+                    .push((self.generation, WorldEvent::Conquered { ruler: c, ruled }));
                 self.subject(c, ruled, contact.intensity.max(CONQUEST_INTENSITY));
                 contacts = self.contact_index();
             }
@@ -3870,16 +4144,41 @@ mod tests {
 
     fn water_pair() -> (World, usize, usize) {
         let mut world = World::new(7, Params::static_society());
-        let coast: Vec<_> = (0..world.map.regions.len()).filter(|&r| world.map.coastal(r)).collect();
-        let (from, to) = coast.iter().find_map(|&a| coast.iter().find_map(|&b| {
-            (world.map.overseas(a, b) && world.map.voyage(a, b) <= 1800.0
-                && world.map.regions[a].neighbours.iter().any(|&r| world.map.regions[r].terrain.is_land()))
-                .then_some((a, b))
-        })).expect("nearby separate shores");
-        let a = world.found_seeded(&Naming::People, &SoundProfile::base(), 7, 0.8, 0.5,
-            Some(from), Some(Livelihood::Farming));
-        let b = world.found_seeded(&Naming::People, &SoundProfile::base(), 8, 0.2, 0.5,
-            Some(to), Some(Livelihood::Farming));
+        let coast: Vec<_> = (0..world.map.regions.len())
+            .filter(|&r| world.map.coastal(r))
+            .collect();
+        let (from, to) = coast
+            .iter()
+            .find_map(|&a| {
+                coast.iter().find_map(|&b| {
+                    (world.map.overseas(a, b)
+                        && world.map.voyage(a, b) <= 1800.0
+                        && world.map.regions[a]
+                            .neighbours
+                            .iter()
+                            .any(|&r| world.map.regions[r].terrain.is_land()))
+                    .then_some((a, b))
+                })
+            })
+            .expect("nearby separate shores");
+        let a = world.found_seeded(
+            &Naming::People,
+            &SoundProfile::base(),
+            7,
+            0.8,
+            0.5,
+            Some(from),
+            Some(Livelihood::Farming),
+        );
+        let b = world.found_seeded(
+            &Naming::People,
+            &SoundProfile::base(),
+            8,
+            0.2,
+            0.5,
+            Some(to),
+            Some(Livelihood::Farming),
+        );
         (world, a, b)
     }
 
@@ -3895,8 +4194,18 @@ mod tests {
         assert!(voyage.by_sea);
         assert_eq!(world.apart(a, b), voyage.effort);
         let from = world.communities[a].home();
-        assert!(world.journeys(b, voyage.effort).iter().any(|(r, j)| *r == from && j.by_sea));
-        assert!(!world.journeys(b, voyage.effort - 0.01).iter().any(|(r, _)| *r == from));
+        assert!(
+            world
+                .journeys(b, voyage.effort)
+                .iter()
+                .any(|(r, j)| *r == from && j.by_sea)
+        );
+        assert!(
+            !world
+                .journeys(b, voyage.effort - 0.01)
+                .iter()
+                .any(|(r, _)| *r == from)
+        );
         world.learn(a, Craft::Seafaring, None);
         let reverse = world.journey_to(a, to).unwrap();
         assert!(reverse.by_sea);
@@ -3908,8 +4217,13 @@ mod tests {
     fn authored_contacts_refuse_unreachable_pairs_without_mutation() {
         let (mut world, a, b) = water_pair();
         let before = world.clone();
-        for kind in [ContactKind::Neighbours, ContactKind::Trade, ContactKind::Rule,
-            ContactKind::Intermarriage, ContactKind::Religion] {
+        for kind in [
+            ContactKind::Neighbours,
+            ContactKind::Trade,
+            ContactKind::Rule,
+            ContactKind::Intermarriage,
+            ContactKind::Religion,
+        ] {
             assert!(world.connect(a, b, 0.5, kind).is_err());
             assert_eq!(world.events, before.events);
             assert_eq!(world.contacts, before.contacts);
@@ -3928,7 +4242,9 @@ mod tests {
         world.params.pilgrimage_reach = effort;
         world.connect(a, b, 0.5, ContactKind::Religion).unwrap();
         world.params.conquest_reach = effort;
-        world.connect(a, b, 0.5, ContactKind::Intermarriage).unwrap();
+        world
+            .connect(a, b, 0.5, ContactKind::Intermarriage)
+            .unwrap();
         world.params.trade_reach = effort - 0.01;
         assert!(world.connect(a, b, 0.5, ContactKind::Trade).is_err());
         assert!(world.connect(a, b, 0.5, ContactKind::Neighbours).is_err());
@@ -3942,7 +4258,9 @@ mod tests {
         let (mut world, ruler, subject) = water_pair();
         let remote = world.communities[subject].home();
         world.communities[subject].lands = world.communities[ruler].lands.clone();
-        world.connect(ruler, subject, 0.8, ContactKind::Rule).unwrap();
+        world
+            .connect(ruler, subject, 0.8, ContactKind::Rule)
+            .unwrap();
         let state = world.rules(ruler).unwrap();
         world.communities[subject].lands = vec![remote];
         world.learn(subject, Craft::Seafaring, None);
@@ -3956,8 +4274,14 @@ mod tests {
         assert!(world.states[state].subjects().next().is_none());
         assert!(world.contacts.is_empty());
         world.reconcile_contacts();
-        let parted: Vec<_> = world.events.iter().filter(|(_, e)| matches!(e,
-            WorldEvent::Parted { a, b, kind: ContactKind::Rule } if *a == ruler && *b == subject)).collect();
+        let parted: Vec<_> = world
+            .events
+            .iter()
+            .filter(|(_, e)| {
+                matches!(e,
+            WorldEvent::Parted { a, b, kind: ContactKind::Rule } if *a == ruler && *b == subject)
+            })
+            .collect();
         assert_eq!(parted.len(), 1);
         assert!(world.states[state].standing());
     }
@@ -3984,7 +4308,9 @@ mod tests {
         world.send_pilgrims();
         assert_eq!(world.contacts[0].kind, ContactKind::Religion);
         assert_eq!(world.contacts[0].intensity, 0.3);
-        world.connect(pilgrim, holder, 0.7, ContactKind::Trade).unwrap();
+        world
+            .connect(pilgrim, holder, 0.7, ContactKind::Trade)
+            .unwrap();
         let contacts = world.contacts.clone();
         let events = world.events.clone();
         world.send_pilgrims();
@@ -3994,10 +4320,21 @@ mod tests {
 
     fn crowd_walkable_lands(world: &mut World, community: usize) {
         let home = world.communities[community].home();
-        let blocker = world.found_seeded(&Naming::People, &SoundProfile::base(), 9, 1.0, 0.5,
-            Some(home), Some(Livelihood::Farming));
-        world.communities[blocker].lands = world.map.walking_row(home, f32::INFINITY)
-            .iter().map(|&(r, _)| r as usize).collect();
+        let blocker = world.found_seeded(
+            &Naming::People,
+            &SoundProfile::base(),
+            9,
+            1.0,
+            0.5,
+            Some(home),
+            Some(Livelihood::Farming),
+        );
+        world.communities[blocker].lands = world
+            .map
+            .walking_row(home, f32::INFINITY)
+            .iter()
+            .map(|&(r, _)| r as usize)
+            .collect();
         world.communities[blocker].size = 100_000_000.0;
     }
 
@@ -4011,7 +4348,10 @@ mod tests {
         let home = world.communities[a].home();
         crowd_walkable_lands(&mut world, a);
         world.learn(b, Craft::Seafaring, None);
-        assert_eq!(world.leavers_land(home, Livelihood::Farming, false), (home, false));
+        assert_eq!(
+            world.leavers_land(home, Livelihood::Farming, false),
+            (home, false)
+        );
         world.migrate();
         assert_eq!(world.communities[a].home(), home);
         world.learn(a, Craft::Seafaring, None);
@@ -4020,36 +4360,89 @@ mod tests {
         assert!(world.map.voyage(home, coast) <= world.params.colony_reach);
         assert!(world.events.iter().any(|(_, e)| matches!(e,
             WorldEvent::Split { daughter: d, by_sea: true, .. } if *d == daughter)));
-        assert!(world.contacts.iter().any(|k| k.a == a && k.b == daughter && k.kind == ContactKind::Trade));
+        assert!(
+            world
+                .contacts
+                .iter()
+                .any(|k| k.a == a && k.b == daughter && k.kind == ContactKind::Trade)
+        );
         world.migrate();
         assert!(world.events.iter().any(|(_, e)| matches!(e,
             WorldEvent::Migrated { community, by_sea: true, .. } if *community == a)));
         for (_, event) in &world.events {
-            if let WorldEvent::Migrated { from, to, by_sea, .. } = *event {
-                let effort = if by_sea { world.map.voyage(from, to) } else { world.map.distance(from, to) };
+            if let WorldEvent::Migrated {
+                from, to, by_sea, ..
+            } = *event
+            {
+                let effort = if by_sea {
+                    world.map.voyage(from, to)
+                } else {
+                    world.map.distance(from, to)
+                };
                 assert!(effort <= world.params.migration_reach);
             }
         }
     }
 
+    #[test]
+    fn urban_residence_does_not_grant_a_neighbouring_holding_or_port() {
+        let (mut world, ruler, subject) = water_pair();
+        world.learn(ruler, Craft::Seafaring, None);
+        world.params.conquest_reach = 1800.0;
+        world.params.city_rate = 1.0;
+        for c in [ruler, subject] {
+            world.communities[c].size = 300_000.0;
+        }
+        let remote = world.communities[subject].home();
+        let capital = world.communities[ruler].home();
+        world.communities[subject].lands = vec![capital];
+        world
+            .connect(ruler, subject, 0.6, ContactKind::Rule)
+            .unwrap();
+        world.grow_cities();
+        world.communities[subject].lands = vec![remote];
+        assert!(
+            world
+                .presence(subject)
+                .iter()
+                .any(|&(r, n)| r == capital && n > 0.0)
+        );
+        let counted: f32 = world.presence(subject).iter().map(|(_, n)| n).sum();
+        assert!((counted - world.communities[subject].size).abs() < 0.1);
+        let rule = world.contacts[0];
+        world.part_contact(rule);
+        let spatial = world.spatial();
+        assert_eq!(world.nearness_indexed(ruler, subject, &spatial), 0.0);
+        assert!(world.journey_to(subject, capital).is_none());
+        world.params.neighbour_rate = 1000.0;
+        world.make_contacts();
+        assert!(world.contacts.is_empty());
+    }
 
     #[test]
     fn regional_food_and_presence_follow_polygon_area() {
         let mut world = World::new(7, Params::static_society());
-        let lands: Vec<_> = world.map.regions.iter().enumerate()
+        let lands: Vec<_> = world
+            .map
+            .regions
+            .iter()
+            .enumerate()
             .filter(|(_, r)| r.terrain == Terrain::Plains)
-            .map(|(r, _)| r).take(2).collect();
+            .map(|(r, _)| r)
+            .take(2)
+            .collect();
         assert_eq!(lands.len(), 2);
         let a = world.found(&SoundProfile::base(), 0.5, 0.5);
         world.communities[a].lands = lands.clone();
         let fed_a = world.feeds(lands[0], Livelihood::Farming);
         let fed_b = world.feeds(lands[1], Livelihood::Farming);
-        let area_ratio = world.map.regions[lands[0]].area_km2
-            / world.map.regions[lands[1]].area_km2;
+        let area_ratio =
+            world.map.regions[lands[0]].area_km2 / world.map.regions[lands[1]].area_km2;
         assert!((fed_a / fed_b - area_ratio).abs() < 1e-5);
         let presence = world.presence(a);
-        assert!((presence.iter().map(|(_, n)| n).sum::<f32>()
-            - world.communities[a].size).abs() < 0.01);
+        assert!(
+            (presence.iter().map(|(_, n)| n).sum::<f32>() - world.communities[a].size).abs() < 0.01
+        );
         assert!((presence[0].1 / presence[1].1 - area_ratio).abs() < 1e-5);
         for (r, region) in world.map.regions.iter().enumerate() {
             if region.terrain == Terrain::Sea {
@@ -4061,25 +4454,61 @@ mod tests {
     fn sequential_spread_redistributes_all_old_land_presence() {
         let mut world = World::new(7, Params::static_society());
         world.params.spread_rate = 1000.0;
-        let (home, destination) = world.map.regions.iter().enumerate().find_map(|(r, region)| {
-            if region.terrain != Terrain::Plains
-                || region.neighbours.iter().filter(|&&n| world.map.regions[n].terrain.is_land()).count() < 2 {
-                return None;
-            }
-            region.neighbours.iter().copied().find(|&n| {
-                world.map.regions[n].terrain == Terrain::Plains
-                    && world.feeds(n, Livelihood::Farming) > world.feeds(r, Livelihood::Farming) / 2.0
-            }).map(|n| (r, n))
-        }).unwrap();
+        let (home, destination) = world
+            .map
+            .regions
+            .iter()
+            .enumerate()
+            .find_map(|(r, region)| {
+                if region.terrain != Terrain::Plains
+                    || region
+                        .neighbours
+                        .iter()
+                        .filter(|&&n| world.map.regions[n].terrain.is_land())
+                        .count()
+                        < 2
+                {
+                    return None;
+                }
+                region
+                    .neighbours
+                    .iter()
+                    .copied()
+                    .find(|&n| {
+                        world.map.regions[n].terrain == Terrain::Plains
+                            && world.feeds(n, Livelihood::Farming)
+                                > world.feeds(r, Livelihood::Farming) / 2.0
+                    })
+                    .map(|n| (r, n))
+            })
+            .unwrap();
         for (seed, share) in [(1, 0.3), (2, 0.3), (3, 0.1)] {
-            let c = world.found_seeded(&Naming::People, &SoundProfile::base(), seed, 0.5, 0.5,
-                Some(home), Some(Livelihood::Farming));
+            let c = world.found_seeded(
+                &Naming::People,
+                &SoundProfile::base(),
+                seed,
+                0.5,
+                0.5,
+                Some(home),
+                Some(Livelihood::Farming),
+            );
             world.communities[c].size = world.feeds(home, Livelihood::Farming) * share;
         }
-        let blocked: Vec<_> = world.map.regions[home].neighbours.iter().copied()
-            .filter(|&r| r != destination && world.map.regions[r].terrain.is_land()).collect();
-        let blocker = world.found_seeded(&Naming::People, &SoundProfile::base(), 4, 1.0, 0.5,
-            Some(blocked[0]), Some(Livelihood::Farming));
+        let blocked: Vec<_> = world.map.regions[home]
+            .neighbours
+            .iter()
+            .copied()
+            .filter(|&r| r != destination && world.map.regions[r].terrain.is_land())
+            .collect();
+        let blocker = world.found_seeded(
+            &Naming::People,
+            &SoundProfile::base(),
+            4,
+            1.0,
+            0.5,
+            Some(blocked[0]),
+            Some(Livelihood::Farming),
+        );
         world.communities[blocker].lands = blocked;
         world.communities[blocker].size = 100_000_000.0;
         let population: f32 = world.living().map(|c| world.communities[c].size).sum();
@@ -4090,8 +4519,11 @@ mod tests {
         let after: f32 = world.living().map(|c| world.communities[c].size).sum();
         assert_eq!(population, after);
         for c in world.living() {
-            assert!((world.presence(c).iter().map(|(_, n)| n).sum::<f32>()
-                - world.communities[c].size).abs() < world.communities[c].size * 1e-6);
+            assert!(
+                (world.presence(c).iter().map(|(_, n)| n).sum::<f32>() - world.communities[c].size)
+                    .abs()
+                    < world.communities[c].size * 1e-6
+            );
         }
     }
 
@@ -4100,20 +4532,36 @@ mod tests {
         let (mut world, first, second) = water_pair();
         let home = world.communities[first].home();
         world.communities[second].lands = vec![home];
-        let destination = world.map.walking_row(home, 600.0).iter()
-            .find(|&&(r, _)| r as usize != home && world.map.regions[r as usize].terrain == Terrain::Plains)
-            .unwrap().0 as usize;
+        let destination = world
+            .map
+            .walking_row(home, 600.0)
+            .iter()
+            .find(|&&(r, _)| {
+                r as usize != home && world.map.regions[r as usize].terrain == Terrain::Plains
+            })
+            .unwrap()
+            .0 as usize;
         let capacity = world.feeds(destination, Livelihood::Farming);
-        for c in [first, second] { world.communities[c].size = capacity * 0.9; }
+        for c in [first, second] {
+            world.communities[c].size = capacity * 0.9;
+        }
         crowd_walkable_lands(&mut world, first);
-        world.communities.last_mut().unwrap().lands.retain(|&r| r != destination);
+        world
+            .communities
+            .last_mut()
+            .unwrap()
+            .lands
+            .retain(|&r| r != destination);
         world.params.migration_rate = 1000.0;
         world.params.migration_reach = 600.0;
         let population = world.communities[first].size + world.communities[second].size;
         world.migrate();
         assert_eq!(world.communities[first].lands, vec![destination]);
         assert_eq!(world.communities[second].lands, vec![home]);
-        assert_eq!(world.communities[first].size + world.communities[second].size, population);
+        assert_eq!(
+            world.communities[first].size + world.communities[second].size,
+            population
+        );
     }
 
     #[test]
@@ -4262,7 +4710,8 @@ mod tests {
         let source = wave.found(&SoundProfile::base(), 0.9, 0.5);
         let from = wave.communities[source].variety;
         wave.communities[source].lands = wave.communities[daughter].lands.clone();
-        wave.connect(daughter, source, 1.0, ContactKind::Neighbours).unwrap();
+        wave.connect(daughter, source, 1.0, ContactKind::Neighbours)
+            .unwrap();
         let law = wave.laws[0].clone();
         wave.apply_law(from, &law);
         wave.spread_waves(&wave.spoken());
@@ -4466,7 +4915,9 @@ mod tests {
             world.run(5);
             let east = world.split(west, None, 0.0);
             world.communities[outsiders].lands = world.communities[east].lands.clone();
-            world.connect(outsiders, east, 0.8, ContactKind::Rule).unwrap();
+            world
+                .connect(outsiders, east, 0.8, ContactKind::Rule)
+                .unwrap();
             world.run(40);
             let (a, b) = (
                 world.communities[west].variety,
@@ -4645,8 +5096,13 @@ mod tests {
         let mut world = World::new(seed, params);
         let rulers = world.found(&SoundProfile::by_id("iranian").unwrap(), 0.9, 0.3);
         let subjects = world.found(&SoundProfile::by_id("polynesian").unwrap(), 0.2, 0.6);
-        world.communities[subjects].lands = world.communities[rulers].lands.clone();
-        world.connect(rulers, subjects, 1.0, ContactKind::Rule).unwrap();
+        let home = world.communities[rulers].home();
+        let nearby = world.map.regions[home].neighbours.iter().copied()
+            .find(|&r| world.map.regions[r].terrain.is_land()).unwrap();
+        world.communities[subjects].lands = vec![nearby];
+        world
+            .connect(rulers, subjects, 1.0, ContactKind::Rule)
+            .unwrap();
         (world, rulers, subjects)
     }
 
@@ -5062,9 +5518,22 @@ mod tests {
     #[test]
     fn a_people_on_many_lands_parts_along_them() {
         let mut world = World::new(4, Params::static_society());
-        let home = world.map.landmasses.iter().find(|m| m.kind == LandmassKind::Continent).unwrap().anchor;
-        let c = world.found_seeded(&Naming::People, &SoundProfile::base(), 4, 0.5, 0.5,
-            Some(home), Some(Livelihood::Farming));
+        let home = world
+            .map
+            .landmasses
+            .iter()
+            .find(|m| m.kind == LandmassKind::Continent)
+            .unwrap()
+            .anchor;
+        let c = world.found_seeded(
+            &Naming::People,
+            &SoundProfile::base(),
+            4,
+            0.5,
+            0.5,
+            Some(home),
+            Some(Livelihood::Farming),
+        );
         let heart = world.communities[c].home();
         // Its heart, a land beside it, and the land furthest from it.
         let beside = world.map.regions[heart]
@@ -5074,8 +5543,12 @@ mod tests {
             .find(|&r| world.map.regions[r].terrain.is_land())
             .unwrap();
         let row = world.map.walking_row(heart, f32::INFINITY);
-        let far = row.iter().filter(|&&(r, _)| r as usize != heart)
-            .max_by(|a, b| a.1.total_cmp(&b.1)).unwrap().0 as usize;
+        let far = row
+            .iter()
+            .filter(|&&(r, _)| r as usize != heart)
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+            .unwrap()
+            .0 as usize;
         world.communities[c].lands = vec![heart, beside, far];
         world.communities[c].size = 9000.0;
         let daughter = world.split(c, None, 0.5);
@@ -5159,7 +5632,9 @@ mod tests {
             let natives = world.found(&SoundProfile::base(), 0.2, 0.5);
             let comers = world.found(&SoundProfile::by_id("iranian").unwrap(), 0.9, 0.5);
             world.communities[comers].lands = world.communities[natives].lands.clone();
-            world.connect(natives, comers, 0.5, ContactKind::Trade).unwrap();
+            world
+                .connect(natives, comers, 0.5, ContactKind::Trade)
+                .unwrap();
             let land = world.communities[natives].home();
             world.communities[comers].lands = vec![land];
             world.communities[comers].size = world.communities[natives].size * PLACE_HOLD * 1.5;
@@ -5193,10 +5668,17 @@ mod tests {
             }
             world.run(240);
             for (_, event) in &world.events {
-                if let WorldEvent::Migrated { from, to, by_sea, .. } = *event {
+                if let WorldEvent::Migrated {
+                    from, to, by_sea, ..
+                } = *event
+                {
                     moved += 1;
                     assert!(from != to && world.map.regions[to].terrain.is_land());
-                    let effort = if by_sea { world.map.voyage(from, to) } else { world.map.distance(from, to) };
+                    let effort = if by_sea {
+                        world.map.voyage(from, to)
+                    } else {
+                        world.map.distance(from, to)
+                    };
                     assert!(effort <= world.params.migration_reach);
                 }
             }
@@ -5232,7 +5714,9 @@ mod tests {
                 };
                 let foragers = found(&mut world, Livelihood::Foraging);
                 let other = found(&mut world, teacher);
-                world.connect(foragers, other, 0.8, ContactKind::Neighbours).unwrap();
+                world
+                    .connect(foragers, other, 0.8, ContactKind::Neighbours)
+                    .unwrap();
                 world.run(20);
                 let farming = world.communities[foragers].livelihood == Livelihood::Farming;
                 match teacher {
@@ -5285,7 +5769,9 @@ mod tests {
             let land = world.communities[home].home();
             world.communities[stranger].lands = vec![land];
             world.communities[dialect].lands = vec![land];
-            world.connect(home, stranger, 0.5, ContactKind::Neighbours).unwrap();
+            world
+                .connect(home, stranger, 0.5, ContactKind::Neighbours)
+                .unwrap();
             world.run(60);
             let source = world.communities[home].variety;
             for (who, count) in [(dialect, &mut kin), (stranger, &mut strangers)] {
@@ -5404,12 +5890,21 @@ mod tests {
     #[test]
     fn cultural_contacts_teach_partner_lands_without_ownership_or_contact_retention() {
         let mut world = cultural_world(9);
-        let mainland = world.map.landmasses.iter()
-            .find(|m| m.kind == LandmassKind::Continent).unwrap();
+        let mainland = world
+            .map
+            .landmasses
+            .iter()
+            .find(|m| m.kind == LandmassKind::Continent)
+            .unwrap();
         let home = mainland.anchor;
-        let remote = world.map.walking_row(home, world.params.trade_reach).iter()
+        let remote = world
+            .map
+            .walking_row(home, world.params.trade_reach)
+            .iter()
             .filter(|&&(r, _)| world.map.closeness(home, r as usize) == 0.0)
-            .max_by(|a, b| a.1.total_cmp(&b.1)).unwrap().0 as usize;
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+            .unwrap()
+            .0 as usize;
         let a = cultural_found(&mut world, 9, home);
         let b = cultural_found(&mut world, 10, remote);
         let (av, bv) = (world.communities[a].variety, world.communities[b].variety);
@@ -5476,8 +5971,13 @@ mod tests {
         }
         world.connect(b, c, 0.5, ContactKind::Trade).unwrap();
         world.connect(a, b, 0.5, ContactKind::Trade).unwrap();
-        for _ in 0..3 { world.refresh_places(); }
-        assert!(remote.iter().all(|&r| world.known_place(cv, r).is_none()), "local refresh spends no report");
+        for _ in 0..3 {
+            world.refresh_places();
+        }
+        assert!(
+            remote.iter().all(|&r| world.known_place(cv, r).is_none()),
+            "local refresh spends no report"
+        );
         world.hear_places();
         assert_eq!(
             remote[..3]
@@ -5694,7 +6194,9 @@ mod tests {
         world.generation = 8;
         let daughter = world.split(0, None, 0.0);
         let receiver = world.communities[daughter].variety;
-        world.connect(0, daughter, 1.0, ContactKind::Neighbours);
+        world
+            .connect(0, daughter, 1.0, ContactKind::Neighbours)
+            .unwrap();
         let law = catalog()
             .into_iter()
             .find(|l| l.id == "initial-stress")

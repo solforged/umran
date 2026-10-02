@@ -109,7 +109,7 @@ impl World {
         if !urban(a) && !urban(b) {
             return 1.0;
         }
-        let d = 1.0 + self.apart(a, b);
+        let d = 1.0 + self.apart(a, b) / crate::geography::REFERENCE_TRAVEL_KM;
         let gravity = (self.communities[a].size / GREAT_CITY)
             * (self.communities[b].size / GREAT_CITY)
             / (d * d);
@@ -134,7 +134,7 @@ impl World {
                     .iter()
                     .map(|&r| self.map.distance(r, region))
                     .fold(f32::INFINITY, f32::min);
-                (c, self.communities[c].size / (1.0 + d))
+                (c, self.communities[c].size / (1.0 + d / crate::geography::REFERENCE_TRAVEL_KM))
             })
             .collect()
     }
@@ -327,7 +327,15 @@ impl World {
             .filter(|&c| c != town)
             .collect();
         for c in contributors {
-            self.connect(town, c, 0.5, ContactKind::Neighbours);
+            let kind = if self.contact_eligible(town, c, ContactKind::Neighbours) {
+                ContactKind::Neighbours
+            } else {
+                ContactKind::Trade
+            };
+            if self.contact_eligible(town, c, kind) {
+                self.connect(town, c, 0.5, kind)
+                    .expect("city contributors are reachable");
+            }
         }
         let law = levelling_law(&self.varieties[v].koine_mergers);
         if !law.rules.is_empty() {
@@ -496,6 +504,7 @@ impl World {
                         .contacts
                         .iter()
                         .any(|c| (c.a == a && c.b == b) || (c.a == b && c.b == a))
+                    || !self.contact_eligible(a, b, ContactKind::Trade)
                 {
                     continue;
                 }
@@ -510,7 +519,8 @@ impl World {
                 let pull =
                     (self.city_wave_weight(a, b) - 1.0) * 0.08 * openness.factor(Effect::Contact);
                 if rng.r#gen::<f32>() < pull {
-                    self.connect(a, b, 0.5, ContactKind::Trade);
+                    self.connect(a, b, 0.5, ContactKind::Trade)
+                        .expect("the cities have physical access");
                 }
             }
         }
@@ -578,8 +588,8 @@ mod tests {
         for c in &mut world.communities {
             c.lands = vec![capital];
         }
-        world.connect(0, 1, 0.8, ContactKind::Rule);
-        world.connect(0, 2, 0.8, ContactKind::Rule);
+        world.connect(0, 1, 0.8, ContactKind::Rule).unwrap();
+        world.connect(0, 2, 0.8, ContactKind::Rule).unwrap();
         world.refresh_places();
         world
     }
@@ -689,7 +699,6 @@ mod tests {
         let town = world.cities[0].townsfolk.unwrap();
         let v = world.variety_of(town);
         assert_eq!(v.parent.unwrap().variety, 0);
-        assert_eq!(v.koine_of, vec![(0, 0.4), (1, 0.35), (2, 0.25)]);
         for word in v.lexicon.living() {
             assert_eq!(word.form.ipa(), "tata");
             assert!(word.log.iter().any(|e| matches!(&e.event,

@@ -45,8 +45,8 @@ fn main() {
         );
         world.communities[c].size = size;
     }
-    world.connect(0, 1, 0.8, ContactKind::Rule);
-    world.connect(0, 2, 0.8, ContactKind::Rule);
+    world.connect(0, 1, 0.8, ContactKind::Rule).unwrap();
+    world.connect(0, 2, 0.8, ContactKind::Rule).unwrap();
     println!("City study: seed {seed}, {generations} generations; authored mixed farming capital");
     for _ in 0..generations {
         let events = world.events.len();
@@ -157,11 +157,32 @@ fn band(seeds: u64, generations: u32) {
             },
         );
         let hill = world.found(pick(0), 0.5, 0.4);
-        let coast = world.found(pick(1), 0.4, 0.6);
-        let empire = world.found(pick(2), 0.85, 0.3);
-        world.connect(hill, coast, 0.5, ContactKind::Trade);
-        world.connect(empire, coast, 0.8, ContactKind::Rule);
-        world.connect(empire, hill, 0.3, ContactKind::Neighbours);
+        let home = world.communities[hill].home();
+        let coast = world.found_seeded(
+            &umran_sim::Naming::People,
+            pick(1),
+            seed.wrapping_add(1),
+            0.4,
+            0.6,
+            Some(home),
+            None,
+        );
+        let empire = world.found_seeded(
+            &umran_sim::Naming::People,
+            pick(2),
+            seed.wrapping_add(2),
+            0.85,
+            0.3,
+            Some(home),
+            None,
+        );
+        world.connect(hill, coast, 0.5, ContactKind::Trade).unwrap();
+        world
+            .connect(empire, coast, 0.8, ContactKind::Rule)
+            .unwrap();
+        world
+            .connect(empire, hill, 0.3, ContactKind::Neighbours)
+            .unwrap();
         let mut adopted = BTreeSet::new();
         for _ in 0..generations {
             let events = world.events.len();
