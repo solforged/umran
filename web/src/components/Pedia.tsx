@@ -35,6 +35,7 @@ import { Specimen } from "./Specimen";
 import { DescentChart, FamilyTree, type Lineage } from "./FamilyTree";
 import { WordGloss } from "./WordGloss";
 import { Renderings } from "./Renderings";
+import { closeClosingDialogs, emphasizeInk, reducedMotion, useLiftedValue } from "../motion";
 
 /// What the encyclopedia is open at.
 export type Focus = import("../model").Subject;
@@ -86,6 +87,9 @@ interface Folio {
   page: HTMLElement | null;
   show: (leaf: string | null) => void;
   register: (id: string, title: string) => () => void;
+  closing: boolean;
+  previousCard: boolean;
+  remember: (children: ReactNode) => void;
 }
 
 const FolioContext = createContext<Folio | null>(null);
@@ -103,8 +107,14 @@ export function Pedia({
   trail,
   onReturn,
   onIndex,
+  hidden,
+  cardMotion,
+  instantFolio,
+  folioFromCard,
+  onFolioLifted,
   ...context
-}: Context & { trail: Focus[]; onReturn: (index: number) => void; onIndex: () => void }) {
+}: Context & { trail: Focus[]; onReturn: (index: number) => void; onIndex: () => void; hidden: boolean;
+  cardMotion: { direction: string; keyboard: boolean; ink: boolean }; instantFolio: boolean; onFolioLifted: () => void; folioFromCard: boolean }) {
   const focus = trail.at(-1)!;
   const cardKey = JSON.stringify(focus);
   const aside = useRef<HTMLElement>(null);
@@ -114,35 +124,93 @@ export function Pedia({
   const readingPositions = useRef(new Map<string, number>());
   const first = Math.max(0, trail.length - 1 - TRAIL_SHOWN);
   const { leaf, onLeaf, folioHost } = context;
+  const liftedLeaf = useLiftedValue(leaf, onFolioLifted);
+  const renderedLeaf = liftedLeaf.value;
+  const lastCard = useRef(cardKey);
+  const sheetWasOpen = useRef(false);
+  const [switchingLeaf, setSwitchingLeaf] = useState(false);
   const [leaves, setLeaves] = useState<{ id: string; title: string }[]>([]);
   const [page, setPage] = useState<HTMLDivElement | null>(null);
+  const lastContents = useRef<ReactNode>(null);
+  const lastSheet = useRef({ card: cardKey, label: focusLabel(focus, context), leaves });
+  const remember = useCallback((children: ReactNode) => { lastContents.current = children; }, []);
+  const contentLift = useRef<number | undefined>(undefined);
+  const show = useCallback((next: string | null) => {
+    window.clearTimeout(contentLift.current);
+    page?.querySelector(".folio-content-leaving")?.remove();
+    if (next && leaf && next !== leaf && !reducedMotion()) {
+      const outgoing = page?.querySelector(".folio-content")?.cloneNode(true) as HTMLElement | undefined;
+      if (outgoing) {
+        outgoing.className = "folio-content-leaving";
+        outgoing.inert = true; outgoing.setAttribute("aria-hidden", "true");
+        page?.append(outgoing);
+        contentLift.current = window.setTimeout(() => outgoing.remove(), 90);
+      }
+    }
+    onLeaf(next);
+  }, [leaf, page, onLeaf]);
+  useEffect(() => () => { window.clearTimeout(contentLift.current); }, []);
   const register = useCallback((id: string, title: string) => {
     setLeaves((all) => (all.some((l) => l.id === id) ? all.map((l) => (l.id === id ? { id, title } : l)) : [...all, { id, title }]));
     return () => setLeaves((all) => all.filter((l) => l.id !== id));
   }, []);
-  const folio = useMemo<Folio>(() => ({ open: leaf, page, show: onLeaf, register }), [leaf, page, onLeaf, register]);
   // A return visit restores the card's chosen section, once it has registered.
   const shown = leaf !== null && leaves.some((l) => l.id === leaf);
+  if (shown) lastSheet.current = { card: cardKey, label: focusLabel(focus, context), leaves };
+  const visible = shown || (renderedLeaf !== null && liftedLeaf.closing);
+  const sheetLabel = liftedLeaf.closing ? lastSheet.current.label : focusLabel(focus, context);
+  const sheetLeaves = liftedLeaf.closing ? lastSheet.current.leaves : leaves;
+  const previousCard = liftedLeaf.closing && lastSheet.current.card !== cardKey;
+  const folio = useMemo<Folio>(() => ({ open: renderedLeaf, page, show, register, closing: liftedLeaf.closing, previousCard, remember }), [renderedLeaf, page, show, register, liftedLeaf.closing, previousCard, remember]);
+  useLayoutEffect(() => {
+    if (lastCard.current === cardKey) return;
+    lastCard.current = cardKey;
+    const card = aside.current?.querySelector<HTMLElement>("article.card");
+    if (card) card.dataset.direction = cardMotion.direction;
+    const heading = card?.querySelector<HTMLElement>(".card-head h2") ?? null;
+    if (heading) {
+      heading.tabIndex = -1;
+      if (cardMotion.keyboard) heading.focus({ preventScroll: true });
+      if (cardMotion.ink) emphasizeInk(heading);
+    }
+  }, [cardKey, cardMotion]);
+  useLayoutEffect(() => {
+    setSwitchingLeaf(sheetWasOpen.current && shown);
+    sheetWasOpen.current = shown;
+  }, [leaf]);
   useLayoutEffect(() => {
     aside.current?.scrollTo({ top: readingPositions.current.get(cardKey) ?? 0 });
   }, [cardKey]);
   useLayoutEffect(() => {
-    page?.scrollTo({ top: readingPositions.current.get(`${cardKey}:${leaf}`) ?? 0 });
-  }, [cardKey, leaf, page]);
+    if (!liftedLeaf.closing) page?.scrollTo({ top: readingPositions.current.get(`${cardKey}:${renderedLeaf}`) ?? 0 });
+  }, [cardKey, renderedLeaf, page, liftedLeaf.closing]);
+  useLayoutEffect(() => {
+    if (!shown || instantFolio) return;
+    closeClosingDialogs();
+    if (!opener.current || !opener.current.isConnected) opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!folioFromCard || (cardMotion.keyboard && window.matchMedia("(max-width: 900px)").matches)) {
+      folioElement.current?.querySelector<HTMLButtonElement>("[aria-selected=true]")?.focus({ preventScroll: true });
+    }
+    return () => { if (opener.current?.isConnected) opener.current.focus({ preventScroll: true }); opener.current = null; };
+  }, [shown, instantFolio]);
+  useLayoutEffect(() => {
+    if (!shown || !instantFolio) return;
+    if (window.matchMedia("(max-width: 900px)").matches) {
+      folioElement.current?.querySelector<HTMLElement>("[aria-selected=true]")?.focus({ preventScroll: true });
+    } else {
+      aside.current?.querySelector<HTMLElement>(`.leaf-title[data-leaf="${leaf}"]`)?.focus({ preventScroll: true });
+    }
+  }, [shown, instantFolio, page, leaf]);
   useEffect(() => {
     if (!shown) return;
-    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    folioElement.current?.querySelector<HTMLButtonElement>("[aria-selected=true]")?.focus({ preventScroll: true });
-    return () => { if (opener.current?.isConnected) opener.current.focus({ preventScroll: true }); };
-  }, [shown]);
-  useEffect(() => {
-    if (!shown) return;
-    const close = (e: KeyboardEvent) => e.key === "Escape" && onLeaf(null);
+    const close = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !document.querySelector("dialog:modal")) onLeaf(null);
+    };
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
   }, [shown, onLeaf]);
   return (
-    <aside className="pedia" ref={aside} aria-label="Encyclopedia" onScroll={(e) => readingPositions.current.set(cardKey, e.currentTarget.scrollTop)}>
+    <aside className="pedia" hidden={hidden} ref={aside} aria-label="Encyclopedia" onScroll={(e) => readingPositions.current.set(cardKey, e.currentTarget.scrollTop)}>
       <nav className="pedia-nav" aria-label="Reading navigation">
         <button
           type="button"
@@ -188,30 +256,30 @@ export function Pedia({
           <Card focus={focus} context={context} />
         </article>
       </FolioContext.Provider>
-      {folioHost && shown
+      {folioHost && visible && !hidden
         ? createPortal(
-            <section className="folio" ref={folioElement} aria-label={`Folio: ${focusLabel(focus, context)}`}>
+            <section className="folio" ref={folioElement} data-instant={instantFolio || undefined} data-closing={liftedLeaf.closing || undefined} inert={liftedLeaf.closing} aria-hidden={liftedLeaf.closing || undefined} aria-label={`Folio: ${sheetLabel}`}>
               <header className="folio-head">
-                <span className="folio-of">{focusLabel(focus, context)}</span>
+                <span className="folio-of">{sheetLabel}</span>
                 <div className="folio-tabs" role="tablist" aria-label="Sections" onKeyDown={(e) => {
                   if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
-                  const current = leaves.findIndex((l) => l.id === leaf);
+                  const current = leaves.findIndex((l) => l.id === renderedLeaf);
                   const next = e.key === "Home" ? 0 : e.key === "End" ? leaves.length - 1
                     : (current + (e.key === "ArrowRight" ? 1 : -1) + leaves.length) % leaves.length;
-                  e.preventDefault(); onLeaf(leaves[next].id);
+                  e.preventDefault(); show(leaves[next].id);
                   e.currentTarget.querySelectorAll<HTMLButtonElement>("[role=tab]")[next]?.focus();
                 }}>
-                  {leaves.map((l) => (
+                  {sheetLeaves.map((l) => (
                     <button
                       key={l.id}
                       type="button"
                       role="tab"
                       id={`${folioId}-${l.id}`}
                       aria-controls={`${folioId}-page`}
-                      tabIndex={l.id === leaf ? 0 : -1}
-                      aria-selected={l.id === leaf}
+                      tabIndex={l.id === renderedLeaf ? 0 : -1}
+                      aria-selected={l.id === renderedLeaf}
                       className="folio-tab"
-                      onClick={() => onLeaf(l.id)}
+                      onClick={() => show(l.id)}
                     >
                       {l.title}
                     </button>
@@ -221,11 +289,12 @@ export function Pedia({
                   <X size={16} />
                 </button>
               </header>
-              <div className="folio-page card" role="tabpanel" id={`${folioId}-page`} aria-labelledby={`${folioId}-${leaf}`} tabIndex={0} ref={setPage} onScroll={(e) => readingPositions.current.set(`${cardKey}:${leaf}`, e.currentTarget.scrollTop)} />
+              <div className="folio-page card" data-switch={switchingLeaf || undefined} role="tabpanel" id={`${folioId}-page`} aria-labelledby={`${folioId}-${renderedLeaf}`} tabIndex={0} ref={setPage} onScroll={(e) => readingPositions.current.set(`${cardKey}:${renderedLeaf}`, e.currentTarget.scrollTop)} />
             </section>,
             folioHost,
           )
         : null}
+      {previousCard && page ? createPortal(<div className="folio-content">{lastContents.current}</div>, page) : null}
     </aside>
   );
 }
@@ -335,7 +404,7 @@ function CardHead({
       <p className="card-kind">
         <Icon size={14} aria-hidden="true" /> {kind}
       </p>
-      <h2 className={hand === undefined ? undefined : `hand-${hand % 5}`}>{title}</h2>
+      <h2 tabIndex={-1} className={hand === undefined ? undefined : `hand-${hand % 5}`}>{title}</h2>
       {sub ? <p className="card-sub">{sub}</p> : null}
     </header>
   );
@@ -686,16 +755,17 @@ function Leaf({ id, title, summary, children }: { id: string; title: string; sum
   const { register } = folio;
   useEffect(() => register(id, title), [register, id, title]);
   const open = folio.open === id;
+  if (open && !folio.closing) folio.remember(children);
   return (
     <section className={open ? "leaf open" : "leaf"}>
       <h3>
-        <button type="button" className="leaf-title" aria-expanded={open} onClick={() => folio.show(open ? null : id)}>
+        <button type="button" className="leaf-title" data-leaf={id} aria-expanded={open} onClick={() => folio.show(open ? null : id)}>
           {title}
           <ChevronRight size={13} aria-hidden="true" />
         </button>
       </h3>
       <div className="leaf-summary">{summary}</div>
-      {open && folio.page ? createPortal(children, folio.page) : null}
+      {open && folio.page && !folio.previousCard ? createPortal(<div className="folio-content" key={id}>{children}</div>, folio.page) : null}
     </section>
   );
 }

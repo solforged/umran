@@ -64,6 +64,13 @@ charts share a camera, while their populations, holdings, language families and
 word forms come from their own views. Following a link opens that telling;
 continuing either panel is an explicit intervention.
 
+The workbench shows one overlaid sheet at a time. Opening an index, notebook
+or intervention lifts the current folio before the dialog settles, then
+restores its leaf when the dialog closes. Comparison returns to the History
+card's Tellings entry, or the matching folio tab on a phone. Escape dismisses
+only the top sheet. The folio's filters and reading position survive the
+temporary cover, as they do a visit to a word's history.
+
 Saves are recipes (`Recipe`: format, `ENGINE_REVISION`, seed, map size,
 active telling ID and all telling records), not resolved states.
 The import validates identities, parent references and shared action prefixes.

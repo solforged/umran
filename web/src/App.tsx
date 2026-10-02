@@ -11,9 +11,11 @@ import { Shelf } from "./components/Shelf";
 import { Stage } from "./components/Stage";
 import { TellingComparison } from "./components/TellingComparison";
 import { Notebook, makeNote } from "./components/Notebook";
+import type { MapMotionReading } from "./components/MapView";
 import { WorldSetup } from "./components/WorldSetup";
 import { sampleWorld } from "./sample";
 import { download } from "./takeout";
+import { useLiftedValue } from "./motion";
 import {
   describe,
   loadShelf,
@@ -47,6 +49,7 @@ export default function App() {
   const [view, setView] = useState<View>({ kind: "loading" });
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [shelf, setShelf] = useState<ShelfIndex>({ books: [], last: null });
+  const mapMotion = useRef<MapMotionReading | null>(null);
   const engine = useRef<Engine | null>(null);
   const [version, setVersion] = useState(0);
   // Entity IDs belong to one telling. Replacing it starts a fresh reading
@@ -62,6 +65,12 @@ export default function App() {
   const [community, setCommunity] = useState(0);
   const [dialog, setDialog] = useState<DialogKind | null>(null);
   const [page, setPage] = useState<Page>("stage");
+  const [comparisonReturn, setComparisonReturn] = useState(0);
+  const [sheetReturn, setSheetReturn] = useState(0);
+  const liftedDialog = useLiftedValue(dialog, () => setSheetReturn((n) => n + 1));
+  const notebookPage = useMemo(() => notebookDraft === undefined ? null : { initial: notebookDraft }, [notebookDraft]);
+  const liftedNotebook = useLiftedValue(notebookPage, () => setSheetReturn((n) => n + 1));
+  const liftedComparison = useLiftedValue(compareWith, () => setComparisonReturn((n) => n + 1));
   const [worldMap, setWorldMap] = useState<WorldMap | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -103,6 +112,7 @@ export default function App() {
   const adopt = useCallback((id: string, next: Engine, fresh: boolean) => {
     engine.current?.dispose();
     engine.current = next;
+    mapMotion.current = null;
     setNotebook(next.notebook()); setNotebookDraft(undefined);
     setWorldMap(next.map());
     setViewTelling(null); setViewPoint(null); setCompareWith(null);
@@ -405,8 +415,8 @@ export default function App() {
   };
 
   const dialogs =
-    dialog === "found" ? (
-      <Modal open wide title="A new people arrives" onClose={() => setDialog(null)}>
+    liftedDialog.value === "found" ? (
+      <Modal open={dialog !== null} wide title="A new people arrives" onClose={() => setDialog(null)}>
         {!overview.atTip ? <p className="telling-note">Writing in year {generation * YEARS} begins another telling. The years through {latest * YEARS} stay in the chronicle.</p> : null}
         <Designer
           catalog={catalog}
@@ -418,9 +428,10 @@ export default function App() {
           }}
         />
       </Modal>
-    ) : dialog ? (
+    ) : liftedDialog.value ? (
       <ActionDialog
-        kind={dialog}
+        open={dialog !== null}
+        kind={liftedDialog.value}
         catalog={catalog}
         overview={overview}
         selected={selected}
@@ -467,6 +478,9 @@ export default function App() {
         notices={notices}
         initialFocus={initialFocus}
         onSettle={settle}
+        comparisonReturn={comparisonReturn}
+        sheetReturn={sheetReturn}
+        mapMotion={mapMotion}
         onNotebook={() => setNotebookDraft(null)}
         onKeep={(subject, label) => setNotebookDraft(makeNote(overview, subject, label))}
         onReadPoint={(point) => { setViewTelling(overview.telling); setViewPoint(point); setViewing(null); }}
@@ -486,9 +500,9 @@ export default function App() {
         onDialog={setDialog}
       />
       {dialogs}
-      {notebookDraft !== undefined ? <Notebook notes={notebook} overview={overview} initial={notebookDraft}
+      {liftedNotebook.value ? <Notebook open={notebookDraft !== undefined} notes={notebook} overview={overview} initial={liftedNotebook.value.initial}
         onClose={() => setNotebookDraft(undefined)} onSave={saveNote} onRead={openNote} /> : null}
-      {compareWith !== null ? <TellingComparison engine={engine.current} overview={overview} map={worldMap} other={compareWith}
+      {liftedComparison.value !== null ? <TellingComparison open={compareWith !== null} engine={engine.current} overview={overview} map={worldMap} other={liftedComparison.value}
         onClose={() => setCompareWith(null)} onRead={readTelling} onContinue={(from) => { setCompareWith(null); run({ kind: "run", generations: 1 }, from); }} /> : null}
     </div>
   );

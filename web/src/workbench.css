@@ -3,7 +3,7 @@
 .workbench { min-width: 0; }
 
 /* Decisions are made beside the chart, with the census laid out as an account. */
-.settlement-desk { grid-area: pedia; min-height: 0; display: flex; flex-direction: column; background: var(--paper); border-left: 1px solid var(--line); overflow: hidden; animation: unfold-sheet 160ms ease-out; }
+.settlement-desk { grid-area: pedia; min-height: 0; display: flex; flex-direction: column; background: var(--paper); border-left: 1px solid var(--line); overflow: hidden; }
 .settlement-desk > header { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .7rem 1rem; border-bottom: 1px solid var(--line); font-size: .85rem; color: var(--ink-soft); }
 .settlement-desk > header .icon { display: grid; place-items: center; flex: none; }
 .settlement-pages { flex: 1; padding: 1.1rem 1.2rem; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
@@ -90,7 +90,7 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .leaf-title svg { flex: none; }
 .leaf-summary { color: var(--ink-soft); }
 .leaf.open .leaf-title { color: var(--accent); }
-.folio { inset: .8rem; animation: unfold-sheet 160ms ease-out; }
+.folio { inset: .8rem; }
 .folio-head { flex-wrap: wrap; gap: .25rem .6rem; align-items: center; padding: .65rem .7rem 0; }
 .folio-of { flex: 1; min-width: 0; white-space: normal; line-height: 1.15; padding-left: .4rem; }
 .folio-tabs { order: 3; flex-basis: 100%; scrollbar-width: thin; }
@@ -129,10 +129,43 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .index-results small { display: block; color: var(--ink-soft); line-height: 1.25; }
 .index-kind { color: var(--ink-soft); font-size: .8rem; }
 .index-empty { padding: 2rem 0; text-align: center; color: var(--ink-soft); }
-.modal[open] { animation: unfold-sheet 160ms ease-out; }
-@keyframes unfold-sheet { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+/* Material motion */
+:root { --settle: 160ms; --lift: 120ms; --turn: 140ms; --paper-ease: cubic-bezier(.2,.7,.2,1); }
+.modal { position: fixed; inset: 0; margin: auto; }
+.modal[open] { animation: paper-settle var(--settle) var(--paper-ease); }
+.modal::backdrop { animation: backdrop-settle var(--settle) var(--paper-ease); }
+.modal[data-closing] { z-index: 101; animation: paper-lift var(--lift) ease-in forwards; }
+.modal-lift-backdrop { position: fixed; inset: 0; z-index: 100; background: rgb(0 0 0 / .35); pointer-events: none; animation: backdrop-lift var(--lift) ease-in forwards; }
+.folio, .settlement-desk { animation: sheet-settle var(--settle) var(--paper-ease); }
+.folio[data-instant] { animation: none; }
+.folio[data-closing], .settlement-desk[data-closing] { animation: sheet-lift var(--lift) ease-in forwards; }
+.modal[data-closing], .folio[data-closing], .settlement-desk[data-closing] { pointer-events: none; }
+.pedia[hidden] { display: none; }
+.settlement-desk[data-closing] { z-index: 7; }
+.folio-page[data-switch] .folio-content { animation: leaf-turn 90ms ease-out; }
+.folio-page { position: relative; }
+.folio-content-leaving { position: absolute; inset: 1rem 1.25rem auto; pointer-events: none; animation: leaf-lift 90ms ease-out forwards; }
+.pedia > .card[data-direction=forward] { --card-edge: 6px; animation: card-turn var(--turn) var(--paper-ease); }
+.pedia > .card[data-direction=back] { --card-edge: -6px; animation: card-turn var(--turn) var(--paper-ease); }
+.ink-emphasis { text-decoration: underline; text-underline-offset: .16em; text-decoration-color: var(--accent); text-decoration-thickness: 2px; animation: ink-settle 600ms ease-out; }
+.map-holding-gained { animation: holding-gain 300ms ease-out; }
+.map-holding-lost { animation: holding-loss 300ms ease-out forwards; }
+.map-border-new { stroke-dasharray: var(--border-length); animation: border-draw 400ms ease-out; }
+@keyframes paper-settle { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+@keyframes paper-lift { to { opacity: 0; transform: translateY(-4px); } }
+@keyframes backdrop-settle { from { opacity: 0; } to { opacity: 1; } }
+@keyframes backdrop-lift { to { opacity: 0; } }
+@keyframes sheet-settle { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
+@keyframes sheet-lift { to { opacity: 0; transform: translateX(8px); } }
+@keyframes leaf-turn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes leaf-lift { to { opacity: 0; } }
+@keyframes card-turn { from { opacity: 0; transform: translateX(var(--card-edge)); } to { opacity: 1; transform: none; } }
+@keyframes ink-settle { from { text-decoration-color: var(--accent); text-decoration-thickness: 3px; } to { text-decoration-color: var(--line); text-decoration-thickness: 1px; } }
+@keyframes holding-gain { from { fill-opacity: 0; } }
+@keyframes holding-loss { to { fill-opacity: 0; } }
+@keyframes border-draw { from { stroke-dashoffset: var(--border-length); } to { stroke-dashoffset: 0; } }
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation: none !important; scroll-behavior: auto !important; transition: none !important; }
+  *, *::before, *::after, .modal::backdrop { animation: none !important; scroll-behavior: auto !important; transition: none !important; }
 }
 
 /* On a small desk, turn between chart and reading instead of squeezing
@@ -151,7 +184,7 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
   :root .stage-panes button { display: flex; align-items: center; justify-content: center; gap: .5rem; min-height: 2.7rem; flex: 1; border: 0; border-bottom: 2px solid transparent; color: var(--ink-soft); border-radius: 0; }
   :root .stage-panes button[aria-pressed=true] { color: var(--accent); border-bottom-color: var(--accent); }
   .workbench .folio { inset: 0; border: 0; box-shadow: none; }
-  .workbench:has(.folio) .pedia { visibility: hidden; }
+  .workbench:has(.folio:not([data-closing])) .pedia { visibility: hidden; }
   .workbench .stage-head { gap: .75rem; }
   .workbench .atlas-open { margin-right: 9.5rem; }
   .workbench .atlas-open kbd { display: none; }

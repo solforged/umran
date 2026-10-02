@@ -11,7 +11,8 @@ import type { Focus } from "./Pedia";
 
 const souls = (n: number) => Math.round(n).toLocaleString();
 
-export function TellingComparison({ engine, overview, map, other, onClose, onRead, onContinue }: {
+export function TellingComparison({ open, engine, overview, map, other, onClose, onRead, onContinue }: {
+  open: boolean;
   engine: Engine;
   overview: Overview;
   map: WorldMap;
@@ -47,7 +48,7 @@ export function TellingComparison({ engine, overview, map, other, onClose, onRea
   const read = (side: Overview, focus?: Focus) => onRead(side.telling, generation, focus);
   const title = (side: Overview) => side.tellings.find((t) => t.id === side.telling)!.name;
   const state = (side: Overview, c: Community) => side.states.find((s) => s.fell === null && (s.rulers === c.id || s.members.some((m) => m.community === c.id && m.left === null)))?.name ?? "Independent";
-  return <Modal open wide title="Two tellings, one year" onClose={onClose}>
+  return <Modal open={open} wide title="Two tellings, one year" onClose={onClose}>
     <div className="telling-comparison">
       <div className="comparison-tools">
         <p><strong>{leftTitle.name}</strong><span className="muted"> compared with</span></p>

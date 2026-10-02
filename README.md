@@ -132,6 +132,13 @@ also keep their search and selected word when returning from a word's history.
 On a small screen, turn between **Chart** and **Reading** for a full page of each;
 the [atlas index](docs/images/atlas-mobile.jpg) stays within reach in either view.
 
+Sheets settle onto the desk and lift away without delaying the next click.
+Only one is open at a time: closing a dialog returns to the folio and reading
+it temporarily covered. Keyboard links focus the next card's heading; pointer
+links leave focus alone. A single 25-year advance or intervention briefly
+marks changed holdings and new state borders, while playback keeps the chart
+quiet. The system's reduced-motion setting makes all these changes immediate.
+
 ![The chronicle laid over the chart, showing peoples and journeys grouped by year with search, order, and language controls](docs/images/chronicle.jpg)
 
 | | |

@@ -218,10 +218,19 @@ Use short, interruptible transitions with a clear source and destination.
 Acceptance: open and dismiss cards, folios, and dialogs repeatedly on desktop
 and phone without delayed clicks, stolen focus, or movement after dismissal.
 
+Delivered: interruptible paired opening and closing for dialogs, folios and
+settlement accounts; directional card turns and keyboard-only heading focus;
+brief ink emphasis when following a moment or returning through the trail.
+Only one sheet is visible at a time. A dialog temporarily lifts the folio,
+then restores its chosen leaf and filters; comparison returns to Tellings.
+On a phone, a reopened folio's selected tab is the visible focus destination.
+Single-step advances and interventions fade changed holdings and draw new
+state borders, without motion during playback or multi-step scrubs. Reduced
+motion makes every sheet and map change immediate.
+
 ## Suggested order
 
 First finish spatial intervention previews and subject timelines. They make
 the existing simulation more expressive and readable. Then build comparisons
 between tellings and guided founding. Geography and its performance work can
 advance alongside those interfaces, with the same Rust-owned preview contract.
-Add richer motion once the destinations and navigation behavior are settled.

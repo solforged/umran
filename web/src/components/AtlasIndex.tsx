@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { ArrowUpRight, Earth, Hammer, Landmark, Languages, MapPin, Search, Sparkles, Users, type LucideIcon } from "lucide-react";
 import type { Overview, WorldMap } from "../model";
 import { YEARS } from "../model";
@@ -80,6 +81,11 @@ export function AtlasIndex({ open, overview, map, onClose, go }: {
     terms.every((term) => searchText(`${entry.name} ${entry.detail} ${entry.aliases ?? ""}`).includes(term)),
   );
   const shown = matches.slice(0, 100);
+  const navigate = (focus: Focus) => {
+    // Release modal inertness before keyboard navigation focuses the card.
+    flushSync(onClose);
+    go(focus);
+  };
   return (
     <Modal open={open} title="The atlas index" onClose={onClose} initialFocus="input[type=search]" wide>
       <p className="index-intro">Find a people, follow a language, or set out for a distant land.</p>
@@ -89,7 +95,7 @@ export function AtlasIndex({ open, overview, map, onClose, go }: {
           value={query} onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "ArrowDown") { e.preventDefault(); results.current?.querySelector("button")?.focus(); }
-            if (e.key === "Enter" && matches.length === 1) { go(matches[0].focus); onClose(); }
+            if (e.key === "Enter" && matches.length === 1) navigate(matches[0].focus);
           }} />
       </div>
       <div className="index-kinds" aria-label="Kinds of entry">
@@ -108,7 +114,7 @@ export function AtlasIndex({ open, overview, map, onClose, go }: {
         e.preventDefault(); buttons[Math.max(0, Math.min(buttons.length - 1, next))]?.focus();
       }}>
         {shown.map(({ key, name, kind, detail, icon: Icon, focus, tone }) => (
-          <li key={key}><button type="button" onClick={() => { go(focus); onClose(); }}>
+          <li key={key}><button type="button" onClick={() => navigate(focus)}>
             <Icon size={19} aria-hidden="true" style={{ color: tone }} />
             <span><strong>{name}</strong><small>{detail}</small></span>
             <span className="index-kind">{kind}</span><ArrowUpRight size={16} aria-hidden="true" />

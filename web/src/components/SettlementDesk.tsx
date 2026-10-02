@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { ArrowRight, Footprints, GitFork, MapPinned, X } from "lucide-react";
 import type { Catalog, HistoryPoint, Naming, Overview, SettlementChoice, SettlementIntent, SettlementPlan, SettlementPreview, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { TERRAIN_NAME } from "../lore";
 import { NamingSelect } from "./NamingSelect";
+import { closeClosingDialogs } from "../motion";
 
 export interface SettlementDraft {
   community: number;
@@ -47,8 +48,9 @@ export function SettlementAccount({ plan, overview, map }: { plan: SettlementPla
   </div>;
 }
 
-export function SettlementDesk({ draft, preview, error, overview, map, catalog, latest, onChange, onCancel, onCommit }: {
+export function SettlementDesk({ draft, closing, preview, error, overview, map, catalog, latest, onChange, onCancel, onCommit, returnFocus }: {
   draft: SettlementDraft;
+  closing: boolean;
   preview: SettlementPreview | null;
   error: string | null;
   overview: Overview;
@@ -58,8 +60,10 @@ export function SettlementDesk({ draft, preview, error, overview, map, catalog, 
   onChange: (next: SettlementDraft) => void;
   onCancel: () => void;
   onCommit: (choice: SettlementChoice, preview: SettlementPreview) => void;
+  returnFocus: HTMLElement | null;
 }) {
   const close = useRef<HTMLButtonElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
   const [naming, setNaming] = useState<Naming | null>(null);
   const [intensity, setIntensity] = useState(0.5);
   const people = overview.communities[draft.community];
@@ -68,14 +72,24 @@ export function SettlementDesk({ draft, preview, error, overview, map, catalog, 
   const changedPast = JSON.stringify(draft.point) !== JSON.stringify(latest.tellings.find((t) => t.id === latest.telling)?.tip);
   const options = (preview?.options ?? []).filter((o) => draft.intent !== "partition" || people.lands.includes(o.region)).toSorted((a, b) => Number(a.reason !== null) - Number(b.reason !== null) || a.region - b.region);
   const eligible = options.filter((o) => o.reason === null).length;
-  useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  useLayoutEffect(() => {
+    closeClosingDialogs();
+    opener.current = returnFocus ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
     close.current?.focus({ preventScroll: true });
     const dismiss = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); onCancel(); } };
     window.addEventListener("keydown", dismiss);
-    return () => { window.removeEventListener("keydown", dismiss); if (opener?.isConnected) opener.focus({ preventScroll: true }); };
+    return () => {
+      window.removeEventListener("keydown", dismiss);
+      queueMicrotask(() => {
+        if (opener.current?.isConnected && document.activeElement === document.body) opener.current.focus({ preventScroll: true });
+      });
+    };
   }, []);
-  return <aside className="settlement-desk" aria-label="Settlement account">
+  useLayoutEffect(() => {
+    if (closing && opener.current?.isConnected) opener.current.focus({ preventScroll: true });
+    else if (!closing) close.current?.focus({ preventScroll: true });
+  }, [closing]);
+  return <aside className="settlement-desk" data-closing={closing || undefined} inert={closing} aria-hidden={closing || undefined} aria-label="Settlement account">
     <header><span>A choice of homeland · year {overview.generation * YEARS}</span><button ref={close} type="button" className="icon" aria-label="Close settlement account" onClick={onCancel}><X size={18} /></button></header>
     <div className="settlement-pages">
       <h2>{people.name}</h2>

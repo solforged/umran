@@ -1,9 +1,15 @@
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type SetStateAction } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type RefObject, type SetStateAction } from "react";
 import { LocateFixed, Maximize, Minus, Plus } from "lucide-react";
 import type { Community, Craft, EthosAxis, Overview, SettlementPreview, WordMap, WorldMap } from "../model";
 import type { ShelfPeople } from "../shelf";
+import { reducedMotion } from "../motion";
 import { YEARS } from "../model";
 import { hue, TERRAIN_NAME } from "../lore";
+
+export interface MapMotionReading {
+  overview: Overview;
+  fills: Map<number, { owners: string; fill: string }>;
+}
 
 /// Gap between stacked labels of peoples sharing a region, in map units.
 const LINE = 0.3;
@@ -273,11 +279,12 @@ export function MapView({
   states = false,
   chosen,
   lands,
-  beacons = [],
   focus = null,
   known = null,
   zoomable = false,
   settlement = null,
+  animateChanges = false,
+  motionMemory,
   camera,
   onCamera,
   onPeople,
@@ -299,8 +306,6 @@ export function MapView({
   chosen: ReadonlySet<number>;
   /// Lands drawn outlined.
   lands: ReadonlySet<number>;
-  /// Peoples marked with a pulse, for something that just happened.
-  beacons?: readonly number[];
   /// A point to bring into view, in map units.
   focus?: [number, number] | null;
   /// Lands one language knows by name; the rest of the land is veiled,
@@ -308,6 +313,8 @@ export function MapView({
   known?: Set<number> | null;
   zoomable?: boolean;
   settlement?: SettlementPreview | null;
+  animateChanges?: boolean;
+  motionMemory?: RefObject<MapMotionReading | null>;
   camera?: MapCamera;
   onCamera?: (camera: MapCamera) => void;
   onPeople: (community: number) => void;
@@ -326,6 +333,7 @@ export function MapView({
   };
   const routeHead = useId();
   const svg = useRef<SVGSVGElement>(null);
+  const localMotion = useRef<MapMotionReading | null>(null);
   const drag = useRef<{ x: number; y: number; scale: number; box: Box; moved: boolean } | null>(null);
   const glide = useRef(0);
   const pointers = useRef(new Map<number, [number, number]>());
@@ -637,14 +645,77 @@ export function MapView({
       <g key={r.id} onClick={sea ? undefined : () => dragged() || onLand(r.id)}>
         <title>{sea ? "Sea" : veiled ? "Unknown land" : (nameOf(r.id) ?? `Unnamed ${TERRAIN_NAME[r.terrain].toLowerCase()}`)}</title>
         <polygon
+          data-region={r.id}
           className={`land terrain-${r.terrain}${sea ? "" : " open"}${lands.has(r.id) ? " shown" : ""}`}
           points={points}
         />
-        {colour ? <polygon className="claim" points={points} style={{ fill: colour }} /> : null}
+        {colour ? <polygon className="claim" data-region={r.id} points={points} style={{ fill: colour }} /> : null}
         {!sea && settlement ? <polygon points={points} className={`settlement-land${possible.has(r.id) ? " possible" : ""}${remains.has(r.id) ? " remaining" : ""}${arrives.has(r.id) ? " arriving" : ""}`} /> : null}
       </g>
     );
   };
+  // Snapshot only at a reading change. Camera and selection renders never
+  // animate ownership, and no inferred journey is drawn.
+  useLayoutEffect(() => {
+    const node = svg.current;
+    if (!node) return;
+    const memory = motionMemory ?? localMotion;
+    const before = memory.current;
+    if (before?.overview === overview) return;
+    const owners = new Map<number, number[]>();
+    for (const people of overview.communities) {
+      if (people.ended !== null) continue;
+      for (const land of people.lands) {
+        const held = owners.get(land) ?? [];
+        held.push(people.id); owners.set(land, held);
+      }
+    }
+    const fills: MapMotionReading["fills"] = new Map();
+    node.querySelectorAll<SVGPolygonElement>(".claim[data-region]").forEach((claim) => {
+      const region = Number(claim.dataset.region);
+      fills.set(region, { owners: (owners.get(region) ?? []).join(","), fill: claim.style.fill });
+    });
+    memory.current = { overview, fills };
+    const step = before && overview.generation === before.overview.generation + 1 &&
+      (overview.telling === before.overview.telling || overview.mutation !== before.overview.mutation);
+    const intervention = before && overview.generation === before.overview.generation &&
+      overview.mutation !== before.overview.mutation && overview.point.action !== before.overview.point.action;
+    if (!before || !animateChanges || reducedMotion() || (!step && !intervention)) return;
+    const changed: Element[] = [];
+    const ghosts: Element[] = [];
+    const layer = node.querySelector(".lands");
+    for (const region of new Set([...before.fills.keys(), ...fills.keys()])) {
+      const old = before.fills.get(region);
+      const next = fills.get(region);
+      if (old?.owners === next?.owners) continue;
+      const claim = node.querySelector<SVGPolygonElement>(`.claim[data-region="${region}"]`);
+      if (next && claim) { claim.classList.add("map-holding-gained"); changed.push(claim); }
+      if (old && layer) {
+        const ground = node.querySelector<SVGPolygonElement>(`.land[data-region="${region}"]`);
+        if (!ground) continue;
+        const ghost = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+        ghost.setAttribute("points", ground.getAttribute("points")!);
+        ghost.setAttribute("class", "claim map-holding-lost");
+        ghost.style.fill = old.fill;
+        layer.append(ghost); ghosts.push(ghost);
+      }
+    }
+    const priorStates = new Set(before.overview.states.filter((state) => state.fell === null).map((state) => state.id));
+    node.querySelectorAll<SVGPathElement>(".state-borders [data-state]").forEach((border) => {
+      if (priorStates.has(Number(border.dataset.state))) return;
+      border.style.setProperty("--border-length", String(border.getTotalLength()));
+      border.classList.add("map-border-new"); changed.push(border);
+    });
+    const clear = () => {
+      changed.forEach((element) => element.classList.remove("map-holding-gained", "map-border-new"));
+      ghosts.forEach((element) => element.remove());
+    };
+    const timer = window.setTimeout(clear, 400);
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const instant = () => { if (media.matches) clear(); };
+    media.addEventListener("change", instant);
+    return () => { window.clearTimeout(timer); clear(); media.removeEventListener("change", instant); };
+  }, [overview, animateChanges, motionMemory]);
 
   return (
     <div className={zoomable ? "mapview zoomable" : "mapview"}>
@@ -735,7 +806,7 @@ export function MapView({
         </g>
         <g className="state-borders" aria-hidden="true">
           {realms.map(({ state, border }) => (
-            <path key={state.id} d={border} style={{ stroke: hue(state.id) }} />
+            <path key={state.id} data-state={state.id} d={border} style={{ stroke: hue(state.id) }} />
           ))}
         </g>
         {names ? (
@@ -815,13 +886,6 @@ export function MapView({
             ))}
           </g>
         ) : null}
-        <g className="beacons" aria-hidden="true">
-          {[...new Set(beacons)].map((id) => {
-            const point = at.get(id);
-            if (!point) return null;
-            return <circle key={`${id}-${generation}`} className="beacon" cx={point[0]} cy={point[1]} r={0.5} />;
-          })}
-        </g>
         <g className="peoples">
           {overview.communities.map((c) => {
             if (c.ended !== null || hidden(c.region)) return null;

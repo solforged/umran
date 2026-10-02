@@ -10,7 +10,8 @@ export function makeNote(overview: Overview, subject: Subject | null, label: str
     label, generation: overview.generation, revision: overview.revision, archived: false };
 }
 
-export function Notebook({ notes, overview, initial, onClose, onSave, onRead }: {
+export function Notebook({ open, notes, overview, initial, onClose, onSave, onRead }: {
+  open: boolean;
   notes: NotebookNote[];
   overview: Overview;
   initial: NotebookNote | null;
@@ -38,7 +39,7 @@ export function Notebook({ notes, overview, initial, onClose, onSave, onRead }: 
     setDraft(kept);
     setError(failure); setNotice(failure ? null : "Kept in this world's notebook.");
   };
-  return <Modal open wide title="The field notebook" initialFocus={draft ? ".notebook-entry input" : undefined} onClose={() => {
+  return <Modal open={open} wide title="The field notebook" initialFocus={draft ? ".notebook-entry input" : undefined} onClose={() => {
     if (dirty) setError("Keep this entry or discard its edits before closing the notebook.");
     else onClose();
   }}>

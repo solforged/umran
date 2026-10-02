@@ -1417,28 +1417,6 @@ button.icon,
   padding: 0.35rem;
 }
 
-/* Something just happened to these peoples. */
-.beacon {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 2;
-  vector-effect: non-scaling-stroke;
-  pointer-events: none;
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: beacon 1.6s ease-out 2 forwards;
-}
-
-@keyframes beacon {
-  from {
-    transform: scale(0.3);
-    opacity: 1;
-  }
-  to {
-    transform: scale(2.2);
-    opacity: 0;
-  }
-}
 
 /* The folio: a card's long and wide sections, laid over the map as a
    sheet, the map dimmed around it. In portrait it covers the card too. */

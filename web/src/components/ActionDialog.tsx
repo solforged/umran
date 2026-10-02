@@ -20,6 +20,7 @@ const TITLES: Record<Exclude<DialogKind, "found">, string> = {
 /// Forms for shaping a people's history. Each validates the basics;
 /// the engine has the last word and reports anything it rejects.
 export function ActionDialog({
+  open,
   kind,
   catalog,
   overview,
@@ -27,6 +28,7 @@ export function ActionDialog({
   onClose,
   onAction,
 }: {
+  open: boolean;
   kind: Exclude<DialogKind, "found">;
   catalog: Catalog;
   overview: Overview;
@@ -232,7 +234,7 @@ export function ActionDialog({
 
   return (
     <Modal
-      open
+      open={open}
       title={TITLES[kind]}
       onClose={onClose}
       footer={

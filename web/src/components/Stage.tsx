@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { BookMarked, BookOpen, Feather, Gauge, Layers, Map as MapIcon, Pause, Play, ScrollText, Search, SkipForward, StepForward, X } from "lucide-react";
 import type { Annal, Catalog, Craft, Destination, HistoryPoint, ReadEngine, EthosAxis, Overview, SettlementChoice, SettlementPreview, WorldMap } from "../model";
 import { YEARS } from "../model";
@@ -11,8 +11,9 @@ import { concerns, findAnnal, individualAnnals, INITIAL_HISTORY } from "../histo
 import { AtlasIndex } from "./AtlasIndex";
 import type { DictionaryView } from "./Dictionary";
 import { Told } from "./Told";
-import { MapView, type Tint } from "./MapView";
+import { MapView, type MapMotionReading, type Tint } from "./MapView";
 import { Pedia, type Focus } from "./Pedia";
+import { emphasizeInk, useLiftedValue } from "../motion";
 
 /// What stops the years passing on their own.
 type PauseOn = "nothing" | "peoples" | "sounds" | "anything";
@@ -72,6 +73,9 @@ export function Stage({
   onNotebook,
   onKeep,
   onReadPoint,
+  comparisonReturn,
+  sheetReturn,
+  mapMotion,
 }: {
   engine: ReadEngine;
   catalog: Catalog;
@@ -104,6 +108,9 @@ export function Stage({
   onNotebook: () => void;
   onKeep: (subject: Focus, label: string) => void;
   onReadPoint: (point: HistoryPoint) => void;
+  comparisonReturn: number;
+  sheetReturn: number;
+  mapMotion: RefObject<MapMotionReading | null>;
 }) {
   const { latest } = overview;
   const atPresent = overview.atTip;
@@ -115,8 +122,28 @@ export function Stage({
   // The folio page open over the map, by its section's id.
   const [leaf, setLeaf] = useState<string | null>(null);
   const leavesByCard = useRef(new Map<string, string | null>());
+  const [instantFolio, setInstantFolio] = useState(false);
+  const [folioFromCard, setFolioFromCard] = useState(false);
+  const [cardMotion, setCardMotion] = useState({ direction: "none", keyboard: false, ink: false });
+  const keyboardActivation = useRef(false);
+  const afterLift = useRef<(() => void) | null>(null);
+  const comparing = useRef(false);
+  const suspendedLeaf = useRef<{ card: string; leaf: string } | null>(null);
+  const resumeFolio = () => {
+    if (document.querySelector("dialog:modal") || afterLift.current || settlement !== null) return;
+    const previous = suspendedLeaf.current;
+    suspendedLeaf.current = null;
+    if (previous?.card === JSON.stringify(focus)) { comparing.current = false; setInstantFolio(true); setLeaf(previous.leaf); }
+  };
+  useEffect(resumeFolio, [sheetReturn]);
   const showLeaf = (next: string | null) => {
+    setFolioFromCard(false);
+    if (next) {
+      afterLift.current = null; suspendedLeaf.current = null; comparing.current = false;
+      if (liftedSettlement.closing) liftedSettlement.finishLift();
+    }
     leavesByCard.current.set(JSON.stringify(focus), next);
+    setInstantFolio(false);
     setLeaf(next);
   };
   const [folioHost, setFolioHost] = useState<HTMLDivElement | null>(null);
@@ -125,18 +152,54 @@ export function Stage({
   const [followed, setFollowed] = useState<{ subject: Focus; label: string } | null>(null);
   const [dictionaryViews, setDictionaryViews] = useState<Record<number, DictionaryView>>({});
   const [indexOpen, setIndexOpen] = useState(false);
+  useLiftedValue(indexOpen ? true : null, resumeFolio);
   const [pane, setPane] = useState<"map" | "reading">(initialFocus ? "reading" : "map");
+  const completeLift = () => {
+    const action = afterLift.current;
+    afterLift.current = null;
+    if (action) action(); else resumeFolio();
+  };
   const [settlement, setSettlement] = useState<SettlementDraft | null>(null);
-  const settlementReading = useMemo(() => settlement ? engine.overviewAt(settlement.point) : overview, [engine, settlement?.point, overview]);
-  const present = useMemo(() => settlement ? engine.overview(engine.latest()) : overview, [engine, settlement !== null, overview]);
+  const settlementOpener = useRef<HTMLElement | null>(null);
+  const liftedSettlement = useLiftedValue(settlement, completeLift);
+  const desk = liftedSettlement.value;
+  const settlementReading = useMemo(() => desk ? engine.overviewAt(desk.point) : overview, [engine, desk?.point, overview]);
+  const present = useMemo(() => desk ? engine.overview(engine.latest()) : overview, [engine, desk !== null, overview]);
   const settlementPreview = useMemo(() => {
-    if (!settlement) return { preview: null, error: null };
-    try { return { preview: engine.settlement(settlement.point, settlement.community, settlement.intent, settlement.share, settlement.destination), error: null }; }
+    if (!desk) return { preview: null, error: null };
+    try { return { preview: engine.settlement(desk.point, desk.community, desk.intent, desk.share, desk.destination), error: null }; }
     catch (e) { return { preview: null, error: message(e) }; }
-  }, [engine, settlement, overview.mutation]);
+  }, [engine, desk, overview.mutation]);
+  const liftThen = (action: () => void, returnTo?: HTMLElement | null) => {
+    const caller = returnTo?.closest("details")?.querySelector<HTMLElement>("summary") ?? returnTo;
+    const next = () => { caller?.focus({ preventScroll: true }); action(); };
+    if (leaf !== null || desk !== null || document.querySelector(".folio")) {
+      if (leaf) suspendedLeaf.current = { card: JSON.stringify(focus), leaf };
+      afterLift.current = next;
+      setLeaf(null); setSettlement(null);
+    } else next();
+  };
+  useEffect(() => {
+    if (!comparing.current || document.querySelector("dialog:modal") || afterLift.current || settlement !== null) return;
+    comparing.current = false;
+    suspendedLeaf.current = null;
+    setInstantFolio(true);
+    setLeaf("tellings");
+  }, [comparisonReturn]);
+  // A reader's next choice supersedes any return queued by a lifted sheet.
   const go = (next: Focus) => {
+    afterLift.current = null; suspendedLeaf.current = null; comparing.current = false;
+    if (liftedSettlement.closing) liftedSettlement.finishLift();
+    setFolioFromCard(JSON.stringify(focus) !== JSON.stringify(next));
     setPane("reading");
     leavesByCard.current.set(JSON.stringify(focus), leaf);
+    setInstantFolio(false);
+    if (JSON.stringify(focus) !== JSON.stringify(next)) {
+      const origin = document.activeElement;
+      const ink = next.kind === "event" && origin instanceof HTMLElement && !!origin.closest(".moment, .chronicle-latest");
+      if (ink && origin instanceof HTMLElement) emphasizeInk(origin);
+      setCardMotion({ direction: "forward", keyboard: keyboardActivation.current, ink });
+    }
     if (next.kind === "people") onSelect(next.id);
     // The history card is the whole history, so it opens in the folio.
     setLeaf(next.kind === "history" ? "history" : null);
@@ -148,6 +211,9 @@ export function Stage({
   };
   const returnTo = (index: number) => {
     setPlaying(false);
+    setFolioFromCard(true);
+    setInstantFolio(false);
+    setCardMotion({ direction: "back", keyboard: keyboardActivation.current, ink: true });
     setTrail((t) => t.slice(0, index + 1));
     const visit = trail[index];
     setLeaf(leavesByCard.current.get(JSON.stringify(visit.subject)) ?? (visit.subject.kind === "history" ? "history" : null));
@@ -198,16 +264,26 @@ export function Stage({
   const openDialog = (kind: InterventionKind, community = selected) => {
     setPlaying(false);
     if (kind === "settlement") {
-      setLeaf(null); setPane("map");
-      setSettlement({ community, intent: overview.communities[community].lands.length > 1 ? "partition" : "settlers", share: 0.5, destination: null, point: overview.point });
-    } else { onDialog(kind); }
+      settlementOpener.current = document.activeElement instanceof HTMLElement
+        ? document.activeElement.closest("details")?.querySelector<HTMLElement>("summary") ?? document.activeElement : null;
+      const open = () => {
+        setPane("map");
+        setSettlement({ community, intent: overview.communities[community].lands.length > 1 ? "partition" : "settlers", share: 0.5, destination: null, point: overview.point });
+      };
+      if (liftedSettlement.closing) { afterLift.current = null; open(); }
+      else liftThen(open, document.activeElement instanceof HTMLElement ? document.activeElement : null);
+    } else { liftThen(() => onDialog(kind), document.activeElement instanceof HTMLElement ? document.activeElement : null); }
   };
   const reconsider = (annal: Annal) => {
     if (!annal.settlement || !annal.before) return;
-    setPlaying(false); setLeaf(null); setPane("map");
-    setSettlement({ ...annal.settlement.plan.choice, destination: null, point: annal.before });
+    setPlaying(false);
+    settlementOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    liftThen(() => { setPane("map"); setSettlement({ ...annal.settlement!.plan.choice, destination: null, point: annal.before! }); });
   };
-  const openIndex = () => { setPlaying(false); setSettlement(null); setIndexOpen(true); };
+  const openIndex = () => {
+    setPlaying(false);
+    liftThen(() => setIndexOpen(true), document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  };
   const stop = useRef(onStop);
   stop.current = onStop;
   useEffect(() => {
@@ -327,8 +403,7 @@ export function Stage({
         return { chosen: [], lands: [], point: null };
     }
   }, [focus, overview, map]);
-  // Peoples something just happened to pulse, sound changes aside.
-  const beacons = fresh.filter((a) => a.kind !== "law").flatMap((a) => a.peoples);
+  // Changes to holdings have their own, recorded motion; no decorative pulse.
 
   const people = overview.communities[selected];
   // The latest moment written, for the chronicle's line.
@@ -342,7 +417,9 @@ export function Stage({
     : tint.kind === "words" ? `Words for “${concept?.replaceAll("_", " ")}”` : "Sound change";
 
   return (
-    <div className="stage workbench" data-pane={pane} data-settlement={settlement !== null}>
+    <div className="stage workbench" data-pane={pane} data-settlement={desk !== null}
+      onClickCapture={(event) => { keyboardActivation.current = event.detail === 0; }}
+      onKeyDownCapture={(event) => { if (event.key === "Enter" || event.key === " ") keyboardActivation.current = true; }}>
       <header className="stage-head">
         <nav>
           <button type="button" className="link brand" onClick={onShelf} title="Back to the shelf" aria-label="Back to the shelf">
@@ -351,7 +428,7 @@ export function Stage({
           <button type="button" className="link" onClick={onExport}>
             Export
           </button>
-          <button type="button" className="link notebook-open" aria-label="Open the field notebook" onClick={() => { setPlaying(false); onNotebook(); }}><BookMarked size={16} aria-hidden="true" /><span>Notebook</span></button>
+          <button type="button" className="link notebook-open" aria-label="Open the field notebook" onClick={() => { setPlaying(false); liftThen(onNotebook, document.activeElement instanceof HTMLElement ? document.activeElement : null); }}><BookMarked size={16} aria-hidden="true" /><span>Notebook</span></button>
         </nav>
         <span className="stage-title">{title}<button type="button" className="link telling-badge" onClick={() => { setPlaying(false); go({ kind: "history" }); setLeaf("tellings"); }} title="Read and compare the tellings of this world">
           {overview.tellings.find((t) => t.id === overview.telling)?.name}
@@ -372,13 +449,14 @@ export function Stage({
           overview={settlement ? settlementReading : overview}
           generation={settlement ? settlementReading.generation : generation}
           tint={settlement ? { kind: "peoples" } : tint}
+          animateChanges={!playing && !desk}
+          motionMemory={mapMotion}
           names={layers.names}
           routes={!settlement && layers.routes}
           contacts={!settlement && layers.contacts}
           states={!settlement && layers.states}
           chosen={new Set(settlement ? [settlement.community] : highlight.chosen)}
           lands={new Set(highlight.lands)}
-          beacons={settlement ? [] : beacons}
           focus={settlement ? map.regions[settlement.destination ?? settlementReading.communities[settlement.community].region].site : highlight.point}
           known={settlement ? null : known}
           settlement={settlementPreview.preview}
@@ -476,9 +554,15 @@ export function Stage({
       </section>
       <div className="folio-host" ref={setFolioHost} />
 
-      {settlement ? <SettlementDesk draft={settlement} preview={settlementPreview.preview} error={settlementPreview.error}
+      {desk ? <SettlementDesk draft={desk} closing={liftedSettlement.closing} preview={settlementPreview.preview} error={settlementPreview.error}
         overview={settlementReading} map={map} catalog={catalog} latest={present} onChange={setSettlement}
-        onCancel={() => setSettlement(null)} onCommit={onSettle} /> : <Pedia
+        onCancel={() => { afterLift.current = null; setPane("reading"); setSettlement(null); }} onCommit={onSettle} returnFocus={settlementOpener.current} /> : null}
+      <Pedia
+        hidden={desk !== null && !liftedSettlement.closing}
+        cardMotion={cardMotion}
+        instantFolio={instantFolio}
+        folioFromCard={folioFromCard}
+        onFolioLifted={completeLift}
         trail={trail.map((visit) => visit.subject)}
         onReturn={returnTo}
         onIndex={openIndex}
@@ -486,7 +570,7 @@ export function Stage({
         onHistoryView={setHistoryView}
         storyView={storyViews[JSON.stringify(focus)] ?? INITIAL_HISTORY}
         onStoryView={(next) => setStoryViews((views) => ({ ...views, [JSON.stringify(focus)]: next }))}
-        onKeep={(subject, label) => { setPlaying(false); onKeep(subject, label); }}
+        onKeep={(subject, label) => { setPlaying(false); liftThen(() => onKeep(subject, label), document.activeElement instanceof HTMLElement ? document.activeElement : null); }}
         onFollow={(subject, label) => { setPlaying(false); setFollowed({ subject, label }); }}
         dictionaryViews={dictionaryViews}
         onDictionaryView={(variety, view) => setDictionaryViews((views) => ({ ...views, [variety]: view }))}
@@ -503,7 +587,10 @@ export function Stage({
         onPlay={() => setPlaying(true)}
         onRestore={onRestore}
         onRenameTelling={onRenameTelling}
-        onCompare={onCompare}
+        onCompare={(telling) => {
+          comparing.current = true;
+          liftThen(() => onCompare(telling), document.querySelector<HTMLElement>(".leaf-title[data-leaf=tellings]"));
+        }}
         leaf={leaf}
         onLeaf={showLeaf}
         folioHost={folioHost}
@@ -514,7 +601,7 @@ export function Stage({
           openDialog(kind, community);
         }}
         onReconsider={reconsider}
-      />}
+      />
 
       <footer className="timebar stage-bar" inert={settlement !== null}>
         <div className="chronicle-line">
@@ -677,7 +764,7 @@ export function Stage({
           </details>
         </div>
       </footer>
-      {indexOpen ? <AtlasIndex open overview={overview} map={map} go={go} onClose={() => setIndexOpen(false)} /> : null}
+      <AtlasIndex open={indexOpen} overview={overview} map={map} go={go} onClose={() => setIndexOpen(false)} />
     </div>
   );
 }
