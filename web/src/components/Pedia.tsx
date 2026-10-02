@@ -1255,8 +1255,8 @@ function TemperLeaf({ c, told, context }: { c: Community; told: Annal[]; context
   );
 }
 
-function Decisions({ community, choices, context }: { community: number; choices: [InterventionKind, string][]; context: Context }) {
-  return <Popover label="Decide for this people" trigger={(props) => <button type="button" className="decide" disabled={context.running} {...props}>Decide…</button>}>
+function Decisions({ community, choices, context, disabled = false, label = "Decide for this people" }: { community: number; choices: [InterventionKind, string][]; context: Context; disabled?: boolean; label?: string }) {
+  return <Popover label={label} trigger={(props) => <button type="button" className="decide" disabled={context.running || disabled} {...props}>Decide…</button>}>
     {(close) => <>{choices.map(([kind, label]) => <button type="button" key={kind} onClick={() => { close(); context.onDialog(kind, community); }}>{label}</button>)}</>}
   </Popover>;
 }
@@ -1652,6 +1652,7 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
   const ctx = languageChapterContext(context, variety);
   return <div className="language-card">
     <CardHead icon={Languages} kind="A language" title={v.name} tone={hue(v.family)} hand={v.family} sub={v.meaning ? `“${v.meaning}”` : null} />
+    <Decisions community={speakers[0]?.id ?? -1} context={context} choices={[["law", "A sound change"]]} disabled={!speakers.length} label="Decide for this language" />
     <LanguageSpecimen variety={variety} context={context} />
     <Facts rows={[
       ["Spoken by", speakers.length ? <Joined items={speakers} link={(c) => <PeopleLink c={c} context={context} />} /> : "no one now"],

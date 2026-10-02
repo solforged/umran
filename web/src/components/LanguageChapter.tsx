@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
+import { Feather } from "lucide-react";
 import type { Annal, HistoryLine, Law, LexiconRow, LoanCause, Origin, Overview, ReadEngine, Subject, Variety, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { CONTACT_NAME, MARKING_PHRASE, POSSESSOR_PHRASE, STRESS_RULE, WORD_ORDER_PHRASE } from "../lore";
@@ -95,7 +96,7 @@ export function LawEvidence({ variety, law, ctx }: SectionProps & { law: Law }) 
 export function SoundLaws({ variety, ctx }: SectionProps) {
   return <div className="language-section">
     <p className="muted small">A dated ledger of regular changes, from earliest to latest. Forms are the engine’s recorded evidence, not reconstructed here.</p>
-    {variety.laws.length ? <ol className="law-ledger">{variety.laws.map((law, i) => <li key={`${law.id}:${law.generation}:${i}`} data-law={law.id}><div className="law-ledger-head"><span className="gen">{law.generation * YEARS}</span> {ctx.link({ kind: "law", id: law.id }, law.label)}</div><LawEvidence variety={variety} law={law} ctx={ctx} /></li>)}</ol> : <p className="muted">No sound laws yet.</p>}
+    {variety.laws.length ? <ol className="law-ledger">{variety.laws.map((law, i) => <li key={`${law.id}:${law.generation}:${i}`} data-law={law.id}><div className="law-ledger-head"><span className="gen">{law.generation * YEARS}</span> {law.decision != null ? <span className="pen" title="The author's decision"><Feather size={12} aria-hidden="true" /></span> : null}{ctx.link({ kind: "law", id: law.id }, law.label)}</div><LawEvidence variety={variety} law={law} ctx={ctx} /></li>)}</ol> : <p className="muted">No sound laws yet.</p>}
   </div>;
 }
 

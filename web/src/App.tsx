@@ -470,6 +470,7 @@ export default function App() {
         kind={liftedDialog.value}
         catalog={catalog}
         overview={overview}
+        engine={engine.current!}
         selected={selected}
         onClose={() => setDialog(null)}
         onAction={(action) => {

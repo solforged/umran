@@ -404,3 +404,12 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .author-decision { color: var(--accent); font-size: .8em; font-variant: small-caps; }
 /* The author's pen before an entry a decision produced. */
 .pen { display: inline-block; margin-right: .3em; color: var(--accent); vertical-align: -1px; }
+
+/* The catalog's exact previews, beside the law the author can choose. */
+.form .law-choices { gap: 0; padding: 0 .8rem; }
+.law-choice { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .65rem; padding: .85rem 0; }
+.law-choice + .law-choice { border-top: 1px solid var(--line); }
+.law-choice > input { margin-top: .3rem; }
+.form .law-choice label { display: flex; justify-content: space-between; gap: .8rem; cursor: pointer; }
+.law-choice .specimen { margin: .4rem 0 0; }
+.law-choice small { display: block; margin-top: .3rem; }

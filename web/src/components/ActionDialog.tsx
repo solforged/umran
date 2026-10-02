@@ -1,11 +1,12 @@
-import { useState, type FormEvent, type ReactNode } from "react";
-import type { Action, Catalog, ContactKind, Craft, EthosAxis, Overview } from "../model";
+import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import type { Action, Catalog, ContactKind, Craft, EthosAxis, Overview, ReadEngine } from "../model";
 import { YEARS } from "../model";
 import { ETHOS_AXES, ETHOS_POLES, temperament } from "../lore";
 import { Modal } from "./Modal";
+import { Specimen } from "./Specimen";
 
 /// "found" opens the language designer; the rest are here.
-export type DialogKind = "found" | "connect" | "shift" | "state" | "religion" | "craft" | "temper";
+export type DialogKind = "found" | "connect" | "shift" | "state" | "religion" | "craft" | "temper" | "law";
 export type InterventionKind = DialogKind | "settlement";
 
 const TITLES: Record<Exclude<DialogKind, "found">, string> = {
@@ -15,6 +16,7 @@ const TITLES: Record<Exclude<DialogKind, "found">, string> = {
   religion: "Found a religion",
   craft: "Teach a craft",
   temper: "A people's temper turns",
+  law: "A sound change",
 };
 
 /// Forms for shaping a people's history. Each validates the basics;
@@ -24,6 +26,7 @@ export function ActionDialog({
   kind,
   catalog,
   overview,
+  engine,
   selected,
   onClose,
   onAction,
@@ -32,6 +35,7 @@ export function ActionDialog({
   kind: Exclude<DialogKind, "found">;
   catalog: Catalog;
   overview: Overview;
+  engine: ReadEngine;
   selected: number;
   onClose: () => void;
   onAction: (action: Action) => void;
@@ -53,15 +57,24 @@ export function ActionDialog({
   const [axis, setAxis] = useState<EthosAxis>("martial");
   const [toward, setToward] = useState<1 | -1>(1);
   const [amount, setAmount] = useState(0.3);
-  const canSubmit = !!people && (kind === "state" ? people.lands.includes(capital) :
-    kind === "craft" ? !people.crafts.includes(craft) :
-    kind === "temper" ? amount > 0 :
-    kind === "religion" || communities.some((c) => c.id === other && c.id !== community));
+  const languages = overview.varieties.filter((v) => communities.some((c) => c.variety === v.id));
+  const [variety, setVariety] = useState(overview.communities[first]?.variety ?? languages[0]?.id ?? -1);
+  const [law, setLaw] = useState<string | null>(null);
+  const lawChoices = useMemo(() => open && kind === "law" && variety >= 0
+    ? engine.lawChoices(overview.point, variety) : [], [engine, open, kind, overview.point, variety]);
+  const canSubmit = kind === "law" ? lawChoices.some((choice) => choice.id === law) :
+    !!people && (kind === "state" ? people.lands.includes(capital) :
+      kind === "craft" ? !people.crafts.includes(craft) :
+      kind === "temper" ? amount > 0 :
+      kind === "religion" || communities.some((c) => c.id === other && c.id !== community));
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!canSubmit) return;
     switch (kind) {
+      case "law":
+        onAction({ kind: "law", variety, law: law! });
+        return;
       case "connect":
         onAction({ kind: "connect", a: community, b: other, intensity, contact });
         return;
@@ -107,6 +120,27 @@ export function ActionDialog({
 
   const body: ReactNode = (() => {
     switch (kind) {
+      case "law":
+        return <>
+          <label>
+            Language
+            <select value={variety} onChange={(e) => { setVariety(Number(e.target.value)); setLaw(null); }}>
+              {languages.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </select>
+          </label>
+          {lawChoices.length ? <fieldset className="law-choices">
+            <legend>Sound change</legend>
+            {lawChoices.map((choice) => <div className="law-choice" key={choice.id}>
+              <input type="radio" name="law" id={`law-choice-${choice.id}`} checked={law === choice.id}
+                onChange={() => setLaw(choice.id)} />
+              <div>
+                <label htmlFor={`law-choice-${choice.id}`}><strong>{choice.label}</strong><span className="muted small">{choice.words} {choice.words === 1 ? "word" : "words"}</span></label>
+                <Specimen words={choice.specimen} changes />
+                {choice.recent ? <small>happened here lately</small> : null}
+              </div>
+            </div>)}
+          </fieldset> : <p className="muted">Nothing in the catalog would change a word of this language now.</p>}
+        </>;
       case "temper":
         return communities.length === 0 ? (
           <p className="muted">No living people is left to temper.</p>
@@ -235,6 +269,7 @@ export function ActionDialog({
   return (
     <Modal
       open={open}
+      wide={kind === "law"}
       title={TITLES[kind]}
       onClose={onClose}
       footer={
@@ -248,7 +283,7 @@ export function ActionDialog({
             className="primary"
             disabled={!canSubmit}
           >
-            Make this decision
+            {kind === "law" ? "Let it happen" : "Make this decision"}
           </button>
         </>
       }

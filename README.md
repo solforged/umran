@@ -32,7 +32,8 @@ runs the years to a date and draws every turning point on a timeline,
 with sound changes as a quieter track below it. Where the engine
 recorded why something happened, the chronicle says so: "after hard
 times", "as the city grew", each phrase a link to the entry that caused
-it.
+it. The author can also choose a sound change for a language from the
+engine's catalog, previewed on the specimen.
 
 ![The workbench after 4,000 years: rivers and Weather colouring on the chart under its cartouche, beside the world's encyclopedia card, with the chronicle caption and the drawn timeline below](docs/images/stage.jpg)
 
