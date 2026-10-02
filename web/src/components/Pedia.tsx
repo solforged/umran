@@ -553,7 +553,10 @@ function LanguageLink({ variety, context }: { variety: number; context: Context 
 
 function landName(region: number, context: Context): string {
   const name = context.overview.places.find((p) => p.region === region)?.names.at(-1)?.spelled;
-  return name ?? `a nameless ${TERRAIN_NAME[context.map.regions[region].terrain].toLowerCase()}`;
+  const terrain = context.map.regions[region].terrain;
+  // Plural landforms take no article: "nameless hills", but "a nameless forest".
+  const plural = terrain === "plains" || terrain === "hills" || terrain === "mountains";
+  return name ?? `${plural ? "" : "a "}nameless ${TERRAIN_NAME[terrain].toLowerCase()}`;
 }
 
 function LandLink({ region, context }: { region: number; context: Context }) {
@@ -720,11 +723,22 @@ function ZoneLink({ id, context }: { id: number; context: Context }) {
 }
 
 /// A weather zone has no name of its own; call it after its first named
-/// land, as a traveller would ("the weather around Īnif").
+/// land, as a traveller would, or else by where it lies on its continent.
 function zoneName(id: number, context: Context): string {
   const regions = context.map.climateZones[id]?.regions ?? [];
   const named = regions.find((r) => context.overview.places.some((p) => p.region === r && p.names.length > 0));
-  return named === undefined ? "The weather of unnamed lands" : `The weather around ${landName(named, context)}`;
+  if (named !== undefined) return `The weather around ${landName(named, context)}`;
+  const first = context.map.regions[regions[0]];
+  const mass = first?.landmass === null || first === undefined ? undefined : context.map.landmasses[first.landmass];
+  if (!mass) return "The weather of unnamed lands";
+  const [ax, ay] = context.map.regions[mass.anchor].site;
+  const cx = regions.reduce((s, r) => s + context.map.regions[r].site[0], 0) / regions.length;
+  const cy = regions.reduce((s, r) => s + context.map.regions[r].site[1], 0) / regions.length;
+  const dx = cx - ax, dy = cy - ay;
+  const side = Math.abs(dx) < 1 && Math.abs(dy) < 1 ? "heart"
+    : `${dy < -Math.abs(dx) / 2 ? "north" : dy > Math.abs(dx) / 2 ? "south" : ""}${Math.abs(dx) > Math.abs(dy) / 2 ? (dx > 0 ? "-east" : "-west") : ""}`.replace(/^-/, "");
+  const continent = context.overview.continents.find((c) => c.landmass === mass.id)?.name?.name;
+  return continent ? `The weather of ${continent}'s ${side}` : `The weather of an unnamed land's ${side}`;
 }
 
 function RiverCard({ id, context }: { id: number; context: Context }) {

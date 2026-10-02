@@ -440,10 +440,10 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .weather-wet { background: #658174; }
 .weather-cold { background: #667f96; }
 .weather-usual { background: var(--paper); }
-.zoom-far :is(.chart-river:not(.river-tier-3), .claim, .routes, .dealings, .pilgrim-roads, .state-borders, .state-capitals, .chart-marks, .founding-markers) { display: none; }
+.zoom-far :is(.chart-river:not(.river-tier-3), .routes, .dealings, .pilgrim-roads, .founding-markers) { display: none; }
 .zoom-far .land.open { stroke: none; }
 :is(.zoom-far, .zoom-mid) :is(.place-names, .river-names) { display: none; }
-.zoom-mid .chart-marks :is(.mark-tree, .mark-grass, .mark-field, .mark-sand) { display: none; }
+:is(.zoom-far, .zoom-mid) .chart-marks :is(.mark-tree, .mark-grass, .mark-field, .mark-sand) { display: none; }
 .zoom-close .continent-names { display: none; }
 .chart-scale { position: absolute; bottom: .4rem; left: .7rem; display: flex; align-items: end; gap: .8rem; color: var(--ink-soft); background: color-mix(in srgb, var(--paper) 88%, transparent); padding: .3rem .45rem; font-size: .75rem; pointer-events: none; }
 .scale-rule { width: var(--scale-width, 6rem); display: block; position: relative; text-align: center; padding-bottom: .3rem; border-bottom: 1px solid var(--ink); white-space: nowrap; }

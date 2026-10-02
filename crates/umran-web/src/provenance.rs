@@ -334,6 +334,8 @@ impl Bench {
                 .lands
                 .iter()
                 .any(|r| world.map.regions[*r].landmass == Some(*landmass)),
+            Subject::River { id } => a.rivers.contains(id),
+            Subject::Zone { id } => a.zones.contains(id),
             Subject::Event { id } => {
                 a.id == *id
                     || all
