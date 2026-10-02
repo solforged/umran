@@ -3,7 +3,8 @@
 //! cargo run --release -p umran-sim --example calibrate -- [seeds] [generations] [preset]
 
 use std::collections::HashMap;
-use umran_sim::{Lexicon, Params, SoundProfile, World};
+use std::time::Instant;
+use umran_sim::{Craft, Lexicon, MapSize, Params, SoundProfile, World, WorldEvent};
 
 fn kept(lexicon: &Lexicon, ranks: std::ops::RangeInclusive<u8>) -> f32 {
     let slots: Vec<_> = lexicon
@@ -18,9 +19,77 @@ fn kept(lexicon: &Lexicon, ranks: std::ops::RangeInclusive<u8>) -> f32 {
     kept as f32 / slots.len() as f32
 }
 
+fn geography(mut args: impl Iterator<Item = String>) {
+    let seeds: usize = args.next().map_or(30, |s| s.parse().expect("seeds"));
+    let generations: u32 = args.next().map_or(160, |s| s.parse().expect("generations"));
+    let size = match args.next().as_deref().unwrap_or("medium") {
+        "small" => MapSize::Small,
+        "medium" => MapSize::Medium,
+        "large" => MapSize::Large,
+        "vast" => MapSize::Vast,
+        _ => panic!("size: small, medium, large, vast"),
+    };
+    let founders: usize = args.next().map_or(6, |s| s.parse().expect("founders"));
+    let profiles = SoundProfile::presets();
+    let mut sums = [0.0f64; 9];
+    let mut startup = Vec::new();
+    let mut steps = Vec::new();
+    for seed in 0..seeds {
+        let start = Instant::now();
+        let mut world = World::with_map(seed as u64, Params::default(), size);
+        startup.push(start.elapsed().as_secs_f64() * 1000.0);
+        for i in 0..founders {
+            world.found(&profiles[i % profiles.len()], 0.25 + (i % 6) as f32 * 0.12, 0.5);
+        }
+        for _ in 0..generations {
+            let start = Instant::now();
+            world.step();
+            steps.push(start.elapsed().as_secs_f64() * 1000.0);
+        }
+        let count = |matches: fn(&WorldEvent) -> bool| {
+            world.events.iter().filter(|(_, e)| matches(e)).count() as f64
+        };
+        let living: Vec<_> = world.living().collect();
+        let row = [
+            living.len() as f64,
+            count(|e| matches!(e, WorldEvent::Spread { .. })),
+            count(|e| matches!(e, WorldEvent::Migrated { .. })),
+            world.states.iter().filter(|s| s.fell.is_none()).count() as f64,
+            world.contacts.len() as f64,
+            living.iter().map(|&c| world.communities[c].size as f64).sum(),
+            count(|e| matches!(e, WorldEvent::Split { by_sea: true, .. })),
+            count(|e| matches!(e, WorldEvent::Migrated { by_sea: true, .. })),
+            living.iter().map(|&c| world.communities[c].lands.len()).sum::<usize>() as f64,
+        ];
+        for (sum, value) in sums.iter_mut().zip(row) {
+            *sum += value;
+        }
+        let first_ship = world.events.iter().find_map(|(g, e)| {
+            matches!(e, WorldEvent::Learnt { craft: Craft::Seafaring, .. }).then_some(*g)
+        });
+        println!("seed {seed}: {row:?}, first_seafaring={first_ship:?}");
+    }
+    startup.sort_by(f64::total_cmp);
+    steps.sort_by(f64::total_cmp);
+    println!("means peoples spread migrations states contacts population sea_colonies sea_migrations holdings:");
+    println!("{:?}", sums.map(|x| x / seeds as f64));
+    println!(
+        "startup median {:.2} ms; step median {:.2} ms p95 {:.2} ms; mean {:.2} years/s",
+        startup[startup.len() / 2],
+        steps[steps.len() / 2],
+        steps[steps.len() * 95 / 100],
+        25_000.0 * steps.len() as f64 / steps.iter().sum::<f64>(),
+    );
+}
+
 fn main() {
     let mut args = std::env::args().skip(1);
-    let seeds: usize = args.next().map_or(200, |s| s.parse().expect("seeds"));
+    let first = args.next();
+    if first.as_deref() == Some("geography") {
+        geography(args);
+        return;
+    }
+    let seeds: usize = first.map_or(200, |s| s.parse().expect("seeds"));
     let generations: u32 = args.next().map_or(40, |s| s.parse().expect("generations"));
     let only: Option<String> = args.next();
 

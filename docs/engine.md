@@ -14,27 +14,18 @@ and integer squares use explicit multiplication.
   `Slot`s, where words compete for each concept with usage weights. Words
   keep a log of every sound law, borrowing, extension, and loss.
 - The map (`geography.rs`) is drawn from the world seed at a chosen size
-  (`MapSize`): regions are Voronoi cells around jittered hex-grid points,
-  so each borders about six others. Terrain (sea, plains, forest, steppe,
-  hills, mountains, desert) comes from smooth noise ranked into fixed
-  shares, half of it sea, and sets how many a region feeds (`fertility`,
-  where peoples are founded; how many it feeds each way of life is
-  `Livelihood::feeds`), how hard it is to cross (`travel`), and how
-  readily its people move (`mobility`: steppe and desert most, mountain
-  folk least). A region stands for land about 100 km across, so the
-  sizes are regional theatres (small about 0.6 million km² with sea,
-  middling 1.2, wide 2.3), not globes. The land is built as separated
-  basins first, then coasts: a small map has one continent of 20–27
-  regions, a middling map one or two totalling 45–55, a wide map two or
-  three totalling 90–110, with sea always between them; the rest of the
-  land is islands of one to three regions. Each continent grows best
-  first from a scored centre in its basin, so noise shapes its bays and
-  promontories but never bridges two basins. Each land region knows its
-  `landmass`; `Map::landmasses` says whether each body is a continent or
-  an island and which region anchors its name. Founders settle continents,
-  leaving islands for seafarers to find. Travel distances between all
-  regions are precomputed. Map generation uses only arithmetic and square
-  roots, so native and WASM draw the same map.
+  (`MapSize`). Regions are Voronoi cells around jittered hex-grid points,
+  so each borders about six others. Terrain is sea, plains, forest,
+  steppe, hills, mountains, or desert. About half the regions are land, split
+  into two main continents and separate small islands. Each land region
+  has one `landmass`; sea has none. Continental budgets are checked during
+  generation rather than left to a favourable seed.
+  Drawing coordinates stay in map units. One unit means 100 km.
+  Shared-border midpoints give geometric centre-to-centre routes.
+  Terrain multiplies their physical length to give effort-km, equivalent
+  plain kilometres: a 100 km mountain crossing costs 400 effort-km.
+  Polygon area sets regional food capacity. Map geometry uses arithmetic
+  and square roots, so native and WASM draw the same map.
 - Languages are founded from a `LanguageDesign` (`design.rs`): the exact
   sounds, each used or favoured, plus knobs (word length, final consonants,
   inner clusters, repetition, long vowels, geminates, stress, affixes or
@@ -208,8 +199,11 @@ and integer squares use explicit multiplication.
   further it lies from other peoples, and lives as that land suits unless
   told otherwise: plains farm, steppe and desert herd, the rest forage.
   Its number is spread over its lands by how much each feeds it, and it
-  grows logistically toward what they feed it (`capacity` times
-  `Livelihood::feeds`), counting everyone living there; when its lands
+  grows logistically toward what they feed it, counting everyone living
+  there. Food is `capacity * Livelihood::feeds * area_km2 / 8660.254`.
+  The default capacity, 40,000, describes farmers on a reference-area
+  plain, not every polygon. Unequal cells keep equal density, and the
+  larger boundary cells are not normalized away. When its lands
   hold more than they feed it, it declines, so foragers dwindle among
   farmers. A people using most of its lands' food spreads into bordering
   land with real room left (`spread_rate`). One too large for its way of
@@ -243,16 +237,20 @@ and integer squares use explicit multiplication.
 - Contacts come and go (`end_contacts`, `make_contacts`). Each kind has a
   typical lifespan (trade 12 generations, rule 16, intermarriage 20,
   religion 30, distant neighbours 40) and cannot end in its first third.
-  Rule lasts longer the further its ruler stands above the ruled, and rule
-  and intermarriage leave the peoples neighbours. Peoples on the same land
+  Rule lasts longer the further its ruler stands above the ruled.
+  Ended rule and intermarriage leave neighbours only on shared or
+  bordering land. Peoples on the same land
   stay neighbours. Two peoples have one contact at most: a new one between
   them replaces the old. The world makes contacts of its own: peoples on
   the same or bordering land become neighbours, more readily and more
-  closely the easier the border is to cross; peoples open trade, nearer
-  partners likelier; and a people far above one it deals with may conquer
-  it. Each beginning, ending, and conquest is a `WorldEvent`, so it is told
-  in the history and stops "until something happens".
-  `Params::static_society()` turns all of this off.
+  closely the easier the border is to cross; peoples open trade with
+  reachable partners, nearer partners likelier; and a people far above
+  one it deals with may conquer it when its own people can get there.
+  Physical access is checked before stochastic turnover and after
+  territorial change. An unreachable relation ends even with turnover
+  disabled. Each beginning, ending, and conquest is a `WorldEvent`, so
+  it is told in the history and stops "until something happens".
+  `Params::static_society()` disables autonomous hazards, not physical gates.
 - States (`polity.rs`) sit above peoples: a ruling people, the peoples it
   rules, a capital land, and a name coined from the rulers' name with
   their belonging affix ("the realm of the Ivo"), which changes with
@@ -261,8 +259,10 @@ and integer squares use explicit multiplication.
   before; when that contact ends, the subject has thrown off the rule. A
   conquest, by the world or an author's rule contact, brings the ruled
   into the rulers' state, raising one if they have none, and conquered
-  rulers bring their whole state, which falls. Subjects make no
-  conquests, and a people split off within a state stays in it. A large
+  rulers lose their old state. Each former subject joins the conqueror
+  only if the new ruler can reach it; the rest become independent.
+  Subjects make no conquests. A split-off people stays in its parent's
+  state only when the actual ruler can reach the daughter. A large
   farming people under no state may organize itself into one
   (`state_rate`): readily in answer to a challenge (bad times on its
   lands, being crowded off land, a stronger state beside it), a tenth as
@@ -374,7 +374,9 @@ and integer squares use explicit multiplication.
   great city; riding begins only in worlds with steppe herders.
   Metalworking, and riding for herders, add prestige in war; riding
   carries a people further and holds it together over more land; only
-  seafarers migrate or send colonies over the sea.
+  seafarers migrate or send colonies over the sea. An inland holder
+  cannot borrow another people's port, and a subject's ships do not
+  supply its ruler's navy.
 - Writing fixes spelling. From the generation a language is first
   written its words keep the spelling they had, while sound laws go on
   changing speech, so spelling falls behind (as English *knight*). A
@@ -584,6 +586,59 @@ including names and event ordering (11,044, 19,072, and 3,369 bytes).
 Append `--neutral` after the numeric arguments of those three examples
 to reproduce that comparison without changing the engine's defaults.
 
+## Physical travel and map scale
+
+Walking traverses land only. Sea endpoints are unreachable even for
+identity. A voyage starts at held coastal land, ends at a coast, and
+has at least one sea cell. It never passes through another coastal port. Each
+embarkation or landing adds 100 effort-km. Same-continent voyages are
+valid. There are no rented ports, mixed inland-and-sea legs, fleets,
+travel durations, or globe wrapping.
+
+`World::journey_to` and `journey_between` are directed: only the
+traveller's own Seafaring enables a boat journey. Walking wins a tie.
+`apart` is symmetric, so either participant may provide transport for
+trade, intermarriage, or religious contact. Rule always requires the
+actual ruler's directed access. `World::connect` returns a refusal before
+changing contacts, states, or history when a requested relation is
+physically impossible. Authors bypass chance, not reachability.
+
+Default effort-km parameters are founding separation saturation 800,
+migration 600, colony 1,200, trade 1,800, conquest 800, pilgrimage 1,200,
+and cohesion reach 300 before mobility. Pilgrimage rate is 0.02.
+Founding is independent settlement and needs no ships. Spread remains
+land-adjacent and uncapped. Cohesion and territorial partition use exact
+walking distances without a cache ceiling. Distance preferences use
+`1 + effort / 100`, so changing units does not change reference-grid odds.
+The colony ceiling intentionally rises from the old eight steps to
+twelve, while embarkation adds overhead. On reference plain shores,
+three intervening sea cells cost 1,200 effort-km rather than the old 1,000.
+
+The immutable map stores sparse walking and voyage rows out to 1,800
+effort-km. Missing cached destinations are outside a bounded query,
+not necessarily unreachable. Exact pair queries use Dijkstra beyond
+the cache, and uncapped consumers reuse full source rows. Authored
+larger reaches use phase-local rows without mutating the shared map.
+Spatial and contact indexes are derived per phase. Successful spread
+redistributes all old holding presence; later migrants see earlier
+migrants' consumed room. These indexes are not additional replay state.
+
+The fixed drawing scale gives these rectangular extents:
+
+| Size | Regions | Land regions | Approximate extent |
+| --- | ---: | ---: | --- |
+| small | 63 | 31 | 950 × 620 km |
+| middling (`medium`) | 130 | 65 | 1,350 × 879 km |
+| wide (`large`) | 252 | 126 | 1,850 × 1,226 km |
+| vast | 3,600 | 1,800 | 6,050 × 5,210 km |
+
+Vast has two continental bodies of at least 800 regions each and
+exactly three one- or two-region islands. It is a large flat theatre,
+not a planet. The facade exposes `catalog.mapSizes`, `map.kmPerUnit`,
+`Region.areaKm2`, and physical landmass metadata while retaining drawing
+units. Movement views use the event's recorded `bySea`, not the shape
+of the present coast.
+
 ## Studying one mechanism
 
 Each example prints a readable report; profiles are preset ids
@@ -596,6 +651,7 @@ cargo run --release -p umran-sim --example contact -- <seed> <donor> <recipient>
 cargo run --release -p umran-sim --example family -- <seed> <proto> <outsider> <generations>
 cargo run --release -p umran-sim --example history -- <seed> <generations>
 cargo run --release -p umran-sim --example calibrate -- <seeds> <generations> [profile]
+cargo run --release -p umran-sim --example calibrate -- geography [seeds] [generations] [size] [founders]
 cargo run --release -p umran-sim --example length -- [seeds] [generations]
 cargo run --release -p umran-sim --example audit -- [seeds] [generations]
 cargo run --release -p umran-sim --example faiths -- [seeds] [years] [first-seed] [seeded|natural|sample|sample-unseeded]
