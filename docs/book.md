@@ -97,7 +97,22 @@ the engine, not a second source. Blank where the engine has nothing yet.
    speech is the point (court speech, sacred language, koine, the words a
    craft brings) (`StateView`, `ReligionView`, `crafts`, `cities`).
 6. **The chronicle.** Every entry, by year, with causes where recorded,
-   and the author's decisions marked as such.
+   and the author's decisions marked as such. It is read in eras, not
+   as a log. An era opens when a state rises or falls, a people
+   conquers another, a faith is founded, or a language becomes
+   classical; its title is that opening entry, dated. Within an era the
+   headline entries stand at full weight (a people appears, parts,
+   moves, or changes tongue; a conquest; a state; a faith and its
+   schisms, conversions, and holy lands; a craft; a city and its
+   speech; a language written, standardised, or made classical; a
+   people ends; a way of life or hard times). The bookkeeping of a
+   year (neighbours, spreads, crowding, the weather, a river, a
+   meaning or spelling, a temper, a sound change, a grammar change)
+   folds into one quiet line under the year, "also that year", which
+   opens to its entries. A filter to one group or a search unfolds
+   what it matches. The chronicle's card is the table of contents:
+   each era with its span, its title, and the peoples, states, and
+   languages it concerns, at the dense scale.
 7. **Notes.** The author's own, dated, with the subjects they refer to.
 8. **Other tellings.** Each draft's name, the year and decision it
    diverged on, and what it kept.
@@ -162,6 +177,11 @@ The chart, the cards, the chronicle, and the time bar. What changes:
   (their known lands, their names for them, their neighbours as they
   called them), chosen from a people's card. That is the explorer frame,
   kept as a way of reading rather than a mechanic.
+- Two scales on a card. Prose (the head, a section's sentence, an
+  entry's text) keeps the reading measure. Apparatus (a facts box, a
+  roster, a ledger, a leaf's title row, the chronicle's contents) sits
+  at the dense scale the layers menu set: smaller type, tight rows,
+  little padding, so a card holds detail without scrolling.
 
 ### The book
 
