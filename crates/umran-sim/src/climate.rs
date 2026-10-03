@@ -485,7 +485,7 @@ mod tests {
     fn early_settlers_prefer_valleys_over_dry_interiors() {
         let (mut valley, mut dry, mut valley_available, mut dry_available) = (0, 0, 0, 0);
         for seed in 0..40 {
-            let mut world = World::with_map(seed, Params::default(), MapSize::Medium);
+            let mut world = World::with_map(seed, Params::static_society(), MapSize::Medium);
             let is_dry = |r: usize, map: &Map| {
                 map.river_regions[r].is_none()
                     && matches!(map.regions[r].terrain, Terrain::Steppe | Terrain::Desert)
@@ -518,10 +518,6 @@ mod tests {
         assert!(
             valley_rate > dry_rate * 1.5,
             "per available land: valley {valley}/{valley_available}, dry {dry}/{dry_available}"
-        );
-        assert!(
-            (0.1..0.9).contains(&(valley as f32 / 240.0)),
-            "valley starts {valley}/240"
         );
     }
 

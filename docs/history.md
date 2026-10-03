@@ -125,9 +125,15 @@ active telling ID and all telling records), not resolved states.
 The import validates identities, parent references and shared action prefixes.
 An unreadable inactive telling stays retained; it does not prevent reading a
 valid active account. Bump `ENGINE_REVISION` whenever a change would make an
-existing recipe replay differently; loading a recipe from another revision
-still works but the UI warns that its words may differ. Resolved-state saves
-remain possible later work if exact preservation across versions matters.
+existing recipe replay differently. Revision 33 changes flat geography to
+a sphere, replacing region identities: the facade refuses earlier recipes
+and the shelf opens recovery with the original data still downloadable.
+An imported older file is refused without changing saved worlds. Its
+region IDs are never guessed onto the new map. For later revision
+mismatches, replay still works with a warning that the history may differ.
+Shelf miniatures are drawn only when the save matches the running revision.
+Resolved-state saves remain possible later work if exact preservation
+across versions matters.
 
 The save document flattens that recipe alongside the notebook and optional
 `title` and `author` strings. Old saves without these fields load with neither
@@ -164,6 +170,11 @@ Founding keeps one account open beside the chart, with independent
 homeland, livelihood, temper, speech, grammar, and identity choices; the others
 are one inked line each. The chosen people's reach, from the engine's
 founding preview, is drawn on the chart rather than listed.
+
+Chart and Globe are two projections of the same spherical world. The
+`umran.projection` browser preference defaults to Chart; it is not part of
+the recipe. Turning, zooming, or switching views makes no authored decision
+and does not change replay.
 
 The first visit opens the chart room, even when it is empty; founding
 and the sample are explicit choices there. Later visits resume the world

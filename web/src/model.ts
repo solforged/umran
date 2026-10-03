@@ -89,6 +89,14 @@ export type Action =
       /// Leanings the author sets; the rest its land and life choose.
       ethos?: Partial<Ethos>;
     }
+  | {
+      kind: "found-related";
+      source: number;
+      region: number;
+      naming: Naming;
+      livelihood?: Livelihood;
+      ethos?: Partial<Ethos>;
+    }
   | { kind: "connect"; a: number; b: number; intensity: number; contact: ContactKind }
   | { kind: "shift"; community: number; toward: number }
   | { kind: "state"; community: number; capital?: number }
@@ -702,6 +710,8 @@ export interface WordDetail {
 
 export type MapSize = "small" | "medium" | "large" | "vast";
 
+export type GeographyVersion = "spherical-v1" | "continental-v2";
+
 export type Terrain = "sea" | "plains" | "forest" | "steppe" | "hills" | "mountains" | "desert";
 
 export interface Region {
@@ -712,7 +722,11 @@ export interface Region {
   moisture: number;
   warmth: number;
   climateZone: number | null;
-  /// The point the region was drawn around, in map units.
+  /// Canonical longitude east and latitude north, in degrees.
+  center: [number, number];
+  /// Clockwise unclosed small-polygon ring in canonical geographic degrees.
+  boundary: [number, number][];
+  /// Derived equirectangular drawing coordinates, not a physical distance metric.
   site: [number, number];
   outline: [number, number][];
   coastal: boolean;
@@ -737,8 +751,11 @@ export interface Landmass {
 /// The land a book's history plays out on; it never changes.
 export interface WorldMap {
   size: MapSize;
+  geography: GeographyVersion;
+  radiusKm: number;
   width: number;
   height: number;
+  /// Equatorial equirectangular drawing scale; use engine metrics for distances.
   kmPerUnit: number;
   regions: Region[];
   landmasses: Landmass[];
@@ -754,6 +771,8 @@ export interface River {
   joins: number | null;
   /// Exact downstream region at the confluence; null for a sea outlet.
   joinAt: number | null;
+  /// Geodesic center-to-center course through its actual confluence/coastal outlet.
+  lengthKm: number;
 }
 
 export interface ClimateView {
@@ -840,6 +859,9 @@ export interface ReadEngine {
 }
 export interface Engine extends ReadEngine {
   foundingPreview(): FoundingPreview;
+  /// Up to 12 nearby unoccupied year-zero lands, in land-travel order.
+  /// An unoccupied anchor comes first; an occupied anchor is only the origin.
+  foundingSites(region: number, count: number): number[];
   notebook(): NotebookNote[];
   saveNote(note: NotebookNote): void;
   resolveNote(id: string): Destination | null;
@@ -934,7 +956,7 @@ export interface DecisionView {
   /// The action's index in its telling.
   index: number;
   generation: number;
-  kind: "settle" | "found" | "connect" | "shift" | "state" | "religion" | "craft" | "temper";
+  kind: "settle" | "found" | "found-related" | "connect" | "shift" | "state" | "religion" | "craft" | "temper" | "law";
   /// One sentence in the chronicle's voice.
   text: string;
   people: number[];

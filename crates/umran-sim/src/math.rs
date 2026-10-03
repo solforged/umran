@@ -16,3 +16,23 @@ pub(crate) fn ln(value: f32) -> f32 {
 pub(crate) fn pow(base: f32, exponent: f32) -> f32 {
     libm::powf(base, exponent)
 }
+
+#[inline]
+pub(crate) fn sin(value: f64) -> f64 {
+    libm::sin(value)
+}
+
+#[inline]
+pub(crate) fn cos(value: f64) -> f64 {
+    libm::cos(value)
+}
+
+#[inline]
+pub(crate) fn atan2(y: f64, x: f64) -> f64 {
+    libm::atan2(y, x)
+}
+
+#[inline]
+pub(crate) fn exp64(value: f64) -> f64 {
+    libm::exp(value)
+}

@@ -14,7 +14,10 @@ use std::{cell::RefCell, rc::Rc};
 use umran_sim::climate::ClimateCause;
 use umran_sim::compare::intelligibility;
 use umran_sim::concepts::{Concept, by_id, related};
-use umran_sim::geography::{KM_PER_UNIT, LandmassKind, RIVER_TRAVEL_FLOW};
+use umran_sim::geography::{
+    GeographyVersion, KM_PER_UNIT, LandmassKind, Map, RIVER_TRAVEL_FLOW, River, angular_distance,
+    geographic,
+};
 use umran_sim::grammar::{
     Category, GrammarChoice, GrammarEntry, GrammarEvent, Marker as GrammarMarker, MarkerKind,
     MarkerOrigin, PossessorOrder, Side, WordOrder,
@@ -32,6 +35,10 @@ use umran_sim::{
 use umran_sim::{LanguageDesign, MorphologyKind, Naming, Segment, Variety};
 use wasm_bindgen::prelude::*;
 
+/// Revision 33 replaces the flat mesh and its region identities with a sphere.
+/// Earlier region-targeted actions cannot be reinterpreted as spherical locations.
+const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;
+
 /// The browser-facing history; `Bench` holds the logic so it can be tested
 /// natively, where `JsValue` is unavailable.
 #[wasm_bindgen]
@@ -47,6 +54,13 @@ impl Workbench {
     pub fn new(seed: u32, size: &str) -> Result<Workbench, JsValue> {
         Ok(Workbench {
             bench: Bench::new(seed, size).map_err(fail)?,
+        })
+    }
+
+    #[wasm_bindgen(js_name = withGeography)]
+    pub fn with_geography(seed: u32, size: &str, geography: &str) -> Result<Workbench, JsValue> {
+        Ok(Workbench {
+            bench: Bench::with_geography(seed, size, geography).map_err(fail)?,
         })
     }
 
@@ -124,6 +138,23 @@ impl Workbench {
     #[wasm_bindgen(js_name = foundingPreview)]
     pub fn founding_preview(&self) -> Result<String, JsValue> {
         self.bench.founding_preview().map_err(fail)
+    }
+
+    #[wasm_bindgen(js_name = foundingSites)]
+    pub fn founding_sites(&self, region: f64, count: f64) -> Result<String, JsValue> {
+        if !region.is_finite()
+            || region < 0.0
+            || region.fract() != 0.0
+            || region >= self.bench.chronicle.latest().map.regions.len() as f64
+        {
+            return Err(fail("Choose a valid homeland region.".into()));
+        }
+        if !count.is_finite() || count.fract() != 0.0 || !(1.0..=12.0).contains(&count) {
+            return Err(fail("Choose between 1 and 12 founding sites.".into()));
+        }
+        self.bench
+            .founding_sites(region as usize, count as usize)
+            .map_err(fail)
     }
 
     pub fn act(&mut self, action: &str) -> Result<(), JsValue> {
@@ -373,10 +404,26 @@ pub struct Bench {
 
 impl Bench {
     pub fn new(seed: u32, size: &str) -> Result<Bench, String> {
+        Self::new_with_geography(seed, size, GeographyVersion::ContinentalV2)
+    }
+
+    /// Generate the recipe's geography without replaying its authored history.
+    pub fn with_geography(seed: u32, size: &str, geography: &str) -> Result<Bench, String> {
+        let geography: GeographyVersion =
+            serde_json::from_value(serde_json::Value::String(geography.into()))
+                .map_err(|_| format!("Unknown geography version: {geography}."))?;
+        Self::new_with_geography(seed, size, geography)
+    }
+
+    fn new_with_geography(
+        seed: u32,
+        size: &str,
+        geography: GeographyVersion,
+    ) -> Result<Bench, String> {
         let map: MapSize = serde_json::from_value(serde_json::Value::String(size.into()))
             .map_err(|_| format!("Unknown world size: {size}."))?;
         Ok(Bench {
-            chronicle: Chronicle::new(u64::from(seed), map),
+            chronicle: Chronicle::with_geography(u64::from(seed), map, geography),
             notebook: Vec::new(),
             title: None,
             author: None,
@@ -393,6 +440,9 @@ impl Bench {
         let document: Document =
             serde_json::from_str(json).map_err(|e| format!("Not an Umran save: {e}"))?;
         let recipe = document.recipe;
+        if recipe.revision < SPHERICAL_GEOGRAPHY_REVISION {
+            return Err("This save uses the earlier flat geography. Its original is still available for recovery; it cannot be replayed on a spherical world.".into());
+        }
         let chronicle = Chronicle::from_recipe(&recipe)?;
         Ok(Bench {
             chronicle,
@@ -466,7 +516,7 @@ impl Bench {
                     .unwrap_or(world.communities[c].variety)
             };
             let (kind, text, people, variety) = match action {
-                Action::Found { .. } => {
+                Action::Found { .. } | Action::FoundRelated { .. } => {
                     let c = decision
                         .events
                         .clone()
@@ -475,12 +525,24 @@ impl Bench {
                             _ => None,
                         })
                         .expect("founding records its people");
-                    (
-                        "found",
-                        format!("The *{}* were founded.", name(c)),
-                        vec![c],
-                        Some(spoken(c)),
-                    )
+                    match action {
+                        Action::FoundRelated { source, .. } => (
+                            "found-related",
+                            format!(
+                                "The *{}* were founded with speech inherited from the *{}*.",
+                                name(c),
+                                name(*source)
+                            ),
+                            vec![*source, c],
+                            Some(spoken(c)),
+                        ),
+                        _ => (
+                            "found",
+                            format!("The *{}* were founded.", name(c)),
+                            vec![c],
+                            Some(spoken(c)),
+                        ),
+                    }
                 }
                 Action::Settle { choice } => {
                     use umran_sim::settlement::SettlementIntent;
@@ -724,10 +786,10 @@ impl Bench {
         to_json(&CatalogView {
             revision: ENGINE_REVISION,
             map_sizes: [
-                ("small", "small", "63 regions, 31 land; about 950 × 620 km. A regional sea and its shores."),
-                ("medium", "middling", "130 regions, 65 land; about 1,350 × 879 km. A large regional basin."),
-                ("large", "wide", "252 regions, 126 land; about 1,850 × 1,226 km. A small subcontinental theatre."),
-                ("vast", "vast", "3,600 regions, 1,800 land; about 6,050 × 5,210 km. Two small continents and separate islands, not a globe."),
+                ("small", "small", "642 regions; radius 800 km, circumference about 5,030 km. A compact spherical world."),
+                ("medium", "middling", "2,562 regions; radius 1,600 km, circumference about 10,050 km. The default spherical world."),
+                ("large", "wide", "2,562 regions; radius 3,200 km, circumference about 20,110 km. A larger globe at coarser regional resolution."),
+                ("vast", "vast", "10,242 regions; radius 6,371 km, circumference about 40,030 km. An Earth-sized globe at coarser regional resolution."),
             ]
             .into_iter()
             .map(|(id, name, description)| Choice {
@@ -1222,6 +1284,56 @@ impl Bench {
             })
             .collect();
         to_json(&Preview { pairs, peoples })
+    }
+
+    /// Nearby year-zero homelands, ordered by land-only walking effort.
+    /// The anchor may be occupied; all returned sites must be unoccupied and fed.
+    pub fn founding_sites(&self, region: usize, count: usize) -> Result<String, String> {
+        let world = self.chronicle.latest();
+        if world.generation != 0 {
+            return Err("Founding sites belong to year zero.".into());
+        }
+        if !(1..=12).contains(&count) {
+            return Err("Choose between 1 and 12 founding sites.".into());
+        }
+        let anchor = world
+            .map
+            .regions
+            .get(region)
+            .ok_or("Choose a valid homeland region.")?;
+        if !anchor.terrain.is_land() {
+            return Err("A homeland must be on land.".into());
+        }
+        let occupied: HashSet<usize> = world
+            .living()
+            .flat_map(|c| world.communities[c].lands.iter().copied())
+            .collect();
+        let feeds = |r| Livelihood::ALL.iter().any(|&way| world.feeds(r, way) > 0.0);
+        let mut nearby: Vec<(usize, f32)> = Vec::with_capacity(count);
+        for &(r, effort) in world
+            .map
+            .walking_row(region, world.params.settle_apart)
+            .iter()
+        {
+            let r = r as usize;
+            if !effort.is_finite() || occupied.contains(&r) || !feeds(r) {
+                continue;
+            }
+            let at = nearby
+                .binary_search_by(|&(id, distance)| distance.total_cmp(&effort).then(id.cmp(&r)))
+                .unwrap_or_else(|at| at);
+            if at < count {
+                if nearby.len() == count {
+                    nearby.pop();
+                }
+                nearby.insert(at, (r, effort));
+            }
+        }
+        let mut sites = [0; 12];
+        for (site, &(r, _)) in sites.iter_mut().zip(&nearby) {
+            *site = r;
+        }
+        to_json(&sites[..nearby.len()])
     }
 
     pub fn settlement(
@@ -1749,6 +1861,8 @@ impl Bench {
         let map = &self.chronicle.latest().map;
         to_json(&MapView {
             size: map.size,
+            geography: map.geography,
+            radius_km: map.radius_km,
             width: map.width,
             height: map.height,
             km_per_unit: KM_PER_UNIT,
@@ -1765,6 +1879,8 @@ impl Bench {
                     warmth: r.warmth,
                     climate_zone: r.climate_zone,
                     landmass: r.landmass,
+                    center: geographic(r.position),
+                    boundary: r.boundary.iter().copied().map(geographic).collect(),
                     site: r.site,
                     outline: r.outline.clone(),
                     coastal: map.coastal(id),
@@ -1787,17 +1903,8 @@ impl Bench {
                 .rivers
                 .iter()
                 .enumerate()
-                .map(|(id, river)| RiverView {
-                    id,
-                    course: &river.course,
-                    mouth: river.mouth,
-                    catchment: &river.catchment,
-                    joins: river.joins,
-                    join_at: river
-                        .joins
-                        .and_then(|_| river.course.last().and_then(|&region| map.drainage[region])),
-                })
-                .collect(),
+                .map(|(id, river)| river_view(map, id, river))
+                .collect::<Result<Vec<_>, _>>()?,
             climate_zones: map
                 .climate_zones
                 .iter()
@@ -1973,6 +2080,7 @@ impl Bench {
                 Action::Run { generations } => format!("Ran {generations} generations"),
                 // Everything else appears as world events below.
                 Action::Found { .. }
+                | Action::FoundRelated { .. }
                 | Action::Settle { .. }
                 | Action::Connect { .. }
                 | Action::Shift { .. }
@@ -2745,7 +2853,7 @@ fn fail(message: String) -> JsValue {
     JsValue::from_str(&message)
 }
 
-fn to_json<T: Serialize>(value: &T) -> Result<String, String> {
+fn to_json<T: Serialize + ?Sized>(value: &T) -> Result<String, String> {
     serde_json::to_string(value).map_err(|e| e.to_string())
 }
 
@@ -4328,13 +4436,53 @@ struct WordView {
     cognates: Vec<Cognate>,
 }
 
+/// Measure the fixed canonical course, including its actual outlet. Drawing
+/// coordinates cannot supply a distance on a sphere, especially at a chart seam.
+fn river_view<'a>(map: &Map, id: usize, river: &'a River) -> Result<RiverView<'a>, String> {
+    let last = *river
+        .course
+        .last()
+        .ok_or_else(|| format!("River {id} has no course."))?;
+    let join_at = match river.joins {
+        Some(_) => Some(
+            map.drainage[last]
+                .ok_or_else(|| format!("River {id} has no downstream confluence."))?,
+        ),
+        None => None,
+    };
+    let endpoint = if let Some(region) = join_at {
+        map.regions[region].position
+    } else {
+        map.shared_midpoint(last, river.mouth)
+            .ok_or_else(|| format!("River {id} has no shared coastal boundary."))?
+    };
+    let course_radians: f64 = river
+        .course
+        .windows(2)
+        .map(|pair| angular_distance(map.regions[pair[0]].position, map.regions[pair[1]].position))
+        .sum();
+    let length_km = f64::from(map.radius_km)
+        * (course_radians + angular_distance(map.regions[last].position, endpoint));
+    Ok(RiverView {
+        id,
+        course: &river.course,
+        mouth: river.mouth,
+        catchment: &river.catchment,
+        joins: river.joins,
+        join_at,
+        length_km,
+    })
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct MapView<'a> {
     size: MapSize,
+    geography: GeographyVersion,
+    radius_km: f32,
     width: f32,
     height: f32,
-    /// Drawing coordinates remain in map units.
+    /// Equirectangular equatorial drawing scale, not a physical metric elsewhere.
     km_per_unit: f32,
     regions: Vec<RegionView>,
     landmasses: Vec<LandmassView>,
@@ -4354,6 +4502,11 @@ struct RegionView {
     climate_zone: Option<usize>,
     /// Index into the map's landmasses; `None` for sea.
     landmass: Option<usize>,
+    /// Longitude east and latitude north, in degrees.
+    center: [f64; 2],
+    /// Canonical clockwise, unclosed small-polygon ring in geographic degrees.
+    boundary: Vec<[f64; 2]>,
+    /// Derived equirectangular drawing coordinates, never physical distances.
     site: [f32; 2],
     outline: Vec<[f32; 2]>,
     coastal: bool,
@@ -4380,6 +4533,7 @@ struct RiverView<'a> {
     catchment: &'a [usize],
     joins: Option<usize>,
     join_at: Option<usize>,
+    length_km: f64,
 }
 
 #[derive(Serialize)]
@@ -5034,15 +5188,135 @@ mod tests {
     }
 
     #[test]
-    fn continent_names_and_memberships_belong_to_the_requested_generation() {
-        let mut w = Bench::new(5, "large").unwrap();
-        let map: serde_json::Value = serde_json::from_str(&w.map().unwrap()).unwrap();
-        let continents: Vec<_> = map["landmasses"]
-            .as_array()
-            .unwrap()
+    fn spherical_map_exposes_physical_radius_and_consistent_source_chart() {
+        for (size, count, radius) in [
+            ("small", 642, 800.0),
+            ("medium", 2562, 1600.0),
+            ("large", 2562, 3200.0),
+            ("vast", 10242, 6371.0),
+        ] {
+            let bench = Bench::new(5, size).unwrap();
+            let map: serde_json::Value = serde_json::from_str(&bench.map().unwrap()).unwrap();
+            let width = map["width"].as_f64().unwrap();
+            let height = map["height"].as_f64().unwrap();
+            let scale = map["kmPerUnit"].as_f64().unwrap();
+            assert_eq!(map["radiusKm"], radius);
+            assert!((width * scale / radius - 2.0 * std::f64::consts::PI).abs() < 1e-6);
+            assert!((height * 2.0 - width).abs() < width * f64::from(f32::EPSILON));
+            let regions = map["regions"].as_array().unwrap();
+            assert_eq!(regions.len(), count);
+            for region in regions {
+                let lon = region["center"][0].as_f64().unwrap();
+                let lat = region["center"][1].as_f64().unwrap();
+                assert!((-180.0..=180.0).contains(&lon));
+                assert!((-90.0..=90.0).contains(&lat));
+                let x = region["site"][0].as_f64().unwrap();
+                let y = region["site"][1].as_f64().unwrap();
+                assert!((x - (lon + 180.0) / 360.0 * width).abs() < width * 1e-6);
+                assert!((y - (90.0 - lat) / 180.0 * height).abs() < height * 1e-6);
+                let ring = region["boundary"].as_array().unwrap();
+                assert!(ring.len() >= 3);
+                assert_ne!(ring.first(), ring.last(), "canonical rings are unclosed");
+                for vertex in ring {
+                    assert!((-180.0..=180.0).contains(&vertex[0].as_f64().unwrap()));
+                    assert!((-90.0..=90.0).contains(&vertex[1].as_f64().unwrap()));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn river_lengths_follow_geodesic_courses_to_actual_outlets_and_confluences() {
+        let mut map = Map::generate(5, MapSize::Medium);
+        let radius = f64::from(map.radius_km);
+        let original_positions = std::array::from_fn::<_, 4, _>(|id| map.regions[id].position);
+        // Canonical equatorial centers at 179°, -179°, -178° and 0°. Their
+        // three-degree route crosses the seam and must not visit the sea center.
+        map.regions[0].position = [-0.9998476951563913, 0.01745240643728351, 0.0];
+        map.regions[1].position = [-0.9998476951563913, -0.01745240643728351, 0.0];
+        map.regions[2].position = [-0.9993908270190958, -0.03489949670250097, 0.0];
+        map.regions[3].position = [1.0, 0.0, 0.0];
+        map.drainage[1] = Some(2);
+        let tributary = River {
+            course: vec![0, 1],
+            mouth: 3,
+            catchment: vec![0, 1],
+            joins: Some(0),
+        };
+        let view = river_view(&map, 1, &tributary).unwrap();
+        assert_eq!(view.join_at, Some(2));
+        assert!((view.length_km - radius * 3.0 * std::f64::consts::PI / 180.0).abs() < 1e-7);
+        // Source chart positions are neither involved in this length nor changed
+        // when an author switches projections.
+        map.regions[0].site = [0.0, 0.0];
+        map.regions[1].site = [1_000_000.0, 1_000_000.0];
+        assert_eq!(
+            river_view(&map, 1, &tributary).unwrap().length_km,
+            view.length_km
+        );
+        map.radius_km *= 2.0;
+        assert_eq!(
+            river_view(&map, 1, &tributary).unwrap().length_km,
+            view.length_km * 2.0
+        );
+        map.radius_km /= 2.0;
+        for (region, position) in map.regions.iter_mut().zip(original_positions) {
+            region.position = position;
+        }
+        let coast = map
+            .regions
             .iter()
-            .filter(|landmass| landmass["kind"] == "continent")
-            .collect();
+            .enumerate()
+            .find_map(|(id, region)| {
+                region
+                    .terrain
+                    .is_land()
+                    .then(|| {
+                        region
+                            .neighbours
+                            .iter()
+                            .copied()
+                            .find(|&other| !map.regions[other].terrain.is_land())
+                            .map(|mouth| (id, mouth))
+                    })
+                    .flatten()
+            })
+            .unwrap();
+        let river = River {
+            course: vec![coast.0],
+            mouth: coast.1,
+            catchment: vec![coast.0],
+            joins: None,
+        };
+        let outlet = map.shared_midpoint(coast.0, coast.1).unwrap();
+        let length = river_view(&map, 0, &river).unwrap().length_km;
+        assert!(
+            (length / radius - angular_distance(map.regions[coast.0].position, outlet)).abs()
+                < 1e-12
+        );
+        map.regions[coast.1].position = map.regions[coast.0].position;
+        map.regions[coast.0].outline = vec![[1_000_000.0, 1_000_000.0]; 4];
+        map.regions[coast.1].outline.clear();
+        assert_eq!(river_view(&map, 0, &river).unwrap().length_km, length);
+    }
+
+    #[test]
+    fn continent_names_and_memberships_belong_to_the_requested_generation() {
+        // The fixture needs two continents; not every world has them.
+        let (mut w, map, continents) = (0..64)
+            .find_map(|seed| {
+                let w = Bench::new(seed, "large").unwrap();
+                let map: serde_json::Value = serde_json::from_str(&w.map().unwrap()).unwrap();
+                let continents: Vec<serde_json::Value> = map["landmasses"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|landmass| landmass["kind"] == "continent")
+                    .cloned()
+                    .collect();
+                (continents.len() >= 2).then_some((w, map, continents))
+            })
+            .expect("a large world with two continents");
         let mut action: serde_json::Value =
             serde_json::from_str(&found("Hill", "familiar")).unwrap();
         action["region"] = continents[0]["anchor"].clone();
@@ -5451,6 +5725,237 @@ mod tests {
     }
 
     #[test]
+    fn founding_sites_use_land_effort_skip_occupied_and_leave_history_untouched() {
+        let mut bench = Bench::with_geography(5, "medium", "spherical-v1").unwrap();
+        let map = &bench.chronicle.latest().map;
+        let anchor = map
+            .regions
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.terrain.is_land())
+            .max_by_key(|&(r, _)| map.walking_row(r, 800.0).len())
+            .unwrap()
+            .0;
+        let sites: Vec<usize> =
+            serde_json::from_str(&bench.founding_sites(anchor, 12).unwrap()).unwrap();
+        let world = bench.chronicle.latest();
+        let mut expected: Vec<_> = world
+            .map
+            .walking_row(anchor, world.params.settle_apart)
+            .iter()
+            .copied()
+            .collect();
+        expected.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
+        assert_eq!(
+            sites,
+            expected
+                .iter()
+                .take(12)
+                .map(|&(r, _)| r as usize)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(sites[0], anchor);
+        assert!(sites.len() > 2);
+        assert_eq!(
+            sites.iter().copied().collect::<HashSet<_>>().len(),
+            sites.len()
+        );
+        assert!(sites.iter().all(|&r| {
+            world.map.regions[r].terrain.is_land()
+                && world.map.regions[r].landmass == world.map.regions[anchor].landmass
+                && world.map.distance(anchor, r).is_finite()
+        }));
+        bench.act(&found_at("Source", "familiar", anchor)).unwrap();
+        bench
+            .act(&found_at("Neighbour", "indic", sites[1]))
+            .unwrap();
+        let saved = bench.save().unwrap();
+        let view = bench.overview(0).unwrap();
+        let available: Vec<usize> =
+            serde_json::from_str(&bench.founding_sites(anchor, 12).unwrap()).unwrap();
+        assert!(!available.contains(&anchor));
+        assert!(!available.contains(&sites[1]));
+        assert_eq!(available[0], sites[2]);
+        assert_eq!(
+            bench.founding_sites(anchor, 1).unwrap(),
+            to_json(&available[..1]).unwrap()
+        );
+        let sea = bench
+            .chronicle
+            .latest()
+            .map
+            .regions
+            .iter()
+            .position(|r| !r.terrain.is_land())
+            .unwrap();
+        for (region, count) in [(sea, 3), (usize::MAX, 3), (anchor, 0), (anchor, 13)] {
+            assert!(bench.founding_sites(region, count).is_err());
+        }
+        assert_eq!(bench.save().unwrap(), saved);
+        assert_eq!(bench.overview(0).unwrap(), view);
+        let mut unqueried = Bench::load(&saved).unwrap();
+        bench.act(r#"{"kind":"run","generations":4}"#).unwrap();
+        unqueried.act(r#"{"kind":"run","generations":4}"#).unwrap();
+        assert_eq!(
+            bench.chronicle.latest().communities,
+            unqueried.chronicle.latest().communities
+        );
+        let mut queried: serde_json::Value =
+            serde_json::from_str(&bench.overview(4).unwrap()).unwrap();
+        let mut untouched: serde_json::Value =
+            serde_json::from_str(&unqueried.overview(4).unwrap()).unwrap();
+        queried.as_object_mut().unwrap().remove("mutation");
+        untouched.as_object_mut().unwrap().remove("mutation");
+        assert_eq!(queried, untouched);
+        for variety in 0..bench.chronicle.latest().varieties.len() {
+            assert_eq!(
+                bench.lexicon(4, variety).unwrap(),
+                unqueried.lexicon(4, variety).unwrap()
+            );
+        }
+        assert_eq!(
+            bench.chronicle.latest().events,
+            unqueried.chronicle.latest().events
+        );
+        assert!(bench.founding_sites(anchor, 3).is_err());
+    }
+
+    #[test]
+    fn founding_sites_return_short_or_empty_lists_without_water_jumps() {
+        let mut bench = Bench::with_geography(5, "medium", "spherical-v1").unwrap();
+        let map = &bench.chronicle.latest().map;
+        let anchor = map
+            .regions
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.terrain.is_land())
+            .min_by_key(|&(r, _)| map.walking_row(r, 800.0).len())
+            .unwrap()
+            .0;
+        let reachable: Vec<usize> =
+            serde_json::from_str(&bench.founding_sites(anchor, 12).unwrap()).unwrap();
+        assert!(reachable.len() < 12, "fixture has limited nearby land");
+        for region in reachable {
+            bench
+                .act(&found_at("Occupied", "familiar", region))
+                .unwrap();
+        }
+        assert_eq!(bench.founding_sites(anchor, 12).unwrap(), "[]");
+    }
+
+    #[test]
+    fn related_founding_views_and_export_preserve_actual_family_links() {
+        let mut bench = Bench::new(5, "medium").unwrap();
+        let map = &bench.chronicle.latest().map;
+        let anchor = map
+            .regions
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.terrain.is_land())
+            .max_by_key(|&(r, _)| map.walking_row(r, 800.0).len())
+            .unwrap()
+            .0;
+        let sites: Vec<usize> =
+            serde_json::from_str(&bench.founding_sites(anchor, 3).unwrap()).unwrap();
+        bench.act(&found_at("Source", "familiar", anchor)).unwrap();
+        let source = bench.chronicle.latest().communities[0].clone();
+        bench
+            .act(
+                &serde_json::json!({
+                    "kind": "found-related", "source": 0, "region": sites[1],
+                    "naming": {"kind": "people"}, "livelihood": "farming",
+                    "ethos": {"open": 0.4}
+                })
+                .to_string(),
+            )
+            .unwrap();
+        let overview: serde_json::Value =
+            serde_json::from_str(&bench.overview(0).unwrap()).unwrap();
+        assert_eq!(
+            overview["communities"][1]["parents"],
+            serde_json::json!([0])
+        );
+        assert_eq!(
+            overview["communities"][1]["size"],
+            overview["communities"][0]["size"]
+        );
+        assert_eq!(overview["varieties"][1]["parent"], 0);
+        assert_eq!(overview["varieties"][1]["forkedAt"], 0);
+        assert_eq!(
+            overview["varieties"][1]["family"],
+            overview["varieties"][0]["family"]
+        );
+        assert_eq!(
+            overview["varieties"][1]["specimen"],
+            overview["varieties"][0]["specimen"]
+        );
+        assert_eq!(bench.chronicle.latest().communities[0], source);
+        let decisions: serde_json::Value =
+            serde_json::from_str(&bench.decisions().unwrap()).unwrap();
+        assert_eq!(decisions[1]["kind"], "found-related");
+        assert_eq!(decisions[1]["people"], serde_json::json!([0, 1]));
+        assert_eq!(decisions[1]["variety"], 1);
+        let saved = bench.save().unwrap();
+        let recipe: serde_json::Value = serde_json::from_str(&saved).unwrap();
+        assert_eq!(recipe["geography"], "continental-v2");
+        assert_eq!(recipe["tellings"][0]["actions"][1]["kind"], "found-related");
+        let mut restored = Bench::load(&saved).unwrap();
+        assert_eq!(restored.map().unwrap(), bench.map().unwrap());
+        assert_eq!(restored.decisions().unwrap(), bench.decisions().unwrap());
+        assert_eq!(
+            restored.chronicle.latest().communities,
+            bench.chronicle.latest().communities
+        );
+        for variety in 0..2 {
+            assert_eq!(
+                restored.lexicon(0, variety).unwrap(),
+                bench.lexicon(0, variety).unwrap()
+            );
+        }
+        assert_eq!(restored.save().unwrap(), saved);
+    }
+
+    #[test]
+    fn revision_33_implicit_geography_survives_save_replay_and_branch() {
+        let mut original = Bench::with_geography(5, "small", "spherical-v1").unwrap();
+        let home = original.chronicle.latest().map.landmasses[0].anchor;
+        original.act(&found_at("Old", "familiar", home)).unwrap();
+        let first_people = original.chronicle.latest().communities.clone();
+        let first_speech = original.lexicon(0, 0).unwrap();
+        original.act(r#"{"kind":"run","generations":2}"#).unwrap();
+        let old_map = original.map().unwrap();
+        let mut legacy: serde_json::Value =
+            serde_json::from_str(&original.save().unwrap()).unwrap();
+        legacy["revision"] = SPHERICAL_GEOGRAPHY_REVISION.into();
+        legacy.as_object_mut().unwrap().remove("geography");
+        let mut loaded = Bench::load(&legacy.to_string()).unwrap();
+        assert_eq!(loaded.map().unwrap(), old_map);
+        assert_eq!(
+            loaded.chronicle.latest().communities,
+            original.chronicle.latest().communities
+        );
+        assert_eq!(
+            loaded.lexicon(2, 0).unwrap(),
+            original.lexicon(2, 0).unwrap()
+        );
+        let saved = loaded.save().unwrap();
+        let exported: serde_json::Value = serde_json::from_str(&saved).unwrap();
+        assert_eq!(exported["geography"], "spherical-v1");
+        assert_eq!(Bench::load(&saved).unwrap().map().unwrap(), old_map);
+        loaded.branch(0);
+        assert_eq!(loaded.map().unwrap(), old_map);
+        assert_eq!(loaded.chronicle.latest().communities, first_people);
+        assert_eq!(loaded.lexicon(0, 0).unwrap(), first_speech);
+        let fresh: serde_json::Value =
+            serde_json::from_str(&Bench::new(5, "small").unwrap().map().unwrap()).unwrap();
+        assert_eq!(fresh["geography"], "continental-v2");
+        assert_ne!(
+            fresh["regions"],
+            serde_json::from_str::<serde_json::Value>(&old_map).unwrap()["regions"]
+        );
+    }
+
+    #[test]
     fn founding_preview_is_pure_and_neighbours_form_real_contacts() {
         use umran_sim::world::Params;
         let mut w = Bench::new(5, "medium").unwrap();
@@ -5518,7 +6023,7 @@ mod tests {
 
     #[test]
     fn founding_preview_keeps_route_evidence_and_merchant_reach() {
-        let mut w = Bench::new(5, "vast").unwrap();
+        let mut w = Bench::new(5, "medium").unwrap();
         let world = w.chronicle.latest();
         let map = &world.map;
         let reach = world.params.trade_reach;
@@ -5700,7 +6205,6 @@ mod tests {
         };
         let mut w = Bench::new(7, "vast").unwrap();
         let map = w.map().unwrap();
-        assert_eq!(w.chronicle.latest().map.regions.len(), 3600);
         let home = w.chronicle.latest().map.landmasses[0].anchor;
         w.act(&found_at("Hill", "familiar", home)).unwrap();
         w.act(r#"{"kind":"run","generations":2}"#).unwrap();
@@ -5738,6 +6242,34 @@ mod tests {
                 .is_err()
         );
         assert!(w.act("not json").is_err());
+    }
+
+    #[test]
+    fn flat_geography_recipes_are_rejected_without_reinterpreting_region_actions() {
+        let mut bench = Bench::new(5, "small").unwrap();
+        let home = bench.chronicle.latest().map.landmasses[0].anchor;
+        bench.act(&found_at("Hill", "familiar", home)).unwrap();
+        bench.set_title("Kept original");
+        let saved = bench.save().unwrap();
+        let mut original: serde_json::Value = serde_json::from_str(&saved).unwrap();
+        // This ID is valid on the new mesh, but did not identify this land on
+        // the flat one. Successful action replay would still be misleading.
+        for revision in [0, SPHERICAL_GEOGRAPHY_REVISION - 1] {
+            original["revision"] = revision.into();
+            assert!(Bench::load(&original.to_string()).is_err());
+        }
+        let current = Bench::load(&saved).unwrap();
+        assert_eq!(current.chronicle.recipe(), bench.chronicle.recipe());
+        assert_eq!(current.title(), bench.title());
+        assert_eq!(current.map().unwrap(), bench.map().unwrap());
+        // Later spherical revisions keep the ordinary mismatch warning rather
+        // than incorrectly taking the pre-spherical recovery path.
+        original["revision"] = (ENGINE_REVISION + 1).into();
+        let mut different_revision = Bench::load(&original.to_string()).unwrap();
+        let overview: serde_json::Value =
+            serde_json::from_str(&different_revision.overview(0).unwrap()).unwrap();
+        assert_eq!(overview["savedRevision"], ENGINE_REVISION + 1);
+        assert_eq!(different_revision.map().unwrap(), current.map().unwrap());
     }
     #[test]
     fn specimens_show_pure_stress_movement_and_consonant_length() {

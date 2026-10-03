@@ -1,5 +1,5 @@
 :root .setup.founding {
-  grid-template-columns: minmax(0, 1fr) minmax(30rem, 43rem);
+  grid-template-columns: minmax(0, 1fr) minmax(21rem, 25rem);
   grid-template-rows: 2.75rem minmax(0, 1fr) auto;
   grid-template-areas: "rail rail" "map pedia" "time time";
 }
@@ -22,181 +22,375 @@
 }
 
 :root .setup.founding .setup-panel {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   overflow: hidden;
-  padding: 0 1.4rem 0 1.8rem;
+  padding: 0 1rem 0 1.3rem;
 }
 
-.founding .book-head {
+.founding-head {
   flex: none;
-  padding-top: 1rem;
+  padding: 1rem 0 0.7rem;
 }
 
-.founding-accounts {
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
-  padding-left: 0.7rem;
-  margin-left: -0.7rem;
-  overscroll-behavior: contain;
-}
-
-:root .founding .account {
-  padding: 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.founding .account.chosen::before {
-  left: -0.6rem;
-  top: 0.65rem;
-  bottom: 0.65rem;
-  width: 2px;
-}
-
-:root .founding .account-line {
-  display: grid;
-  grid-template-columns: 1.55rem minmax(0, 1fr);
-  align-items: baseline;
-  gap: 0.45rem;
-  width: 100%;
-  min-width: 0;
-  padding: 0.65rem 0;
-  border: 0;
-  background: transparent;
-  text-align: left;
-  font: inherit;
-  font-variant: normal;
-  letter-spacing: 0;
-  line-height: 1.2;
-}
-
-.founding .account-line:hover {
-  color: var(--accent);
-}
-
-.founding .account-line:focus-visible {
-  outline: 1px solid var(--tone, var(--accent));
-  outline-offset: -1px;
-}
-
-.account-ordinal {
+.founding-head .eyebrow,
+.founding-land .eyebrow {
+  margin: 0 0 0.25rem;
+  font-size: 0.68rem;
   color: var(--ink-soft);
-  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+}
+
+.founding-head h2 {
+  margin: 0;
+  font-size: 1.6rem;
+  line-height: 1.15;
+}
+
+.founding-head p {
+  margin: 0.45rem 0 0;
+  font-size: var(--dense-size);
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+
+.founding-roster {
+  flex: none;
+  max-height: min(22vh, 11rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  border-block: 1px solid var(--line);
+  padding: 0.2rem 0;
+}
+
+:root .founding-roster button {
+  display: grid;
+  grid-template-columns: 1.4rem minmax(0, 1fr) minmax(0, 0.85fr);
+  align-items: baseline;
+  gap: 0.35rem;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  padding: 0.3rem 0.35rem;
+  text-align: left;
+  background: none;
+  font: var(--dense-size) var(--serif);
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+:root .founding-roster button:is(:hover, :focus-visible, [aria-pressed="true"]) {
+  background: var(--accent-mute);
+}
+
+:root .founding-roster button[aria-pressed="true"] {
+  box-shadow: inset 2px 0 var(--tone, var(--accent));
+}
+
+.founding-roster-number {
+  font-size: 0.72rem;
+  color: var(--ink-soft);
   font-variant-numeric: tabular-nums;
 }
 
-.account-summary {
-  min-width: 0;
+.founding-roster-name {
+  color: var(--tone, var(--ink));
+  font-size: 1.05rem;
+}
+
+.founding-roster-name,
+.founding-roster-place {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 0.98rem;
 }
 
-.account-people {
-  color: var(--tone, var(--ink));
-  font-size: 1.1rem;
-}
-
-.account-summary .meaning {
+.founding-roster-place {
+  text-align: right;
   color: var(--ink-soft);
-  font-style: italic;
+  font-size: 0.83rem;
 }
 
-.account-description {
-  color: var(--ink-soft);
+.founding-pages {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding-right: 0.25rem;
 }
 
-.account-stages {
-  padding: 0 0 0.85rem 2rem;
+.founding-land,
+.founding-invitation {
+  padding: 0.9rem 0;
+  border-bottom: 1px solid var(--line);
 }
 
-:root .founding .founding-stage {
-  margin-block: 0;
+.founding-land h3,
+.founding-invitation h3 {
+  font-family: var(--display);
+  font-size: 1.2rem;
+  font-weight: 500;
+  margin: 0;
 }
 
-:root .founding .founding-stage + .founding-stage {
-  margin-top: 0.75rem;
-}
-
-:root .founding .founding-stage .eyebrow {
-  margin: 0 0 0.15rem;
-  color: var(--ink-soft);
-  font-size: 0.75rem;
-  font-weight: 400;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-}
-
-.founding .account-text {
-  line-height: 1.35;
-}
-
-.founding-stage .small {
-  margin: 0.25rem 0 0;
+.founding-land p,
+.founding-invitation p {
+  margin: 0.3rem 0;
+  font-size: var(--dense-size);
   line-height: 1.3;
 }
 
-.founding .account-acts {
-  flex-wrap: wrap;
-}
-
-.founding-account-acts {
+.founding-land-actions,
+.founding-speech-actions {
   display: flex;
-  flex: none;
   flex-wrap: wrap;
   align-items: center;
-  gap: 1.1rem;
-  padding: 0.8rem 0 1rem;
-  border-top: 1px solid var(--line);
+  gap: 0.35rem 0.7rem;
+  margin-top: 0.6rem;
 }
 
-.founding-account-acts .link {
+:root .founding-land-actions > button {
+  font-size: var(--dense-size);
+  padding: 0.25rem 0.4rem;
+}
+
+.founding-land-actions button,
+.founding-move {
   display: inline-flex;
   align-items: center;
-  gap: 0.2rem;
+  gap: 0.3rem;
+}
+
+:root .founding-move {
+  font-size: var(--dense-size);
+  margin-top: 0.45rem;
+}
+
+.founding-portrait {
+  padding: 0.9rem 0 0.5rem;
+}
+
+.founding-portrait > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.founding-portrait > header h3 {
+  font-size: 1.65rem;
+  line-height: 1.1;
+  margin: 0;
+}
+
+.founding-portrait > header span {
+  color: var(--ink-soft);
+  font-style: italic;
+  font-size: var(--dense-size);
+}
+
+.founding-portrait p {
+  margin: 0.4rem 0;
+  line-height: 1.35;
+}
+
+.founding-speech {
+  padding-block: 0.7rem;
+}
+
+.founding-speech h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 400;
+  font-variant: small-caps;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+}
+
+.founding-speech .specimen {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem 0.5rem;
+  margin: 0.4rem 0 0.6rem;
+}
+
+.founding-speech-actions,
+.founding-inheritance {
+  font-size: var(--dense-size);
+}
+
+.founding-portrait > details {
+  border-top: 1px solid var(--line);
+  padding-block: 0.45rem;
+}
+
+.founding-portrait > details > summary {
+  cursor: pointer;
+  font-size: var(--dense-size);
+  line-height: 1.3;
+}
+
+.founding-portrait > details > summary span {
+  margin-left: 0.5rem;
+  color: var(--ink-soft);
+}
+
+.founding-portrait .sample {
+  font-size: var(--dense-size);
+}
+
+:root .founding-remove {
+  display: block;
+  margin-top: 0.8rem;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
+.founding-panel-foot {
+  flex: none;
+  border-top: 1px solid var(--line);
+  padding-block: 0.7rem;
+  font-size: 0.82rem;
+}
+
+:root .founding .founding-cartouche {
+  width: 18rem;
+  max-width: calc(100% - 12rem);
+  padding: 0.65rem 0.8rem 0.5rem;
 }
 
 :root .founding .founding-title {
   display: block;
   width: 100%;
   min-width: 0;
-  margin: 0.1rem 0 0.25rem;
-  padding: 0.1rem 0;
+  margin: 0;
+  padding: 0.1rem 0 0.3rem;
   border: 0;
-  border-bottom: 1px dashed var(--line);
+  border-bottom: 1px solid var(--line);
   border-radius: 0;
   background: transparent;
   color: var(--ink);
   font-family: var(--display);
-  font-size: 1.6rem;
+  font-size: 1.5rem;
   line-height: 1.15;
-  text-align: center;
+  text-align: left;
 }
 
 .founding-title:focus-visible {
   outline: 1px solid var(--accent);
   outline-offset: 3px;
 }
-.founding-by { display: flex; align-items: baseline; justify-content: center; gap: .35rem; color: var(--ink-soft); font-family: var(--display); font-style: italic; }
-:root .founding .founding-author { width: 9rem; min-width: 0; padding: .1rem 0; border: 0; border-bottom: 1px dashed var(--line); border-radius: 0; background: transparent; color: var(--ink); font: inherit; }
-.founding-author:focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; }
 
-.founding .map-scale-note {
-  margin: 0.3rem 0;
+.founding-world-tools {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 0.3rem;
+  font-size: var(--dense-size);
 }
 
-.founding .reach-overlay {
-  position: absolute;
-  inset: 0;
-  display: block;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  overflow: hidden;
+:root .founding-world-tools select {
+  width: auto;
+  max-width: 65%;
+  min-width: 0;
+  border: 0;
+  background-color: transparent;
+  padding: 0.1rem 1rem 0.1rem 0;
+  font: inherit;
+}
+
+.founding-world-tools .link {
+  display: inline-flex;
+  gap: 0.2rem;
+  align-items: center;
+}
+
+.founding-world-details,
+.founding-group {
+  padding: var(--dense-pad);
+  font-size: var(--dense-size);
+  line-height: 1.35;
+  width: min(19rem, calc(100vw - 3rem));
+}
+
+.founding-world-details > label,
+.founding-group > label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.founding-world-details input {
+  width: 11rem;
+  min-width: 0;
+}
+
+.founding-world-details dl {
+  margin: 0.75rem 0;
+}
+
+.founding-world-details dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding-block: var(--dense-row);
+}
+
+.founding-world-details dt {
+  color: var(--ink-soft);
+}
+
+.founding-world-details dd {
+  margin: 0;
+}
+
+.founding-world-details p,
+.founding-group p {
+  margin: 0.6rem 0;
+}
+
+.founding-group h3 {
+  font: 1.2rem var(--display);
+  margin: 0 0 0.7rem;
+}
+
+.founding-group select {
+  min-width: 3rem;
+}
+
+.founding-group fieldset {
+  margin: 0.7rem 0;
+  padding: 0;
+  border: 0;
+}
+
+.founding-group legend {
+  color: var(--ink-soft);
+  margin-bottom: 0.3rem;
+}
+
+.founding-group fieldset label {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding-block: 0.2rem;
+}
+
+.founding-group .notice {
+  margin: 0.6rem 0;
+  padding: 0.4rem 0.5rem;
+  font-size: inherit;
+}
+
+.shared-speech-note {
+  margin: 0 0 0.7rem;
+  font-size: var(--dense-size);
+  color: var(--ink-soft);
 }
 
 .reach-homeland {
@@ -204,12 +398,14 @@
   stroke: var(--accent);
   stroke-width: 1.5;
   vector-effect: non-scaling-stroke;
+  pointer-events: none;
 }
 
 .reach-neighbour {
   fill: var(--accent);
   fill-opacity: 0.13;
   stroke: none;
+  pointer-events: none;
 }
 
 .reach-line {
@@ -222,66 +418,75 @@
   cursor: help;
 }
 
-.reach-foot {
-  stroke-dasharray: 3 5;
-}
-
-.reach-sea {
-  stroke-dasharray: 6 4;
-}
-
-.reach-line:hover {
-  stroke: var(--accent);
-  stroke-width: 2.5;
-  stroke-opacity: 1;
-}
+.reach-foot { stroke-dasharray: 3 5; }
+.reach-sea { stroke-dasharray: 6 4; }
+.reach-line:hover { stroke: var(--accent); stroke-width: 2.5; stroke-opacity: 1; }
 
 :root .founding .setup-foot {
   display: flex;
   justify-content: space-between;
 }
 
-@media (max-width: 1050px) and (min-width: 901px) {
+@media (max-width: 1100px) and (min-width: 761px) {
   :root .setup.founding {
-    grid-template-columns: minmax(0, 1fr) minmax(26rem, 48%);
+    grid-template-columns: minmax(0, 1fr) minmax(20rem, 35%);
+  }
+
+  :root .founding .founding-cartouche {
+    width: 14rem;
+    max-width: calc(100% - 5rem);
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 760px) {
   :root .setup.founding {
     height: auto;
     min-height: 100dvh;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: 2.75rem minmax(24rem, 48vh) minmax(28rem, 60vh) auto;
+    grid-template-rows: 2.75rem minmax(23rem, 50vh) minmax(28rem, 65vh) auto;
     grid-template-areas: "rail" "map" "pedia" "time";
   }
 
   :root .app > .setup.founding .stage-map {
-    margin: 0 0.9rem;
+    margin: 0 0.6rem;
   }
 
-  :root .founding .setup-panel {
-    margin: 1rem 0.9rem 0;
-    padding: 0 1rem 0 1.4rem;
+  :root .setup.founding .setup-panel {
+    margin: 0.8rem 0.6rem 0;
+    padding: 0 0.9rem 0 1.1rem;
   }
 
-  .founding .cartouche {
-    max-width: min(19rem, calc(100% - 7rem));
-    padding-inline: 0.6rem;
+  :root .founding .founding-cartouche {
+    top: 1.1rem;
+    left: 1.1rem;
+    width: 13rem;
+    max-width: calc(100% - 5rem);
+    padding: 0.45rem 0.55rem;
   }
 
-  .founding .map-hint {
-    max-width: calc(100% - 3.2rem);
-    font-size: 0.85rem;
+  :root .founding .founding-title {
+    font-size: 1.2rem;
   }
 
-  .founding .setup-foot {
-    gap: 0.75rem;
+  .founding-head h2 { font-size: 1.4rem; }
+  .founding-roster { max-height: 9rem; }
+  .founding .map-hint { display: none; }
+  .founding .setup-foot { gap: 0.75rem; }
+  .founding .setup-foot .year { min-width: 0; font-size: 0.85rem; white-space: normal; }
+}
+
+@media (pointer: coarse) {
+  :root .founding-roster button,
+  .founding-land-actions > button,
+  .founding-world-tools > select,
+  .founding-world-tools > button,
+  .founding-move,
+  .founding-group fieldset label,
+  .founding-portrait > details > summary {
+    min-height: 2.75rem;
   }
 
-  .founding .setup-foot .year {
-    min-width: 0;
-    font-size: 0.9rem;
-    white-space: normal;
+  .founding-portrait > details > summary {
+    padding-block: 0.7rem;
   }
 }

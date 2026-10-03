@@ -84,13 +84,15 @@ fn act(bench: &mut Bench, mut action: Value) -> Result<(), String> {
 
 fn request(bench: &mut Option<Bench>, input: Value) -> Result<Value, String> {
     match input["kind"].as_str().ok_or("Missing request kind")? {
+        "catalog" => serde_json::from_str(&Bench::catalog()?).map_err(|error| error.to_string()),
         "new" => {
             let seed = input["seed"].as_u64().ok_or("Missing world seed")?;
             let seed = u32::try_from(seed).map_err(|error| error.to_string())?;
-            *bench = Some(Bench::new(
-                seed,
-                input["map"].as_str().ok_or("Missing map size")?,
-            )?);
+            let map = input["map"].as_str().ok_or("Missing map size")?;
+            *bench = Some(match input["geography"].as_str() {
+                Some(geography) => Bench::with_geography(seed, map, geography)?,
+                None => Bench::new(seed, map)?,
+            });
             Ok(Value::Null)
         }
         "load" => {
@@ -115,6 +117,32 @@ fn request(bench: &mut Option<Bench>, input: Value) -> Result<Value, String> {
                 input["destination"].as_i64().ok_or("Missing destination")? as i32,
             )?;
             serde_json::from_str(&preview).map_err(|e| e.to_string())
+        }
+        "founding-sites" => {
+            let region = input["region"].as_u64().ok_or("Missing anchor region")? as usize;
+            let count = input["count"].as_u64().ok_or("Missing site count")? as usize;
+            let sites = bench
+                .as_ref()
+                .ok_or("No world open")?
+                .founding_sites(region, count)?;
+            serde_json::from_str(&sites).map_err(|e| e.to_string())
+        }
+        "decisions" => {
+            let decisions = bench.as_ref().ok_or("No world open")?.decisions()?;
+            serde_json::from_str(&decisions).map_err(|e| e.to_string())
+        }
+        "law-choices" => {
+            let choices = bench.as_ref().ok_or("No world open")?.law_choices(
+                &input["point"].to_string(),
+                input["variety"].as_u64().ok_or("Missing variety")? as usize,
+            )?;
+            serde_json::from_str(&choices).map_err(|e| e.to_string())
+        }
+        "branch" => {
+            let generation = input["generation"].as_u64().ok_or("Missing generation")?;
+            let generation = u32::try_from(generation).map_err(|error| error.to_string())?;
+            bench.as_mut().ok_or("No world open")?.branch(generation);
+            Ok(Value::Null)
         }
         "save" => Ok(Value::String(
             bench.as_ref().ok_or("No world open")?.save()?,

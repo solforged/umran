@@ -92,13 +92,14 @@ function canonical(value: Json): string {
 function digest(value: Json): string {
   return createHash("sha256").update(canonical(value)).digest("hex");
 }
-// These are the facade's f32 fields, including integral-valued floats. Geometry
+// These are the facade's floating fields, including integral-valued floats. Geometry
 // arrays inherit their field's classification. A new fractional numeric field
 // is also float state; a new integral field remains discrete until classified.
 const FLOAT_FIELDS: Record<string, true | undefined> = {
   size: true, prestige: true, power: true, openness: true, intensity: true,
   purism: true, city: true, keptFromHigh: true, share: true,
   width: true, height: true, site: true, outline: true,
+  radiusKm: true, center: true, boundary: true, lengthKm: true,
   elevation: true, moisture: true, warmth: true, wetness: true,
   targetWetness: true, targetWarmth: true, riverFlow: true, flow: true,
   feeding: true, areaKm2: true, kmPerUnit: true,
@@ -240,6 +241,27 @@ async function compare(bench: WasmWorkbench, label: string, seed: number, year: 
   }
 }
 
+function assertExact(nativeValue: Json, wasmValue: Json, label: string): void {
+  if (digest(nativeValue) !== digest(wasmValue)) {
+    throw new Error(`${label}: ${firstDifference(nativeValue, wasmValue)}`);
+  }
+  checks++;
+}
+
+async function refused(
+  bench: WasmWorkbench, request: JsonObject, apply: () => unknown, label: string,
+): Promise<void> {
+  const nativeSave = await rpc({ kind: "save" });
+  const wasmSave = bench.save();
+  let nativeError = false;
+  let wasmError = false;
+  try { await rpc(request); } catch { nativeError = true; }
+  try { apply(); } catch { wasmError = true; }
+  if (!nativeError || !wasmError) throw new Error(`${label} must be refused by both facades`);
+  assertExact(await rpc({ kind: "save" }), nativeSave, `${label} changed native history`);
+  assertExact(bench.save(), wasmSave, `${label} changed WASM history`);
+}
+
 const presets = ["germanic", "semitic", "polynesian"];
 function actions(seed: number, region: number): JsonObject[] {
   const found: JsonObject[] = presets.map((preset, index) => ({
@@ -309,6 +331,203 @@ async function generated(seed: number): Promise<void> {
     } finally { replay.free(); }
     worlds++;
   } finally { bench.free(); }
+}
+
+async function relatedFamily(seed: number): Promise<void> {
+  const size = ["small", "medium", "large", "vast"][seed % 4];
+  const label = `related/${size}`;
+  await rpc({ kind: "new", seed, map: size });
+  const bench = new Workbench(seed, size);
+  try {
+    const map = object(json(JSON.parse(bench.map())));
+    if (map.geography !== "continental-v2") throw new Error("New founding worlds must use continental-v2");
+    const nativeBefore = await rpc({ kind: "save" });
+    const wasmBefore = bench.save();
+    let sites: number[] | undefined;
+    for (const region of array(map.regions).map(object).filter(r => r.terrain !== "sea")) {
+      const candidates = array(json(JSON.parse(bench.foundingSites(number(region.id), 3)))).map(number);
+      if (candidates.length === 3) { sites = candidates; break; }
+    }
+    if (!sites) throw new Error(`Related-family fixture needs three nearby land sites: seed=${seed}`);
+    const anchor = sites[0];
+    assertExact(
+      await rpc({ kind: "founding-sites", region: anchor, count: 3 }), sites,
+      `Founding sites differ: seed=${seed}`,
+    );
+    assertExact(await rpc({ kind: "save" }), nativeBefore, "Founding-site query changed native recipe");
+    assertExact(bench.save(), wasmBefore, "Founding-site query changed WASM recipe");
+    const sea = array(map.regions).map(object).find(r => r.terrain === "sea");
+    if (!sea) throw new Error("Founding-site refusal fixture needs sea");
+    for (const [region, count] of [[number(sea.id), 3], [anchor, 0], [anchor, 13], [array(map.regions).length, 3]]) {
+      await refused(bench, { kind: "founding-sites", region, count },
+        () => bench.foundingSites(region, count), "Invalid founding-site query");
+    }
+    // wasm-bindgen must not silently truncate invalid JavaScript numbers.
+    for (const [region, count] of [[anchor + 0.5, 3], [-1, 3], [anchor, 1.5]]) {
+      let rejected = false;
+      try { bench.foundingSites(region, count); } catch { rejected = true; }
+      if (!rejected) throw new Error("Fractional/negative founding-site input was silently coerced");
+    }
+    assertExact(bench.save(), wasmBefore, "Invalid WASM query changed history");
+    const founder: JsonObject = {
+      kind: "found", preset: "germanic", seed: (seed + 31) >>> 0,
+      naming: { kind: "people" }, region: anchor, livelihood: "farming",
+      power: 0.5, openness: 0.5,
+    };
+    await rpc({ kind: "act", action: founder });
+    wasmAct(bench, founder);
+    const occupiedSites = json(JSON.parse(bench.foundingSites(anchor, 3)));
+    assertExact(await rpc({ kind: "founding-sites", region: anchor, count: 3 }), occupiedSites,
+      `Occupied-anchor sites differ: seed=${seed}`);
+    if (array(occupiedSites).includes(anchor) || number(array(occupiedSites)[0]) !== sites[1]) {
+      throw new Error("An occupied anchor must be skipped while preserving nearby order");
+    }
+    for (const [source, region] of [[99, sites[1]], [0, number(sea.id)]]) {
+      const invalid: JsonObject = { kind: "found-related", source, region, naming: { kind: "people" } };
+      await refused(bench, { kind: "act", action: invalid }, () => wasmAct(bench, invalid),
+        "Invalid related-founding reference");
+    }
+    for (const region of sites.slice(1)) {
+      const action: JsonObject = {
+        kind: "found-related", source: 0, region, naming: { kind: "people" },
+        livelihood: "farming", ethos: { open: 0.4 },
+      };
+      await rpc({ kind: "act", action });
+      wasmAct(bench, action);
+    }
+    const overview = object(json(JSON.parse(bench.overview(0))));
+    const communities = array(overview.communities).map(object);
+    const varieties = array(overview.varieties).map(object);
+    const source = varieties[number(communities[0].variety)];
+    const sourceRows = json(JSON.parse(bench.lexicon(0, number(source.id))));
+    const descendants = communities.slice(1).map(c => varieties[number(c.variety)]);
+    for (const [index, child] of descendants.entries()) {
+      assertExact(communities[index + 1].parents!, [0], "Related people's ancestry is missing");
+      if (communities[index + 1].size !== communities[0].size || child.parent !== source.id
+        || child.forkedAt !== 0 || child.family !== source.family) {
+        throw new Error("Related founding must be year-zero ancestry, not unrelated speech or migration");
+      }
+      assertExact(child.grammar!, source.grammar!, "Related founding lost its inherited grammar");
+      assertExact(json(JSON.parse(bench.lexicon(0, number(child.id)))), sourceRows,
+        "Related founding regenerated words or lost lexical origins");
+    }
+    const decisions = json(JSON.parse(bench.decisions()));
+    assertExact(await rpc({ kind: "decisions" }), decisions, "Related authored decisions differ");
+    for (const decision of array(decisions).map(object).slice(1)) {
+      if (decision.kind !== "found-related" || array(decision.people)[0] !== 0 || decision.variety === null) {
+        throw new Error("Related authored decisions must retain source, child and resulting language");
+      }
+    }
+    await compare(bench, label, seed, 0);
+    // A real law on just the founder demonstrates that forks evolve separately.
+    const point = overview.point!;
+    const choices = json(JSON.parse(bench.lawChoices(JSON.stringify(point), number(source.id))));
+    assertExact(await rpc({ kind: "law-choices", point, variety: source.id! }), choices,
+      "Related family's independent law choices differ");
+    const law = array(choices).map(object).find(choice => number(choice.words) > 0);
+    if (!law) throw new Error("Related-family fixture needs an effective sound law");
+    const childRows = descendants.map(child => json(JSON.parse(bench.lexicon(0, number(child.id)))));
+    const action: JsonObject = { kind: "law", variety: source.id!, law: law.id! };
+    await rpc({ kind: "act", action });
+    wasmAct(bench, action);
+    if (digest(json(JSON.parse(bench.lexicon(0, number(source.id))))) === digest(sourceRows)) {
+      throw new Error("Authored law did not change the founder's living words");
+    }
+    for (const [index, child] of descendants.entries()) {
+      assertExact(json(JSON.parse(bench.lexicon(0, number(child.id)))), childRows[index],
+        "A law on the parent mutated its independent founding fork");
+    }
+    assertExact(await rpc({ kind: "decisions" }), json(JSON.parse(bench.decisions())),
+      "Related family's exhaustive law decision export differs");
+    const run: JsonObject = { kind: "run", generations: 4 };
+    await rpc({ kind: "act", action: run });
+    wasmAct(bench, run);
+    await compare(bench, label, seed, 4 * YEARS);
+    const nonzero: JsonObject = {
+      kind: "found-related", source: 0, region: sites[1], naming: { kind: "people" },
+    };
+    await refused(bench, { kind: "act", action: nonzero }, () => wasmAct(bench, nonzero),
+      "Nonzero-generation related founding");
+    const nativeRecipe = string(await rpc({ kind: "save" }));
+    const wasmRecipe = bench.save();
+    assertExact(json(JSON.parse(nativeRecipe)), json(JSON.parse(wasmRecipe)), "Related-family recipes differ");
+    const live = snapshot(bench, bench.latest());
+    await rpc({ kind: "load", recipe: nativeRecipe });
+    const restored = Workbench.load(wasmRecipe);
+    try {
+      await compare(restored, `${label}/replay`, seed, restored.latest() * YEARS);
+      assertExact(snapshot(restored, restored.latest()), live, "Related family changed after export/reload");
+      assertExact(await rpc({ kind: "decisions" }), json(JSON.parse(restored.decisions())),
+        "Related decisions changed on replay");
+    } finally { restored.free(); }
+    worlds++;
+  } finally { bench.free(); }
+}
+
+async function legacyGeography(seed: number): Promise<void> {
+  const size = ["small", "medium", "large", "vast"][seed % 4];
+  const label = `legacy/spherical-v1/${size}`;
+  await rpc({ kind: "new", seed, map: size, geography: "spherical-v1" });
+  const original = Workbench.withGeography(seed, size, "spherical-v1");
+  try {
+    const map = json(JSON.parse(original.map()));
+    const anchor = number(object(array(object(map).landmasses)[0]).anchor);
+    const founder: JsonObject = {
+      kind: "found", preset: "germanic", seed: (seed + 31) >>> 0,
+      naming: { kind: "people" }, region: anchor, power: 0.5, openness: 0.5,
+    };
+    await rpc({ kind: "act", action: founder });
+    wasmAct(original, founder);
+    const yearZero = snapshot(original, 0);
+    const run: JsonObject = { kind: "run", generations: 2 };
+    await rpc({ kind: "act", action: run });
+    wasmAct(original, run);
+    const nativeRecipe = object(json(JSON.parse(string(await rpc({ kind: "save" })))));
+    const wasmRecipe = object(json(JSON.parse(original.save())));
+    assertExact(nativeRecipe, wasmRecipe, "Explicit spherical-v1 recipes differ");
+    if (wasmRecipe.geography !== "spherical-v1") throw new Error("Old geography must remain explicit on export");
+    // Recreate the actual revision-33 spelling: old maps had no version field.
+    nativeRecipe.revision = 33;
+    wasmRecipe.revision = 33;
+    delete nativeRecipe.geography;
+    delete wasmRecipe.geography;
+    await rpc({ kind: "load", recipe: JSON.stringify(nativeRecipe) });
+    const loaded = Workbench.load(JSON.stringify(wasmRecipe));
+    try {
+      await compare(loaded, label, seed, 2 * YEARS);
+      assertExact(json(JSON.parse(loaded.map())), map, "Revision-33 load redrew the saved map");
+      const resaved = loaded.save();
+      const savedRecipe = object(json(JSON.parse(resaved)));
+      if (savedRecipe.geography !== "spherical-v1") throw new Error("Re-saving lost the old geography");
+      assertExact(json(JSON.parse(string(await rpc({ kind: "save" })))), savedRecipe,
+        "Migrated revision-33 recipes differ");
+      await rpc({ kind: "load", recipe: resaved });
+      const replay = Workbench.load(resaved);
+      try {
+        await compare(replay, `${label}/replay`, seed, 2 * YEARS);
+        assertExact(json(JSON.parse(replay.map())), map, "Re-saved old geography changed on replay");
+        await rpc({ kind: "branch", generation: 0 });
+        replay.branch(0);
+        await compare(replay, `${label}/branch`, seed, 0);
+        const branched = snapshot(replay, 0);
+        // Branching intentionally assigns a new telling ID, not a new world.
+        const expectedYearZero = {
+          ...yearZero,
+          overview: { ...object(yearZero.overview), telling: object(branched.overview).telling! },
+        };
+        assertExact(branched, expectedYearZero, "An old-geography branch changed its original year-zero world");
+        const branchRecipe = replay.save();
+        if (object(json(JSON.parse(branchRecipe))).geography !== "spherical-v1") {
+          throw new Error("Branching changed the old geography version");
+        }
+        await rpc({ kind: "load", recipe: branchRecipe });
+        const branchReplay = Workbench.load(branchRecipe);
+        try { await compare(branchReplay, `${label}/branch/replay`, seed, 0); }
+        finally { branchReplay.free(); }
+      } finally { replay.free(); }
+      worlds++;
+    } finally { loaded.free(); }
+  } finally { original.free(); }
 }
 
 async function sample(): Promise<void> {
@@ -420,8 +639,17 @@ try {
     if (!("ok" in response)) throw new Error("Native driver returned no result");
     return response.ok;
   };
+  const nativeCatalog = await rpc({ kind: "catalog" });
+  const wasmCatalog = json(JSON.parse(Workbench.catalog()));
+  if (digest(nativeCatalog) !== digest(wasmCatalog)) {
+    throw new Error(`Catalog differs: ${firstDifference(nativeCatalog, wasmCatalog)}`);
+  }
   const runStarted = performance.now();
-  for (const seed of onlySeed === undefined ? seeds : [onlySeed]) await generated(seed);
+  for (const seed of onlySeed === undefined ? seeds : [onlySeed]) {
+    await generated(seed);
+    await relatedFamily(seed);
+    await legacyGeography(seed);
+  }
   if (onlySeed === undefined || onlySeed === 21) await sample();
   for (const [key, record] of drift) {
     console.log(`SURVEY ${key} through=${record.through} checked=${everyYear ? "all-generations" : "checkpoints"} discreteFirst=${record.discrete ?? "none"} floatFirst=${record.floats ?? "none"}`);

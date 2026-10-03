@@ -74,15 +74,38 @@ mod tests {
     fn settlement_requires_a_route_from_every_inhabited_land() {
         let mut world = World::with_map(7, Params::static_society(), MapSize::Medium);
         world.found(&SoundProfile::base(), 0.5, 0.5);
-        let a = world.map.landmasses[0].regions[0];
-        let b = world.map.landmasses[1].regions[0];
-        world.communities[0].lands = vec![a, b];
-        let destination = world.map.regions[a]
-            .neighbours
+        let (a, destination) = world
+            .map
+            .regions
             .iter()
-            .copied()
-            .find(|&r| world.map.regions[r].terrain.is_land())
-            .unwrap();
+            .enumerate()
+            .find_map(|(a, land)| {
+                if !land.terrain.is_land() {
+                    return None;
+                }
+                land.neighbours
+                    .iter()
+                    .copied()
+                    .find(|&r| {
+                        world.map.regions[r].terrain.is_land()
+                            && world.map.distance(a, r) <= world.params.migration_reach
+                    })
+                    .map(|destination| (a, destination))
+            })
+            .expect("a walkable destination");
+        let b = world
+            .map
+            .regions
+            .iter()
+            .enumerate()
+            .find(|(_, land)| {
+                land.terrain.is_land() && land.landmass != world.map.regions[a].landmass
+            })
+            .expect("a disconnected inhabited source")
+            .0;
+        world.communities[0].lands = vec![a, b];
+        assert!(world.journey_to(0, destination).is_some());
+        assert!(world.map.distance(b, destination).is_infinite());
         let choice = SettlementChoice {
             community: 0,
             intent: SettlementIntent::Migration,

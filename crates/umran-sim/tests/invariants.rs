@@ -809,6 +809,11 @@ fn assert_world_eq(a: &World, b: &World, seed: u64) {
 }
 
 fn recipe(seed: u64) -> Recipe {
+    let mut history = Chronicle::new(seed, MapSize::Small);
+    let map = &history.latest().map;
+    let home = (0..map.regions.len())
+        .find(|&r| map.regions[r].terrain.is_land() && !map.island(r))
+        .expect("the recipe needs a mainland for settlement");
     let mut actions = Vec::new();
     for (i, preset) in ["germanic", "polynesian", "semitic"].iter().enumerate() {
         let language_seed = seed * 3 + i as u64;
@@ -818,7 +823,7 @@ fn recipe(seed: u64) -> Recipe {
             seed: language_seed,
             power: 0.4 + i as f32 * 0.2,
             openness: 0.4 + i as f32 * 0.1,
-            region: None,
+            region: Some(home),
             livelihood: None,
             ethos: None,
         });
@@ -838,7 +843,6 @@ fn recipe(seed: u64) -> Recipe {
         },
         Action::Religion { community: 0 },
     ]);
-    let mut history = Chronicle::new(seed, MapSize::Small);
     for action in actions {
         history.act(action).unwrap();
     }

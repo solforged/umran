@@ -1,24 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, FileUp, X } from "lucide-react";
 import { landMap } from "../engine";
-import { YEARS, type MapSize, type WorldMap } from "../model";
-import { bookLand, type BookEntry, type ShelfPeople } from "../shelf";
+import { YEARS, type WorldMap } from "../model";
+import { bookLand, type BookEntry, type BookLand, type ShelfPeople } from "../shelf";
 import { Miniature } from "./MapView";
 import { Modal } from "./Modal";
 import { Told } from "./Told";
 import "./chartroom.css";
 
-const UNKNOWN: WorldMap = { size: "medium", width: 13.5, height: 8.794229, kmPerUnit: 100, regions: [], landmasses: [], rivers: [], climateZones: [] };
+const UNKNOWN: WorldMap = { size: "medium", geography: "continental-v2", radiusKm: 1600, width: 2 * Math.PI * 1600 / 100, height: Math.PI * 1600 / 100, kmPerUnit: 100, regions: [], landmasses: [], rivers: [], climateZones: [] };
 
-function Chart({ land, peoples }: { land: { seed: number; size: MapSize } | null; peoples?: ShelfPeople[] }) {
-  const [map, setMap] = useState<WorldMap | null>(null);
-  const [seed, size] = [land?.seed, land?.size];
+function Chart({ land, peoples }: { land: BookLand | null; peoples?: ShelfPeople[] }) {
+  const [loaded, setLoaded] = useState<(BookLand & { map: WorldMap }) | null>(null);
+  const [seed, size, geography] = [land?.seed, land?.size, land?.geography];
   useEffect(() => {
-    if (seed === undefined || size === undefined) return;
+    if (seed === undefined || size === undefined || geography === undefined) return;
     let live = true;
-    landMap(seed, size).then((next) => live && setMap(next), () => undefined);
+    landMap(seed, size, geography).then((map) => live && setLoaded({ seed, size, geography, map }), () => undefined);
     return () => { live = false; };
-  }, [seed, size]);
+  }, [seed, size, geography]);
+  // Unsupported recipes have no map. Never reuse a previously loaded chart
+  // or overlay saved region IDs while another recipe's geography is loading.
+  const map = loaded && loaded.seed === seed && loaded.size === size && loaded.geography === geography ? loaded.map : null;
   return <Miniature map={map ?? UNKNOWN} peoples={map ? peoples : []} />;
 }
 
@@ -36,7 +39,7 @@ export function ChartRoom({ revision, books, onOpen, onBegin, onSample, onImport
   const [removing, setRemoving] = useState<BookEntry | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const worlds = useMemo(() => [...books].sort((a, b) => b.updated - a.updated)
-    .map((book) => ({ book, land: bookLand(book.id) })), [books]);
+    .map((book) => ({ book, land: bookLand(book.id, revision) })), [books, revision]);
   const [leading, ...others] = worlds;
 
   function world({ book, land }: typeof worlds[number], lead: boolean) {

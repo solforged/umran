@@ -14,6 +14,7 @@ import { AtlasIndex } from "./AtlasIndex";
 import type { DictionaryView } from "./Dictionary";
 import { Told } from "./Told";
 import { MapView, type MapMotionReading, type Tint } from "./MapView";
+import { useMapProjection } from "./MapProjectionSwitch";
 import { EntryAnnotations, Pedia, type Focus } from "./Pedia";
 import { emphasizeInk, useLiftedValue } from "../motion";
 import { LightChoice } from "./LightSwitch";
@@ -154,6 +155,7 @@ export function Stage({
   const { latest } = overview;
   const atPresent = overview.atTip;
 
+  const [projection, setProjection] = useMapProjection();
   // The encyclopedia's trail of cards; the last is the one open.
   const [trail, setTrail] = useState<Destination[]>([{ subject: initialFocus ?? { kind: "world" }, reading: { telling: overview.telling, point: overview.point } }]);
   const focus = trail.at(-1)!.subject;
@@ -556,9 +558,11 @@ export function Stage({
       onKeyDownCapture={(event) => { if (event.key === "Enter" || event.key === " ") keyboardActivation.current = true; }}>
       <div className="stage-notices">{notices}{runError ? <p className="notice error" role="alert">{runError}</p> : null}{followed ? <p className="following-note">Following {followed.label}. Study pauses when this subject appears in the chronicle. <button type="button" className="link" onClick={() => setFollowed(null)}>Stop following</button></p> : null}</div>
 
-      <section className="stage-map" aria-label="Chart">
+      <section className="stage-map" aria-label={projection === "globe" ? "Globe" : "Chart"}>
         <MapView
           map={map}
+          projection={projection}
+          onProjection={setProjection}
           overview={settlement ? settlementReading : overview}
           generation={settlement ? settlementReading.generation : generation}
           tint={settlement ? { kind: "peoples" } : tint}
@@ -590,7 +594,7 @@ export function Stage({
           <Popover label="This world" role="menu" side="bottom" align="start"
             trigger={(props) => (
               <button type="button" className="cartouche-open" {...props}>
-                <span className="cartouche-kicker">A chart of</span>
+                <span className="cartouche-kicker">{projection === "globe" ? "A globe of" : "A chart of"}</span>
                 <span className="cartouche-title">{title}</span>
                 <span className="cartouche-note">{tellingName} · year {generation * YEARS}</span>
                 <ChevronDown size={14} aria-hidden="true" />

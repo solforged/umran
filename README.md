@@ -37,7 +37,17 @@ Where the engine recorded why something happened, the chronicle says so:
 that caused it. The author can also choose a sound change for a language
 from the engine's catalog, previewed on the specimen.
 
-![The workbench after 4,000 years: rivers and Weather colouring on the chart under its cartouche, beside the world's encyclopedia card, with the chronicle caption and the drawn timeline below](docs/images/stage.jpg)
+The world is spherical; the chart remains the default view. Choose **Globe**
+in the cartouche to turn the same inked world through its poles, then return
+to the chart for close reading. Both views share lands, rivers, journeys,
+cards, and founding placement. The engine measures spherical areas and
+great-circle distances, independently of the drawing. The default world
+has 2,562 regions and a radius of 1,600 km; the vast world is Earth-sized.
+
+Worlds saved before engine revision 33 keep their original data and open
+recovery. Their old flat-map land IDs cannot be replayed on the new sphere.
+
+![The workbench after 4,000 years: the inked globe turned toward the sample's peoples, beside the world's card, with its chronicle caption and timeline below](docs/images/stage.jpg)
 
 ## What happens in a world
 
@@ -170,8 +180,8 @@ quiet. The system's reduced-motion setting makes all these changes immediate.
 |---|---|
 | ![Founding: an old chart beside the book of accounts, one people's six stages open and the rest one line each, with the open people's reach drawn on the chart](docs/images/setup.png) | ![Words compared: a table of basic words across related languages, shaded by shared root](docs/images/cognates.png) |
 | **Founding a world.** Each people is one line in the book of accounts until opened: homeland, livelihood, temper, speech, grammar, and identity. Who can meet whom is drawn on the chart from the engine's travel rules. Name the world, or let it take the name of its continent. Sounds can be tuned on a full sound chart; the grammar sketch shows a sentence and possession with their sounds and glosses. | **Words compared.** Basic words across the living languages, shaded alike when they come from one root (cognates). |
-| ![A language's family tree, with its sounds and word-building patterns](docs/images/family.png) | ![A sound law's card: the peoples who have it and where it spread, with the isogloss drawn on the map](docs/images/law.png) |
-| **A family tree.** Every language card charts its family's descent, its sounds, and how it builds words, here by vowel patterns over consonant roots, as Arabic does. | **A sound law.** Who has a change, whether it arose among them or spread from a neighbour, and on the map, where it stopped. |
+| ![Language families branching through four thousand years, including ended and classical languages](docs/images/family.png) | ![A sound law's card: the peoples who have it and where it spread, with the isogloss drawn on the map](docs/images/law.png) |
+| **Family trees.** The world's languages branch as peoples part; ended languages and classical forms keep their places in the record. Each language also has a card for its sounds, grammar, and word-building patterns. | **A sound law.** Who has a change, whether it arose among them or spread from a neighbour, and on the map, where it stopped. |
 
 ## How it is built
 

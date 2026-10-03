@@ -13,6 +13,7 @@ pub mod cities;
 pub mod climate;
 pub mod compare;
 pub mod concepts;
+mod continental;
 pub mod design;
 pub mod diglossia;
 pub mod ethos;
@@ -42,6 +43,7 @@ pub mod root;
 pub mod schisms;
 pub mod settlement;
 mod spelling;
+mod sphere;
 pub mod typology;
 pub mod variety;
 pub mod wold;
@@ -60,7 +62,9 @@ pub use diglossia::{Classical, Fixing, Vernacular};
 pub use ethos::{Axis, Effect, Ethos, FoundingEthos, Pole, TemperCause};
 pub use flavor::Flavor;
 pub use form::{Form, Seg, Syllable};
-pub use geography::{ClimateZone, Landmass, LandmassKind, Map, MapSize, Region, River, Terrain};
+pub use geography::{
+    ClimateZone, GeographyVersion, Landmass, LandmassKind, Map, MapSize, Region, River, Terrain,
+};
 pub use grammar::{Category, Grammar, GrammarChoice, GrammarDesign, GrammarPrior};
 pub use ideas::{Craft, Need, Religion, Revelation, SacredKind, SacredPlace};
 pub use inventory::Inventory;

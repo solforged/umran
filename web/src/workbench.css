@@ -50,7 +50,7 @@
 .settlement-land.remaining { fill: #50769c; fill-opacity: .45; stroke: #486a8e; }
 .settlement-land.arriving { fill: #c38b52; fill-opacity: .6; stroke: #9c5d26; stroke-width: 2; vector-effect: non-scaling-stroke; }
 .settlement-journeys { pointer-events: none; fill: none; stroke: var(--ink); stroke-width: 1.7; }
-.settlement-journeys polyline { vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.settlement-journeys path { vector-effect: non-scaling-stroke; stroke-linejoin: round; }
 .settlement-journeys .sea-journey { stroke-dasharray: 4 3; }
 .stage[data-settlement=true] .map-tools, .stage[data-settlement=true] .map-perspective { display: none; }
 .stage[data-settlement=true] .stage-bar { opacity: .5; }
@@ -83,7 +83,6 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .chart-help { position: absolute; left: .7rem; bottom: 3rem; margin: 0; color: var(--ink-soft); background: color-mix(in srgb, var(--paper) 88%, transparent); padding: .1rem .4rem; font-size: .8rem; pointer-events: none; }
 .mapview > svg:focus-visible { outline-offset: -3px; }
 .stage-year.in-past { color: var(--accent); }
-.map-scale-note { font-size: .8rem; color: var(--ink-soft); max-width: 26rem; margin: .5rem auto; }
 .telling-note { padding: .65rem .8rem; margin: 0 0 1rem; border-left: 2px solid var(--accent); background: var(--accent-mute); font-size: .95rem; }
 
 /* The index is a page of entries, not a second encyclopedia. */
@@ -303,34 +302,6 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 
 /* How a loan came, under its line in a word's history. */
 .loan-cause { display: block; color: var(--ink-soft); font-size: .92em; margin-top: .15rem; }
-/* Guided founding */
-:root .setup { grid-template-columns: minmax(0, 1fr) minmax(25rem, 33rem); }
-:root .setup .setup-panel { min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0 1.4rem 1.5rem 1.8rem; }
-.setup .book-head { padding-top: .8rem; }
-.setup .book-head .sample-note { font-size: .85rem; }
-.setup .account { padding-block: 1rem; border-bottom: 0; }
-.founding-stage { margin-block: 1rem; }
-:root .founding-stage > .eyebrow { margin: 0 0 .35rem; color: var(--ink-soft); font-size: .75rem; font-weight: 400; letter-spacing: .1em; text-transform: uppercase; }
-:root .setup .account.chosen .founding-stage .account-text::first-letter { font-size: inherit; line-height: inherit; float: none; color: inherit; padding: 0; font-family: inherit; }
-.founding-stage > .small { margin: .3rem 0; }
-@media (min-width: 641px) and (max-width: 900px) {
-  :root .setup { grid-template-columns: minmax(0, 1fr) minmax(22rem, 45%); grid-template-rows: auto auto minmax(0, 1fr) auto; grid-template-areas: "head head" "notices notices" "map pedia" "time time"; }
-}
-@media (max-width: 640px) {
-  :root .setup { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 40vh minmax(0, 1fr) auto; grid-template-areas: "head" "notices" "map" "pedia" "time"; }
-  :root .setup .stage-map { margin: 0 .5rem; }
-  :root .setup .setup-panel { padding-inline: 1.2rem; margin: 0; border-left: 0; }
-  .setup .cartouche { top: .6rem; bottom: auto; left: .6rem; padding: .6rem .8rem; max-width: calc(100% - 1.2rem); }
-  :root .setup .cartouche h1 { font-size: 1.3rem; }
-  .setup .cartouche-note, .setup .map-scale-note, .setup .map-hint { display: none; }
-  .setup .cartouche-tools { flex-wrap: wrap; gap: .35rem .7rem; font-size: .75rem; }
-  .setup .book-head h2 { font-size: 1.3rem; }
-  .setup-foot { flex-wrap: wrap; gap: .35rem; padding: .5rem .7rem; }
-  .setup-foot .year { font-size: .8rem; }
-  .setup-foot > .row { width: 100%; justify-content: space-between; gap: .5rem; }
-  .setup-foot .begin { padding-inline: .6rem; }
-  .setup-foot > .row > .link { font-size: .8rem; }
-}
 /* Geography on the chart */
 .chart-river { cursor: pointer; }
 .chart-river path { fill: none; stroke-linecap: round; stroke-linejoin: round; }

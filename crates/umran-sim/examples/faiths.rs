@@ -108,9 +108,9 @@ fn sample(seed: u64, years: u32, authored: bool) -> Result<Chronicle, String> {
                 place: "river".into(),
             },
             0.7,
-            73,
+            183,
         ),
-        ("semitic", 52, Naming::People, 0.5, 99),
+        ("semitic", 52, Naming::People, 0.5, 184),
         (
             "polynesian",
             73,
@@ -118,7 +118,7 @@ fn sample(seed: u64, years: u32, authored: bool) -> Result<Chronicle, String> {
                 place: "sea".into(),
             },
             0.4,
-            76,
+            185,
         ),
     ] {
         history.act(Action::Found {

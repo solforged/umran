@@ -33,7 +33,7 @@ import type { InterventionKind } from "./ActionDialog";
 import { SettlementAccount } from "./SettlementDesk";
 import { Told } from "./Told";
 import { INITIAL_DICTIONARY, type DictionaryView } from "./Dictionary";
-import { peoplesByRegion, riverLength } from "./MapView";
+import { peoplesByRegion } from "./MapView";
 import { Specimen } from "./Specimen";
 import { DescentChart, FamilyForest, type Lineage } from "./FamilyTree";
 import { WordGloss } from "./WordGloss";
@@ -793,12 +793,28 @@ function zoneName(id: number, context: Context): string {
   const first = context.map.regions[regions[0]];
   const mass = first?.landmass === null || first === undefined ? undefined : context.map.landmasses[first.landmass];
   if (!mass) return "The weather of unnamed lands";
-  const [ax, ay] = context.map.regions[mass.anchor].site;
-  const cx = regions.reduce((s, r) => s + context.map.regions[r].site[0], 0) / regions.length;
-  const cy = regions.reduce((s, r) => s + context.map.regions[r].site[1], 0) / regions.length;
-  const dx = cx - ax, dy = cy - ay;
-  const side = Math.abs(dx) < 1 && Math.abs(dy) < 1 ? "heart"
-    : `${dy < -Math.abs(dx) / 2 ? "north" : dy > Math.abs(dx) / 2 ? "south" : ""}${Math.abs(dx) > Math.abs(dy) / 2 ? (dx > 0 ? "-east" : "-west") : ""}`.replace(/^-/, "");
+  const [longitude, latitude] = context.map.regions[mass.anchor].center;
+  const lon = longitude * Math.PI / 180, lat = latitude * Math.PI / 180;
+  // An area-weighted spherical centroid does not jump across the chart seam.
+  const centroid = regions.reduce(([x, y, z], id) => {
+    const region = context.map.regions[id];
+    const l = region.center[0] * Math.PI / 180, p = region.center[1] * Math.PI / 180;
+    return [
+      x + region.areaKm2 * Math.cos(p) * Math.cos(l),
+      y + region.areaKm2 * Math.cos(p) * Math.sin(l),
+      z + region.areaKm2 * Math.sin(p),
+    ];
+  }, [0, 0, 0]);
+  const [x, y, z] = centroid;
+  const east = -x * Math.sin(lon) + y * Math.cos(lon);
+  const north = -x * Math.sin(lat) * Math.cos(lon) - y * Math.sin(lat) * Math.sin(lon) + z * Math.cos(lat);
+  const toward = x * Math.cos(lat) * Math.cos(lon) + y * Math.cos(lat) * Math.sin(lon) + z * Math.sin(lat);
+  const bearingLength = Math.hypot(east, north), centerLength = Math.hypot(x, y, z);
+  const distanceKm = Math.atan2(bearingLength, toward) * context.map.radiusKm;
+  // Balanced/antipodal districts and a polar anchor have no unique bearing.
+  const side = centerLength < 1e-6 || Math.abs(latitude) > 89.999 || (toward < 0 && bearingLength < centerLength * 1e-9) ? "lands"
+    : distanceKm < 100 ? "heart"
+    : `${north > Math.abs(east) / 2 ? "north" : north < -Math.abs(east) / 2 ? "south" : ""}${Math.abs(east) > Math.abs(north) / 2 ? (east > 0 ? "-east" : "-west") : ""}`.replace(/^-/, "");
   const continent = context.overview.continents.find((c) => c.landmass === mass.id)?.name?.name;
   return continent ? `The weather of ${continent}'s ${side}` : `The weather of an unnamed land's ${side}`;
 }
@@ -815,7 +831,7 @@ function RiverCard({ id, context }: { id: number; context: Context }) {
     <CardHead icon={Waves} kind="A river" title={now?.spelled ?? "Unnamed river"}
       sub={now ? <span className="ipa">/{now.ipa}/</span> : null} />
     <Facts rows={[
-      ["Length", `${Math.round(riverLength(map, river)).toLocaleString()} km`],
+      ["Length", `${Math.round(river.lengthKm).toLocaleString()} km`],
       ["Lands", <Joined items={river.course} link={(region) => <LandLink region={region} context={context} />} />],
       ["Home of", living.length ? <Joined items={living} link={(c) => <PeopleLink c={c} context={context} />} /> : "no one now"],
       ["Flow", flow?.flowing ? "flowing now" : "flow has failed"],

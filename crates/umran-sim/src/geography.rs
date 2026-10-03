@@ -1,22 +1,19 @@
-//! The land peoples live on: a map of regions drawn from the world's seed.
+//! One closed spherical geography, independent of how a chart presents it.
 //!
-//! Regions are the cells around jittered points on a hex grid (a Voronoi
-//! diagram), so each borders about six others. Separated basins contain
-//! connected, noisy continental coasts; small islands sit in their ocean
-//! moats. Relief and moisture ranks set terrain shares on the finished land
-//! mask. Generation uses only arithmetic and square roots, never `exp` or
-//! `sin`, whose last bits can differ between native code and WASM.
+//! Regions are the dual cells of a subdivided icosahedron. Canonical unit
+//! vectors determine area, drainage adjacency, landmass anchors and travel;
+//! the equirectangular `site` and `outline` are drawing compatibility only.
 
-use crate::rivers;
-use crate::rng::{index, key, stream};
+use crate::rng::{key, stream};
+use crate::sphere::{Point, add, dot, tangent, unit};
+use crate::{continental, math, rivers, sphere};
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
+use std::f64::consts::{PI, TAU};
 use std::{borrow::Cow, cmp::Ordering, collections::BinaryHeap};
 
-/// Height of one hex-grid row, with points one unit apart: √3 / 2.
-const ROW: f64 = 0.866_025_403_784_438_6;
-/// Physical length represented by one drawing/grid unit.
+/// Equatorial drawing scale only; never use chart lengths for physics.
 pub const KM_PER_UNIT: f32 = 100.0;
 /// Plain-kilometre scale used to soften journey preferences.
 pub const REFERENCE_TRAVEL_KM: f32 = 100.0;
@@ -32,10 +29,8 @@ const VALLEY_EFFORT: f32 = 0.65;
 pub const CACHE_REACH_KM: f32 = 1_800.0;
 /// Fixed effort-km charged on each embarkation and landing.
 const EMBARK: f32 = 100.0;
-/// Furthest a point strays from its grid position, in grid units.
-const JITTER: f64 = 0.3;
-/// Share of regions under water.
-const SEA: f64 = 0.5;
+/// Classification by physical land area, independent of mesh resolution.
+const CONTINENT_AREA_KM2: f64 = 500_000.0;
 /// Shares of land that are mountain and hill, by height.
 const MOUNTAINS: f64 = 0.1;
 const HILLS: f64 = 0.15;
@@ -48,54 +43,17 @@ const FOREST: f64 = 0.3;
 const PLAIN_CLOSENESS: f32 = 0.8;
 /// Closest any two regions can be, short of being the same land.
 const MAX_CLOSENESS: f32 = 0.9;
-/// One row describes a regional theatre, with regions about 100 km across.
-/// The half-sea budget is fixed; land beyond the main bodies is small islands.
-struct Geography {
-    cols: usize,
-    rows: usize,
-    continents: (usize, usize),
-    continent_land: (usize, usize),
-    minimum: usize,
-    /// Fixed number of one/two-cell islands; None preserves the regional packs.
-    island_count: Option<usize>,
+
+/// The immutable geography algorithm recorded by a world's recipe.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GeographyVersion {
+    SphericalV1,
+    #[default]
+    ContinentalV2,
 }
 
-const GEOGRAPHY: [Geography; 4] = [
-    Geography {
-        cols: 9,
-        rows: 7,
-        continents: (1, 1),
-        continent_land: (20, 27),
-        minimum: 20,
-        island_count: None,
-    },
-    Geography {
-        cols: 13,
-        rows: 10,
-        continents: (1, 2),
-        continent_land: (45, 55),
-        minimum: 20,
-        island_count: None,
-    },
-    Geography {
-        cols: 18,
-        rows: 14,
-        continents: (2, 3),
-        continent_land: (90, 110),
-        minimum: 25,
-        island_count: None,
-    },
-    Geography {
-        cols: 60,
-        rows: 60,
-        continents: (2, 2),
-        continent_land: (1_794, 1_797),
-        minimum: 800,
-        island_count: Some(3),
-    },
-];
-
-/// How large a world is: how many regions its map has.
+/// Physical world size and bounded spherical region resolution.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum MapSize {
@@ -107,22 +65,25 @@ pub enum MapSize {
 }
 
 impl MapSize {
-    fn geography(self) -> &'static Geography {
-        &GEOGRAPHY[self as usize]
+    fn subdivisions(self) -> u32 {
+        match self {
+            Self::Small => 3,
+            Self::Medium | Self::Large => 4,
+            Self::Vast => 5,
+        }
     }
 
-    /// Columns and rows of the hex grid.
-    fn grid(self) -> (usize, usize) {
-        let g = self.geography();
-        (g.cols, g.rows)
+    pub fn radius_km(self) -> f32 {
+        match self {
+            Self::Small => 800.0,
+            Self::Medium => 1_600.0,
+            Self::Large => 3_200.0,
+            Self::Vast => 6_371.0,
+        }
     }
 
-    /// Fewest regions a body of land needs to count as a continent, one of
-    /// the map's main bodies; smaller ones are islands. A region stands for
-    /// land about 100 km across. Regional sizes hold country-sized or
-    /// subcontinental fragments; Vast holds two small-continent-sized bodies.
-    pub fn continent_minimum(self) -> usize {
-        self.geography().minimum
+    pub fn region_count(self) -> usize {
+        10 * 4_usize.pow(self.subdivisions()) + 2
     }
 }
 
@@ -179,14 +140,18 @@ impl Terrain {
 /// One region of the map.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Region {
-    /// The point the region was drawn around, in grid units.
+    /// Canonical unit vector: x=cos(lat)cos(lon), y=cos(lat)sin(lon), z=sin(lat).
+    pub position: [f64; 3],
+    /// Canonical unclosed polygon, clockwise when viewed from outside.
+    pub boundary: Vec<[f64; 3]>,
+    /// Derived equirectangular drawing point, never a physical coordinate.
     pub site: [f32; 2],
-    /// Its border, as a convex polygon in grid units.
+    /// Derived drawing ring, locally unwrapped around `site`.
     pub outline: Vec<[f32; 2]>,
-    /// Physical area, derived before drawing coordinates are rounded.
+    /// Physical area of the canonical spherical polygon.
     pub area_km2: f32,
     pub terrain: Terrain,
-    /// Original relief and moisture noise, retained without changing map draws.
+    /// Normalized relief and moisture fields, independent of projection.
     pub elevation: f32,
     pub moisture: f32,
     /// Static normalized thermal baseline, separate from climate history.
@@ -362,6 +327,8 @@ impl RouteScratch {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Map {
     pub size: MapSize,
+    pub geography: GeographyVersion,
+    pub radius_km: f32,
     pub width: f32,
     pub height: f32,
     pub regions: Vec<Region>,
@@ -386,186 +353,65 @@ pub struct Map {
 }
 
 impl Map {
-    /// The map `seed` draws for a world of `size`.
+    /// The closed world `seed` draws at the physical scale of `size`.
     pub fn generate(seed: u64, size: MapSize) -> Map {
-        let g = size.geography();
-        let (cols, rows) = size.grid();
-        let width = cols as f64 + 0.5;
-        let height = (rows - 1) as f64 * ROW + 1.0;
-        let n = cols * rows;
-        let mut rng = stream(seed, &[key("map")]);
-        // Draw once: fallback geometries use the same offsets, not new worlds.
-        let offsets: Vec<[f64; 2]> = (0..n)
-            .map(|_| [rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)])
-            .collect();
-        let broad = Noise::new(&mut rng, width, height, 3.0);
-        let fine = Noise::new(&mut rng, width, height, 1.5);
-        let wet = Noise::new(&mut rng, width, height, 3.5);
-        let mut layout_rng = stream(seed, &[key("continent layout")]);
-        let k = g.continents.0 + index(&mut layout_rng, g.continents.1 - g.continents.0 + 1);
-        let layouts = layouts(g, k);
-        let start = index(&mut layout_rng, layouts.len());
-        let mut shares_rng = stream(seed, &[key("continent shares")]);
-        let continent_land = g.continent_land.0
-            + index(&mut shares_rng, g.continent_land.1 - g.continent_land.0 + 1);
-        let weights: Vec<f64> = (0..k).map(|_| shares_rng.gen_range(0.75..1.25)).collect();
-        let island_land = n - share(n, SEA) - continent_land;
-        let budget = LandBudget {
-            k,
-            minimum: g.minimum,
-            continents: continent_land,
-            islands: island_land,
-            island_count: g.island_count,
+        Self::generate_with_version(seed, size, GeographyVersion::ContinentalV2)
+    }
+
+    /// Replays a recorded geography without changing its geometry or streams.
+    pub fn generate_with_version(seed: u64, size: MapSize, geography: GeographyVersion) -> Map {
+        let radius_km = size.radius_km();
+        let width = TAU * f64::from(radius_km) / f64::from(KM_PER_UNIT);
+        let height = width / 2.0;
+        let mut mesh = sphere::mesh(size.subdivisions());
+        let (terrain, elevation, moisture) = match geography {
+            GeographyVersion::SphericalV1 => surface(seed, &mesh.cells, radius_km),
+            GeographyVersion::ContinentalV2 => continental::surface(seed, &mut mesh, radius_km),
         };
-        let mut island_rng = stream(seed, &[key("continent islands")]);
-        let island_order: Vec<f64> = (0..n).map(|_| island_rng.r#gen()).collect();
-        let island_orientation = index(&mut island_rng, 8);
-        let mut coasts_rng = stream(seed, &[key("continent coasts")]);
-        let centres: Vec<[f64; 2]> = (0..k)
-            .map(|_| {
-                [
-                    coasts_rng.gen_range(-0.15..0.15),
-                    coasts_rng.gen_range(-0.15..0.15),
-                ]
-            })
-            .collect();
-
-        // The family is finite at each amplitude. Zero jitter is the terminal
-        // constructor, proven separately for every size/K and land budget.
-        let (sites, cells, borders, neighbours, plan) = [JITTER, JITTER / 2.0, 0.0]
+        let landmass = landmasses(&terrain, &mesh.cells);
+        let edges = travel_edges(&mesh.cells, &terrain, &mesh.borders, radius_km);
+        let mut regions: Vec<_> = mesh
+            .cells
             .into_iter()
-            .find_map(|jitter| {
-                let sites = sites(g, &offsets, jitter);
-                let cells = grid_cells(g, &sites, width, height);
-                let borders = shared_borders(&cells);
-                let neighbours = border_neighbours(n, &borders);
-                let plan = if jitter == 0.0 {
-                    // A canonical terminal ordering makes feasibility a finite
-                    // proof over budgets, not another seed-dependent gamble.
-                    choose_plan(&layouts, 0, &neighbours, &budget, &sweep_order(g, 0))
-                } else {
-                    choose_plan(&layouts, start, &neighbours, &budget, &island_order).or_else(
-                        || {
-                            (0..8).find_map(|offset| {
-                                let order = sweep_order(g, (island_orientation + offset) % 8);
-                                choose_plan(&layouts, start, &neighbours, &budget, &order)
-                            })
-                        },
-                    )
-                }?;
-                Some((sites, cells, borders, neighbours, plan))
-            })
-            .expect("the zero-jitter layouts hold every prescribed land budget");
-        let quotas = apportion(&plan.continents, &weights, g.minimum, continent_land);
-        let mut terrain = vec![Terrain::Sea; n];
-        let mut elevation = vec![0.0; n];
-        let mut scores = Vec::with_capacity(plan.continents.iter().map(Vec::len).max().unwrap());
-        for (b, candidates) in plan.continents.iter().enumerate() {
-            basin_scores(
-                candidates,
-                &sites,
-                centres[b],
-                &broad,
-                &fine,
-                &mut elevation,
-                &mut scores,
-            );
-            grow(candidates, &scores, &neighbours, quotas[b], &mut terrain);
-        }
-        for island in &plan.islands {
-            basin_scores(
-                island,
-                &sites,
-                [0.0, 0.0],
-                &broad,
-                &fine,
-                &mut elevation,
-                &mut scores,
-            );
-            for &r in island {
-                terrain[r] = Terrain::Plains;
-            }
-        }
-        let land: Vec<usize> = (0..n).filter(|&i| terrain[i].is_land()).collect();
-        let by_height = ranked(&land, &elevation);
-        let peaks = share(land.len(), MOUNTAINS);
-        let hills = share(land.len(), HILLS);
-        for &i in by_height.iter().rev().take(peaks) {
-            terrain[i] = Terrain::Mountains;
-        }
-        for &i in by_height.iter().rev().skip(peaks).take(hills) {
-            terrain[i] = Terrain::Hills;
-        }
-        // The coast is wetter than the interior.
-        let moisture: Vec<f64> = sites
-            .iter()
             .enumerate()
-            .map(|(i, &[x, y])| {
-                let coastal = neighbours[i].iter().any(|&n| terrain[n] == Terrain::Sea);
-                wet.at(x, y) + if coastal { 0.15 } else { 0.0 }
-            })
-            .collect();
-        let lowland: Vec<usize> = land
-            .iter()
-            .copied()
-            .filter(|&i| terrain[i] == Terrain::Plains)
-            .collect();
-        let by_wet = ranked(&lowland, &moisture);
-        let desert = share(lowland.len(), DESERT);
-        let steppe = share(lowland.len(), STEPPE);
-        let forest = share(lowland.len(), FOREST);
-        for &i in by_wet.iter().take(desert) {
-            terrain[i] = Terrain::Desert;
-        }
-        for &i in by_wet.iter().skip(desert).take(steppe) {
-            terrain[i] = Terrain::Steppe;
-        }
-        for &i in by_wet.iter().rev().take(forest) {
-            terrain[i] = Terrain::Forest;
-        }
-
-        let landmass = landmasses(&terrain, &neighbours);
-        let edges = travel_edges(&sites, &terrain, &borders);
-        let mut regions: Vec<Region> = cells
-            .into_iter()
-            .zip(neighbours)
-            .enumerate()
-            .map(|(i, ((outline, _), neighbours))| Region {
-                site: [sites[i][0] as f32, sites[i][1] as f32],
-                outline: outline.iter().map(|&[x, y]| [x as f32, y as f32]).collect(),
-                area_km2: (area(&outline) * (f64::from(KM_PER_UNIT) * f64::from(KM_PER_UNIT)))
-                    as f32,
-                terrain: terrain[i],
-                elevation: elevation[i] as f32,
-                moisture: moisture[i] as f32,
-                warmth: rivers::warmth(seed, i, elevation[i] as f32),
-                climate_zone: None,
-                neighbours,
-                landmass: landmass[i],
-            })
-            .collect();
-        let landmasses = describe_landmasses(&regions, size);
-        assert_eq!(
-            landmasses
-                .iter()
-                .filter(|m| m.kind == LandmassKind::Continent)
-                .count(),
-            k
-        );
-        assert!(landmasses.iter().all(|m| match m.kind {
-            LandmassKind::Continent => m.regions.len() >= g.minimum,
-            LandmassKind::Island =>
-                (1..=if g.island_count.is_some() { 2 } else { 3 }).contains(&m.regions.len()),
-        }));
-        if let Some(count) = g.island_count {
-            assert_eq!(
-                landmasses
+            .map(|(i, cell)| {
+                let site = chart_point(cell.position, width, height);
+                let outline = cell
+                    .boundary
                     .iter()
-                    .filter(|m| m.kind == LandmassKind::Island)
-                    .count(),
-                count
-            );
-        }
+                    .map(|&p| {
+                        let mut point = chart_point(p, width, height);
+                        // Keep the legacy ring local, but canonical boundary owns
+                        // seam/pole clipping and is the only physical geometry.
+                        let delta = f64::from(point[0]) - f64::from(site[0]);
+                        if delta > width / 2.0 {
+                            point[0] -= width as f32;
+                        }
+                        if delta < -width / 2.0 {
+                            point[0] += width as f32;
+                        }
+                        point
+                    })
+                    .collect();
+                Region {
+                    position: cell.position,
+                    area_km2: (sphere::area(cell.position, &cell.boundary)
+                        * f64::from(radius_km)
+                        * f64::from(radius_km)) as f32,
+                    boundary: cell.boundary,
+                    site,
+                    outline,
+                    terrain: terrain[i],
+                    elevation: elevation[i] as f32,
+                    moisture: moisture[i] as f32,
+                    warmth: rivers::warmth(seed, i, elevation[i] as f32, cell.position[2] as f32),
+                    climate_zone: None,
+                    neighbours: cell.neighbours,
+                    landmass: landmass[i],
+                }
+            })
+            .collect();
+        let landmasses = describe_landmasses(&regions);
         let climate_zones = rivers::climate_zones(seed, &mut regions, &landmasses);
         let rivers::Hydrology {
             drainage,
@@ -577,6 +423,8 @@ impl Map {
         } = rivers::generate(seed, &regions);
         let mut map = Map {
             size,
+            geography,
+            radius_km,
             width: width as f32,
             height: height as f32,
             regions,
@@ -596,6 +444,26 @@ impl Map {
         map.walking = map.cache_routes(RouteMode::Walking);
         map.voyages = map.cache_routes(RouteMode::Voyage);
         map
+    }
+
+    /// Half-arclength point of the shared canonical border (possibly curved).
+    pub fn shared_midpoint(&self, a: usize, b: usize) -> Option<[f64; 3]> {
+        let ra = self.regions.get(a)?;
+        let rb = self.regions.get(b)?;
+        if ra.neighbours.binary_search(&b).is_err() {
+            return None;
+        }
+        if self.geography == GeographyVersion::ContinentalV2 {
+            // Canonicalize traversal so asking b→a returns exactly the same point.
+            let (first, second) = if a < b { (ra, rb) } else { (rb, ra) };
+            return sphere::shared_midpoint(&first.boundary, &second.boundary);
+        }
+        let mut shared = ra
+            .boundary
+            .iter()
+            .copied()
+            .filter(|p| rb.boundary.contains(p));
+        Some(unit(add(shared.next()?, shared.next()?)))
     }
 
     fn initialize_valleys(&mut self, flows: &[f32]) {
@@ -914,514 +782,273 @@ impl Map {
     }
 }
 
-/// Grid rectangles are only candidate basins, never the finished coastline.
-/// Their outer sea belt also supplies island sites when there is one basin.
-fn layouts(g: &Geography, k: usize) -> Vec<Vec<Option<usize>>> {
-    let central = |n: usize| (2 * n / 5)..=(3 * n / 5);
-    let membership = |assign: &dyn Fn(usize, usize) -> Option<usize>| {
-        (0..g.rows)
-            .flat_map(|r| {
-                (0..g.cols).map(move |c| {
-                    if c == 0 || r == 0 || c + 1 == g.cols || r + 1 == g.rows {
-                        None
-                    } else {
-                        assign(c, r)
-                    }
-                })
-            })
-            .collect()
-    };
-    let mut out = Vec::new();
-    if k == 1 {
-        out.push(membership(&|_, _| Some(0)));
-    } else if k == 2 {
-        for vertical in [true, false] {
-            for cut in central(if vertical { g.cols } else { g.rows }) {
-                out.push(membership(&|c, r| {
-                    let p = if vertical { c } else { r };
-                    (p != cut).then_some(usize::from(p > cut))
-                }));
-            }
-        }
-    } else {
-        assert_eq!(k, 3);
-        for vertical in [true, false] {
-            for main_first in [true, false] {
-                for full in central(if vertical { g.cols } else { g.rows }) {
-                    for half in central(if vertical { g.rows } else { g.cols }) {
-                        out.push(membership(&|c, r| {
-                            let (p, q) = if vertical { (c, r) } else { (r, c) };
-                            if p == full {
-                                None
-                            } else if (p < full) == main_first {
-                                Some(0)
-                            } else {
-                                (q != half).then_some(1 + usize::from(q > half))
-                            }
-                        }));
-                    }
-                }
-            }
-        }
+/// Longitude east and latitude north, in degrees, from a canonical unit vector.
+pub fn geographic(position: [f64; 3]) -> [f64; 2] {
+    let [x, y, z] = position;
+    [
+        math::atan2(y, x) * 180.0 / PI,
+        math::atan2(z, (x * x + y * y).sqrt()) * 180.0 / PI,
+    ]
+}
+
+/// Shortest great-circle angle in radians, including coincident/antipodal points.
+pub fn angular_distance(a: [f64; 3], b: [f64; 3]) -> f64 {
+    sphere::angle(a, b)
+}
+
+fn chart_point(position: Point, width: f64, height: f64) -> [f32; 2] {
+    let [lon, lat] = geographic(position);
+    [
+        ((lon + 180.0) / 360.0 * width) as f32,
+        ((90.0 - lat) / 180.0 * height) as f32,
+    ]
+}
+
+pub(crate) fn random_direction(rng: &mut ChaCha8Rng) -> Point {
+    let z: f64 = rng.gen_range(-1.0..1.0);
+    let longitude = rng.gen_range(-PI..PI);
+    let radial = (1.0 - z * z).sqrt();
+    [
+        radial * math::cos(longitude),
+        radial * math::sin(longitude),
+        z,
+    ]
+}
+
+/// Smooth, seam-free fields sampled in 3D rather than in chart coordinates.
+struct Wave {
+    direction: Point,
+    frequency: f64,
+    phase: f64,
+    amplitude: f64,
+}
+
+impl Wave {
+    fn value(&self, p: Point) -> f64 {
+        self.amplitude * math::sin(dot(p, self.direction) * self.frequency + self.phase)
     }
-    // A two-row basin near the edge can pass topology checks but turns its
-    // minimum quota into a rectangular strip. Retain room for shaped coasts.
-    out.retain(|owner: &Vec<Option<usize>>| {
-        (0..k).all(|b| {
-            let (mut x0, mut y0, mut x1, mut y1) = (g.cols, g.rows, 0, 0);
-            for (r, &body) in owner.iter().enumerate() {
-                if body == Some(b) {
-                    x0 = x0.min(r % g.cols);
-                    y0 = y0.min(r / g.cols);
-                    x1 = x1.max(r % g.cols);
-                    y1 = y1.max(r / g.cols);
-                }
-            }
-            x1 >= x0 + 2 && y1 >= y0 + 2
-        })
-    });
-    out
 }
 
-/// Eight row/column sweeps form a small, finite packing alternative to the
-/// fully noisy island priorities. Reflections and transposition vary the
-/// starting shore; the zero-jitter terminal uses the first sweep.
-fn sweep_order(g: &Geography, orientation: usize) -> Vec<f64> {
-    (0..g.cols * g.rows)
-        .map(|r| {
-            let (mut x, mut y) = (r % g.cols, r / g.cols);
-            if orientation & 1 != 0 {
-                x = g.cols - 1 - x;
-            }
-            if orientation & 2 != 0 {
-                y = g.rows - 1 - y;
-            }
-            if orientation & 4 != 0 {
-                (x * g.rows + y) as f64
-            } else {
-                (y * g.cols + x) as f64
-            }
-        })
-        .collect()
+fn waves(rng: &mut ChaCha8Rng) -> [Wave; 6] {
+    std::array::from_fn(|i| Wave {
+        direction: random_direction(rng),
+        frequency: [3.0, 5.0, 9.0, 17.0, 31.0, 47.0][i],
+        phase: rng.gen_range(-PI..PI),
+        amplitude: [0.38, 0.26, 0.17, 0.10, 0.06, 0.03][i],
+    })
 }
 
-fn sites(g: &Geography, offsets: &[[f64; 2]], jitter: f64) -> Vec<[f64; 2]> {
-    offsets
+struct Continent {
+    centre: Point,
+    along: Point,
+    across: Point,
+    length: f64,
+    width: f64,
+    ridge_offset: f64,
+    ridge_phase: f64,
+}
+
+impl Continent {
+    /// Spherical logarithmic coordinates in the body's local tangent basis.
+    fn coordinates(&self, p: Point) -> [f64; 2] {
+        let x = dot(p, self.along);
+        let y = dot(p, self.across);
+        let radial = (x * x + y * y).sqrt();
+        let scale = if radial > 1e-12 {
+            math::atan2(radial, dot(p, self.centre)) / radial
+        } else {
+            0.0
+        };
+        [x * scale, y * scale]
+    }
+}
+
+/// A bounded set of separated broad bodies, perturbed coasts, small volcanic
+/// highs, and curved elongated ridges. This is not a plate or weather model.
+fn surface(
+    seed: u64,
+    cells: &[sphere::Cell],
+    radius_km: f32,
+) -> (Vec<Terrain>, Vec<f64>, Vec<f64>) {
+    let mut body_rng = stream(seed, &[key("spherical continental bodies")]);
+    let mut continents: Vec<Continent> = Vec::with_capacity(5);
+    for _ in 0..5 {
+        // Farthest of a fixed candidate set; never retry a generated world.
+        let centre = (0..48)
+            .map(|_| random_direction(&mut body_rng))
+            .min_by(|&a, &b| {
+                let nearest = |p| {
+                    continents
+                        .iter()
+                        .map(|c| dot(p, c.centre))
+                        .fold(-1.0, f64::max)
+                };
+                nearest(a).total_cmp(&nearest(b))
+            })
+            .unwrap();
+        let (east, north) = tangent(centre);
+        let turn = body_rng.gen_range(-PI..PI);
+        let (s, c) = (math::sin(turn), math::cos(turn));
+        continents.push(Continent {
+            centre,
+            along: std::array::from_fn(|i| east[i] * c + north[i] * s),
+            across: std::array::from_fn(|i| north[i] * c - east[i] * s),
+            length: body_rng.gen_range(0.58..0.88),
+            width: body_rng.gen_range(0.34..0.55),
+            ridge_offset: body_rng.gen_range(-0.15..0.15),
+            ridge_phase: body_rng.gen_range(-PI..PI),
+        });
+    }
+    let mut island_rng = stream(seed, &[key("spherical island highs")]);
+    let islands: Vec<_> = (0..32)
+        .map(|_| {
+            let centre = random_direction(&mut island_rng);
+            let radius = island_rng.gen_range(0.06..0.14);
+            (centre, radius, math::cos(radius * 1.25))
+        })
+        .collect();
+    let coast_waves = waves(&mut stream(seed, &[key("spherical coastline field")]));
+    let relief_waves = waves(&mut stream(seed, &[key("spherical relief field")]));
+    let wet_waves = waves(&mut stream(seed, &[key("spherical moisture field")]));
+    let mut terrain = vec![Terrain::Sea; cells.len()];
+    let mut elevation = Vec::with_capacity(cells.len());
+    for (r, cell) in cells.iter().enumerate() {
+        let p = cell.position;
+        let coast: f64 = coast_waves.iter().map(|wave| wave.value(p)).sum();
+        let relief: f64 = relief_waves.iter().map(|wave| wave.value(p)).sum();
+        let mut height: f64 = -1.0;
+        let mut ridge: f64 = 0.0;
+        for body in &continents {
+            if dot(p, body.centre) <= 0.0 {
+                continue;
+            }
+            let [along, across] = body.coordinates(p);
+            let bend = math::sin(5.0 * along + body.ridge_phase);
+            // A broad bend makes non-elliptical peninsulas and bays.
+            let bent = across + 0.10 * bend;
+            let x = along / body.length;
+            let y = bent / body.width;
+            height = height.max(1.0 - (x * x + y * y).sqrt() + 0.22 * coast);
+            let transverse = (across - body.ridge_offset - 0.07 * bend) / 0.065;
+            let longitudinal = along / (0.8 * body.length);
+            ridge = ridge.max(math::exp64(
+                -transverse * transverse
+                    - longitudinal * longitudinal * longitudinal * longitudinal,
+            ));
+        }
+        for &(centre, radius, cutoff) in &islands {
+            // Dot-product rejection avoids trig for distant small highs.
+            if dot(p, centre) > cutoff {
+                height = height.max(1.0 - angular_distance(p, centre) / radius + 0.10 * coast);
+            }
+        }
+        if height > 0.0 {
+            terrain[r] = Terrain::Plains;
+        }
+        elevation.push((0.12 + 0.32 * height + 0.64 * ridge + 0.10 * relief).clamp(0.0, 1.0));
+    }
+
+    // Distance to salt water follows the closed graph in physical kilometres.
+    // A multi-source pass avoids scanning every coast from every inland cell.
+    let coast_distance = coast_distances(cells, &terrain, radius_km);
+    let moisture: Vec<_> = cells
         .iter()
         .enumerate()
-        .map(|(i, &[dx, dy])| {
-            let (c, r) = (i % g.cols, i / g.cols);
-            [
-                0.5 + c as f64 + if r % 2 == 1 { 0.5 } else { 0.0 } + jitter * dx,
-                0.5 + r as f64 * ROW + jitter * dy,
-            ]
+        .map(|(r, cell)| {
+            let latitude = cell.position[2].abs();
+            let equatorial = math::exp64(-latitude * latitude / 0.045);
+            let subtropical = math::exp64(-(latitude - 0.5) * (latitude - 0.5) / 0.025);
+            let field: f64 = wet_waves.iter().map(|wave| wave.value(cell.position)).sum();
+            (0.46 + 0.28 * math::exp64(-coast_distance[r] / 650.0) + 0.22 * equatorial
+                - 0.25 * subtropical
+                - 0.22 * elevation[r]
+                + 0.24 * field)
+                .clamp(0.0, 1.0)
         })
-        .collect()
-}
+        .collect();
 
-struct LandBudget {
-    k: usize,
-    minimum: usize,
-    continents: usize,
-    islands: usize,
-    island_count: Option<usize>,
-}
-
-struct LandPlan {
-    continents: Vec<Vec<usize>>,
-    islands: Vec<Vec<usize>>,
-}
-
-fn choose_plan(
-    layouts: &[Vec<Option<usize>>],
-    start: usize,
-    neighbours: &[Vec<usize>],
-    budget: &LandBudget,
-    island_order: &[f64],
-) -> Option<LandPlan> {
-    for offset in 0..layouts.len() {
-        let owner = &layouts[(start + offset) % layouts.len()];
-        // A grid separator alone is insufficient on a jittered Voronoi graph.
-        // Remove BOTH endpoints of every edge crossing candidate basins.
-        let mut moated = owner.clone();
-        for (r, adjacent) in neighbours.iter().enumerate() {
-            for &n in adjacent {
-                if owner[r].is_some() && owner[n].is_some() && owner[r] != owner[n] {
-                    moated[r] = None;
-                    moated[n] = None;
-                }
-            }
-        }
-        let packs = island_packs(&moated, neighbours, island_order);
-        let search = IslandSearch {
-            owner: &moated,
-            neighbours,
-            budget,
-            packs,
-        };
-        let mut blocked = vec![0u8; owner.len()];
-        let mut islands = Vec::new();
-        // Never spend exponential time exhausting an infeasible arrangement.
-        // Move to the next finite layout, retaining the exact same budget.
-        let mut alternatives = 1024;
-        if let Some(continents) = search.find(
-            budget.islands,
-            0,
-            &mut blocked,
-            &mut islands,
-            &mut alternatives,
-        ) {
-            return Some(LandPlan {
-                continents,
-                islands,
-            });
-        }
+    let land: Vec<_> = (0..cells.len()).filter(|&r| terrain[r].is_land()).collect();
+    let by_height = ranked(&land, &elevation);
+    let mountains = share(land.len(), MOUNTAINS);
+    let hills = share(land.len(), HILLS);
+    let lowland_end = land.len() - mountains - hills;
+    for &r in &by_height[lowland_end..land.len() - mountains] {
+        terrain[r] = Terrain::Hills;
     }
-    None
-}
-
-/// Connected packs of one, two, and three separator/outer-belt cells.
-/// Every ordering tie is explicit; no hashing or random redraws are involved.
-fn island_packs(
-    owner: &[Option<usize>],
-    neighbours: &[Vec<usize>],
-    order: &[f64],
-) -> [Vec<Vec<usize>>; 3] {
-    let mut out = [Vec::new(), Vec::new(), Vec::new()];
-    for r in 0..owner.len() {
-        if owner[r].is_some() {
-            continue;
-        }
-        out[0].push(vec![r]);
-        for &n in &neighbours[r] {
-            if n <= r || owner[n].is_some() {
-                continue;
-            }
-            out[1].push(vec![r, n]);
-            for &p in neighbours[r].iter().chain(&neighbours[n]) {
-                if p == r || p == n || owner[p].is_some() {
-                    continue;
-                }
-                let mut pack = vec![r, n, p];
-                pack.sort_unstable();
-                out[2].push(pack);
-            }
-        }
+    for &r in &by_height[land.len() - mountains..] {
+        terrain[r] = Terrain::Mountains;
     }
-    for packs in &mut out {
-        packs.sort_unstable();
-        packs.dedup();
-        // Compact peripheral packs spare basin capacity. Noise breaks this
-        // preference enough to vary island locations and shapes by seed.
-        let score = |pack: &[usize]| {
-            let mut rim = Vec::new();
-            for &r in pack {
-                rim.extend(
-                    neighbours[r]
-                        .iter()
-                        .copied()
-                        .filter(|&n| owner[n].is_some()),
-                );
-            }
-            rim.sort_unstable();
-            rim.dedup();
-            rim.len() as f64 + 4.0 * pack.iter().map(|&r| order[r]).sum::<f64>() / pack.len() as f64
-        };
-        let mut scored: Vec<_> = packs.drain(..).map(|p| (score(&p), p)).collect();
-        scored.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-        packs.extend(scored.into_iter().map(|(_, p)| p));
+    let by_moisture = ranked(&by_height[..lowland_end], &moisture);
+    let deserts = share(lowland_end, DESERT);
+    let steppes = share(lowland_end, STEPPE);
+    let forests = share(lowland_end, FOREST);
+    for &r in &by_moisture[..deserts] {
+        terrain[r] = Terrain::Desert;
     }
-    out
+    for &r in &by_moisture[deserts..deserts + steppes] {
+        terrain[r] = Terrain::Steppe;
+    }
+    for &r in &by_moisture[lowland_end - forests..] {
+        terrain[r] = Terrain::Forest;
+    }
+    (terrain, elevation, moisture)
 }
 
-struct IslandSearch<'a> {
-    owner: &'a [Option<usize>],
-    neighbours: &'a [Vec<usize>],
-    budget: &'a LandBudget,
-    packs: [Vec<Vec<usize>>; 3],
-}
-
-impl IslandSearch<'_> {
-    /// Bounded backtracking. Regional islands use packs up to three cells;
-    /// fixed-count islands distribute their budget into one/two-cell packs.
-    /// Equal-size packs have increasing indices, eliminating permutations.
-    fn find(
-        &self,
-        remaining: usize,
-        first: usize,
-        blocked: &mut [u8],
-        islands: &mut Vec<Vec<usize>>,
-        alternatives: &mut usize,
-    ) -> Option<Vec<Vec<usize>>> {
-        if *alternatives == 0 {
-            return None;
-        }
-        *alternatives -= 1;
-        let continents = largest_components(self.owner, self.neighbours, blocked, self.budget.k);
-        if continents.iter().any(|c| c.len() < self.budget.minimum)
-            || continents.iter().map(Vec::len).sum::<usize>() < self.budget.continents
-        {
-            return None;
-        }
-        if remaining == 0 {
-            if self
-                .budget
-                .island_count
-                .is_some_and(|count| islands.len() != count)
-            {
-                return None;
-            }
-            return ocean_backbone(&continents, islands, self.neighbours).then_some(continents);
-        }
-        let size = if let Some(count) = self.budget.island_count {
-            let slots = count.checked_sub(islands.len())?;
-            if slots == 0 || remaining < slots || remaining > 2 * slots {
-                return None;
-            }
-            if remaining > slots { 2 } else { 1 }
+pub(crate) fn coast_distances(
+    cells: &[sphere::Cell],
+    terrain: &[Terrain],
+    radius_km: f32,
+) -> Vec<f64> {
+    let mut distance = vec![f64::INFINITY; cells.len()];
+    let mut heap = BinaryHeap::new();
+    for (r, cell) in cells.iter().enumerate() {
+        if !terrain[r].is_land() {
+            distance[r] = 0.0;
         } else {
-            remaining.min(3)
-        };
-        for (p, pack) in self.packs[size - 1].iter().enumerate().skip(first) {
-            if *alternatives == 0 {
-                break;
+            let coast = cell
+                .neighbours
+                .iter()
+                .copied()
+                .filter(|&n| !terrain[n].is_land())
+                .map(|n| {
+                    0.5 * f64::from(radius_km) * angular_distance(cell.position, cells[n].position)
+                })
+                .fold(f64::INFINITY, f64::min);
+            if coast.is_finite() {
+                distance[r] = coast;
+                heap.push(RouteVisit {
+                    effort: coast,
+                    region: r as u32,
+                });
             }
-            if pack.iter().any(|&r| blocked[r] != 0) {
+        }
+    }
+    while let Some(RouteVisit { effort, region }) = heap.pop() {
+        let r = region as usize;
+        if effort != distance[r] {
+            continue;
+        }
+        for &n in &cells[r].neighbours {
+            if !terrain[n].is_land() {
                 continue;
             }
-            let mut rim = pack.clone();
-            for &r in pack {
-                rim.extend(&self.neighbours[r]);
-            }
-            rim.sort_unstable();
-            rim.dedup();
-            for &r in &rim {
-                blocked[r] += 1;
-            }
-            islands.push(pack.clone());
-            let left = remaining - size;
-            let next_size = if left == 0 {
-                0
-            } else if let Some(count) = self.budget.island_count {
-                if left > count - islands.len() { 2 } else { 1 }
-            } else {
-                left.min(3)
-            };
-            let next = if next_size == size { p + 1 } else { 0 };
-            if let Some(c) = self.find(remaining - size, next, blocked, islands, alternatives) {
-                return Some(c);
-            }
-            islands.pop();
-            for &r in &rim {
-                blocked[r] -= 1;
-            }
-        }
-        None
-    }
-}
-
-fn largest_components(
-    owner: &[Option<usize>],
-    neighbours: &[Vec<usize>],
-    blocked: &[u8],
-    k: usize,
-) -> Vec<Vec<usize>> {
-    let mut largest = vec![Vec::new(); k];
-    let mut seen = vec![false; owner.len()];
-    let mut component = Vec::new();
-    let mut stack = Vec::new();
-    for start in 0..owner.len() {
-        let Some(b) = owner[start] else { continue };
-        if seen[start] || blocked[start] != 0 {
-            continue;
-        }
-        component.clear();
-        stack.push(start);
-        seen[start] = true;
-        while let Some(r) = stack.pop() {
-            component.push(r);
-            for &n in &neighbours[r] {
-                if !seen[n] && blocked[n] == 0 && owner[n] == Some(b) {
-                    seen[n] = true;
-                    stack.push(n);
-                }
-            }
-        }
-        component.sort_unstable();
-        if component.len() > largest[b].len()
-            || (component.len() == largest[b].len() && component[0] < largest[b][0])
-        {
-            std::mem::swap(&mut component, &mut largest[b]);
-        }
-    }
-    largest
-}
-
-/// The reserved sea (including discarded basin fragments) is connected.
-/// No island can cut the separator into disconnected ocean pockets.
-fn ocean_backbone(
-    continents: &[Vec<usize>],
-    islands: &[Vec<usize>],
-    neighbours: &[Vec<usize>],
-) -> bool {
-    let mut sea = vec![true; neighbours.len()];
-    for &r in continents.iter().chain(islands).flatten() {
-        sea[r] = false;
-    }
-    let Some(start) = sea.iter().position(|&s| s) else {
-        return false;
-    };
-    let mut stack = vec![start];
-    sea[start] = false;
-    while let Some(r) = stack.pop() {
-        for &n in &neighbours[r] {
-            if sea[n] {
-                sea[n] = false;
-                stack.push(n);
+            let candidate = effort
+                + f64::from(radius_km) * angular_distance(cells[r].position, cells[n].position);
+            if candidate < distance[n] {
+                distance[n] = candidate;
+                heap.push(RouteVisit {
+                    effort: candidate,
+                    region: n as u32,
+                });
             }
         }
     }
-    !sea.into_iter().any(|s| s)
-}
-
-/// Capped largest-remainder apportionment, reweighted when a basin binds.
-fn apportion(
-    candidates: &[Vec<usize>],
-    weights: &[f64],
-    minimum: usize,
-    total: usize,
-) -> Vec<usize> {
-    let mut quotas = vec![minimum; candidates.len()];
-    let mut remaining = total - minimum * candidates.len();
-    while remaining != 0 {
-        let weighted: Vec<f64> = candidates
-            .iter()
-            .zip(&quotas)
-            .zip(weights)
-            .map(|((c, &q), &w)| (c.len() - q) as f64 * w)
-            .collect();
-        let sum: f64 = weighted.iter().sum();
-        let ideals: Vec<f64> = weighted
-            .iter()
-            .map(|&w| remaining as f64 * w / sum)
-            .collect();
-        if let Some(b) =
-            (0..quotas.len()).find(|&b| ideals[b] > (candidates[b].len() - quotas[b]) as f64)
-        {
-            remaining -= candidates[b].len() - quotas[b];
-            quotas[b] = candidates[b].len();
-            continue;
-        }
-        for (q, &ideal) in quotas.iter_mut().zip(&ideals) {
-            let whole = ideal as usize;
-            *q += whole;
-            remaining -= whole;
-        }
-        let mut order: Vec<usize> = (0..quotas.len()).collect();
-        order.sort_by(|&a, &b| {
-            let fraction = |r: usize| ideals[r] - (ideals[r] as usize) as f64;
-            fraction(b).total_cmp(&fraction(a)).then(a.cmp(&b))
-        });
-        for b in order {
-            if remaining == 0 {
-                break;
-            }
-            if quotas[b] < candidates[b].len() {
-                quotas[b] += 1;
-                remaining -= 1;
-            }
-        }
-    }
-    quotas
-}
-
-fn basin_scores(
-    candidates: &[usize],
-    sites: &[[f64; 2]],
-    displacement: [f64; 2],
-    broad: &Noise,
-    fine: &Noise,
-    elevation: &mut [f64],
-    scores: &mut Vec<f64>,
-) {
-    let (mut x0, mut y0, mut x1, mut y1) = (
-        f64::INFINITY,
-        f64::INFINITY,
-        f64::NEG_INFINITY,
-        f64::NEG_INFINITY,
-    );
-    for &r in candidates {
-        let [x, y] = sites[r];
-        x0 = x0.min(x);
-        y0 = y0.min(y);
-        x1 = x1.max(x);
-        y1 = y1.max(y);
-    }
-    let (w, h) = (x1 - x0 + 1.0, y1 - y0 + ROW);
-    let (cx, cy) = (
-        (x0 + x1) / 2.0 + displacement[0] * w,
-        (y0 + y1) / 2.0 + displacement[1] * h,
-    );
-    scores.clear();
-    for &r in candidates {
-        let [x, y] = sites[r];
-        let (dx, dy) = ((x - cx) / (w / 2.0), (y - cy) / (h / 2.0));
-        let shape = 1.0 - dx * dx - dy * dy;
-        let (b, f) = (broad.at(x, y), fine.at(x, y));
-        scores.push(shape + 0.25 * b + 0.20 * f);
-        // Keep relief correlated with the basin without assigning all the
-        // mountain quota to the centres of tiny islands.
-        elevation[r] = b + 0.7 * f + 0.15 * shape;
-    }
-}
-
-/// Highest-scored frontier first, with region-ID ties. Connectivity and
-/// sufficient candidate capacity guarantee that the quota is reachable.
-fn grow(
-    candidates: &[usize],
-    scores: &[f64],
-    neighbours: &[Vec<usize>],
-    quota: usize,
-    terrain: &mut [Terrain],
-) {
-    let mut value = vec![None; terrain.len()];
-    for (&r, &score) in candidates.iter().zip(scores) {
-        value[r] = Some(score);
-    }
-    let compare = |a: usize, b: usize| {
-        value[a]
-            .unwrap()
-            .total_cmp(&value[b].unwrap())
-            .then(b.cmp(&a))
-    };
-    let start = *candidates
-        .iter()
-        .max_by(|&&a, &&b| compare(a, b))
-        .expect("a basin has candidates");
-    let mut frontier = vec![start];
-    let mut queued = vec![false; terrain.len()];
-    queued[start] = true;
-    for _ in 0..quota {
-        let best = frontier
-            .iter()
-            .enumerate()
-            .max_by(|a, b| compare(*a.1, *b.1))
-            .map(|(i, _)| i)
-            .expect("a connected basin can fill its quota");
-        let r = frontier.swap_remove(best);
-        terrain[r] = Terrain::Plains;
-        for &n in &neighbours[r] {
-            if value[n].is_some() && !queued[n] {
-                frontier.push(n);
-                queued[n] = true;
-            }
-        }
-    }
+    distance
 }
 
 /// Each land region's body of land, numbered in order of its lowest
 /// region; `None` for sea.
-fn landmasses(terrain: &[Terrain], neighbours: &[Vec<usize>]) -> Vec<Option<usize>> {
+fn landmasses(terrain: &[Terrain], cells: &[sphere::Cell]) -> Vec<Option<usize>> {
     let mut out: Vec<Option<usize>> = vec![None; terrain.len()];
     let mut next = 0;
     for start in 0..terrain.len() {
@@ -1431,7 +1058,7 @@ fn landmasses(terrain: &[Terrain], neighbours: &[Vec<usize>]) -> Vec<Option<usiz
         out[start] = Some(next);
         let mut stack = vec![start];
         while let Some(r) = stack.pop() {
-            for &n in &neighbours[r] {
+            for &n in &cells[r].neighbours {
                 if terrain[n].is_land() && out[n].is_none() {
                     out[n] = Some(next);
                     stack.push(n);
@@ -1444,7 +1071,7 @@ fn landmasses(terrain: &[Terrain], neighbours: &[Vec<usize>]) -> Vec<Option<usiz
 }
 
 /// Each body of land's kind, regions, and anchor, by its number.
-fn describe_landmasses(regions: &[Region], size: MapSize) -> Vec<Landmass> {
+fn describe_landmasses(regions: &[Region]) -> Vec<Landmass> {
     let count = regions
         .iter()
         .filter_map(|r| r.landmass)
@@ -1459,32 +1086,25 @@ fn describe_landmasses(regions: &[Region], size: MapSize) -> Vec<Landmass> {
     members
         .into_iter()
         .map(|regions_of| {
-            // Centre of area: each cell's centroid weighted by its area.
-            let (mut area, mut cx, mut cy) = (0.0f64, 0.0f64, 0.0f64);
-            for &r in &regions_of {
-                let (a, x, y) = centroid(&regions[r].outline);
-                area += a;
-                cx += a * x;
-                cy += a * y;
-            }
-            let (cx, cy) = if area > 0.0 {
-                (cx / area, cy / area)
-            } else {
-                (0.0, 0.0)
-            };
+            let centre = regions_of.iter().fold([0.0; 3], |sum, &r| {
+                add(sum, sphere::moment(&regions[r].boundary))
+            });
+            // Maximizing dot product minimizes the angular distance to the
+            // spherical surface centroid. A zero moment ties by stable ID.
             let anchor = regions_of
                 .iter()
                 .copied()
-                .min_by(|&a, &b| {
-                    let d = |r: usize| {
-                        let [x, y] = regions[r].site;
-                        let (dx, dy) = (f64::from(x) - cx, f64::from(y) - cy);
-                        dx * dx + dy * dy
-                    };
-                    d(a).total_cmp(&d(b)).then(a.cmp(&b))
+                .max_by(|&a, &b| {
+                    dot(regions[a].position, centre)
+                        .total_cmp(&dot(regions[b].position, centre))
+                        .then(b.cmp(&a))
                 })
                 .expect("a landmass has a region");
-            let kind = if regions_of.len() >= size.continent_minimum() {
+            let area: f64 = regions_of
+                .iter()
+                .map(|&r| f64::from(regions[r].area_km2))
+                .sum();
+            let kind = if area >= CONTINENT_AREA_KM2 {
                 LandmassKind::Continent
             } else {
                 LandmassKind::Island
@@ -1498,238 +1118,25 @@ fn describe_landmasses(regions: &[Region], size: MapSize) -> Vec<Landmass> {
         .collect()
 }
 
-/// A polygon's area and centroid, by the shoelace formula.
-fn centroid(outline: &[[f32; 2]]) -> (f64, f64, f64) {
-    let (mut a, mut x, mut y) = (0.0f64, 0.0f64, 0.0f64);
-    for (i, &[x0, y0]) in outline.iter().enumerate() {
-        let [x1, y1] = outline[(i + 1) % outline.len()];
-        let (x0, y0, x1, y1) = (f64::from(x0), f64::from(y0), f64::from(x1), f64::from(y1));
-        let cross = x0 * y1 - x1 * y0;
-        a += cross;
-        x += (x0 + x1) * cross;
-        y += (y0 + y1) * cross;
-    }
-    if a == 0.0 {
-        return (0.0, 0.0, 0.0);
-    }
-    (a.abs() / 2.0, x / (3.0 * a), y / (3.0 * a))
-}
-
-/// Smooth random values over the plane: random heights at the corners of
-/// a coarse lattice, blended between them.
-struct Noise {
-    cell: f64,
-    cols: usize,
-    values: Vec<f64>,
-}
-
-impl Noise {
-    fn new(rng: &mut ChaCha8Rng, width: f64, height: f64, cell: f64) -> Noise {
-        let cols = (width / cell) as usize + 2;
-        let rows = (height / cell) as usize + 2;
-        let values = (0..cols * rows).map(|_| rng.r#gen::<f64>()).collect();
-        Noise { cell, cols, values }
-    }
-
-    fn at(&self, x: f64, y: f64) -> f64 {
-        let (gx, gy) = (x.max(0.0) / self.cell, y.max(0.0) / self.cell);
-        let (ix, iy) = (gx as usize, gy as usize);
-        let (tx, ty) = (smooth(gx - ix as f64), smooth(gy - iy as f64));
-        let v = |c: usize, r: usize| self.values[r * self.cols + c];
-        let top = v(ix, iy) + (v(ix + 1, iy) - v(ix, iy)) * tx;
-        let bottom = v(ix, iy + 1) + (v(ix + 1, iy + 1) - v(ix, iy + 1)) * tx;
-        top + (bottom - top) * ty
-    }
-}
-
-fn smooth(t: f64) -> f64 {
-    t * t * (3.0 - 2.0 * t)
-}
-
-#[derive(Clone, Debug)]
-struct CellBorder {
-    neighbour: usize,
-    ends: [[f64; 2]; 2],
-}
-
-#[derive(Clone, Debug)]
-struct SharedBorder {
-    a: usize,
-    b: usize,
-    midpoint: [f64; 2],
-}
-
-fn area(outline: &[[f64; 2]]) -> f64 {
-    outline
-        .iter()
-        .enumerate()
-        .map(|(i, &[x0, y0])| {
-            let [x1, y1] = outline[(i + 1) % outline.len()];
-            x0 * y1 - x1 * y0
-        })
-        .sum::<f64>()
-        .abs()
-        / 2.0
-}
-
-/// The unjittered rectangle is covered within sqrt(1^2 + 0.5^2) of a
-/// grid site: choose the nearest row, then its nearest point. Jitter adds
-/// at most sqrt(2)*0.3, so every true cell lies within 1.55 of its site.
-/// A site supplying a positive Voronoi facet is therefore at most 3.1 away.
-/// Omitted columns (delta >= 5) are at least 5-0.5-0.6 = 3.9 away;
-/// omitted rows are at least 5*ROW-0.6 > 3.7 away. Keeping +/-4 of each
-/// includes every true facet, hence exactly the full half-plane intersection.
-/// Region-ID clipping order remains the same as the exhaustive clipper.
-fn grid_cells(
-    g: &Geography,
-    sites: &[[f64; 2]],
-    width: f64,
-    height: f64,
-) -> Vec<(Vec<[f64; 2]>, Vec<CellBorder>)> {
-    (0..sites.len())
-        .map(|i| {
-            let (c, r) = (i % g.cols, i / g.cols);
-            let candidates = (r.saturating_sub(4)..=(r + 4).min(g.rows - 1)).flat_map(|row| {
-                (c.saturating_sub(4)..=(c + 4).min(g.cols - 1)).map(move |col| row * g.cols + col)
-            });
-            clipped_cell(sites, i, width, height, candidates)
-        })
-        .collect()
-}
-
-#[cfg(test)]
-fn cell(sites: &[[f64; 2]], i: usize, width: f64, height: f64) -> (Vec<[f64; 2]>, Vec<CellBorder>) {
-    clipped_cell(sites, i, width, height, 0..sites.len())
-}
-
-/// The Voronoi cell of site `i` within the map's bounds, and the sites
-/// whose cells it borders: the bounds clipped by the half-plane nearer `i`
-/// than each other site. Each edge of the polygon remembers the site that
-/// cut it, or none for the map's edge.
-fn clipped_cell(
-    sites: &[[f64; 2]],
-    i: usize,
-    width: f64,
-    height: f64,
-    candidates: impl Iterator<Item = usize>,
-) -> (Vec<[f64; 2]>, Vec<CellBorder>) {
-    let mut polygon: Vec<([f64; 2], Option<usize>)> = vec![
-        ([0.0, 0.0], None),
-        ([width, 0.0], None),
-        ([width, height], None),
-        ([0.0, height], None),
-    ];
-    let [px, py] = sites[i];
-    let mut next = Vec::with_capacity(12);
-    for j in candidates {
-        if j == i {
-            continue;
-        }
-        let [qx, qy] = sites[j];
-        // Points p with (p - m)·n <= 0 are nearer site i.
-        let (nx, ny) = (qx - px, qy - py);
-        let (mx, my) = ((px + qx) / 2.0, (py + qy) / 2.0);
-        let side = |[x, y]: [f64; 2]| (x - mx) * nx + (y - my) * ny;
-        next.clear();
-        for k in 0..polygon.len() {
-            let (a, label) = polygon[k];
-            let (b, _) = polygon[(k + 1) % polygon.len()];
-            let (sa, sb) = (side(a), side(b));
-            let cross = || {
-                let t = sa / (sa - sb);
-                [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
-            };
-            match (sa <= 0.0, sb <= 0.0) {
-                (true, true) => next.push((a, label)),
-                (true, false) => {
-                    next.push((a, label));
-                    next.push((cross(), Some(j)));
-                }
-                (false, true) => next.push((cross(), label)),
-                (false, false) => {}
-            }
-        }
-        std::mem::swap(&mut polygon, &mut next);
-    }
-    let borders = (0..polygon.len())
-        .filter_map(|k| {
-            let (a, label) = polygon[k];
-            let (b, _) = polygon[(k + 1) % polygon.len()];
-            let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
-            // Keep the existing sliver cutoff, but apply it to unrounded
-            // labelled edges. A surviving side supplies the canonical border.
-            label
-                .filter(|_| dx * dx + dy * dy > 1e-6)
-                .map(|neighbour| CellBorder {
-                    neighbour,
-                    ends: [a, b],
-                })
-        })
-        .collect();
-    (polygon.into_iter().map(|(p, _)| p).collect(), borders)
-}
-
-/// Retain one positive border for each unordered pair before f32 rounding.
-/// Prefer the lower-ID cell's side; a one-sided clipping sliver still yields
-/// exactly one symmetric edge rather than independently recovered geometry.
-fn shared_borders(cells: &[(Vec<[f64; 2]>, Vec<CellBorder>)]) -> Vec<SharedBorder> {
-    let mut sides: Vec<_> = cells
-        .iter()
-        .enumerate()
-        .flat_map(|(i, (_, borders))| {
-            borders.iter().map(move |border| {
-                (
-                    i.min(border.neighbour),
-                    i.max(border.neighbour),
-                    i,
-                    border.ends,
-                )
-            })
-        })
-        .collect();
-    sides.sort_unstable_by_key(|&(a, b, source, _)| (a, b, source));
-    sides.dedup_by_key(|side| (side.0, side.1));
-    sides
-        .into_iter()
-        .map(|(a, b, _, [p, q])| SharedBorder {
-            a,
-            b,
-            midpoint: [(p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0],
-        })
-        .collect()
-}
-
-fn border_neighbours(n: usize, borders: &[SharedBorder]) -> Vec<Vec<usize>> {
-    let mut neighbours = vec![Vec::new(); n];
-    for border in borders {
-        neighbours[border.a].push(border.b);
-        neighbours[border.b].push(border.a);
-    }
-    for row in &mut neighbours {
-        row.sort_unstable();
-    }
-    neighbours
-}
-
-fn travel_edges(sites: &[[f64; 2]], terrain: &[Terrain], borders: &[SharedBorder]) -> RouteRows {
-    let mut offsets = vec![0; sites.len() + 1];
+fn travel_edges(
+    cells: &[sphere::Cell],
+    terrain: &[Terrain],
+    borders: &[sphere::Border],
+    radius_km: f32,
+) -> RouteRows {
+    let mut offsets = vec![0; cells.len() + 1];
     for border in borders {
         offsets[border.a + 1] += 1;
         offsets[border.b + 1] += 1;
     }
-    for r in 0..sites.len() {
+    for r in 0..cells.len() {
         offsets[r + 1] += offsets[r];
     }
     let mut entries = vec![(0, 0.0); 2 * borders.len()];
-    let mut cursor = offsets[..sites.len()].to_vec();
+    let mut cursor = offsets[..cells.len()].to_vec();
     for border in borders {
-        let leg = |r: usize| {
-            let [x, y] = sites[r];
-            let [mx, my] = border.midpoint;
-            let (dx, dy) = (x - mx, y - my);
-            (dx * dx + dy * dy).sqrt()
-        };
-        let effort = (f64::from(KM_PER_UNIT)
+        let leg = |r: usize| angular_distance(cells[r].position, border.midpoint);
+        let effort = (f64::from(radius_km)
             * (leg(border.a) * f64::from(terrain[border.a].travel())
                 + leg(border.b) * f64::from(terrain[border.b].travel())))
             as f32;
@@ -1738,7 +1145,7 @@ fn travel_edges(sites: &[[f64; 2]], terrain: &[Terrain], borders: &[SharedBorder
             cursor[from] += 1;
         }
     }
-    for r in 0..sites.len() {
+    for r in 0..cells.len() {
         entries[offsets[r]..offsets[r + 1]].sort_unstable_by_key(|&(id, _)| id);
     }
     RouteRows { offsets, entries }
@@ -1926,17 +1333,14 @@ mod tests {
                     for pair in river.course.windows(2) {
                         assert_eq!(map.drainage[pair[0]], Some(pair[1]));
                     }
-                    let mut catchment = Vec::new();
-                    for &r in &map.drainage_order {
-                        let mut at = r;
-                        while map.regions[at].terrain.is_land() && at != end {
-                            at = map.drainage[at].unwrap();
-                        }
-                        if at == end {
-                            catchment.push(r);
-                        }
+                    let mut feeds = vec![false; n];
+                    feeds[end] = true;
+                    // Propagate membership upstream through the independent
+                    // topological order instead of walking every source path.
+                    for &r in map.drainage_order.iter().rev() {
+                        feeds[r] = feeds[r] || feeds[map.drainage[r].unwrap()];
                     }
-                    catchment.sort_unstable();
+                    let catchment: Vec<_> = (0..n).filter(|&r| feeds[r]).collect();
                     assert_eq!(river.catchment, catchment);
                     let mut outlet = end;
                     while map.regions[outlet].terrain.is_land() {
@@ -2041,374 +1445,350 @@ mod tests {
     }
 
     #[test]
-    fn border_midpoints_define_reference_and_skewed_effort() {
-        let g = Geography {
-            cols: 5,
-            rows: 5,
-            continents: (1, 1),
-            continent_land: (1, 1),
-            minimum: 1,
-            island_count: None,
-        };
-        let points = sites(&g, &[[0.0, 0.0]; 25], 0.0);
-        let cells: Vec<_> = (0..points.len())
-            .map(|i| cell(&points, i, 5.5, 4.0 * ROW + 1.0))
-            .collect();
-        let borders = shared_borders(&cells);
-        for (terrain, expected) in [(Terrain::Plains, 100.0), (Terrain::Steppe, 80.0)] {
-            let edges = travel_edges(&points, &vec![terrain; points.len()], &borders);
-            let effort = edges.get(12, 13).unwrap();
-            assert!((effort - expected).abs() < 1e-4);
+    fn geographic_coordinates_use_east_longitude_and_north_latitude_degrees() {
+        for (position, expected) in [
+            ([1.0, 0.0, 0.0], [0.0, 0.0]),
+            ([0.0, 1.0, 0.0], [90.0, 0.0]),
+            ([0.0, -1.0, 0.0], [-90.0, 0.0]),
+            ([-1.0, 0.0, 0.0], [180.0, 0.0]),
+            ([0.0, 0.0, 1.0], [0.0, 90.0]),
+            ([0.0, 0.0, -1.0], [0.0, -90.0]),
+        ] {
+            let actual = geographic(position);
+            assert!((actual[0] - expected[0]).abs() < 1e-12);
+            assert!((actual[1] - expected[1]).abs() < 1e-12);
         }
-
-        let points = [[0.5, 0.5], [1.5, 0.5], [1.0, 1.4]];
-        let cells: Vec<_> = (0..points.len())
-            .map(|i| cell(&points, i, 2.0, 2.0))
-            .collect();
-        let borders = shared_borders(&cells);
-        let border = borders.iter().find(|b| (b.a, b.b) == (0, 1)).unwrap();
-        let [mx, my] = border.midpoint;
-        let (dx, dy) = (mx - 0.5, my - 0.5);
-        let leg = (dx * dx + dy * dy).sqrt();
-        assert!(leg > 0.5);
-        let edges = travel_edges(
-            &points,
-            &[Terrain::Plains, Terrain::Hills, Terrain::Sea],
-            &borders,
-        );
-        let effort = edges.get(0, 1).unwrap();
-        assert!((f64::from(effort) - 100.0 * leg * 3.0).abs() < 1e-4);
-        assert_eq!(effort, edges.get(1, 0).unwrap());
     }
 
     #[test]
-    fn bounded_grid_clipping_preserves_exhaustive_areas_and_borders() {
-        for size in [
-            MapSize::Small,
-            MapSize::Medium,
-            MapSize::Large,
-            MapSize::Vast,
-        ] {
-            let g = size.geography();
-            let n = g.cols * g.rows;
-            let width = g.cols as f64 + 0.5;
-            let height = (g.rows - 1) as f64 * ROW + 1.0;
-            for seed in 0..3 {
-                let mut rng = stream(seed, &[key("clipper oracle")]);
-                let offsets: Vec<_> = (0..n)
-                    .map(|r| {
-                        if seed == 0 {
-                            // Extreme opposing offsets exercise the exclusion bound,
-                            // including map corners and alternating offset rows.
-                            [
-                                if r % 2 == 0 { -1.0 } else { 1.0 },
-                                if (r / g.cols) % 2 == 0 { 1.0 } else { -1.0 },
-                            ]
-                        } else {
-                            [rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)]
-                        }
-                    })
-                    .collect();
-                for jitter in [JITTER, JITTER / 2.0, 0.0] {
-                    let sites = sites(g, &offsets, jitter);
-                    let bounded = grid_cells(g, &sites, width, height);
-                    let exhaustive: Vec<_> =
-                        (0..n).map(|r| cell(&sites, r, width, height)).collect();
-                    for r in 0..n {
-                        assert!(
-                            (area(&bounded[r].0) - area(&exhaustive[r].0)).abs() < 1e-9,
-                            "{size:?}, seed {seed}, jitter {jitter}, region {r}"
-                        );
-                    }
-                    let bounded = shared_borders(&bounded);
-                    let exhaustive = shared_borders(&exhaustive);
-                    assert_eq!(bounded.len(), exhaustive.len());
-                    for (a, b) in bounded.iter().zip(&exhaustive) {
-                        assert_eq!((a.a, a.b), (b.a, b.b));
-                        assert!((a.midpoint[0] - b.midpoint[0]).abs() < 1e-8);
-                        assert!((a.midpoint[1] - b.midpoint[1]).abs() < 1e-8);
-                    }
+    fn spherical_border_routes_cross_the_seam_and_scale_with_radius() {
+        let mesh = sphere::mesh(3);
+        let terrain: Vec<_> = (0..mesh.cells.len())
+            .map(|r| {
+                if r % 2 == 0 {
+                    Terrain::Plains
+                } else {
+                    Terrain::Hills
                 }
+            })
+            .collect();
+        let edges = travel_edges(&mesh.cells, &terrain, &mesh.borders, 800.0);
+        let larger = travel_edges(&mesh.cells, &terrain, &mesh.borders, 1_600.0);
+        let mut seam_edges = 0;
+        for border in &mesh.borders {
+            let a = mesh.cells[border.a].position;
+            let b = mesh.cells[border.b].position;
+            let expected = 800.0
+                * (angular_distance(a, border.midpoint) * f64::from(terrain[border.a].travel())
+                    + angular_distance(b, border.midpoint) * f64::from(terrain[border.b].travel()));
+            let effort = edges.get(border.a, border.b).unwrap();
+            assert!((f64::from(effort) - expected).abs() < 0.0001);
+            assert_eq!(edges.get(border.b, border.a), Some(effort));
+            assert_eq!(larger.get(border.a, border.b), Some(2.0 * effort));
+            assert!(effort.is_finite() && effort > 0.0);
+            let ga = geographic(a);
+            let gb = geographic(b);
+            if (ga[0] - gb[0]).abs() > 180.0 && ga[1].abs() < 70.0 {
+                seam_edges += 1;
+                // Neighbours separated by nearly a chart circumference are
+                // still ordinary ~100 km cells on the closed globe.
+                assert!(angular_distance(a, b) * 800.0 < 200.0);
+                assert!(effort < 400.0);
             }
         }
+        assert!(seam_edges > 0);
     }
 
     #[test]
-    fn regions_tile_the_map_and_border_each_other_both_ways() {
+    fn physical_sphere_and_connected_landmasses_ignore_chart_coordinates() {
         for size in [
             MapSize::Small,
             MapSize::Medium,
             MapSize::Large,
             MapSize::Vast,
         ] {
-            let map = Map::generate(7, size);
-            let area: f64 = map.regions.iter().map(|r| centroid(&r.outline).0).sum();
-            let physical_area: f64 = map.regions.iter().map(|r| f64::from(r.area_km2)).sum();
-            let rectangle = f64::from(map.width) * f64::from(map.height) * 10_000.0;
-            assert!((physical_area - rectangle).abs() / rectangle < 1e-6);
-            assert!(map.regions.iter().all(|r| r.area_km2 > 0.0));
+            let mut map = Map::generate(7, size);
+            assert_eq!(map.regions.len(), size.region_count());
+            let area: f64 = map.regions.iter().map(|r| f64::from(r.area_km2)).sum();
+            let expected = 4.0 * PI * f64::from(map.radius_km) * f64::from(map.radius_km);
+            assert!((area - expected).abs() / expected < 1e-6);
             assert!(
-                (area - f64::from(map.width) * f64::from(map.height)).abs() < 1e-2,
-                "{size:?}: {area}"
+                (f64::from(map.width) * f64::from(KM_PER_UNIT) - TAU * f64::from(map.radius_km))
+                    .abs()
+                    < 0.01
             );
-            for (i, r) in map.regions.iter().enumerate() {
-                assert!(
-                    (2..=9).contains(&r.neighbours.len()),
-                    "{i}: {:?}",
-                    r.neighbours
-                );
-                for &j in &r.neighbours {
-                    assert!(map.regions[j].neighbours.contains(&i));
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn continents_and_islands_obey_the_regional_budgets_and_graph() {
-        for (size, k_range, land_range, minimum) in [
-            (MapSize::Small, 1..=1, 20..=27, 20),
-            (MapSize::Medium, 1..=2, 45..=55, 20),
-            (MapSize::Large, 2..=3, 90..=110, 25),
-            (MapSize::Vast, 2..=2, 1_794..=1_797, 800),
-        ] {
-            let mut startup_ms = Vec::new();
-            let mut payload_counts = Vec::new();
-            let mut body_sizes = Vec::new();
-            for seed in 0..128 {
-                let start = std::time::Instant::now();
-                let map = Map::generate(seed, size);
-                startup_ms.push(start.elapsed().as_secs_f64() * 1_000.0);
-                payload_counts.push(map.route_entry_counts());
-                assert_eq!(map, Map::generate(seed, size), "{size:?}, seed {seed}");
-                let continents: Vec<_> = map
-                    .landmasses
-                    .iter()
-                    .filter(|m| m.kind == LandmassKind::Continent)
-                    .collect();
-                body_sizes.extend(continents.iter().map(|m| m.regions.len()));
-                let islands: Vec<_> = map
-                    .landmasses
-                    .iter()
-                    .filter(|m| m.kind == LandmassKind::Island)
-                    .collect();
-                assert!(k_range.contains(&continents.len()), "{size:?}, seed {seed}");
-                assert!(
-                    land_range.contains(&continents.iter().map(|m| m.regions.len()).sum::<usize>())
-                );
-                assert!(continents.iter().all(|m| m.regions.len() >= minimum));
-                assert!(!islands.is_empty());
-                assert!(islands.iter().all(|m| (1..=3).contains(&m.regions.len())));
-                if size == MapSize::Vast {
-                    assert_eq!(map.regions.len(), 3_600);
-                    assert_eq!(islands.len(), 3);
-                    assert!(islands.iter().all(|m| (1..=2).contains(&m.regions.len())));
-                    let area: f64 = map.regions.iter().map(|r| f64::from(r.area_km2)).sum();
-                    let rectangle = f64::from(map.width) * f64::from(map.height) * 10_000.0;
-                    assert!((area - rectangle).abs() / rectangle < 1e-6);
-                }
-                // The first sea region is on the reserved outer ocean belt.
-                // Every main body must have a coast on that same backbone,
-                // not merely border an isolated inland lake.
-                let start = map
-                    .regions
-                    .iter()
-                    .position(|r| r.terrain == Terrain::Sea)
-                    .unwrap();
-                let mut ocean = vec![false; map.regions.len()];
-                let mut stack = vec![start];
-                ocean[start] = true;
+            assert_eq!(map.width, 2.0 * map.height);
+            let mut seen = vec![false; map.regions.len()];
+            for (id, mass) in map.landmasses.iter().enumerate() {
+                let mut stack = vec![mass.anchor];
+                let mut members = Vec::new();
+                seen[mass.anchor] = true;
                 while let Some(r) = stack.pop() {
+                    members.push(r);
                     for &n in &map.regions[r].neighbours {
-                        if !ocean[n] && map.regions[n].terrain == Terrain::Sea {
-                            ocean[n] = true;
+                        if map.regions[n].terrain.is_land() && !seen[n] {
+                            seen[n] = true;
                             stack.push(n);
                         }
                     }
                 }
-                assert!(continents.iter().all(|m| {
-                    m.regions
-                        .iter()
-                        .any(|&r| map.regions[r].neighbours.iter().any(|&n| ocean[n]))
-                }));
-
-                // Independently traverse the final land graph and compare the
-                // complete membership, not just the count or stored IDs.
-                let mut seen = vec![false; map.regions.len()];
-                let mut components = Vec::new();
-                for start in 0..map.regions.len() {
-                    if seen[start] || !map.regions[start].terrain.is_land() {
-                        continue;
-                    }
-                    let mut stack = vec![start];
-                    let mut members = Vec::new();
-                    seen[start] = true;
-                    while let Some(r) = stack.pop() {
-                        members.push(r);
-                        for &n in &map.regions[r].neighbours {
-                            if !seen[n] && map.regions[n].terrain.is_land() {
-                                seen[n] = true;
-                                stack.push(n);
-                            }
-                        }
-                    }
-                    members.sort_unstable();
-                    components.push(members);
-                }
-                assert_eq!(components.len(), map.landmasses.len());
-                for (id, (members, mass)) in components.iter().zip(&map.landmasses).enumerate() {
-                    assert_eq!(members, &mass.regions);
-                    assert!(members.contains(&mass.anchor));
-                    assert!(members.iter().all(|&r| map.regions[r].landmass == Some(id)));
-                    assert!(members.iter().any(|&r| map.coastal(r)));
-                    for &r in members {
-                        assert_eq!(map.island(r), mass.kind == LandmassKind::Island);
-                    }
-                }
-                for (r, region) in map.regions.iter().enumerate() {
-                    assert_eq!(region.landmass.is_some(), region.terrain.is_land());
-                    assert!(region.neighbours.windows(2).all(|pair| pair[0] < pair[1]));
-                    for &n in &region.neighbours {
-                        assert!(map.regions[n].neighbours.contains(&r));
-                        if region.terrain.is_land() && map.regions[n].terrain.is_land() {
-                            assert_eq!(region.landmass, map.regions[n].landmass);
-                            assert!(!map.overseas(r, n));
-                        }
-                    }
-                }
-                let count = |t| map.regions.iter().filter(|r| r.terrain == t).count();
-                let land = map.regions.len() - share(map.regions.len(), SEA);
-                let peaks = share(land, MOUNTAINS);
-                let hills = share(land, HILLS);
-                let lowlands = land - peaks - hills;
-                assert_eq!(count(Terrain::Sea), share(map.regions.len(), SEA));
-                assert_eq!(count(Terrain::Mountains), peaks);
-                assert_eq!(count(Terrain::Hills), hills);
-                assert_eq!(count(Terrain::Desert), share(lowlands, DESERT));
-                assert_eq!(count(Terrain::Steppe), share(lowlands, STEPPE));
-                assert_eq!(count(Terrain::Forest), share(lowlands, FOREST));
+                members.sort_unstable();
+                assert_eq!(members, mass.regions);
+                assert!(members.iter().all(|&r| map.regions[r].landmass == Some(id)));
+                assert!(members.iter().any(|&r| map.coastal(r)));
+                let area: f64 = members
+                    .iter()
+                    .map(|&r| f64::from(map.regions[r].area_km2))
+                    .sum();
                 assert_eq!(
-                    count(Terrain::Plains),
-                    lowlands
-                        - share(lowlands, DESERT)
-                        - share(lowlands, STEPPE)
-                        - share(lowlands, FOREST)
+                    mass.kind == LandmassKind::Continent,
+                    area >= CONTINENT_AREA_KM2
                 );
             }
-            startup_ms.sort_by(f64::total_cmp);
-            eprintln!(
-                "{size:?}: 128 seeds, startup median={:.2}ms p95={:.2}ms; \
-                body cells={}..{}; walking tuples={}..{}, voyage tuples={}..{}",
-                startup_ms[64],
-                startup_ms[121],
-                body_sizes.iter().min().unwrap(),
-                body_sizes.iter().max().unwrap(),
-                payload_counts.iter().map(|p| p.0).min().unwrap(),
-                payload_counts.iter().map(|p| p.0).max().unwrap(),
-                payload_counts.iter().map(|p| p.1).min().unwrap(),
-                payload_counts.iter().map(|p| p.1).max().unwrap()
+            for (id, region) in map.regions.iter().enumerate() {
+                assert_eq!(seen[id], region.terrain.is_land());
+                assert!(region.area_km2 > 0.0);
+                assert!(region.neighbours.windows(2).all(|p| p[0] < p[1]));
+                let expected =
+                    chart_point(region.position, f64::from(map.width), f64::from(map.height));
+                assert!((expected[0] - region.site[0]).abs() < 0.0001);
+                assert!((expected[1] - region.site[1]).abs() < 0.0001);
+                for &other in &region.neighbours {
+                    assert!(map.shared_midpoint(id, other).is_some());
+                    let effort = map.edges.get(id, other).unwrap();
+                    assert!(effort.is_finite() && effort > 0.0);
+                }
+            }
+            let source = map
+                .landmasses
+                .iter()
+                .max_by_key(|m| m.regions.len())
+                .unwrap()
+                .anchor;
+            let routes = map.walking_row(source, f32::INFINITY).into_owned();
+            assert_eq!(
+                routes.len(),
+                map.landmasses[map.regions[source].landmass.unwrap()]
+                    .regions
+                    .len()
+            );
+            assert!(
+                routes
+                    .iter()
+                    .all(|&(_, distance)| distance.is_finite() && distance >= 0.0)
+            );
+            let bounded: Vec<_> = routes
+                .iter()
+                .copied()
+                .filter(|&(_, d)| d <= CACHE_REACH_KM)
+                .collect();
+            assert_eq!(map.walking_cached(source), bounded);
+            let coast = map
+                .regions
+                .iter()
+                .enumerate()
+                .find(|&(r, _)| map.coastal(r))
+                .unwrap()
+                .0;
+            let voyages = map.voyage_row(coast, f32::INFINITY);
+            let bounded: Vec<_> = voyages
+                .iter()
+                .copied()
+                .filter(|&(_, d)| d <= CACHE_REACH_KM)
+                .collect();
+            assert_eq!(map.voyage_cached(coast), bounded);
+            for region in &mut map.regions {
+                region.site = [f32::NAN; 2];
+                region.outline.clear();
+            }
+            assert_eq!(map.walking_row(source, f32::INFINITY).as_ref(), routes);
+            assert_eq!(describe_landmasses(&map.regions), map.landmasses);
+            assert_eq!(
+                rivers::drainage(&map.regions),
+                (map.drainage, map.drainage_order)
             );
         }
     }
 
     #[test]
-    fn continental_shares_reapportion_when_multiple_basins_fill() {
-        let candidates = [vec![0; 25], vec![0; 70], vec![0; 30]];
-        assert_eq!(
-            apportion(&candidates, &[1.25, 0.75, 1.25], 20, 120),
-            [25, 65, 30]
-        );
-    }
-
-    #[test]
-    fn zero_jitter_is_terminal_for_every_size_count_and_budget() {
-        for size in [
-            MapSize::Small,
-            MapSize::Medium,
-            MapSize::Large,
-            MapSize::Vast,
-        ] {
-            let g = size.geography();
-            let n = g.cols * g.rows;
-            let sites = sites(g, &vec![[0.0, 0.0]; n], 0.0);
-            let width = g.cols as f64 + 0.5;
-            let height = (g.rows - 1) as f64 * ROW + 1.0;
-            let cells = grid_cells(g, &sites, width, height);
-            let neighbours = border_neighbours(n, &shared_borders(&cells));
-            for k in g.continents.0..=g.continents.1 {
-                let layouts = layouts(g, k);
-                for continents in g.continent_land.0..=g.continent_land.1 {
-                    let budget = LandBudget {
-                        k,
-                        minimum: g.minimum,
-                        continents,
-                        islands: n - share(n, SEA) - continents,
-                        island_count: g.island_count,
-                    };
-                    let order = sweep_order(g, 0);
-                    let plan = choose_plan(&layouts, 0, &neighbours, &budget, &order)
-                        .unwrap_or_else(|| panic!("{size:?}, K={k}, land={continents}"));
-                    let quotas = apportion(&plan.continents, &vec![1.0; k], g.minimum, continents);
-                    let mut terrain = vec![Terrain::Sea; n];
-                    for (c, &quota) in plan.continents.iter().zip(&quotas) {
-                        grow(c, &vec![0.0; c.len()], &neighbours, quota, &mut terrain);
-                    }
-                    for &r in plan.islands.iter().flatten() {
-                        terrain[r] = Terrain::Plains;
-                    }
-                    assert_eq!(
-                        terrain.iter().filter(|&&t| t == Terrain::Sea).count(),
-                        share(n, SEA)
-                    );
-                    let membership = landmasses(&terrain, &neighbours);
-                    let mut sizes = vec![0; k + plan.islands.len()];
-                    for m in membership.into_iter().flatten() {
-                        sizes[m] += 1;
-                    }
-                    assert_eq!(sizes.iter().filter(|&&s| s >= g.minimum).count(), k);
-                    assert_eq!(
-                        sizes.iter().filter(|&&s| s >= g.minimum).sum::<usize>(),
-                        continents
-                    );
+    fn representative_surfaces_have_coherent_land_relief_and_islands() {
+        let mesh = sphere::mesh(4);
+        for seed in 0..12 {
+            let (terrain, elevation, moisture) = surface(seed, &mesh.cells, 1_600.0);
+            let members = landmasses(&terrain, &mesh.cells);
+            let mut body_areas = vec![0.0; members.iter().flatten().max().unwrap() + 1];
+            let mut total_land = 0.0;
+            for (r, cell) in mesh.cells.iter().enumerate() {
+                assert!((0.0..=1.0).contains(&elevation[r]));
+                assert!((0.0..=1.0).contains(&moisture[r]));
+                if let Some(body) = members[r] {
+                    let area = sphere::area(cell.position, &cell.boundary) * 1_600.0 * 1_600.0;
+                    body_areas[body] += area;
+                    total_land += area;
+                }
+            }
+            let share = total_land / (4.0 * PI * 1_600.0 * 1_600.0);
+            assert!((0.20..0.65).contains(&share), "seed {seed}: {share}");
+            assert!(
+                body_areas
+                    .iter()
+                    .filter(|&&a| a >= CONTINENT_AREA_KM2)
+                    .count()
+                    >= 2
+            );
+            assert!(body_areas.iter().any(|&a| a < CONTINENT_AREA_KM2));
+            let land_edges = mesh
+                .borders
+                .iter()
+                .filter(|edge| terrain[edge.a].is_land() && terrain[edge.b].is_land())
+                .count();
+            let mixed_edges = mesh
+                .borders
+                .iter()
+                .filter(|edge| terrain[edge.a].is_land() != terrain[edge.b].is_land())
+                .count();
+            assert!(
+                land_edges > mixed_edges,
+                "coherent bodies, not scattered land noise"
+            );
+            let peaks: Vec<_> = (0..terrain.len())
+                .filter(|&r| terrain[r] == Terrain::Mountains)
+                .collect();
+            let connected_peaks = peaks
+                .iter()
+                .filter(|&&r| {
+                    mesh.cells[r]
+                        .neighbours
+                        .iter()
+                        .any(|&n| matches!(terrain[n], Terrain::Mountains | Terrain::Hills))
+                })
+                .count();
+            assert!(
+                connected_peaks * 4 >= peaks.len() * 3,
+                "mountains form connected relief"
+            );
+            assert!(terrain.contains(&Terrain::Plains) && terrain.contains(&Terrain::Forest));
+            let (drainage, order) = {
+                let regions: Vec<_> = mesh
+                    .cells
+                    .iter()
+                    .enumerate()
+                    .map(|(r, cell)| Region {
+                        position: cell.position,
+                        boundary: cell.boundary.clone(),
+                        site: [0.0; 2],
+                        outline: Vec::new(),
+                        area_km2: 1.0,
+                        terrain: terrain[r],
+                        elevation: elevation[r] as f32,
+                        moisture: moisture[r] as f32,
+                        warmth: 0.5,
+                        climate_zone: None,
+                        neighbours: cell.neighbours.clone(),
+                        landmass: members[r],
+                    })
+                    .collect();
+                rivers::drainage(&regions)
+            };
+            let mut rank = vec![usize::MAX; terrain.len()];
+            for (i, &r) in order.iter().enumerate() {
+                rank[r] = i;
+            }
+            for (r, t) in terrain.iter().enumerate() {
+                assert_eq!(drainage[r].is_some(), t.is_land());
+                if let Some(next) = drainage[r] {
+                    assert!(mesh.cells[r].neighbours.contains(&next));
                     assert!(
-                        sizes
-                            .iter()
-                            .filter(|&&s| s < g.minimum)
-                            .all(|&s| (1..=3).contains(&s))
+                        rank[r] < rank[next],
+                        "acyclic drainage eventually reaches sea"
                     );
-                    assert_eq!(
-                        plan.islands.iter().map(Vec::len).sum::<usize>(),
-                        budget.islands
-                    );
-                    if let Some(count) = g.island_count {
-                        assert_eq!(plan.islands.len(), count);
-                        assert!(
-                            plan.islands
-                                .iter()
-                                .all(|island| (1..=2).contains(&island.len()))
-                        );
-                    }
-                    assert!(ocean_backbone(&plan.continents, &plan.islands, &neighbours));
                 }
             }
         }
     }
 
     #[test]
-    fn every_map_has_sea_mountains_and_open_land_in_proportion() {
-        for seed in 0..20 {
-            let map = Map::generate(seed, MapSize::Medium);
-            let count = |t: Terrain| map.regions.iter().filter(|r| r.terrain == t).count();
-            let n = map.regions.len();
-            assert_eq!(count(Terrain::Sea), share(n, SEA));
-            assert!(count(Terrain::Mountains) > 0 && count(Terrain::Plains) > 0);
-            assert!(count(Terrain::Desert) < count(Terrain::Plains));
+    fn landmass_anchor_is_surface_area_weighted_across_the_chart_seam() {
+        let mut map = route_fixture(&[Terrain::Plains; 3], &[(0, 1, 100.0), (1, 2, 100.0)]);
+        let point = |lon: f64, lat: f64| {
+            let lon = lon * PI / 180.0;
+            let lat = lat * PI / 180.0;
+            [
+                math::cos(lat) * math::cos(lon),
+                math::cos(lat) * math::sin(lon),
+                math::sin(lat),
+            ]
+        };
+        for (region, (lon, half)) in
+            map.regions
+                .iter_mut()
+                .zip([(175.0, 3.0), (-175.0, 1.0), (0.0, 0.1)])
+        {
+            region.position = point(lon, 0.0);
+            region.boundary = vec![
+                point(lon - half, -half),
+                point(lon - half, half),
+                point(lon + half, half),
+                point(lon + half, -half),
+            ];
+            region.area_km2 =
+                (sphere::area(region.position, &region.boundary) * 1_600.0 * 1_600.0) as f32;
         }
+        assert_eq!(describe_landmasses(&map.regions)[0].anchor, 0);
+        map.regions.swap(0, 1);
+        assert_eq!(describe_landmasses(&map.regions)[0].anchor, 1);
+        // The same number of regions can change class as physical area grows.
+        for r in &mut map.regions {
+            r.area_km2 = 150_000.0;
+        }
+        assert_eq!(
+            describe_landmasses(&map.regions)[0].kind,
+            LandmassKind::Island
+        );
+        map.regions[0].area_km2 = 200_000.0;
+        assert_eq!(
+            describe_landmasses(&map.regions)[0].kind,
+            LandmassKind::Continent
+        );
     }
 
     #[test]
     fn sparse_routes_match_independent_oracles_and_inclusive_radii() {
-        let map = Map::generate(6, MapSize::Small);
+        // Exhaustive all-pairs oracle stays deliberately tiny. Generated
+        // sphere geometry and seam costs are covered independently above.
+        let map = route_fixture(
+            &[
+                Terrain::Plains,
+                Terrain::Hills,
+                Terrain::Plains,
+                Terrain::Sea,
+                Terrain::Sea,
+                Terrain::Plains,
+                Terrain::Sea,
+                Terrain::Plains,
+                Terrain::Mountains,
+                Terrain::Sea,
+                Terrain::Plains,
+                Terrain::Sea,
+            ],
+            &[
+                (0, 1, 137.0),
+                (1, 2, 213.0),
+                (0, 2, 900.0),
+                (0, 3, 182.0),
+                (2, 4, 201.0),
+                (3, 4, 328.0),
+                (4, 5, 175.0),
+                (5, 6, 201.0),
+                (6, 7, 302.0),
+                (7, 8, 2_000.0),
+                (3, 9, 330.0),
+                (9, 10, 222.0),
+                (4, 9, 89.0),
+                (9, 11, 2_100.0),
+                (8, 11, 370.0),
+            ],
+        );
         let n = map.regions.len();
         let walk = floyd_oracle(&map, true);
         let sea = floyd_oracle(&map, false);
@@ -2625,20 +2005,14 @@ mod tests {
     }
 
     fn linear_map(terrain: &[Terrain]) -> Map {
-        let sites: Vec<_> = (0..terrain.len()).map(|r| [r as f64 + 0.5, 0.5]).collect();
-        let cells: Vec<_> = (0..terrain.len())
-            .map(|r| cell(&sites, r, terrain.len() as f64, 1.0))
-            .collect();
-        let borders = shared_borders(&cells);
-        let edges = travel_edges(&sites, terrain, &borders);
-        let links: Vec<_> = (0..terrain.len())
-            .flat_map(|r| {
-                edges
-                    .row(r)
-                    .iter()
-                    .copied()
-                    .filter(move |&(s, _)| r < s as usize)
-                    .map(move |(s, effort)| (r, s as usize, effort))
+        // Abstract 100 km cells isolate route semantics from mesh generation.
+        let links: Vec<_> = (1..terrain.len())
+            .map(|r| {
+                (
+                    r - 1,
+                    r,
+                    50.0 * (terrain[r - 1].travel() + terrain[r].travel()),
+                )
             })
             .collect();
         route_fixture(terrain, &links)
@@ -2654,27 +2028,30 @@ mod tests {
         for row in &mut adjacent {
             row.sort_unstable_by_key(|&(r, _)| r);
         }
-        let neighbours: Vec<Vec<_>> = adjacent
-            .iter()
-            .map(|row| row.iter().map(|&(r, _)| r as usize).collect())
-            .collect();
-        let masses = landmasses(terrain, &neighbours);
+        let mut mesh = sphere::mesh(1);
+        assert!(n <= mesh.cells.len());
+        mesh.cells.truncate(n);
+        for (cell, row) in mesh.cells.iter_mut().zip(&adjacent) {
+            cell.neighbours = row.iter().map(|&(r, _)| r as usize).collect();
+        }
+        let masses = landmasses(terrain, &mesh.cells);
         let regions: Vec<_> = (0..n)
             .map(|r| Region {
-                site: [r as f32, 0.0],
-                outline: vec![
-                    [r as f32, 0.0],
-                    [r as f32 + 1.0, 0.0],
-                    [r as f32 + 1.0, 1.0],
-                    [r as f32, 1.0],
-                ],
+                position: mesh.cells[r].position,
+                boundary: mesh.cells[r].boundary.clone(),
+                site: chart_point(mesh.cells[r].position, 2.0 * PI, PI),
+                outline: mesh.cells[r]
+                    .boundary
+                    .iter()
+                    .map(|&p| chart_point(p, 2.0 * PI, PI))
+                    .collect(),
                 area_km2: REFERENCE_AREA_KM2,
                 terrain: terrain[r],
                 elevation: 0.5,
                 moisture: 0.5,
                 warmth: 0.6,
                 climate_zone: None,
-                neighbours: neighbours[r].clone(),
+                neighbours: mesh.cells[r].neighbours.clone(),
                 landmass: masses[r],
             })
             .collect();
@@ -2688,9 +2065,11 @@ mod tests {
         }
         let mut map = Map {
             size: MapSize::Small,
-            width: n as f32,
-            height: 1.0,
-            landmasses: describe_landmasses(&regions, MapSize::Small),
+            geography: GeographyVersion::ContinentalV2,
+            radius_km: 100.0,
+            width: TAU as f32,
+            height: PI as f32,
+            landmasses: describe_landmasses(&regions),
             regions,
             drainage: vec![None; n],
             drainage_order: Vec::new(),

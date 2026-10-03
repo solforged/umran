@@ -2,7 +2,7 @@
 // key, plus an index of titles. The older single-world save is copied onto
 // the shelf once and otherwise left untouched.
 
-import type { Engine, HistoryPoint, MapSize, Overview, Subject as Focus } from "./model";
+import type { Engine, GeographyVersion, HistoryPoint, MapSize, Overview, Subject as Focus } from "./model";
 
 export interface BookEntry {
   id: string;
@@ -82,13 +82,26 @@ export function readBook(id: string): string | null {
   return get(bookKey(id));
 }
 
-/// The seed and size of the land a book plays out on, read from its save,
-/// or null if the save cannot be read.
-export function bookLand(id: string): { seed: number; size: MapSize } | null {
+export interface BookLand {
+  seed: number;
+  size: MapSize;
+  geography: GeographyVersion;
+}
+
+/// Preview only supported spherical recipes. Revision 33 predates the explicit
+/// geography field; its region IDs always belong to spherical-v1.
+/// Reading a miniature never migrates or rewrites the saved original.
+export function bookLand(id: string, revision: number): BookLand | null {
   try {
-    const recipe = JSON.parse(get(bookKey(id)) ?? "null") as { seed?: unknown; map?: unknown } | null;
-    if (typeof recipe?.seed !== "number" || typeof recipe.map !== "string") return null;
-    return { seed: recipe.seed, size: recipe.map as MapSize };
+    const recipe = JSON.parse(get(bookKey(id)) ?? "null") as {
+      seed?: unknown; map?: unknown; revision?: unknown; geography?: unknown;
+    } | null;
+    if (!recipe || typeof recipe.revision !== "number"
+      || recipe.revision < 33 || recipe.revision > revision
+      || typeof recipe.seed !== "number" || typeof recipe.map !== "string") return null;
+    const geography = recipe.geography === undefined ? "spherical-v1" : recipe.geography;
+    if (geography !== "spherical-v1" && geography !== "continental-v2") return null;
+    return { seed: recipe.seed, size: recipe.map as MapSize, geography };
   } catch {
     return null;
   }

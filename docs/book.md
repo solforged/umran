@@ -120,6 +120,18 @@ the engine, not a second source. Blank where the engine has nothing yet.
 8. **Other tellings.** Each draft's name, the year and decision it
    diverged on, and what it kept.
 
+## A spherical world, two views
+
+The chart remains the first view, with a rotatable inked globe beside it
+as a choice in the cartouche. Founding, lands, journeys, names, and cards
+refer to the same world in both views. A projection is a way of reading,
+not a decision in the world's history.
+
+The world is spherical from its founding. A people's known-world lens can
+show how its geographic knowledge grows on either view; it does not change
+the surface. A literal flat world made round would be a separate authored
+historical event, not an automatic stage of this simulator.
+
 ## Screens
 
 Four, each a chapter of the book or a tool for writing one. Anything

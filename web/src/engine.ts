@@ -5,6 +5,7 @@ import type {
   Catalog,
   Engine,
   FoundingPreview,
+  GeographyVersion,
   ReadEngine,
   Comparison,
   ClimateView,
@@ -107,6 +108,7 @@ function wrap(bench: Workbench): Engine {
   return {
     ...root.engine,
     foundingPreview: () => JSON.parse(bench.foundingPreview()) as FoundingPreview,
+    foundingSites: (region, count) => JSON.parse(bench.foundingSites(region, count)) as number[],
     notebook: () => JSON.parse(bench.notebook()) as NotebookNote[],
     saveNote: (note) => { bench.saveNote(JSON.stringify(note)); },
     resolveNote: (id) => JSON.parse(bench.resolveNote(id)) as Destination | null,
@@ -159,16 +161,16 @@ export async function loadEngine(json: string): Promise<Engine> {
   return wrap(Workbench.load(json));
 }
 
-// A map depends on its seed and size alone, so the shelf can draw a saved
-// world without replaying its history. Kept once drawn.
+// Seed, size and the recipe's geography version determine a map, so the shelf
+// can draw a saved world without replaying its history. Kept once drawn.
 const maps = new Map<string, Promise<WorldMap>>();
 
-export function landMap(seed: number, size: MapSize): Promise<WorldMap> {
-  const key = `${seed}:${size}`;
+export function landMap(seed: number, size: MapSize, geography: GeographyVersion): Promise<WorldMap> {
+  const key = `${seed}:${size}:${geography}`;
   let map = maps.get(key);
   if (!map) {
     map = ready().then(() => {
-      const bench = new Workbench(seed, size);
+      const bench = Workbench.withGeography(seed, size, geography);
       try {
         return JSON.parse(bench.map()) as WorldMap;
       } finally {

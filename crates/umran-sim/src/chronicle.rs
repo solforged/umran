@@ -7,7 +7,7 @@
 
 use crate::design::LanguageDesign;
 use crate::ethos::{Axis, FoundingEthos};
-use crate::geography::MapSize;
+use crate::geography::{GeographyVersion, MapSize};
 use crate::ideas::{Craft, Revelation};
 use crate::livelihood::Livelihood;
 use crate::names::Naming;
@@ -18,9 +18,9 @@ use std::collections::BTreeMap;
 
 /// Bumped whenever an engine change would make an existing recipe replay
 /// differently. Saves record it so a mismatch can be reported.
-/// Revision 32 adds object marking and inherited word and possessor order.
-/// The extra category changes later grammar draws and sound-law selection.
-pub const ENGINE_REVISION: u32 = 32;
+/// Revision 34 adds versioned continental geography and related founding.
+/// Revision-33 recipes retain their original spherical geography.
+pub const ENGINE_REVISION: u32 = 34;
 /// Identifies saved recipes. Kept from the project's first name, langgen,
 /// so files saved before the rename still load.
 pub const FORMAT: &str = "langgen-sim-recipe";
@@ -49,6 +49,16 @@ pub enum Action {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         region: Option<usize>,
         /// How they live; `None` lets their land decide.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        livelihood: Option<Livelihood>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ethos: Option<FoundingEthos>,
+    },
+    /// A year-zero people whose speech descends from a living source.
+    FoundRelated {
+        source: usize,
+        region: usize,
+        naming: Naming,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         livelihood: Option<Livelihood>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -124,8 +134,15 @@ pub struct Recipe {
     /// default size.
     #[serde(default)]
     pub map: MapSize,
+    /// Missing geography identifies recipes made with the original spherical map.
+    #[serde(default = "spherical_geography")]
+    pub geography: GeographyVersion,
     pub active: TellingId,
     pub tellings: Vec<Telling>,
+}
+
+fn spherical_geography() -> GeographyVersion {
+    GeographyVersion::SphericalV1
 }
 
 /// Where a replay has got to: the next action, and how far into it if it
@@ -149,6 +166,7 @@ pub struct HistoryPoint {
 pub struct Chronicle {
     pub seed: u64,
     pub map: MapSize,
+    pub geography: GeographyVersion,
     active: TellingId,
     tellings: Vec<Telling>,
     latest: World,
@@ -157,9 +175,15 @@ pub struct Chronicle {
 
 impl Chronicle {
     pub fn new(seed: u64, map: MapSize) -> Self {
+        Self::with_geography(seed, map, GeographyVersion::ContinentalV2)
+    }
+
+    /// A history whose map recipe remains fixed through every telling and reading.
+    pub fn with_geography(seed: u64, map: MapSize, geography: GeographyVersion) -> Self {
         Self {
             seed,
             map,
+            geography,
             active: 0,
             tellings: vec![Telling {
                 id: 0,
@@ -167,7 +191,7 @@ impl Chronicle {
                 parent: None,
                 actions: Vec::new(),
             }],
-            latest: World::with_map(seed, Params::default(), map),
+            latest: World::with_geography(seed, Params::default(), map, geography),
             checkpoints: BTreeMap::new(),
         }
     }
@@ -308,7 +332,7 @@ impl Chronicle {
             return Ok(self.latest.clone());
         }
         let actions = self.prefix(point)?;
-        Self::replay(self.seed, self.map, &actions)
+        Self::replay(self.seed, self.map, self.geography, &actions)
     }
 
     /// Each action with the generation it happened at.
@@ -417,15 +441,25 @@ impl Chronicle {
         if self.active == id {
             return Ok(());
         }
-        let latest = Self::replay(self.seed, self.map, &self.telling(id)?.actions)?;
+        let latest = Self::replay(
+            self.seed,
+            self.map,
+            self.geography,
+            &self.telling(id)?.actions,
+        )?;
         self.active = id;
         self.latest = latest;
         self.checkpoints.clear();
         Ok(())
     }
 
-    fn replay(seed: u64, map: MapSize, actions: &[Action]) -> Result<World, String> {
-        let mut world = World::with_map(seed, Params::default(), map);
+    fn replay(
+        seed: u64,
+        map: MapSize,
+        geography: GeographyVersion,
+        actions: &[Action],
+    ) -> Result<World, String> {
+        let mut world = World::with_geography(seed, Params::default(), map, geography);
         for (i, action) in actions.iter().enumerate() {
             apply(&mut world, action, i).map_err(|e| format!("action {}: {e}", i + 1))?;
         }
@@ -493,7 +527,8 @@ impl Chronicle {
             .next_back()
             .map(|(_, (c, w))| (*c, w.clone()))
             .unwrap_or_else(|| {
-                let fresh = World::with_map(self.seed, Params::default(), self.map);
+                let fresh =
+                    World::with_geography(self.seed, Params::default(), self.map, self.geography);
                 (Cursor::default(), fresh)
             });
         while cursor.action < self.actions().len() {
@@ -532,6 +567,7 @@ impl Chronicle {
             revision: ENGINE_REVISION,
             seed: self.seed,
             map: self.map,
+            geography: self.geography,
             active: self.active,
             tellings: self.tellings.clone(),
         }
@@ -570,11 +606,15 @@ impl Chronicle {
                 }
             }
         }
-        let mut chronicle = Self::new(recipe.seed, recipe.map);
-        chronicle.latest = Self::replay(recipe.seed, recipe.map, &active.actions)?;
-        chronicle.active = recipe.active;
-        chronicle.tellings = recipe.tellings.clone();
-        Ok(chronicle)
+        Ok(Self {
+            seed: recipe.seed,
+            map: recipe.map,
+            geography: recipe.geography,
+            active: recipe.active,
+            tellings: recipe.tellings.clone(),
+            latest: Self::replay(recipe.seed, recipe.map, recipe.geography, &active.actions)?,
+            checkpoints: BTreeMap::new(),
+        })
     }
 }
 
@@ -645,6 +685,15 @@ fn apply(world: &mut World, action: &Action, index: usize) -> Result<(), String>
                 *livelihood,
                 ethos.as_ref(),
             );
+        }
+        Action::FoundRelated {
+            source,
+            region,
+            naming,
+            livelihood,
+            ethos,
+        } => {
+            world.found_related(*source, *region, naming, *livelihood, ethos.as_ref())?;
         }
         Action::Connect {
             a,
@@ -788,6 +837,12 @@ mod tests {
 
     fn same(a: &World, b: &World) -> bool {
         a.generation == b.generation
+            && a.map == b.map
+            && a.climate == b.climate
+            && a.places == b.places
+            && a.river_names == b.river_names
+            && a.continent_names == b.continent_names
+            && a.cities == b.cities
             && a.events == b.events
             && a.causes == b.causes
             && a.triggers == b.triggers
@@ -800,6 +855,269 @@ mod tests {
                 .iter()
                 .zip(&b.varieties)
                 .all(|(x, y)| x.lexicon == y.lexicon)
+    }
+
+    #[test]
+    fn related_founders_inherit_the_living_language_without_migration() {
+        let mut world = World::new(7, Params::static_society());
+        apply(&mut world, &found("First", "familiar"), 0).unwrap();
+        apply(&mut world, &found("Second", "semitic"), 1).unwrap();
+        // A source can already have changed speech: community and variety
+        // indices are not interchangeable, nor is the original design current.
+        apply(
+            &mut world,
+            &Action::Shift {
+                community: 0,
+                toward: 1,
+            },
+            2,
+        )
+        .unwrap();
+        let founding_size = world.communities[1].size;
+        world.communities[0].size = founding_size * 2.3;
+        let source = world.communities[0].clone();
+        let parent = source.variety;
+        let speech = world.varieties[parent].clone();
+        let homeland = world.known_place(parent, source.home()).unwrap().clone();
+        let region = (0..world.map.regions.len())
+            .find(|&r| {
+                world.map.regions[r].terrain.is_land()
+                    && world.communities.iter().all(|c| !c.lands.contains(&r))
+            })
+            .unwrap();
+        let action: Action = serde_json::from_value(serde_json::json!({
+            "kind": "found-related",
+            "source": 0,
+            "region": region,
+            "naming": { "kind": "epithet", "epithet": "new" },
+            "livelihood": "foraging",
+            "ethos": { "martial": 0.8 }
+        }))
+        .unwrap();
+        let events = world.events.len();
+        let contacts = world.contacts.clone();
+        apply(&mut world, &action, 3).unwrap();
+        let people = &world.communities[2];
+        let daughter = people.variety;
+        let inherited = &world.varieties[daughter];
+        assert_eq!(world.generation, 0);
+        assert_eq!(world.communities[0], source);
+        assert_eq!(people.parents, vec![0]);
+        assert_eq!(people.size, founding_size, "use a full founding population");
+        assert_eq!(people.lands, vec![region]);
+        assert_eq!(world.presence(2), vec![(region, founding_size)]);
+        assert_eq!(
+            (people.power, people.openness),
+            (source.power, source.openness)
+        );
+        assert_eq!(people.prestige, source.power);
+        assert_eq!(people.livelihood, Livelihood::Foraging);
+        assert_eq!(people.ethos.martial, 0.8);
+        assert_eq!(people.faith, None);
+        assert!(people.crafts.is_empty());
+        assert!(people.living());
+        assert_eq!(
+            inherited.parent,
+            Some(crate::variety::Fork {
+                variety: parent,
+                generation: 0,
+                inherited: speech.lexicon.lexemes.len() as u32,
+            })
+        );
+        assert_eq!(world.family(daughter), world.family(parent));
+        assert_eq!(inherited.lexicon, speech.lexicon);
+        assert_eq!(inherited.grammar, speech.grammar);
+        assert_eq!(inherited.morphology, speech.morphology);
+        assert_eq!(inherited.profile, speech.profile);
+        assert_eq!(inherited.given, speech.given);
+        for word in &speech.lexicon.lexemes {
+            assert_eq!(
+                world.root_of(daughter, word.id),
+                world.root_of(parent, word.id)
+            );
+        }
+        assert_eq!(world.known_place(daughter, source.home()), Some(&homeland));
+        assert_eq!(world.places[region].last().unwrap().variety, daughter);
+        assert_eq!(people.name.coined, 0);
+        assert_eq!(inherited.name.coined, 0);
+        assert_eq!(world.contacts, contacts);
+        assert_eq!(
+            &world.events[events..],
+            &[(0, WorldEvent::Found { community: 2 })],
+            "authored kinship is founding, not a migration or a split"
+        );
+        assert_eq!(
+            world.decisions.last(),
+            Some(&crate::world::Decision {
+                action: 3,
+                events: events..events + 1,
+            })
+        );
+    }
+
+    #[test]
+    fn related_founders_evolve_independently_and_replay() {
+        let mut history = Chronicle::new(7, MapSize::Small);
+        history.act(found("First", "familiar")).unwrap();
+        let region = (0..history.latest().map.regions.len())
+            .find(|&r| {
+                history.latest().map.regions[r].terrain.is_land()
+                    && !history.latest().communities[0].lands.contains(&r)
+            })
+            .unwrap();
+        history
+            .act(
+                serde_json::from_value(serde_json::json!({
+                    "kind": "found-related",
+                    "source": 0,
+                    "region": region,
+                    "naming": { "kind": "speakers" }
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        let parent = history.latest().communities[0].variety;
+        let daughter = history.latest().communities[1].variety;
+        history.act(Action::Run { generations: 1 }).unwrap();
+        let world = history.latest();
+        let speech = &world.varieties[daughter];
+        let law = world
+            .law_catalog()
+            .iter()
+            .find(|law| {
+                law.id != "koine-levelling"
+                    && speech.lexicon.living().any(|word| {
+                        law.changes(
+                            &word.form,
+                            &law.apply(&word.form, speech.minimal, speech.stress()),
+                            speech.stress(),
+                        )
+                    })
+            })
+            .unwrap()
+            .id;
+        let source_lexicon = world.varieties[parent].lexicon.clone();
+        let before = speech.lexicon.clone();
+        history
+            .act(Action::Law {
+                variety: daughter,
+                law: law.into(),
+            })
+            .unwrap();
+        let world = history.latest();
+        assert_eq!(world.varieties[parent].lexicon, source_lexicon);
+        assert_ne!(world.varieties[daughter].lexicon, before);
+        assert_eq!(world.varieties[daughter].laws.last(), Some(&(1, law)));
+        assert_eq!(world.family(daughter), world.family(parent));
+        assert_eq!(
+            world.varieties[daughter].parent.unwrap().generation,
+            0,
+            "independent change must not invent earlier founding history"
+        );
+        let recipe: Recipe =
+            serde_json::from_str(&serde_json::to_string(&history.recipe()).unwrap()).unwrap();
+        let replay = Chronicle::from_recipe(&recipe).unwrap();
+        assert!(same(world, replay.latest()));
+        assert_eq!(world.decisions, replay.latest().decisions);
+        for (a, b) in world.varieties.iter().zip(&replay.latest().varieties) {
+            assert_eq!(a.parent, b.parent);
+            assert_eq!(a.grammar, b.grammar);
+            assert_eq!(a.laws, b.laws);
+        }
+    }
+
+    #[test]
+    fn related_founding_refusals_preserve_world_and_recipe() {
+        fn refuse(history: &mut Chronicle, action: Action) {
+            let before = history.latest().clone();
+            let recipe = history.recipe();
+            assert!(history.act(action).is_err());
+            let world = history.latest();
+            assert_eq!(history.recipe(), recipe);
+            assert!(same(world, &before));
+            assert_eq!(world.decisions, before.decisions);
+            assert_eq!(world.authored_laws, before.authored_laws);
+            assert_eq!(world.places, before.places);
+            assert_eq!(world.river_names, before.river_names);
+            assert_eq!(world.continent_names, before.continent_names);
+            assert_eq!(world.cities, before.cities);
+            for (a, b) in world.varieties.iter().zip(&before.varieties) {
+                assert_eq!(a.parent, b.parent);
+                assert_eq!(a.grammar, b.grammar);
+                assert_eq!(a.laws, b.laws);
+                assert_eq!(a.exonyms, b.exonyms);
+                assert_eq!(a.river_exonyms, b.river_exonyms);
+            }
+        }
+        let mut history = Chronicle::new(7, MapSize::Small);
+        history.act(found("First", "familiar")).unwrap();
+        let home = history.latest().communities[0].home();
+        let sea = (0..history.latest().map.regions.len())
+            .find(|&r| !history.latest().map.regions[r].terrain.is_land())
+            .unwrap();
+        for (source, region, naming, ethos) in [
+            (usize::MAX, home, Naming::People, None),
+            (0, usize::MAX, Naming::People, None),
+            (0, sea, Naming::People, None),
+            (0, home, Naming::Land, None),
+            (
+                0,
+                home,
+                Naming::Place {
+                    place: "moon".into(),
+                },
+                None,
+            ),
+            (
+                0,
+                home,
+                Naming::Epithet {
+                    epithet: "moon".into(),
+                },
+                None,
+            ),
+            (
+                0,
+                home,
+                Naming::People,
+                Some(FoundingEthos {
+                    martial: Some(f32::NAN),
+                    ..FoundingEthos::default()
+                }),
+            ),
+            (
+                0,
+                home,
+                Naming::People,
+                Some(FoundingEthos {
+                    open: Some(1.01),
+                    ..FoundingEthos::default()
+                }),
+            ),
+        ] {
+            refuse(
+                &mut history,
+                Action::FoundRelated {
+                    source,
+                    region,
+                    naming,
+                    livelihood: None,
+                    ethos,
+                },
+            );
+        }
+        let valid = Action::FoundRelated {
+            source: 0,
+            region: home,
+            naming: Naming::People,
+            livelihood: None,
+            ethos: None,
+        };
+        history.latest.communities[0].ended = Some(0);
+        refuse(&mut history, valid.clone());
+        history.latest.communities[0].ended = None;
+        history.act(Action::Run { generations: 1 }).unwrap();
+        refuse(&mut history, valid);
     }
 
     #[test]
@@ -962,14 +1280,18 @@ mod tests {
                 ..Params::default()
             },
         );
+        let home = (0..baseline.map.regions.len())
+            .find(|&r| baseline.map.regions[r].terrain.is_land() && !baseline.map.island(r))
+            .unwrap();
         let mut actions = vec![
             found("Hill", "familiar"),
             found("Coast", "polynesian"),
             found("Court", "semitic"),
         ];
         for action in &mut actions {
-            if let Action::Found { ethos, .. } = action {
+            if let Action::Found { ethos, region, .. } = action {
                 *ethos = Some(zero);
+                *region = Some(home);
             }
         }
         actions.extend([
@@ -1361,6 +1683,119 @@ mod tests {
         let mut wrong = back.clone();
         wrong.format = "something-else".into();
         assert!(Chronicle::from_recipe(&wrong).is_err());
+    }
+
+    #[test]
+    fn geography_survives_legacy_migration_readings_checkpoints_and_tellings() {
+        for geography in [
+            GeographyVersion::SphericalV1,
+            GeographyVersion::ContinentalV2,
+        ] {
+            let mut source = match geography {
+                GeographyVersion::SphericalV1 => {
+                    Chronicle::with_geography(7, MapSize::Small, geography)
+                }
+                GeographyVersion::ContinentalV2 => Chronicle::new(7, MapSize::Small),
+            };
+            let empty = World::with_geography(7, Params::default(), MapSize::Small, geography);
+            assert!(same(source.latest(), &empty));
+
+            // The authored region is chosen on the recorded geography, not redrawn
+            // on whatever geography new worlds now use.
+            let home = empty
+                .map
+                .regions
+                .iter()
+                .position(|r| r.terrain.is_land())
+                .unwrap();
+            let mut action = found("First", "familiar");
+            if let Action::Found { region, .. } = &mut action {
+                *region = Some(home);
+            }
+            source.act(action).unwrap();
+            let founding = source.latest().clone();
+            let after_founding = source.end();
+            source.act(Action::Run { generations: 25 }).unwrap();
+            let original = source.latest().clone();
+
+            let mut saved = serde_json::to_value(source.recipe()).unwrap();
+            if geography == GeographyVersion::SphericalV1 {
+                // Revision-33 saves predate the field. Loading and saving one
+                // must make its old map explicit, never adopt the new generator.
+                saved["revision"] = serde_json::json!(33);
+                saved.as_object_mut().unwrap().remove("geography");
+            }
+            let migrated: Recipe = serde_json::from_value(saved).unwrap();
+            assert_eq!(migrated.geography, geography);
+            let mut loaded = Chronicle::from_recipe(&migrated).unwrap();
+            assert!(same(loaded.latest(), &original));
+            let explicit = serde_json::to_value(loaded.recipe()).unwrap();
+            assert_eq!(
+                explicit["geography"],
+                serde_json::to_value(geography).unwrap()
+            );
+            let resaved: Recipe = serde_json::from_value(explicit).unwrap();
+            loaded = Chronicle::from_recipe(&resaved).unwrap();
+            assert!(same(loaded.latest(), &original));
+
+            // Exact zero-time readings and undo also regenerate the original map.
+            assert!(same(
+                &loaded.world_at_point(HistoryPoint::default()).unwrap(),
+                &empty
+            ));
+            let previous = loaded.previous(loaded.end()).unwrap();
+            assert_eq!(previous, after_founding);
+            assert!(same(&loaded.world_at_point(previous).unwrap(), &founding));
+            let mut at_fourteen = founding.clone();
+            at_fourteen.run(14);
+            assert!(same(
+                &loaded
+                    .world_at_point(HistoryPoint {
+                        action: 1,
+                        offset: 14,
+                    })
+                    .unwrap(),
+                &at_fourteen
+            ));
+
+            // Scrub forward to populate checkpoints, then backward through one.
+            let mut at_twenty_one = founding.clone();
+            at_twenty_one.run(21);
+            assert!(same(&loaded.world_at(21), &at_twenty_one));
+            assert!(loaded.checkpoints.contains_key(&10));
+            assert!(loaded.checkpoints.contains_key(&20));
+            assert!(same(&loaded.world_at(14), &at_fourteen));
+
+            let mut at_twenty = founding.clone();
+            at_twenty.run(20);
+            loaded.branch_at(20);
+            assert!(same(loaded.latest(), &at_twenty));
+            let child = loaded.active();
+            loaded.act(Action::Run { generations: 3 }).unwrap();
+            let mut continued = at_twenty;
+            continued.run(3);
+            assert!(same(loaded.latest(), &continued));
+            loaded.restore(0).unwrap();
+            assert!(same(loaded.latest(), &original));
+            assert!(same(loaded.reading(child).unwrap().latest(), &continued));
+
+            // Exporting while another telling is active must keep both histories
+            // replayable on the same geography after a second load.
+            let branched: Recipe =
+                serde_json::from_str(&serde_json::to_string(&loaded.recipe()).unwrap()).unwrap();
+            assert_eq!(branched.geography, geography);
+            let mut reloaded = Chronicle::from_recipe(&branched).unwrap();
+            assert!(same(reloaded.latest(), &original));
+            reloaded.restore(child).unwrap();
+            assert!(same(reloaded.latest(), &continued));
+            reloaded
+                .act_at(after_founding, Action::Run { generations: 1 })
+                .unwrap();
+            let mut at_one = founding;
+            at_one.run(1);
+            assert!(same(reloaded.latest(), &at_one));
+            assert_eq!(reloaded.recipe().geography, geography);
+        }
     }
 
     #[test]

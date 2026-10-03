@@ -1557,10 +1557,41 @@ mod tests {
     fn cultural_shrines_use_founder_knowledge_and_available_category_weights() {
         let mut kinds = [0; 4];
         for seed in 0..128 {
-            let (mut world, founder) = cultural_faith_world(seed);
-            cultural_teach_chart(&mut world, founder);
-            let home = world.communities[founder].home();
+            let mut world = World::with_map(
+                seed,
+                Params::static_society(),
+                crate::geography::MapSize::Large,
+            );
+            // An island home makes a continental coast a far shore even on
+            // worlds with just one continent. Some worlds have no island.
+            let Some(home) = world
+                .map
+                .landmasses
+                .iter()
+                .find(|m| m.kind == LandmassKind::Island)
+                .map(|m| m.anchor)
+            else {
+                continue;
+            };
+            let founder = world.found_seeded(
+                &Naming::People,
+                &SoundProfile::base(),
+                seed,
+                0.5,
+                0.5,
+                Some(home),
+                Some(Livelihood::Farming),
+                None,
+            );
             let variety = world.communities[founder].variety;
+            let mut local = world.clone();
+            let locally_known = local.known_lands(variety);
+            assert!(locally_known.iter().all(|&r| local.map.island(r)));
+            let religion = local.found_religion(founder, Revelation::Proclaimed);
+            assert!(locally_known.contains(&local.religions[religion].shrine.region));
+            assert_ne!(local.religions[religion].shrine.kind, SacredKind::FarShore);
+
+            cultural_teach_chart(&mut world, founder);
             let known = world.known_lands(variety);
             assert!(known.iter().any(|&r| world.map.island(r)));
             assert!(
@@ -1612,9 +1643,12 @@ mod tests {
             };
             kinds[bucket] += 1;
         }
+        let total: i32 = kinds.iter().sum();
+        assert!(total >= 64, "only {total} of 128 worlds have an island");
         for (i, count) in kinds.into_iter().enumerate() {
-            let band = if i < 2 { 25..=52 } else { 12..=39 };
-            assert!(band.contains(&count), "category {i}: {count} of 128");
+            let share = f64::from(count) / f64::from(total);
+            let band = if i < 2 { 0.19..=0.41 } else { 0.09..=0.31 };
+            assert!(band.contains(&share), "category {i}: {count} of {total}");
         }
     }
 

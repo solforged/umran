@@ -3,7 +3,9 @@ use crate::concepts::{CONCEPTS, Concept, Field, related};
 use crate::diglossia::{CLASSICAL_PRESTIGE, Vernacular};
 use crate::ethos::{Axis, Effect, Ethos, FoundingEthos, Pole, TemperCause};
 use crate::form::Form;
-use crate::geography::{CACHE_REACH_KM, LandmassKind, Map, MapSize, REFERENCE_TRAVEL_KM, Terrain};
+use crate::geography::{
+    CACHE_REACH_KM, GeographyVersion, LandmassKind, Map, MapSize, REFERENCE_TRAVEL_KM, Terrain,
+};
 use crate::grammar::{Category, ImportedPair, MarkerKind, MarkerOrigin, Side};
 use crate::ideas::{Craft, Religion, SACRED_INTENSITY, SACRED_PRESTIGE, living_related};
 use crate::laws::{Law, catalog};
@@ -905,7 +907,17 @@ impl World {
 
     /// A world on a map of `size`, drawn from `seed`.
     pub fn with_map(seed: u64, params: Params, size: MapSize) -> Self {
-        let mut map = Map::generate(seed, size);
+        Self::with_geography(seed, params, size, GeographyVersion::ContinentalV2)
+    }
+
+    /// A world drawn with the geography recorded by its recipe.
+    pub fn with_geography(
+        seed: u64,
+        params: Params,
+        size: MapSize,
+        geography: GeographyVersion,
+    ) -> Self {
+        let mut map = Map::generate_with_version(seed, size, geography);
         let climate = crate::climate::Climate::new(seed, &map);
         map.set_valley_flows(&climate.flows);
         Self {
@@ -983,9 +995,90 @@ impl World {
         let mut variety = Variety::found(variety_seed, profile, livelihood, ethos);
         let name = self.coin(&variety, naming, None);
         variety.name = self.language_name(&variety, &name);
+        self.register_founder(
+            variety, name, None, power, openness, region, livelihood, ethos,
+        )
+    }
+
+    /// Authors a related people at year zero, with its own founding
+    /// population and a true fork of `source`'s living speech. The source
+    /// keeps its population and lands. Standing and openness are inherited;
+    /// livelihood and ethos follow the usual founding choices for this land.
+    pub fn found_related(
+        &mut self,
+        source: usize,
+        region: usize,
+        naming: &Naming,
+        livelihood: Option<Livelihood>,
+        ethos: Option<&FoundingEthos>,
+    ) -> Result<usize, String> {
+        if self.generation != 0 {
+            return Err("related peoples can only be founded at year zero".into());
+        }
+        let people = self
+            .communities
+            .get(source)
+            .ok_or_else(|| format!("there is no community {source}"))?;
+        if !people.living() {
+            return Err(format!("the {} are no more", self.community_name(source)));
+        }
+        if !self
+            .map
+            .regions
+            .get(region)
+            .is_some_and(|r| r.terrain.is_land())
+        {
+            return Err(format!("region {region} is not land a people can settle"));
+        }
+        naming.validate()?;
+        if *naming == Naming::Land {
+            return Err("a founding people has no land name to be called by yet".into());
+        }
+        if let Some(ethos) = ethos {
+            ethos.validate()?;
+        }
+
+        let (parent, power, openness) = (people.variety, people.power, people.openness);
+        let livelihood = livelihood.unwrap_or_else(|| self.default_livelihood(region));
+        let ethos = self.founding_ethos(self.communities.len(), region, livelihood, ethos);
+        let mut variety = self.varieties[parent].fork(parent, self.generation);
+        self.inherit_places(parent, &mut variety);
+        let name = self.coin(
+            &variety,
+            naming,
+            Some((&people.name, &self.varieties[parent])),
+        );
+        variety.name = self.fresh_language_name(&variety, &name);
+        Ok(self.register_founder(
+            variety,
+            name,
+            Some(source),
+            power,
+            openness,
+            region,
+            livelihood,
+            ethos,
+        ))
+    }
+
+    /// Registers both independent and related founders through the same
+    /// population, naming, and land-presence bookkeeping.
+    #[allow(clippy::too_many_arguments)]
+    fn register_founder(
+        &mut self,
+        variety: Variety,
+        name: Name,
+        parent: Option<usize>,
+        power: f32,
+        openness: f32,
+        region: usize,
+        livelihood: Livelihood,
+        ethos: Ethos,
+    ) -> usize {
+        let index = self.communities.len();
         self.varieties.push(variety);
         self.communities.push(Community {
-            parents: Vec::new(),
+            parents: parent.into_iter().collect(),
             name,
             variety: self.varieties.len() - 1,
             prestige: power.clamp(0.0, 1.0),
@@ -4783,9 +4876,9 @@ mod tests {
         assert_eq!(world.events, events);
     }
 
-    fn crowd_walkable_lands(world: &mut World, community: usize) {
+    fn crowd_walkable_lands(world: &mut World, community: usize) -> usize {
         let home = world.communities[community].home();
-        let blocker = world.found_seeded(
+        let home_blocker = world.found_seeded(
             &Naming::People,
             &SoundProfile::base(),
             9,
@@ -4795,13 +4888,39 @@ mod tests {
             Some(Livelihood::Farming),
             None,
         );
-        world.communities[blocker].lands = world
+        world.communities[home_blocker].size = 2.0 * world.feeds(home, Livelihood::Farming);
+        let home_deficit = world.occupation()[home] - world.feeds(home, Livelihood::Farming);
+        let lands: Vec<_> = world
             .map
             .walking_row(home, f32::INFINITY)
             .iter()
             .map(|&(r, _)| r as usize)
+            .filter(|&r| r != home)
             .collect();
-        world.communities[blocker].size = 100_000_000.0;
+        let total: f32 = lands
+            .iter()
+            .map(|&r| world.feeds(r, Livelihood::Farming))
+            .sum();
+        let least = lands
+            .iter()
+            .map(|&r| world.feeds(r, Livelihood::Farming))
+            .fold(f32::INFINITY, f32::min);
+        // Presence is proportional to capacity. Make even the poorest
+        // walkable land have less absolute room than the crowded home;
+        // a fixed large population alone can make poor neighbours roomier.
+        let blocker = world.found_seeded(
+            &Naming::People,
+            &SoundProfile::base(),
+            10,
+            1.0,
+            0.5,
+            Some(lands[0]),
+            Some(Livelihood::Farming),
+            None,
+        );
+        world.communities[blocker].lands = lands;
+        world.communities[blocker].size = total * (1.0 + 2.0 * home_deficit / least);
+        blocker
     }
 
     #[test]
@@ -4823,9 +4942,12 @@ mod tests {
         world.learn(a, Craft::Seafaring, None);
         let daughter = world.split(a, None, 0.5);
         let coast = world.communities[daughter].home();
-        assert!(world.map.voyage(home, coast) <= world.params.colony_reach);
+        assert!(world.map.overseas(home, coast));
+        let colony_effort = world.map.voyage(home, coast);
+        assert!(colony_effort.is_finite() && colony_effort <= world.params.colony_reach);
         assert!(world.events.iter().any(|(_, e)| matches!(e,
-            WorldEvent::Split { daughter: d, by_sea: true, .. } if *d == daughter)));
+            WorldEvent::Split { daughter: d, from, to, by_sea: true, travelled: true, .. }
+                if *d == daughter && *from == home && *to == coast)));
         assert!(
             world
                 .contacts
@@ -4833,6 +4955,7 @@ mod tests {
                 .any(|k| k.a == a && k.b == daughter && k.kind == ContactKind::Trade)
         );
         world.migrate();
+        assert!(world.map.overseas(home, world.communities[a].home()));
         assert!(world.events.iter().any(|(_, e)| matches!(e,
             WorldEvent::Migrated { community, by_sea: true, .. } if *community == a)));
         for (_, event) in &world.events {
@@ -4845,7 +4968,7 @@ mod tests {
                 } else {
                     world.map.distance(from, to)
                 };
-                assert!(effort <= world.params.migration_reach);
+                assert!(effort.is_finite() && effort <= world.params.migration_reach);
             }
         }
     }
@@ -4999,35 +5122,71 @@ mod tests {
 
     #[test]
     fn later_migrants_see_the_room_consumed_by_earlier_migrants() {
-        let (mut world, first, second) = water_pair();
-        let home = world.communities[first].home();
-        world.communities[second].lands = vec![home];
-        let destination = world
+        let mut world = World::new(7, Params::static_society());
+        // Select a walkable destination, not a shore chosen for a voyage.
+        // Leave another land for the community blocking all other options.
+        let (home, destination) = world
             .map
-            .walking_row(home, 600.0)
+            .regions
             .iter()
-            .find(|&&(r, _)| {
-                r as usize != home && world.map.regions[r as usize].terrain == Terrain::Plains
+            .enumerate()
+            .find_map(|(home, region)| {
+                if !region.terrain.is_land()
+                    || region
+                        .neighbours
+                        .iter()
+                        .filter(|&&r| world.map.regions[r].terrain.is_land())
+                        .count()
+                        < 2
+                {
+                    return None;
+                }
+                world
+                    .map
+                    .walking_row(home, world.params.migration_reach)
+                    .iter()
+                    .find_map(|&(r, _)| {
+                        let destination = r as usize;
+                        (destination != home && world.feeds(destination, Livelihood::Farming) > 0.0)
+                            .then_some((home, destination))
+                    })
             })
-            .unwrap()
-            .0 as usize;
+            .expect("a reachable farming destination and another walkable land");
+        let [first, second] = [(7, 0.8), (8, 0.2)].map(|(seed, power)| {
+            world.found_seeded(
+                &Naming::People,
+                &SoundProfile::base(),
+                seed,
+                power,
+                0.5,
+                Some(home),
+                Some(Livelihood::Farming),
+                None,
+            )
+        });
         let capacity = world.feeds(destination, Livelihood::Farming);
         for c in [first, second] {
             world.communities[c].size = capacity * 0.9;
         }
-        crowd_walkable_lands(&mut world, first);
-        world
-            .communities
-            .last_mut()
-            .unwrap()
+        let blocker = crowd_walkable_lands(&mut world, first);
+        world.communities[blocker]
             .lands
             .retain(|&r| r != destination);
         world.params.migration_rate = 1000.0;
-        world.params.migration_reach = 600.0;
+        let effort = world.map.distance(home, destination);
+        assert!(effort.is_finite() && effort <= world.params.migration_reach);
+        assert_eq!(
+            world.free_room(second, destination, &world.spatial()),
+            capacity
+        );
         let population = world.communities[first].size + world.communities[second].size;
         world.migrate();
         assert_eq!(world.communities[first].lands, vec![destination]);
         assert_eq!(world.communities[second].lands, vec![home]);
+        assert!(
+            world.free_room(second, destination, &world.spatial())
+                < world.communities[second].size / 2.0
+        );
         assert_eq!(
             world.communities[first].size + world.communities[second].size,
             population
@@ -6166,20 +6325,31 @@ mod tests {
             for preset in ["familiar", "polynesian", "iranian", "finnic"] {
                 world.found(&SoundProfile::by_id(preset).unwrap(), 0.5, 0.5);
             }
-            world.run(240);
-            for (_, event) in &world.events {
-                if let WorldEvent::Migrated {
-                    from, to, by_sea, ..
-                } = *event
-                {
-                    moved += 1;
-                    assert!(from != to && world.map.regions[to].terrain.is_land());
-                    let effort = if by_sea {
-                        world.map.voyage(from, to)
-                    } else {
-                        world.map.distance(from, to)
-                    };
-                    assert!(effort <= world.params.migration_reach);
+            for _ in 0..240 {
+                let made = world.events.len();
+                world.step();
+                // Valley routes can dry or reopen next generation. Judge
+                // each journey against the geography when it was made.
+                for (_, event) in &world.events[made..] {
+                    if let WorldEvent::Migrated {
+                        from, to, by_sea, ..
+                    } = *event
+                    {
+                        moved += 1;
+                        assert!(from != to && world.map.regions[to].terrain.is_land());
+                        let effort = if by_sea {
+                            world.map.voyage(from, to)
+                        } else {
+                            world.map.distance(from, to)
+                        };
+                        assert!(
+                            effort.is_finite() && effort <= world.params.migration_reach,
+                            "seed {seed}, generation {}: {from} -> {to}, by_sea {by_sea}, \
+                             effort {effort}, reach {}",
+                            world.generation,
+                            world.params.migration_reach
+                        );
+                    }
                 }
             }
         }

@@ -203,9 +203,12 @@ pub(crate) fn courses(
     (rivers, owner)
 }
 
-pub(crate) fn warmth(seed: u64, region: usize, elevation: f32) -> f32 {
-    let mut rng = stream(seed, &[key("climate baseline"), region as u64]);
-    (rng.gen_range(0.65..0.95) - 0.25 * elevation).clamp(0.0, 1.0)
+/// Latitude is the canonical position's z coordinate (sin(latitude)).
+/// Elevation cools the baseline; a small fixed local offset is not weather.
+pub(crate) fn warmth(seed: u64, region: usize, elevation: f32, latitude_sine: f32) -> f32 {
+    let mut rng = stream(seed, &[key("spherical climate baseline"), region as u64]);
+    (0.94 - 0.72 * latitude_sine.abs() - 0.28 * elevation + rng.gen_range(-0.035..0.035))
+        .clamp(0.0, 1.0)
 }
 
 /// Grow compact connected districts to twelve lands, with seeded frontier
@@ -294,4 +297,27 @@ pub(crate) fn climate_zones(
         }
     }
     zones
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn thermal_baseline_cools_with_latitude_and_elevation_not_hemisphere() {
+        for seed in 0..12 {
+            let equator = warmth(seed, 7, 0.0, 0.0);
+            let middle = warmth(seed, 7, 0.0, 0.5);
+            let pole = warmth(seed, 7, 0.0, 1.0);
+            assert!(equator > middle && middle > pole);
+            assert_eq!(middle, warmth(seed, 7, 0.0, -0.5));
+            assert_eq!(pole, warmth(seed, 7, 0.0, -1.0));
+            assert!(warmth(seed, 7, 1.0, 0.0) < equator);
+            for latitude in [-1.0, -0.5, 0.0, 0.5, 1.0] {
+                for elevation in [0.0, 0.5, 1.0] {
+                    assert!((0.0..=1.0).contains(&warmth(seed, 7, elevation, latitude)));
+                }
+            }
+        }
+    }
 }

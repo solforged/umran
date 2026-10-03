@@ -409,7 +409,7 @@ export default function App() {
       {overview.savedRevision !== null ? (
         <p className="notice">
           This world was saved with engine revision {overview.savedRevision}; this is revision{" "}
-          {overview.revision}, so its words may differ from when it was saved.
+          {overview.revision}, so its history may differ from when it was saved.
         </p>
       ) : null}
       {error ? (

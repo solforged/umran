@@ -11,9 +11,9 @@ pub fn sample() -> Chronicle {
                 place: "river".into(),
             },
             0.7,
-            73,
+            1200,
         ),
-        ("semitic", 52, Naming::People, 0.5, 99),
+        ("semitic", 52, Naming::People, 0.5, 1215),
         (
             "polynesian",
             73,
@@ -21,7 +21,7 @@ pub fn sample() -> Chronicle {
                 place: "sea".into(),
             },
             0.4,
-            76,
+            83,
         ),
     ] {
         history

@@ -15,31 +15,34 @@ positions it produced, including an empty range when no event was emitted.
 These records clone with the world and are rebuilt on every replay path,
 including exact readings and checkpoints. `Run` advances the simulation; it
 is not an authored decision, and its events have no decision attribution.
-This bookkeeping makes no random draws and changes no simulation events,
-so the engine revision remains 31.
+This bookkeeping makes no random draws and does not itself change replay.
 
 - `World` (`world.rs`) steps communities, varieties, and contacts through
   25-year generations. `Variety` holds a `SoundProfile` and a `Lexicon` of
   `Slot`s, where words compete for each concept with usage weights. Words
   keep a log of every sound law, borrowing, extension, and loss.
-- The map (`geography.rs`) is drawn from the world seed at a chosen size
-  (`MapSize`). Regions are Voronoi cells around jittered hex-grid points,
-  so each borders about six others. Terrain is sea, plains, forest,
-  steppe, hills, mountains, or desert. About half the regions are land, split
-  among separated continental bodies and small islands. Each land region
-  has one `landmass`; sea has none. The existing sizes have one to three
-  continents with size-specific budgets. Vast has two, each at least
-  800 regions. Budgets are checked rather than left to a favourable seed.
-  Founders settle continents before islands.
-  Drawing coordinates stay in map units. One unit means 100 km.
-  Shared-border midpoints give geometric centre-to-centre routes.
+- The map (`geography.rs`, `sphere.rs`) is a closed spherical surface drawn
+  from the world seed at a chosen physical size (`MapSize`). Regions are
+  dual cells of a subdivided icosahedron, with shared borders across the
+  chart seam and around both poles. Canonical unit-vector centres and
+  boundaries determine spherical area, drainage, landmass anchors, and
+  great-circle travel. Terrain is sea, plains, forest, steppe, hills,
+  mountains, or desert. Seeded continental bodies, multiscale coastal
+  variation, curved mountain belts, and island highs form the surface.
+  Latitude and elevation affect warmth; moisture varies with latitude,
+  relief, and proximity to sea. These are static fields, not plate tectonics.
+  Each connected land body has one `landmass`; sea has none. Bodies of at
+  least 500,000 km² are continents, rather than meeting a cell-count quota.
+  Founders prefer continents to islands.
+  Shared-border great-circle midpoints give centre-to-centre routes.
   Terrain multiplies their physical length to give effort-km, equivalent
   plain kilometres: a 100 km mountain crossing costs 400 effort-km.
-  Polygon area sets regional food capacity. Map geometry uses arithmetic
-  and square roots, so native and WASM draw the same map.
-  Elevation and moisture are retained rather than discarded after terrain
-  choice. Static regional drainage supplies named river courses, and connected
-  climate zones supply weather histories without redrawing the coast.
+  Spherical area sets regional food capacity. Drawing coordinates remain
+  derived equirectangular map units, at 100 km per unit along the equator;
+  their lengths and areas never measure the simulation. Portable `libm`
+  trigonometry keeps native and WASM geography identical. Static drainage
+  supplies named rivers, and connected climate zones supply weather
+  histories without redrawing the coast.
 - Languages are founded from a `LanguageDesign` (`design.rs`): the exact
   sounds, each used or favoured, plus knobs (word length, final consonants,
   inner clusters, repetition, long vowels, geminates, stress, affixes or
@@ -817,8 +820,8 @@ Walking traverses land only. Sea endpoints are unreachable even for
 identity. A voyage starts at held coastal land, ends at a coast, and
 has at least one sea cell. It never passes through another coastal port. Each
 embarkation or landing adds 100 effort-km. Same-continent voyages are
-valid. There are no rented ports, mixed inland-and-sea legs, fleets,
-travel durations, or globe wrapping.
+valid. The region graph has no seam or polar boundary. There are no rented
+ports, mixed inland-and-sea legs, fleets, or travel durations.
 
 `World::journey_to` and `journey_between` are directed: only the
 traveller's own Seafaring enables a boat journey. Walking wins a tie.
@@ -862,21 +865,34 @@ migrants' consumed room. These indexes are not additional replay state.
 Urban residence adds population at a city, not a territorial holding or
 borrowable port. The phase indexes distinguish residents from land holders.
 
-The fixed drawing scale gives these rectangular extents:
+Physical radius and regional resolution are separate:
 
-| Size | Regions | Land regions | Approximate extent |
-| --- | ---: | ---: | --- |
-| small | 63 | 31 | 950 × 620 km |
-| middling (`medium`) | 130 | 65 | 1,350 × 879 km |
-| wide (`large`) | 252 | 126 | 1,850 × 1,226 km |
-| vast | 3,600 | 1,800 | 6,050 × 5,210 km |
+| Size | Regions | Radius | Approximate circumference |
+| --- | ---: | ---: | ---: |
+| small | 642 | 800 km | 5,030 km |
+| middling (`medium`) | 2,562 | 1,600 km | 10,050 km |
+| wide (`large`) | 2,562 | 3,200 km | 20,110 km |
+| vast | 10,242 | 6,371 km | 40,030 km |
 
-Vast has two continental bodies of at least 800 regions each and
-exactly three one- or two-region islands. It is a large flat theatre,
-not a planet. The facade exposes `catalog.mapSizes`, `map.kmPerUnit`,
-`Region.areaKm2`, and physical landmass metadata while retaining drawing
-units. Movement views use the event's recorded `bySea`, not the shape
-of the present coast.
+Wide and vast use coarser regions, rather than letting planet size demand
+unbounded mesh and route storage. Land fraction, connected bodies, and
+islands emerge from the seeded surface; the old rectangular continent
+budgets no longer apply.
+
+The facade exposes `radiusKm`, geographic `center` and `boundary`
+coordinates, `Region.areaKm2`, and authoritative `River.lengthKm`.
+`site` and `outline` are derived chart coordinates only. River length
+follows great-circle course segments through the actual confluence or
+shared coastal midpoint. The browser's `cartography.ts` projects this one
+geography as an equirectangular chart or an orthographic globe; d3-geo clips
+the seam and horizon. Switching or rotating views changes no history.
+Movement views use the event's recorded `bySea`, not the present coast.
+
+Revision 33 replaces the old flat geography and its region identities.
+Earlier recipes open recovery with their originals intact rather than
+replaying their decisions on unrelated lands. Native parity parsing uses
+`serde_json`'s `float_roundtrip` feature so geographic f64 values retain
+their exact bits through JSON, as they do with the browser's `JSON.parse`.
 
 ## Rivers and regional climate
 
@@ -886,8 +902,8 @@ Enclosed hollows receive a lowest-saddle spill route without changing their
 visible elevation or terrain. Region ids break ties, and the upstream order
 cannot loop. Runoff accumulates physical wet catchment area, with a separate
 seeded local variation. A reach becomes a river at about 25,981 wet km²,
-not at a fraction of the map. Vast therefore has more catchments and rivers,
-not smaller cells or a river in every cell.
+not at a fraction of the map. At the coarser wide and vast resolutions,
+one wet region can already supply a named headwater reach.
 
 Every river has a stable id, an ordered main course, an ultimate sea mouth,
 and its upstream catchment, the land supplying its water. The strongest
