@@ -5,10 +5,10 @@
 .margin-text:hover { background: transparent; }
 .margin-title { display: block; font-size: .9rem; font-style: italic; }
 .margin-para { display: block; margin: .45rem 0; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
-.margin-actions, .margin-tools { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
+.margin-actions, .margin-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dense-gap); }
 .margin-actions { margin-top: .45rem; }
 .margin-tools { margin-top: .85rem; }
-.margin-actions button, .margin-tools button { display: inline-flex; align-items: center; gap: .25rem; font-size: .75rem; }
+.margin-actions button, .margin-tools button { display: inline-flex; align-items: center; gap: var(--dense-gap); font-size: var(--dense-size); }
 .margin-actions button { color: var(--ink-soft); }
 .margin-editor input, .margin-editor textarea { display: block; width: 100%; min-width: 0; margin: .3rem 0; padding: .3rem; border: 1px solid transparent; border-radius: 0; background: transparent; color: var(--ink); font: inherit; box-shadow: none; }
 .margin-editor input { font-size: .9rem; font-style: italic; }

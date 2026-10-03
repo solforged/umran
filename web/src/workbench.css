@@ -64,7 +64,7 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .trail button { max-width: 10rem; overflow: hidden; text-overflow: ellipsis; }
 .pedia > .card { padding-top: .45rem; }
 .pedia { scrollbar-width: thin; scrollbar-color: var(--line) transparent; overscroll-behavior: contain; }
-:root .leaf-title { width: 100%; justify-content: space-between; gap: 1rem; text-align: left; padding: .5rem 0 .2rem; border-top: 1px solid var(--line); }
+:root .leaf-title { width: 100%; justify-content: space-between; gap: var(--dense-gap); text-align: left; padding: var(--dense-row) 0; border-top: 1px solid var(--line); }
 .leaf-title svg { flex: none; }
 .leaf-summary { color: var(--ink-soft); }
 .leaf.open .leaf-title { color: var(--accent); }
