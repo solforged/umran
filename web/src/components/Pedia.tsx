@@ -27,6 +27,7 @@ import type { Annal, Catalog, CityView, Community, Craft, CraftView, ReadEngine,
 import { YEARS } from "../model";
 import { CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, FAITH_HOW, FALL_NAME, howCame, howNamed, hue, LIVELIHOOD_NAME, MECHANISM_NAME, RISE_NAME, SCHISM_CAUSE, STRONG, temperament, TERMS, TERRAIN_NAME, weatherDeparture, type Term } from "../lore";
 import { filterHistory, findAnnal, individualAnnals, relatedMoments, subjectHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
+import { eras, quietLine, QUIET_KINDS, type Era } from "../eras";
 import { bond } from "../words";
 import type { InterventionKind } from "./ActionDialog";
 import { SettlementAccount } from "./SettlementDesk";
@@ -41,6 +42,7 @@ import { closeClosingDialogs, emphasizeInk, reducedMotion, useLiftedValue } from
 import { Popover } from "./Popover";
 import { CHAPTER, ChapterSummary, LawEvidence, LoanCauseText, WordOrigin, type ChapterContext } from "./LanguageChapter";
 import { Margin } from "./Margin";
+import "./chronicle.css";
 
 /// What the encyclopedia is open at.
 export type Focus = import("../model").Subject;
@@ -954,9 +956,10 @@ function Few<T>({ items, link, leaf, max = 3 }: { items: T[]; link: (item: T) =>
 }
 
 /// Something's story in the folio, newest first, with its latest moment
-/// on the card.
+/// on the card: the latest headline, or the latest entry of any kind
+/// when the story holds nothing louder.
 function StoryLeaf({ title, annals, context }: { title: string; annals: Annal[]; context: Context }) {
-  const last = annals.at(-1);
+  const last = annals.findLast((annal) => !QUIET_KINDS.has(annal.kind)) ?? annals.at(-1);
   if (!last) return null;
   return (
     <Leaf
@@ -1141,45 +1144,109 @@ function FamilyTrees({ context }: { context: Context }) {
   );
 }
 
-/// A reading of the annals, with filters kept by the stage while the
-/// reader follows a person or moment and then returns to the chronicle.
+/// Entries keep their evidence and links whether full-weight or unfolded.
+function ChronicleEvents({ annals, context }: { annals: Annal[]; context: Context }) {
+  return <ol className="chronicle-events">{annals.map((annal) => {
+    const kind = EVENT_KIND[annal.kind];
+    return <li key={annal.id}>
+      <kind.icon size={17} aria-hidden="true" />
+      <div><span className="event-kind">{kind.name}</span>
+        <button type="button" className="moment" onClick={() => context.go({ kind: "event", id: annal.id })}>{annal.decision !== undefined ? <span className="pen" title="The author's decision"><Feather size={12} aria-hidden="true" /></span> : null}<Told text={annal.text} /></button>
+        <EntryAnnotations annal={annal} context={context} />
+        <AnnalLinks annal={annal} context={context} />
+        {annal.specimen.length ? <Specimen words={annal.specimen} changes={annal.laws.length > 0} onWord={(concept) => { if (annal.variety !== null) context.go({ kind: "word", variety: annal.variety, concept }); }} /> : null}
+      </div>
+    </li>;
+  })}</ol>;
+}
+
+function EraSubjects({ era, context }: { era: Era; context: Context }) {
+  const { overview } = context;
+  const subjects = new Map<string, ReactNode>();
+  for (const year of era.years) for (const annal of year.headlines) {
+    for (const id of annal.peoples) if (overview.communities[id]) subjects.set(`people-${id}`, <PeopleLink c={overview.communities[id]} context={context} />);
+    for (const id of annal.states) if (overview.states[id]) subjects.set(`state-${id}`, <StateLink state={overview.states[id]} context={context} />);
+    for (const id of annal.languages) if (overview.varieties[id]) subjects.set(`language-${id}`, <LanguageLink variety={id} context={context} />);
+  }
+  return <span className="chronicle-era-subjects"><Joined items={[...subjects.values()].slice(0, 4)} link={(link) => link} />{subjects.size > 4 ? ` and ${subjects.size - 4} more` : null}</span>;
+}
+
+/// The card is the contents; the wide card reads the same eras in detail.
 function HistoryCard({ context }: { context: Context }) {
   const { overview, historyView: view, onHistoryView } = context;
+  const folio = useContext(FolioContext)!;
+  const [destination, setDestination] = useState<number | null>(null);
   const update = (patch: Partial<HistoryView>) => onHistoryView({ ...view, limit: 100, ...patch });
+  const contents = useMemo(() => eras(overview.annals, overview.generation, overview), [overview]);
   const lines = useMemo(() => filterHistory(overview.annals, overview.varieties, view), [overview, view]);
   const shown = lines.slice(0, view.limit);
-  const years = new Map<number, Annal[]>();
-  for (const annal of shown) years.set(annal.generation, [...(years.get(annal.generation) ?? []), annal]);
+  const selected = new Set(shown.map((a) => a.id));
+  const unfold = view.group !== "All events" || view.query.trim() !== "" || view.sounds !== "all";
+  const ordered = view.order === "newest" ? [...contents].reverse() : contents;
+  const headlineCount = contents.reduce((sum, era) => sum + era.years.reduce((n, year) => n + year.headlines.length, 0), 0);
+  const quietYears = contents.reduce((sum, era) => sum + era.years.filter((year) => year.quiet.length).length, 0);
   const missingLanguage = typeof view.sounds === "number" && !overview.varieties[view.sounds];
+  useEffect(() => {
+    if (destination === null || folio.open !== "history" || !folio.page) return;
+    const frame = requestAnimationFrame(() => {
+      const header = folio.page?.querySelector<HTMLElement>(`[data-chronicle-era="${destination}"]`);
+      const section = header?.closest<HTMLElement>(".chronicle-era");
+      if (header && section && folio.page) {
+        folio.page.scrollTo({ top: folio.page.scrollTop + section.getBoundingClientRect().top - folio.page.getBoundingClientRect().top });
+        header.focus({ preventScroll: true });
+        setDestination(null);
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [destination, folio.open, folio.page, view.limit]);
+  const openEra = (era: Era) => {
+    const all = filterHistory(overview.annals, overview.varieties, { ...INITIAL_HISTORY, order: view.order });
+    const last = all.reduce((index, annal, i) => annal.generation >= era.start && annal.generation <= era.end ? i : index, -1);
+    onHistoryView({ ...INITIAL_HISTORY, order: view.order, limit: Math.max(100, last + 1) });
+    setDestination(era.start);
+    folio.show("history");
+  };
   return (
     <>
       <CardHead icon={ScrollText} kind={overview.tellings.find((t) => t.id === overview.telling)?.name ?? "This telling"} title="The chronicle" />
-      <p className="muted">Follow the journeys of peoples, the fortunes of their realms, and the words they leave behind.</p>
+      <ol className="chronicle-contents" aria-label="The chronicle's eras">{contents.map((era) => <li key={era.start}>
+        <button type="button" className="chronicle-contents-row" title={era.title} onClick={() => openEra(era)}>
+          <span className="chronicle-era-span">{era.start * YEARS}–{era.end * YEARS}</span>
+          <span>{era.heading}</span>
+        </button>
+        <EraSubjects era={era} context={context} />
+      </li>)}</ol>
       <Leaf id="history" title="Entries" summary={
-        <p>{overview.annals.length.toLocaleString()} {overview.annals.length === 1 ? "entry" : "entries"} written through year {overview.generation * YEARS}.
-          {overview.tellings.length > 1 ? ` ${overview.tellings.length - 1} other ${overview.tellings.length === 2 ? "telling" : "tellings"} kept.` : ""}</p>
+        <p>{headlineCount.toLocaleString()} headline {headlineCount === 1 ? "entry" : "entries"} and {quietYears.toLocaleString()} quiet {quietYears === 1 ? "year" : "years"}.</p>
       }>
         <ChronicleFilters view={view} update={update} overview={overview} sounds />
-        <div className="chronicle-count"><span role="status">{lines.length.toLocaleString()} {lines.length === 1 ? "entry" : "entries"}{view.query || view.group !== "All events" || view.sounds !== "all" ? " matching these filters" : " in this telling"}</span>
+        <div className="chronicle-count"><span role="status">{lines.length.toLocaleString()} {lines.length === 1 ? "entry" : "entries"}{unfold ? " matching these filters" : " in this telling"}</span>
           <button type="button" className="link" onClick={() => onHistoryView(INITIAL_HISTORY)}>Reset filters</button>
         </div>
         {missingLanguage ? <p className="muted small">The selected language has not arisen in this year. Its sound changes will appear when you return to its time.</p> : null}
         {lines.length === 0 ? <p className="index-empty">No entries match these filters. Try a different name or broaden the filters.</p> : null}
         <div className="chronicle-years">
-          {[...years].map(([generation, annals]) => <section className="chronicle-year-group" key={generation}>
-            <h3><button type="button" className="link" title="See the world in this year" onClick={() => context.onScrub(generation)}>Year {generation * YEARS}</button></h3>
-            <ol className="chronicle-events">{annals.map((annal, i) => {
-              const kind = EVENT_KIND[annal.kind];
-              return <li key={i}>
-                <kind.icon size={17} aria-hidden="true" />
-                <div><span className="event-kind">{kind.name}</span>
-                  <button type="button" className="moment" onClick={() => context.go({ kind: "event", id: annal.id })}>{annal.decision !== undefined ? <span className="pen" title="The author's decision"><Feather size={12} aria-hidden="true" /></span> : null}<Told text={annal.text} /></button>
-                  <EntryAnnotations annal={annal} context={context} />
-                  <AnnalLinks annal={annal} context={context} />
+          {ordered.map((era) => {
+            const years = (view.order === "newest" ? [...era.years].reverse() : era.years).flatMap((year) => {
+              const matching = shown.filter((annal) => annal.generation === year.generation);
+              if (!matching.length) return [];
+              return [{ generation: year.generation, headlines: unfold ? matching : year.headlines.filter((a) => selected.has(a.id)), quiet: unfold ? [] : year.quiet.filter((a) => selected.has(a.id)) }];
+            });
+            if (!years.length) return null;
+            return <section className="chronicle-era" key={era.start}>
+              <h3 className="chronicle-era-head" data-chronicle-era={era.start} tabIndex={-1}>{era.opening ? <>Year {era.start * YEARS} · <Told text={era.opening.text} /></> : era.title}</h3>
+              {years.map((year) => <section className="chronicle-year-group" key={year.generation}>
+                <h4><button type="button" className="link" title="See the world in this year" onClick={() => context.onScrub(year.generation)}>Year {year.generation * YEARS}</button></h4>
+                <div>
+                  {year.headlines.length ? <ChronicleEvents annals={year.headlines} context={context} /> : null}
+                  {year.quiet.length ? <details className="chronicle-quiet" key={`${view.order}:${year.generation}`}>
+                    <summary>{quietLine(year, overview)}</summary>
+                    <ChronicleEvents annals={year.quiet} context={context} />
+                  </details> : null}
                 </div>
-              </li>;
-            })}</ol>
-          </section>)}
+              </section>)}
+            </section>;
+          })}
         </div>
         {lines.length > shown.length ? <button type="button" className="chronicle-load" onClick={() => update({ limit: view.limit + 100 })}>Read another {Math.min(100, lines.length - shown.length)} entries</button> : null}
       </Leaf>

@@ -1,0 +1,121 @@
+.chronicle-contents {
+  list-style: none;
+  margin: .65rem 0;
+  padding: 0;
+  font-size: .9rem;
+  line-height: 1.2;
+}
+
+.chronicle-contents > li {
+  padding: .1rem 0 .25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.chronicle-contents-row {
+  display: grid;
+  grid-template-columns: 4.6rem minmax(0, 1fr);
+  gap: .45rem;
+  width: 100%;
+  padding: .1rem 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+
+.chronicle-contents-row:hover,
+.chronicle-contents-row:focus-visible {
+  color: var(--accent);
+}
+
+.chronicle-era-span {
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.chronicle-era-subjects {
+  display: block;
+  padding: .1rem 0 .1rem 5.05rem;
+  color: var(--ink-soft);
+  font-size: .9rem;
+}
+
+.chronicle-era-subjects .link {
+  font-size: inherit;
+}
+
+.chronicle-era-head {
+  position: sticky;
+  top: -1rem;
+  z-index: 1;
+  margin: 0;
+  padding: .45rem 0;
+  border-bottom: 3px double var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  font: 1.1rem var(--serif);
+  line-height: 1.25;
+  scroll-margin-top: 0;
+}
+
+.chronicle-era .chronicle-year-group > h4 {
+  margin: .3rem 0;
+  font-size: .9rem;
+  font-weight: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.chronicle-quiet {
+  padding: .1rem 0;
+}
+
+.chronicle-quiet > summary,
+.book-quiet-line {
+  color: var(--ink-soft);
+  font-size: .9rem;
+  line-height: 1.3;
+}
+
+.chronicle-quiet > summary {
+  cursor: pointer;
+  padding: .1rem 0;
+}
+
+.chronicle-quiet[open] > summary {
+  margin-bottom: .35rem;
+}
+
+.book-era-year > h4 {
+  margin: .6rem 0 .1rem;
+  color: var(--ink-soft);
+  font-size: .9rem;
+  font-weight: normal;
+}
+
+.book-quiet-line {
+  margin: .2rem 0;
+}
+
+.book-quiet {
+  margin: .2rem 0 .6rem;
+  padding: 0;
+  list-style: none;
+  font-size: .9rem;
+  color: var(--ink-soft);
+}
+
+.book-quiet > li {
+  display: grid;
+  grid-template-columns: 3.5rem minmax(0, 1fr);
+  gap: 1rem;
+  padding: .1rem 0;
+  scroll-margin-top: 1rem;
+}
+
+@media (max-width: 560px) {
+  .chronicle-contents-row { grid-template-columns: 4.2rem minmax(0, 1fr); }
+  .chronicle-era-subjects { padding-left: 4.65rem; }
+  .book-quiet > li { grid-template-columns: 2.8rem minmax(0, 1fr); gap: .5rem; }
+}

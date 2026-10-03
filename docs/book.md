@@ -100,9 +100,12 @@ the engine, not a second source. Blank where the engine has nothing yet.
    and the author's decisions marked as such. It is read in eras, not
    as a log. An era opens when a state rises or falls, a people
    conquers another, a faith is founded, or a language becomes
-   classical; its title is that opening entry, dated. Within an era the
-   headline entries stand at full weight (a people appears, parts,
-   moves, or changes tongue; a conquest; a state; a faith and its
+   classical, and runs at least two hundred years: an opener sooner
+   than that stays a headline inside the era. The era's heading is a
+   few words from the opener's subjects ("Iffi rises"); its full entry
+   is the title. Within an era the headline entries stand at full
+   weight (a people appears, parts, moves, or changes tongue; a
+   conquest; a state; a faith and its
    schisms, conversions, and holy lands; a craft; a city and its
    speech; a language written, standardised, or made classical; a
    people ends; a way of life or hard times). The bookkeeping of a
@@ -111,7 +114,7 @@ the engine, not a second source. Blank where the engine has nothing yet.
    folds into one quiet line under the year, "also that year", which
    opens to its entries. A filter to one group or a search unfolds
    what it matches. The chronicle's card is the table of contents:
-   each era with its span, its title, and the peoples, states, and
+   each era with its span, its heading, and the peoples, states, and
    languages it concerns, at the dense scale.
 7. **Notes.** The author's own, dated, with the subjects they refer to.
 8. **Other tellings.** Each draft's name, the year and decision it

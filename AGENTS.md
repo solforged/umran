@@ -53,7 +53,12 @@ Read further when the task touches it:
   frontispiece as the home card, each subject card opening in
   derivation order with a `Decide…` menu, a card's long sections
   (`Leaf`) opening wide over the map, and the author's notes written in
-  its margin (`Margin`); `LanguageChapter` holds the language sections
+  its margin (`Margin`); `eras.ts` reads the chronicle in eras, opened
+  by a state's rise or fall, a conquest, a faith, or a classical
+  language, with each year's bookkeeping folded into one quiet line;
+  apparatus (facts boxes, rosters, ledgers) sits at the dense scale
+  set by the `--dense-*` properties while prose keeps its measure;
+  `LanguageChapter` holds the language sections
   the card and the book share); and the book (`Book`: the world read in
   chapter order, laid over the map like a wide card, with the author
   named on the frontispiece). Every menu is a `Popover`: one open at a

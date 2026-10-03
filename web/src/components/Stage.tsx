@@ -9,6 +9,7 @@ import type { DialogKind, InterventionKind } from "./ActionDialog";
 import { message } from "../engine";
 import { SettlementDesk, type SettlementDraft } from "./SettlementDesk";
 import { concerns, findAnnal, individualAnnals, INITIAL_HISTORY } from "../history";
+import { QUIET_KINDS } from "../eras";
 import { AtlasIndex } from "./AtlasIndex";
 import type { DictionaryView } from "./Dictionary";
 import { Told } from "./Told";
@@ -532,9 +533,13 @@ export function Stage({
   }, [focus, overview, map]);
   // Changes to holdings have their own, recorded motion; no decorative pulse.
 
-  // The latest moment written, for the chronicle's line.
-  const last = overview.annals.at(-1) ?? null;
-  const sameYear = last ? overview.annals.filter((a) => a.generation === last.generation).length : 0;
+  // Prefer the latest headline when the year's final entry is bookkeeping.
+  const latestAnnal = overview.annals.at(-1) ?? null;
+  const thisYear = latestAnnal ? overview.annals.filter((a) => a.generation === latestAnnal.generation) : [];
+  const last = latestAnnal && QUIET_KINDS.has(latestAnnal.kind)
+    ? thisYear.findLast((a) => !QUIET_KINDS.has(a.kind)) ?? latestAnnal
+    : latestAnnal;
+  const sameYear = thisYear.length;
   const LastIcon = last ? EVENT_KIND[last.kind].icon : null;
   const tellingName = overview.tellings.find((t) => t.id === overview.telling)?.name;
   const { marks, sounds } = useMemo(() => marksFromAnnals(overview.annals), [overview.annals]);

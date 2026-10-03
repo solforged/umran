@@ -29,11 +29,13 @@ tellings, notes, the book, day or lamplight, and the way back to the
 chart room). Find and the map's layers sit top-right, the chronicle's
 latest line is a caption over the map's foot, and the time bar beneath
 runs the years to a date and draws every turning point on a timeline,
-with sound changes as a quieter track below it. Where the engine
-recorded why something happened, the chronicle says so: "after hard
-times", "as the city grew", each phrase a link to the entry that caused
-it. The author can also choose a sound change for a language from the
-engine's catalog, previewed on the specimen.
+with sound changes as a quieter track below it. The chronicle reads in
+eras, with headline entries at full weight and the year's quieter
+bookkeeping folded into one line; its card is a table of contents.
+Where the engine recorded why something happened, the chronicle says so:
+"after hard times", "as the city grew", each phrase a link to the entry
+that caused it. The author can also choose a sound change for a language
+from the engine's catalog, previewed on the specimen.
 
 ![The workbench after 4,000 years: rivers and Weather colouring on the chart under its cartouche, beside the world's encyclopedia card, with the chronicle caption and the drawn timeline below](docs/images/stage.jpg)
 
@@ -162,7 +164,7 @@ links leave focus alone. A single 25-year advance or intervention briefly
 marks changed holdings and new state borders, while playback keeps the chart
 quiet. The system's reduced-motion setting makes all these changes immediate.
 
-![The chronicle laid over the chart, showing peoples and journeys grouped by year with search, order, and language controls](docs/images/chronicle.jpg)
+![The chronicle laid over the chart, read in eras: headline entries at full weight and each year's bookkeeping folded into one line](docs/images/chronicle.jpg)
 
 | | |
 |---|---|

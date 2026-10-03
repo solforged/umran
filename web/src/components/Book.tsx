@@ -4,6 +4,7 @@ import { YEARS } from "../model";
 import * as lore from "../lore";
 import { CONTACT_NAME, LIVELIHOOD_NAME, TERRAIN_NAME, temperament, weatherDeparture } from "../lore";
 import { findAnnal, individualAnnals } from "../history";
+import { eras, quietLine } from "../eras";
 import { bookMarkdown, craftLines, download, fileName, givenNameLines, peopleLines, religionLines, renderingLines, stateLines } from "../takeout";
 import { CHAPTER, ChapterSummary, type ChapterContext } from "./LanguageChapter";
 import { Miniature } from "./MapView";
@@ -143,17 +144,30 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
     },
     wordAnchor: (variety, concept) => `word-${variety}-${concept}`,
   };
-  const annals = useMemo(() => individualAnnals(overview.annals).sort((a, b) => a.generation - b.generation), [overview]);
   const decisions = useMemo(() => engine.decisions().filter((decision) => decision.generation <= generation), [engine, version, generation]);
-  const annalOrder = new Map(annals.map((annal, index) => [annal.id, index]));
-  const chronicle = [
-    ...annals.map((annal, order) => ({ generation: annal.generation, order, annal, decision: null })),
-    ...decisions.map((decision) => ({
-      generation: decision.generation,
-      order: Math.min(...decision.annals.map((id) => annalOrder.get(id) ?? Infinity)),
-      annal: null, decision,
-    })),
-  ].sort((a, b) => a.generation - b.generation || a.order - b.order || Number(a.annal !== null) - Number(b.annal !== null));
+  const chronicle = useMemo(() => {
+    const sections = eras(overview.annals, generation, overview);
+    // A decision remains visible even when it produced no recorded entry.
+    for (const decision of decisions) {
+      const era = sections.find((section) => decision.generation >= section.start && decision.generation <= section.end);
+      if (era && !era.years.some((year) => year.generation === decision.generation)) {
+        era.years.push({ generation: decision.generation, headlines: [], quiet: [] });
+        era.years.sort((a, b) => a.generation - b.generation);
+      }
+    }
+    return sections;
+  }, [overview, generation, decisions]);
+  const annalOrder = new Map<string, number>();
+  overview.annals.forEach((annal, index) => {
+    annalOrder.set(annal.id, index);
+    for (const member of annal.members) annalOrder.set(member.id, index);
+  });
+  const decisionsByYear = new Map<number, DecisionView[]>();
+  for (const decision of decisions) {
+    const year = decisionsByYear.get(decision.generation) ?? [];
+    year.push(decision);
+    decisionsByYear.set(decision.generation, year);
+  }
   const peoples = [...overview.communities].sort((a, b) => a.coined - b.coined || a.id - b.id);
   const families = [...new Set(overview.varieties.map((v) => v.family))];
   const climate = useMemo(() => engine.climate(generation), [engine, generation, version]);
@@ -312,14 +326,33 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
       </section>
       <section className="book-chapter" id="book-chronicle" data-book-chapter="chronicle">
         {head(5)}<h2>The chronicle</h2>
-        <p className="muted">Every recorded entry, in year order. Challenges are named only where the engine recorded a cause.</p>
-        <ol className="book-chronicle">{chronicle.map(({ annal, decision }) => annal
-          ? <ChronicleEntry key={annal.id} annal={annal} overview={overview} anchor marked={false} />
-          : <li className="book-decision-row" key={`decision-${decision!.index}`}>
-              <span className="gen">{decision!.generation * YEARS}</span>
-              <div><Told text={decision!.text} /><small className="book-decision">The author’s decision</small></div>
-            </li>
-        )}</ol>
+        <p className="muted">Every recorded entry, read in eras. Challenges are named only where the engine recorded a cause.</p>
+        {chronicle.map((era) => <section className="book-era" key={era.start}>
+          <h3><span className="book-era-span">{era.start * YEARS}–{era.end * YEARS}</span> {era.heading}</h3>
+          {era.years.map((year) => {
+            const rows = [
+              ...year.headlines.map((annal) => ({ order: annalOrder.get(annal.id) ?? Infinity, annal, decision: null })),
+              ...(decisionsByYear.get(year.generation) ?? []).map((decision) => ({
+                order: Math.min(...decision.annals.map((id) => annalOrder.get(id) ?? Infinity)), annal: null, decision,
+              })),
+            ].sort((a, b) => a.order - b.order || Number(a.annal !== null) - Number(b.annal !== null));
+            const quietIds = year.quiet.flatMap((annal) => [annal.id, ...annal.members.map((member) => member.id)]);
+            return <section className="book-era-year" key={year.generation}>
+              <h4>Year {year.generation * YEARS}</h4>
+              {rows.length ? <ol className="book-chronicle">{rows.map(({ annal, decision }) => annal
+                ? <ChronicleEntry key={annal.id} annal={annal} overview={overview} anchor marked={false} />
+                : <li className="book-decision-row" key={`decision-${decision!.index}`}>
+                    <span className="gen">{decision!.generation * YEARS}</span>
+                    <div><Told text={decision!.text} /><small className="book-decision">The author’s decision</small></div>
+                  </li>
+              )}</ol> : null}
+              {year.quiet.length ? <>
+                <p className="book-quiet-line" data-annals={quietIds.join(" ")}>{year.quiet.filter((annal) => annal.members.length).map((annal) => <span id={`event-${annal.id}`} key={annal.id} />)}{quietLine(year, overview)}</p>
+                <ol className="book-quiet">{individualAnnals(year.quiet).map((annal) => <ChronicleEntry key={annal.id} annal={annal} overview={overview} anchor marked={false} />)}</ol>
+              </> : null}
+            </section>;
+          })}
+        </section>)}
       </section>
       <section className="book-chapter" id="book-notes" data-book-chapter="notes">
         {head(6)}<h2>Notes</h2>

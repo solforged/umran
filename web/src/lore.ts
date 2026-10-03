@@ -327,3 +327,29 @@ export const POSSESSOR_PHRASE = {
   before: { choice: "the child's fish", prose: "the possessor comes before", summary: "possessor before" },
   after: { choice: "the fish of the child", prose: "the possessor comes after", summary: "possessor after" },
 } as const;
+
+/// The chronicle's quiet apparatus shares its nouns with cards and the book.
+export const CHRONICLE = {
+  first: "The first peoples",
+  rose: "A state rises",
+  fell: "A state falls",
+  conquest: "A conquest",
+  faith: "A faith is founded",
+  classical: "A classical language",
+  also: "Also that year",
+  weather: "the weather turned",
+  neighbours: ["pair of neighbours", "pairs of neighbours"],
+  lands: ["land", "lands"],
+  contact: ["meeting", "meetings"],
+  parted: ["parting", "partings"],
+  rivers: ["river changed", "rivers changed"],
+  temper: ["temper turned", "tempers turned"],
+  law: ["sound change", "sound changes"],
+  grammar: ["grammar change", "grammar changes"],
+  meaning: ["meaning changed", "meanings changed"],
+  respelling: ["spelling changed", "spellings changed"],
+} as const;
+
+export function countWord(count: number): string {
+  return ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"][count] ?? count.toLocaleString();
+}
