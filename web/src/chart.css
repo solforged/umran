@@ -506,6 +506,54 @@
   :root .setup .map-hint { max-width: calc(100% - 3.2rem); }
 }
 
+/* Cities share the capital's ink, but stand as small population-scaled rings. */
+.mapview .city { cursor: pointer; }
+.mapview .city-hit { fill: transparent; stroke: none; }
+.mapview .city-ring {
+  fill: var(--paper);
+  stroke: var(--accent);
+  stroke-width: 0.028px;
+}
+.mapview .city-heart { fill: var(--accent); }
+.mapview .city:focus { outline: none; }
+.mapview .city:focus-visible .city-ring { stroke-width: 0.055px; }
+
+/* The gazetteer is apparatus, not another reading pane. */
+:root .map-inspector {
+  position: absolute;
+  z-index: 8;
+  width: 280px;
+  max-width: calc(100% - 16px);
+  overflow: auto;
+  padding: var(--dense-pad);
+  border: 3px double var(--ink-soft);
+  background: var(--paper-raised);
+  color: var(--ink);
+  box-shadow: 0 3px 12px var(--vignette);
+  font-family: var(--serif);
+  font-size: var(--dense-size);
+  line-height: 1.3;
+  cursor: auto;
+}
+.map-inspector header { display: flex; align-items: start; gap: 0.4rem; }
+:root .map-inspector h3 { flex: 1; margin: 0; font-size: 1.15em; overflow-wrap: anywhere; }
+:root .map-inspector .inspector-close { color: var(--ink-soft); font-size: 1.2em; line-height: 1; min-width: 1.2em; }
+.inspector-subtitle { margin: var(--dense-row) 0 0.3rem; font-style: italic; color: var(--ink-soft); }
+.inspector-sayings { list-style: none; padding: 0; margin: 0.3rem 0; max-height: min(18rem, 40vh); overflow-y: auto; }
+.inspector-sayings li { padding: var(--dense-row) 0; border-bottom: 1px dotted var(--line); }
+.inspector-sayings li:last-child { border: 0; }
+.inspector-language { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.3em; font-variant: small-caps; color: var(--accent); }
+.inspector-language small { color: var(--ink-soft); font-size: 0.8em; }
+.inspector-spelled { font-style: italic; overflow-wrap: anywhere; }
+:root .map-inspector .ipa { font-size: var(--dense-size); overflow-wrap: anywhere; }
+.inspector-meaning { display: block; color: var(--ink-soft); font-size: 0.9em; }
+.inspector-facts { margin: 0.3rem 0; }
+.inspector-facts > div { display: grid; grid-template-columns: max-content 1fr; gap: var(--dense-gap); padding: var(--dense-row) 0; }
+.inspector-facts dt { color: var(--ink-soft); font-variant: small-caps; }
+.inspector-facts dd { margin: 0; overflow-wrap: anywhere; }
+.map-inspector footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.3rem; padding-top: var(--dense-row); }
+.map-inspector footer small { color: var(--ink-soft); font-style: italic; }
+
 /* The same inked world, opened flat or turned on its axis. */
 .map-projection-switch {
   display: inline-flex;

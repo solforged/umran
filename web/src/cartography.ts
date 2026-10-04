@@ -42,13 +42,27 @@ const SPHERE = { type: "Sphere" } as const;
 const GRATICULE = geoGraticule10();
 const planarPath = geoPath().digits(6);
 
+interface SphericalBounds {
+  vertices: Vector[];
+  center: Vector;
+  /** A cap smaller than a hemisphere contains the cell's great-circle edges. */
+  limb: number;
+  /** Edges whose maximum orthographic sagitta is below d3's precision. */
+  direct: boolean;
+}
+
+interface RegionGeometry extends SphericalBounds {
+  polygon: Polygon;
+}
+
 // Geometry belongs to an immutable world and survives projection/rotation
 // changes. Weak keys release it when that world or a transient route unloads.
 interface MapGeometry {
-  regions: WeakMap<Region, Polygon>;
+  regions: WeakMap<Region, RegionGeometry>;
   vectors: WeakMap<Region, Vector[]>;
   lines: WeakMap<readonly MapPoint[], LineString>;
   areas: WeakMap<readonly MapPoint[], Polygon>;
+  lineBounds: WeakMap<LineString, SphericalBounds>;
   points: WeakMap<MapPoint, { location: MapPoint; normal: Vector }>;
   borders: Map<number, Map<number, MapPoint[]>>;
   rivers: WeakMap<River, MapPoint[]>;
@@ -63,6 +77,7 @@ function geometryFor(map: WorldMap): MapGeometry {
       vectors: new WeakMap(),
       lines: new WeakMap(),
       areas: new WeakMap(),
+      lineBounds: new WeakMap(),
       points: new WeakMap(),
       borders: new Map(),
       rivers: new WeakMap(),
@@ -112,6 +127,33 @@ function vectorsFor(map: WorldMap, region: Region): Vector[] {
     cache.set(region, vectors);
   }
   return vectors;
+}
+
+function sphericalBounds(vertices: Vector[], center: Vector, closed: boolean): SphericalBounds {
+  let radiusCos = 1, direct = vertices.length >= (closed ? 3 : 2);
+  for (let i = 0; i < vertices.length; i++) {
+    radiusCos = Math.min(radiusCos, dot(center, vertices[i]));
+    // precision / globe radius = (height / 2000) / (height / 2).
+    // 1 - cos(edge / 2) <= .001 means no adaptive midpoint is needed.
+    if ((closed || i + 1 < vertices.length) && dot(vertices[i], vertices[(i + 1) % vertices.length]) < 0.996002) direct = false;
+  }
+  return {
+    vertices, center,
+    limb: radiusCos > 0 ? Math.sqrt(Math.max(0, 1 - radiusCos * radiusCos)) + 1e-12 : Infinity,
+    direct,
+  };
+}
+
+function regionGeometry(map: WorldMap, region: Region): RegionGeometry {
+  const cache = geometryFor(map).regions;
+  let geometry = cache.get(region);
+  if (geometry) return geometry;
+  geometry = {
+    polygon: polygonGeometry(region.boundary),
+    ...sphericalBounds(vectorsFor(map, region), vector(region.center), true),
+  };
+  cache.set(region, geometry);
+  return geometry;
 }
 
 function polygonGeometry(points: readonly MapPoint[]): Polygon {
@@ -214,18 +256,40 @@ export function createCartography(
   projection.precision(height / 2000);
   const path = geoPath(projection).digits(6);
   let viewCenter = vector(rotation);
+  let east: Vector = [-Math.sin(rotation[0] * RADIANS), Math.cos(rotation[0] * RADIANS), 0];
+  let north: Vector = [
+    -Math.sin(rotation[1] * RADIANS) * Math.cos(rotation[0] * RADIANS),
+    -Math.sin(rotation[1] * RADIANS) * Math.sin(rotation[0] * RADIANS),
+    Math.cos(rotation[1] * RADIANS),
+  ];
   let revision = 0;
   const paths = new WeakMap<Polygon | LineString, { revision: number; d: string }>();
   const continuousPaths = new WeakMap<LineString, { revision: number; label: string; end: string }>();
   const points = new WeakMap<MapPoint, { revision: number; at: MapPoint | null }>();
-  const project = (geometry: Polygon | LineString): string => {
+  const project = (geometry: Polygon | LineString, bounds?: SphericalBounds): string => {
     let result = paths.get(geometry);
     if (!result) {
       result = { revision: -1, d: "" };
       paths.set(geometry, result);
     }
     if (result.revision !== revision) {
-      result.d = path(geometry) ?? "";
+      const facing = globe && bounds ? dot(viewCenter, bounds.center) : 0;
+      if (globe && bounds && facing < -bounds.limb) {
+        result.d = "";
+      } else if (globe && bounds?.direct && facing > bounds.limb) {
+        // Match geoPath's six-digit serialization without the spherical
+        // clipper or trigonometry at every vertex. Larger and limb-crossing
+        // edges retain d3's exact clipping and adaptive great-circle sampling.
+        let d = "";
+        for (const vertex of bounds.vertices) {
+          const x = Math.round((width / 2 + height / 2 * dot(east, vertex)) * 1e6) / 1e6;
+          const y = Math.round((height / 2 - height / 2 * dot(north, vertex)) * 1e6) / 1e6;
+          d += `${d ? "L" : "M"}${x},${y}`;
+        }
+        result.d = d && geometry.type === "Polygon" ? `${d}Z` : d;
+      } else {
+        result.d = path(geometry) ?? "";
+      }
       result.revision = revision;
     }
     return result.d;
@@ -279,6 +343,11 @@ export function createCartography(
       if (!globe || (next[0] === rotation[0] && next[1] === rotation[1])) return;
       rotation = next;
       viewCenter = vector(next);
+      const longitude = next[0] * RADIANS, latitude = next[1] * RADIANS;
+      const sinLongitude = Math.sin(longitude), cosLongitude = Math.cos(longitude);
+      const sinLatitude = Math.sin(latitude), cosLatitude = Math.cos(latitude);
+      east = [-sinLongitude, cosLongitude, 0];
+      north = [-sinLatitude * cosLongitude, -sinLatitude * sinLongitude, cosLatitude];
       projection.rotate([-next[0], -next[1]]);
       revision++;
     },
@@ -296,23 +365,29 @@ export function createCartography(
           geometry.points.set(site, source);
         }
         // Calling a d3 projection directly does not run its spherical clipper.
-        projected.at = globe && dot(viewCenter, source.normal) < -1e-12 ? null : projection(source.location);
+        projected.at = !globe ? projection(source.location) : dot(viewCenter, source.normal) < -1e-12 ? null : [
+          width / 2 + height / 2 * dot(east, source.normal),
+          height / 2 - height / 2 * dot(north, source.normal),
+        ];
         projected.revision = revision;
       }
       return projected.at;
     },
     region(region) {
-      let polygon = geometry.regions.get(region);
-      if (!polygon) {
-        // Canonical clockwise winding also encloses small seam/pole cells;
-        // chart-coordinate sorting would reverse or tear their interiors.
-        polygon = polygonGeometry(region.boundary);
-        geometry.regions.set(region, polygon);
-      }
-      return project(polygon);
+      const source = regionGeometry(map, region);
+      return project(source.polygon, source);
     },
     line(points) {
-      return points.length < 2 ? "" : project(lineGeometry(map, points));
+      if (points.length < 2) return "";
+      const line = lineGeometry(map, points);
+      if (!globe) return project(line);
+      let bounds = geometry.lineBounds.get(line);
+      if (!bounds) {
+        const vertices = line.coordinates.map((point) => vector(point as MapPoint));
+        bounds = sphericalBounds(vertices, vertices[0], false);
+        geometry.lineBounds.set(line, bounds);
+      }
+      return project(line, bounds);
     },
     area(points) {
       if (points.length < 3) return "";
@@ -372,18 +447,56 @@ export function sharedBorder(map: WorldMap, a: number, b: number): MapPoint[] {
   return edge;
 }
 
-/** Cached source-chart course, ending at the actual confluence or coastline. */
+/** Samples per course leg when a river is smoothed through its cell centres. */
+const RIVER_SMOOTHING = 4;
+
+/// A centripetal Catmull-Rom curve through the course's unit vectors, so a
+/// river bends through each land it crosses instead of turning at its centre.
+/// Done on the sphere, it needs no seam or pole cases; the source and the
+/// mouth stay exactly where the engine put them.
+function smoothCourse(map: WorldMap, points: MapPoint[]): MapPoint[] {
+  if (points.length < 3) return points;
+  const knots = points.map((point) => vector(geographicPoint(map, point)));
+  const out: MapPoint[] = [points[0]];
+  const at = (i: number) => knots[Math.min(Math.max(i, 0), knots.length - 1)];
+  const chord = (a: Vector, b: Vector) => Math.sqrt(Math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2));
+  for (let i = 0; i + 1 < knots.length; i++) {
+    const p0 = at(i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);
+    const t0 = 0, t1 = t0 + Math.max(chord(p0, p1), 1e-9), t2 = t1 + Math.max(chord(p1, p2), 1e-9), t3 = t2 + Math.max(chord(p2, p3), 1e-9);
+    for (let k = 1; k <= RIVER_SMOOTHING; k++) {
+      if (k === RIVER_SMOOTHING) { out.push(points[i + 1]); break; }
+      const t = t1 + (t2 - t1) * k / RIVER_SMOOTHING;
+      const mix = (a: Vector, b: Vector, ta: number, tb: number): Vector => {
+        const wb = (t - ta) / (tb - ta), wa = 1 - wb;
+        return [a[0] * wa + b[0] * wb, a[1] * wa + b[1] * wb, a[2] * wa + b[2] * wb];
+      };
+      const a1 = mix(p0, p1, t0, t1), a2 = mix(p1, p2, t1, t2), a3 = mix(p2, p3, t2, t3);
+      const b1 = mix(a1, a2, t0, t2), b2 = mix(a2, a3, t1, t3);
+      const c = mix(b1, b2, t1, t2);
+      const length = Math.hypot(c[0], c[1], c[2]);
+      out.push(chartPoint(map, geographic([c[0] / length, c[1] / length, c[2] / length])));
+    }
+  }
+  return out;
+}
+
+/** Cached source-chart course, smoothed through the lands it crosses. V4 and
+ * later rivers follow the engine's channel through shared borders, ending at
+ * their confluence, lake, or coast; legacy courses run centre to centre and
+ * are extended to the coast here. */
 export function riverPoints(map: WorldMap, river: River): MapPoint[] {
   const cache = geometryFor(map).rivers;
   const cached = cache.get(river);
   if (cached) return cached;
-  const points = river.course.map((id) => chartPoint(map, map.regions[id].center));
-  if (river.course.length) {
+  const points = river.channel.length >= 2
+    ? river.channel.map((point) => chartPoint(map, geographic(point)))
+    : river.course.map((id) => chartPoint(map, map.regions[id].center));
+  if (river.channel.length < 2 && river.course.length) {
     if (river.joinAt !== null) {
       points.push(chartPoint(map, map.regions[river.joinAt].center));
-    } else {
+    } else if (river.course.at(-1) !== river.mouth) {
       const edge = sharedBorder(map, river.course.at(-1)!, river.mouth);
-      if (edge.length < 2) throw new Error(`River ${river.id} does not end at an adjacent coastal region`);
+      if (edge.length < 2) { cache.set(river, points); return points; }
       const shore = edge.map((point) => geographicPoint(map, point));
       const lengths = shore.slice(1).map((point, i) => geoDistance(shore[i], point));
       let remaining = lengths.reduce((length, segment) => length + segment, 0) / 2;
@@ -397,6 +510,7 @@ export function riverPoints(map: WorldMap, river: River): MapPoint[] {
       }
     }
   }
-  cache.set(river, points);
-  return points;
+  const course = smoothCourse(map, points);
+  cache.set(river, course);
+  return course;
 }

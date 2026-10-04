@@ -46,6 +46,8 @@ Read further when the task touches it:
   the workshop (`Stage`: `MapView` with its layers, label policy by
   zoom, and the `lens` that draws the chart as one people knew it; the
   world's cartouche and menu top-left, Find and the layers top-right,
+  the gazetteer (`gazetteer.ts` arranges the facade's native names and
+  exonyms; `MapInspector` shows one hover or pinned place card);
   the chronicle's latest line as a caption over the foot, and a time bar
   whose primary verb runs to a year in chunked frames, with play and
   step in a study drawer, and whose `Timeline` clusters turning points

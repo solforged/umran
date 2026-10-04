@@ -43,11 +43,21 @@ to the chart for close reading. Both views share lands, rivers, journeys,
 cards, and founding placement. The engine measures spherical areas and
 great-circle distances, independently of the drawing. The default world
 has 2,562 regions and a radius of 1,600 km; the vast world is Earth-sized.
+New worlds use `continental-v5`: three to six continents of very unequal
+size, with gulfs, peninsulas, straits, island arcs, mountain belts along
+convergent plate margins, and inland lakes. Land covers about 30% of the
+sphere. Older worlds keep the geography they were drawn with. The globe
+turns at frame rate on every world size.
+
+Hover or focus a land, river, lake, city, or marker to read its gazetteer:
+what its holders call it, what other languages call it, each with its
+pronunciation and meaning, and a few facts. Click to keep the place open,
+then follow Open to its card.
 
 Worlds saved before engine revision 33 keep their original data and open
 recovery. Their old flat-map land IDs cannot be replayed on the new sphere.
 
-![The workbench after 4,000 years: the inked globe turned toward the sample's peoples, beside the world's card, with its chronicle caption and timeline below](docs/images/stage.jpg)
+![The workbench after 4,000 years: the inked globe turned toward the sample's peoples, a city's gazetteer card open over it, beside the world's card, with its chronicle caption and timeline below](docs/images/stage.jpg)
 
 ## What happens in a world
 
@@ -161,7 +171,8 @@ also keep their search and selected word when returning from a word's history.
 On a small screen, turn between **Chart** and **Reading** for a full page of each;
 the [atlas index](docs/images/atlas-mobile.jpg) stays within reach in either view.
 
-The **chart** shows rivers in the ink of the coast. Failed flows fade to a
+The **chart** shows rivers in the ink of the coast, bending through the
+lands they cross. Failed flows fade to a
 dashed line. Lakes are sea-filled insets on the chart and globe; their
 extent is not modelled. Close in to read local land, river, and lake names,
 or open their cards for names across languages, shore lands, and outlets.
@@ -180,7 +191,7 @@ quiet. The system's reduced-motion setting makes all these changes immediate.
 
 | | |
 |---|---|
-| ![Founding: an old chart beside the book of accounts, one people's six stages open and the rest one line each, with the open people's reach drawn on the chart](docs/images/setup.png) | ![Words compared: a table of basic words across related languages, shaded by shared root](docs/images/cognates.png) |
+| ![Founding: the chart of a new world with its continents, islands, and rivers, a chosen homeland outlined, and the book beside it reading that land and offering to found a people there](docs/images/setup.png) | ![Words compared: a table of basic words across related languages, shaded by shared root](docs/images/cognates.png) |
 | **Founding a world.** Each people is one line in the book of accounts until opened: homeland, livelihood, temper, speech, grammar, and identity. Who can meet whom is drawn on the chart from the engine's travel rules. Name the world, or let it take the name of its continent. Sounds can be tuned on a full sound chart; the grammar sketch shows a sentence and possession with their sounds and glosses. | **Words compared.** Basic words across the living languages, shaded alike when they come from one root (cognates). |
 | ![Language families branching through four thousand years, including ended and classical languages](docs/images/family.png) | ![A sound law's card: the peoples who have it and where it spread, with the isogloss drawn on the map](docs/images/law.png) |
 | **Family trees.** The world's languages branch as peoples part; ended languages and classical forms keep their places in the record. Each language also has a card for its sounds, grammar, and word-building patterns. | **A sound law.** Who has a change, whether it arose among them or spread from a neighbour, and on the map, where it stopped. |

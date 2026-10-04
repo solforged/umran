@@ -7,6 +7,7 @@ import { worldName } from "../shelf";
 import { Designer, randomSeed, type Founding as FoundingDesign } from "./Designer";
 import { MapView } from "./MapView";
 import { useMapProjection } from "./MapProjectionSwitch";
+import { MapInspector, type MapInspection } from "./MapInspector";
 import { Modal } from "./Modal";
 import { decodeNaming, encodeNaming, namingChoices } from "./NamingSelect";
 import { Phrase } from "./Phrase";
@@ -77,6 +78,8 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
   const [founders, setFounders] = useState<Founder[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
   const [inspected, setInspected] = useState<number | null>(null);
+  const mapContainer = useRef<HTMLElement>(null);
+  const [inspection, setInspection] = useState<MapInspection | null>(null);
   const [focus, setFocus] = useState<number | null>(null);
   const [title, setTitle] = useState<string | null>(null);
   const [author, setAuthor] = useState(() => {
@@ -194,6 +197,8 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
   const occupied = !!land && !!overview?.communities.some((community) => community.lands.includes(land.id));
   const defaultTitle = overview?.communities.length ? worldName(overview) : null;
   const chartReady = !!map && !!overview;
+  const riverNames = useMemo(() => map && engine.current ? map.rivers.map((river) => engine.current!.river(0, river.id)) : [], [built]);
+  const lakeNames = useMemo(() => map && engine.current ? map.lakes.map((lake) => engine.current!.lake(0, lake.id)) : [], [built]);
   const landName = (region: number) => overview?.places.find((place) => place.region === region)?.names.at(-1)?.spelled ?? "unnamed land";
   const available = MOST_PEOPLES - founders.length;
   const count = Math.min(groupCount, available);
@@ -274,16 +279,20 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
           <span className="brand-name"><span>ʿUmrān</span></span>
         </button>
       </header>
-      <section className="stage-map" aria-label={projection === "globe" ? "Globe" : "Chart"} aria-busy={!currentBuild}>
+      <section ref={mapContainer} className="stage-map" aria-label={projection === "globe" ? "Globe" : "Chart"} aria-busy={!currentBuild}>
         {chartReady ? <MapView key={`${worldSeed}:${size}`} map={map} overview={overview} generation={0} tint={{ kind: "peoples" }}
           projection={projection} onProjection={setProjection}
+          riverNames={riverNames}
+          lakeNames={lakeNames}
           reach={people && built ? { preview: built.preview, people: people.id } : undefined}
           chosen={new Set(people ? [people.id] : [])}
           lands={new Set(inspected === null ? [] : [inspected])}
           focus={focus === null ? null : map.regions[focus]?.site ?? null}
           zoomable
           onPeople={(id) => { if (currentBuild && founders[id]) choose(founders[id].key); }}
+          onInspect={(feature, at) => setInspection(feature ? { feature, at } : null)}
           onLand={(region) => { if (currentBuild && map.regions[region].terrain !== "sea") setInspected(region); }} /> : null}
+        {chartReady ? <MapInspector container={mapContainer} inspection={inspection} map={map} overview={overview} generation={0} selectedVariety={people?.variety} riverNames={riverNames} lakeNames={lakeNames} pinnable={false} /> : null}
         <div className="cartouche founding-cartouche">
           <input className="founding-title" aria-label="World name" value={title ?? defaultTitle ?? ""}
             placeholder="An unnamed world" onChange={(event) => setTitle(event.target.value)} />

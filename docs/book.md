@@ -188,6 +188,9 @@ The chart, the cards, the chronicle, and the time bar. What changes:
   layer is families; land names when zoomed in; state outlines only on
   that layer or when a state card is open. Eight peoples is where
   cartography starts to matter.
+- Hover or focus a place on either map to read its gazetteer: native names,
+  other languages' names, pronunciations, and the land beneath a city.
+  Click to keep the place card open, then Open to read its full card.
 - Reading as a people: *as the Kakimi knew it* is a lens on the chart
   (their known lands, their names for them, their neighbours as they
   called them), chosen from a people's card. That is the explorer frame,

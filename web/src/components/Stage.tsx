@@ -15,6 +15,7 @@ import type { DictionaryView } from "./Dictionary";
 import { Told } from "./Told";
 import { MapView, type MapMotionReading, type Tint } from "./MapView";
 import { useMapProjection } from "./MapProjectionSwitch";
+import { MapInspector, type MapInspection } from "./MapInspector";
 import { EntryAnnotations, Pedia, type Focus } from "./Pedia";
 import { emphasizeInk, useLiftedValue } from "../motion";
 import { LightChoice } from "./LightSwitch";
@@ -157,6 +158,8 @@ export function Stage({
   const atPresent = overview.atTip;
 
   const [projection, setProjection] = useMapProjection();
+  const mapContainer = useRef<HTMLElement>(null);
+  const [inspection, setInspection] = useState<MapInspection | null>(null);
   // The encyclopedia's trail of cards; the last is the one open.
   const [trail, setTrail] = useState<Destination[]>([{ subject: initialFocus ?? { kind: "world" }, reading: { telling: overview.telling, point: overview.point } }]);
   const focus = trail.at(-1)!.subject;
@@ -565,7 +568,7 @@ export function Stage({
       onKeyDownCapture={(event) => { if (event.key === "Enter" || event.key === " ") keyboardActivation.current = true; }}>
       <div className="stage-notices">{notices}{runError ? <p className="notice error" role="alert">{runError}</p> : null}{followed ? <p className="following-note">Following {followed.label}. Study pauses when this subject appears in the chronicle. <button type="button" className="link" onClick={() => setFollowed(null)}>Stop following</button></p> : null}</div>
 
-      <section className="stage-map" aria-label={projection === "globe" ? "Globe" : "Chart"}>
+      <section ref={mapContainer} className="stage-map" aria-label={projection === "globe" ? "Globe" : "Chart"}>
         <MapView
           map={map}
           projection={projection}
@@ -598,7 +601,13 @@ export function Stage({
           onCraft={(id) => go({ kind: "craft", id })}
           onRiver={settlement ? undefined : (id) => go({ kind: "river", id })}
           onLake={settlement ? undefined : (id) => go({ kind: "lake", id })}
+          onCity={(city) => { const place = overview.cities.find((c) => c.id === city); if (place) go({ kind: "state", id: place.state }); }}
+          onInspect={(feature, at) => setInspection(feature ? { feature, at } : null)}
         />
+        <MapInspector container={mapContainer} inspection={inspection} map={map}
+          overview={settlement ? settlementReading : overview} generation={chartGeneration}
+          selectedVariety={knownBy ?? overview.communities[selected]?.variety} riverNames={riverNames} lakeNames={lakeNames} climate={climate}
+          known={settlement ? null : known} onOpen={settlement ? undefined : go} />
         <div className="cartouche world-cartouche">
           <Popover label="This world" role="menu" side="bottom" align="start"
             trigger={(props) => (

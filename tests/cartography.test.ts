@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { geoCircle, geoOrthographic, geoPath } from "d3-geo";
 import {
   chartPoint,
   createCartography,
@@ -228,6 +229,60 @@ describe("globe visibility and rotation", () => {
     expect(bounds(meridian)).toEqual([90, 0, 90, 180]);
     expect(pathLength(meridian)).toBeCloseTo(180, 5);
   });
+
+  test("cached caps and direct vertices match d3 across the limb, seam and poles", () => {
+    const cells = [-179, -90, -1, 0, 89, 179].flatMap((longitude) =>
+      [-89, -45, 0, 45, 89].flatMap((latitude) =>
+        [0.1, 2, 25].map((radius) => {
+          const center: MapPoint = [longitude, latitude];
+          const boundary = geoCircle().center(center).radius(radius).precision(60)().coordinates[0].slice(0, -1) as MapPoint[];
+          return { center, boundary };
+        })));
+    const map = world(cells);
+    const globe = createCartography(map, "globe");
+    for (const longitude of [-180, -90, -0.1, 0, 89.9, 180]) {
+      for (const latitude of [-90, -45, 0, 45, 90]) {
+        const rotation: MapPoint = [longitude, latitude];
+        globe.rotate(rotation);
+        const projection = geoOrthographic().scale(map.height / 2).translate([map.height / 2, map.height / 2])
+          .rotate([-longitude, -latitude]).clipAngle(90).precision(map.height / 2000);
+        const path = geoPath(projection).digits(6);
+        for (const region of map.regions) {
+          const expected = path({ type: "Polygon", coordinates: [[...region.boundary, region.boundary[0]]] }) ?? "";
+          expect(globe.region(region)).toBe(expected);
+          // A second read shares the same projected result, including empty cells.
+          expect(globe.region(region)).toBe(expected);
+          const point = globe.point(region.site);
+          if (point) {
+            const reference = projection(region.center)!;
+            expect(point[0]).toBeCloseTo(reference[0], 10);
+            expect(point[1]).toBeCloseTo(reference[1], 10);
+          }
+        }
+      }
+    }
+  });
+
+  test("cached coastal and river caps preserve clipped and resampled d3 lines", () => {
+    const map = world();
+    const globe = createCartography(map, "globe");
+    const courses: MapPoint[][] = [
+      [[-1, 0], [1, 1]], [[178, 10], [-179, 11]], [[90, -2], [90, 2]],
+      [[88, 0], [89.9, 0]], [[-40, 0], [40, 0]], [[0, -80], [0, 0], [0, 80]],
+      [[-120, -30], [0, 60], [120, -30]],
+    ];
+    const lines = courses.map((course) => course.map((point) => chartPoint(map, point)));
+    for (const rotation of [[0, 0], [0, 90], [0, -90], [180, 30], [89.9, 0], [-90, 20], [0, 0]] as MapPoint[]) {
+      globe.rotate(rotation);
+      const path = geoPath(geoOrthographic().scale(map.height / 2).translate([map.height / 2, map.height / 2])
+        .rotate([-rotation[0], -rotation[1]]).clipAngle(90).precision(map.height / 2000)).digits(6);
+      for (const points of lines) {
+        const expected = path({ type: "LineString", coordinates: points.map((point) => geographicPoint(map, point)) }) ?? "";
+        expect(globe.line(points)).toBe(expected);
+        expect(globe.line(points)).toBe(expected);
+      }
+    }
+  });
 });
 
 describe("continuous readable label paths", () => {
@@ -320,6 +375,25 @@ describe("canonical coastal borders and river courses", () => {
     ]);
     map.rivers = [tributary, parent];
     expect(riverPoints(map, tributary)).toEqual([[180, 90], [183, 86]]);
+  });
+
+  test("a closed-basin river ends in its terminal lake cell without seeking a coastline", () => {
+    const river: River = { id: 0, course: [0, 1, 2], channel: [], mouth: 2, catchment: [0, 1, 2], joins: null, joinAt: null, lengthKm: 500 };
+    const map = world([
+      { center: [-10, 0], neighbours: [1] },
+      { center: [0, 5], neighbours: [0, 2] },
+      { center: [10, 0], neighbours: [1] },
+    ]);
+    map.rivers = [river];
+    map.lakes = [{ id: 0, regions: [1, 2], outlet: null }];
+    const points = riverPoints(map, river);
+    expect(points).toHaveLength(9);
+    expect(points[0]).toEqual(chartPoint(map, map.regions[0].center));
+    expect(points.at(-1)).toEqual(chartPoint(map, map.regions[2].center));
+    expect(riverPoints(map, river)).toBe(points);
+    for (const projection of ["chart", "globe"] as const) {
+      expect(segments(createCartography(map, projection).line(points))).toHaveLength(1);
+    }
   });
 
   test("a sea outlet ends at the actual shared coast, not the sea centre or centre-to-centre midpoint", () => {

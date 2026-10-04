@@ -7,6 +7,7 @@ import { YEARS } from "../model";
 import { hue, TERRAIN_NAME } from "../lore";
 import { chartPoint, createCartography, geographicPoint, lakeOutline, riverPoints, sharedBorder, type Cartography, type GlobeRotation, type MapPoint, type MapProjection } from "../cartography";
 import { MapProjectionSwitch } from "./MapProjectionSwitch";
+import type { MapFeature } from "../gazetteer";
 
 export interface MapMotionReading {
   overview: Overview;
@@ -312,6 +313,8 @@ export function MapView({
   onCraft,
   onRiver,
   onLake,
+  onCity,
+  onInspect,
 }: {
   map: WorldMap;
   overview: Overview;
@@ -355,6 +358,8 @@ export function MapView({
   onCraft?: (craft: Craft) => void;
   onLake?: (lake: number) => void;
   onRiver?: (id: number) => void;
+  onCity?: (city: number) => void;
+  onInspect?: (feature: MapFeature | null, at: [number, number]) => void;
 }) {
   const climateZones = useMemo(() => new Map(climate?.zones.map((zone) => [zone.id, zone])), [climate]);
   const climateRivers = useMemo(() => new Map(climate?.rivers.map((river) => [river.id, river])), [climate]);
@@ -383,13 +388,18 @@ export function MapView({
   const root = useRef<HTMLDivElement>(null);
   const scaleText = useRef<HTMLSpanElement>(null);
   const scaleRule = useRef<HTMLSpanElement>(null);
+  const zoomIn = useRef<HTMLButtonElement>(null);
+  const zoomOut = useRef<HTMLButtonElement>(null);
   const labelLayers = useRef<SVGElement[]>([]);
+  const stateBorders = useRef<SVGGElement>(null);
   const labelAnchors = useRef<SVGElement[]>([]);
   const lettering = useRef<SVGTextElement[]>([]);
   const paths = useRef(new Map<SVGPathElement, { draw: PathDrawer; d: string; hide: HTMLElement | SVGElement | null; revision: number }>());
   const drawnPaths = useMemo(() => new WeakMap<PathDrawer, { revision: number; d: string }>(), [cartography]);
   const drawRevision = useRef(0);
-  const projectedAnchors = useRef(new Map<SVGElement, { site: MapPoint; scale?: number; visible: boolean; revision: number }>());
+  const projectedAnchors = useRef(new Map<SVGElement, {
+    site: MapPoint; translation?: SVGTransform; visible: boolean; revision: number;
+  }>());
   // The same semantic zoom policy as workbench.css, classified once per
   // render rather than asking the DOM for visibility on every globe turn.
   const projectionLayers = useRef<{ mask: number; paths: typeof paths.current; anchors: typeof projectedAnchors.current; labels: SVGElement[] }[]>([]);
@@ -429,7 +439,10 @@ export function MapView({
     return (node: SVGElement | null) => {
       if (attached) projectedAnchors.current.delete(attached);
       attached = node;
-      if (node) projectedAnchors.current.set(node, { site, scale, visible: node.style.display !== "none", revision: -1 });
+      if (node) projectedAnchors.current.set(node, {
+        site, visible: node.style.display !== "none", revision: -1,
+        translation: scale === undefined ? undefined : (node as SVGGraphicsElement).transform.baseVal.getItem(0),
+      });
     };
   };
   // Hidden hemisphere anchors still have DOM and handlers, so they can appear
@@ -448,11 +461,11 @@ export function MapView({
     const element = svg.current, chart = root.current;
     if (!element || !chart) return;
     const value = view.current, ratio = value[2] / width;
+    // Both camera dimensions scale together. Read the old screen scale before
+    // changing viewBox, then derive the new one without a second SVG layout.
+    const pixelsPerUnit = (element.getScreenCTM()?.a ?? 1) * element.viewBox.baseVal.width / value[2];
     const nextBox = value.join(" ");
     if (element.getAttribute("viewBox") !== nextBox) element.setAttribute("viewBox", nextBox);
-    // Read the scale before moving paths; measuring afterward forces layout
-    // of the whole changed globe on every turn.
-    const pixelsPerUnit = element.getScreenCTM()?.a ?? 1;
     const visibleMask = ratio > 0.6 ? 1 : ratio < 0.25 ? 4 : 2;
     if (pendingTurn.current) {
       cartography.rotate(turning.current);
@@ -490,8 +503,8 @@ export function MapView({
         const visible = point !== null;
         if (visible !== binding.visible) { node.style.display = visible ? "" : "none"; binding.visible = visible; }
         if (!point) return;
-        if (binding.scale !== undefined) {
-          node.setAttribute("transform", `translate(${point[0]} ${point[1]}) scale(${binding.scale})`);
+        if (binding.translation) {
+          binding.translation.setTranslate(point[0], point[1]);
         } else {
           node.dataset.labelX = String(point[0]);
           node.dataset.labelY = String(point[1]);
@@ -499,9 +512,9 @@ export function MapView({
       });
     }
     const label = Math.max(Math.sqrt(ratio), 14 / (pixelsPerUnit * 0.24));
-    element.style.setProperty("--label", String(label));
     for (const layer of labelLayers.current) {
       layer.style.setProperty("--label", String(label));
+      layer.style.setProperty("--small-label-min", `${10 / pixelsPerUnit}px`);
       if (layer.classList.contains("peoples")) layer.style.setProperty("--people-label-min", `${14 / pixelsPerUnit}px`);
     }
     // Camera frames need only relayout lettering, not rerender mesh geometry.
@@ -533,8 +546,7 @@ export function MapView({
       }
     }
     const kmPerPixel = (projection === "globe" ? 2 * map.radiusKm / height : map.kmPerUnit) / pixelsPerUnit;
-    chart.style.setProperty("--small-label-min", `${10 / pixelsPerUnit}px`);
-    chart.style.setProperty("--state-weight", String(1 + 2 * Math.min(1, (1 - ratio) / 0.6)));
+    stateBorders.current?.style.setProperty("--state-weight", String(1 + 2 * Math.min(1, (1 - ratio) / 0.6)));
     if (!moving.current) {
     const occupied: DOMRect[] = [];
     const named = new Set<string>();
@@ -605,8 +617,7 @@ export function MapView({
       ? `Circumference ${Math.round(2 * Math.PI * map.radiusKm).toLocaleString()} km`
       : `${km.toLocaleString()} km at the equator`;
     if (scaleText.current && scaleText.current.textContent !== caption) scaleText.current.textContent = caption;
-    const closer = chart.querySelector<HTMLButtonElement>('[aria-label="Zoom in"]');
-    const farther = chart.querySelector<HTMLButtonElement>('[aria-label="Zoom out"]');
+    const closer = zoomIn.current, farther = zoomOut.current;
     if (closer) closer.disabled = ratio <= closest + 0.0001;
     if (farther) farther.disabled = ratio >= 0.9999;
   };
@@ -1065,6 +1076,37 @@ export function MapView({
   function hidden(region: number): boolean {
     return known !== null && !known.has(region);
   }
+  const inspectionFrame = useRef(0);
+  const inspectionCallback = useRef(onInspect);
+  inspectionCallback.current = onInspect;
+  useEffect(() => () => cancelAnimationFrame(inspectionFrame.current), []);
+  const inspectEvents = (feature: MapFeature) => ({
+    "data-map-feature": JSON.stringify(feature),
+    onPointerEnter: (event: PointerEvent<SVGElement>) => {
+      cancelAnimationFrame(inspectionFrame.current); inspectionFrame.current = 0;
+      if (!drag.current?.moved && !moving.current) inspectionCallback.current?.(feature, [event.clientX, event.clientY]);
+    },
+    onPointerMove: (event: PointerEvent<SVGElement>) => {
+      if (inspectionFrame.current || drag.current?.moved || moving.current) return;
+      const at: [number, number] = [event.clientX, event.clientY];
+      inspectionFrame.current = requestAnimationFrame(() => {
+        inspectionFrame.current = 0;
+        if (!drag.current?.moved && !moving.current) inspectionCallback.current?.(feature, at);
+      });
+    },
+    onPointerLeave: (event: PointerEvent<SVGElement>) => {
+      cancelAnimationFrame(inspectionFrame.current); inspectionFrame.current = 0;
+      inspectionCallback.current?.(null, [event.clientX, event.clientY]);
+    },
+    onFocus: (event: { currentTarget: SVGElement }) => {
+      const box = event.currentTarget.getBoundingClientRect();
+      inspectionCallback.current?.(feature, [box.x + box.width / 2, box.y + box.height / 2]);
+    },
+    onBlur: (event: { currentTarget: SVGElement }) => {
+      const box = event.currentTarget.getBoundingClientRect();
+      inspectionCallback.current?.(null, [box.x + box.width / 2, box.y + box.height / 2]);
+    },
+  });
 
 
   const possible = new Set(settlement?.options.filter((o) => o.reason === null).map((o) => o.region));
@@ -1075,8 +1117,9 @@ export function MapView({
     const veiled = !sea && hidden(r.id);
     const colour = veiled ? null : colourOf(r.id);
     return (
-      <g key={r.id} data-chart-region={r.id} onClick={sea ? undefined : () => dragged() || onLand(r.id)}>
-        <title>{sea ? "Sea" : veiled ? "Unknown land" : (nameOf(r.id) ?? `Unnamed ${TERRAIN_NAME[r.terrain].toLowerCase()}`)}</title>
+      <g key={r.id} data-chart-region={r.id} onClick={sea ? undefined : () => dragged() || onLand(r.id)}
+        {...inspectEvents({ kind: "land", region: r.id })}
+        aria-label={sea ? "Sea" : veiled ? "Unknown land" : (nameOf(r.id) ?? `Unnamed ${TERRAIN_NAME[r.terrain].toLowerCase()}`)}>
         <path
           data-region={r.id}
           className={`land terrain-${r.terrain}${sea ? "" : " open"}${lands.has(r.id) ? " shown" : ""}${reader?.region === r.id ? " lens-heart" : ""}`}
@@ -1188,7 +1231,6 @@ export function MapView({
           }
         }}
         aria-label={`${projection === "globe" ? "Globe" : "Chart"} of the world in year ${generation * YEARS}`}
-        style={{ "--label": label } as CSSProperties}
         onPointerDown={down}
         onPointerMove={move}
         onPointerUp={up}
@@ -1222,11 +1264,11 @@ export function MapView({
             const name = namedRiver(river);
             const failed = climateRivers.get(river.id)?.flowing === false;
             return <g key={river.id} className={`chart-river river-tier-${tier}${failed ? " failed" : ""}`}
-              role={onRiver ? "button" : undefined} tabIndex={onRiver ? 0 : undefined}
+              role={onRiver || onInspect ? "button" : undefined} tabIndex={onRiver || onInspect ? 0 : undefined}
               aria-label={name?.spelled ?? "Unnamed river"}
+              {...inspectEvents({ kind: "river", river: river.id, region: river.mouth })}
               onClick={() => dragged() || onRiver?.(river.id)}
               onKeyDown={(e) => { if (onRiver && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onRiver(river.id); } }}>
-              <title>{`${name?.spelled ?? "Unnamed river"}${failed ? ", flow has failed" : ""}`}</title>
               <path className="river-ink" {...bindPath((view) => view.line(points), "parent")} />
               <path className="river-hit" {...bindPath((view) => view.line(points))} />
             </g>;
@@ -1237,11 +1279,11 @@ export function MapView({
             if (lake.regions.every(hidden)) return null;
             const name = namedLake(lake);
             return <g key={lake.id} className="chart-lake" data-lake={lake.id}
-              role={onLake ? "button" : undefined} tabIndex={onLake ? 0 : undefined}
+              role={onLake || onInspect ? "button" : undefined} tabIndex={onLake || onInspect ? 0 : undefined}
               aria-label={name?.spelled ?? "Unnamed lake"}
+              {...inspectEvents({ kind: "lake", lake: lake.id, region: lake.regions.find((region) => !hidden(region))! })}
               onClick={() => dragged() || onLake?.(lake.id)}
               onKeyDown={(e) => { if (onLake && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onLake(lake.id); } }}>
-              <title>{name?.spelled ?? "Unnamed lake"}</title>
               <path className="lake-shore" {...bindPath((view) => view.area(shore), "parent")} />
               <path className="lake-ripple" {...bindPath((view) => view.line(ripple))} pointerEvents="none" />
             </g>;
@@ -1292,8 +1334,10 @@ export function MapView({
                 y={y}
                 className="continent-name"
                 data-label-kind="continent" data-label-priority={0}
-                role={onContinent ? "button" : undefined}
-                tabIndex={onContinent ? 0 : undefined}
+                role={onContinent || onInspect ? "button" : undefined}
+                tabIndex={onContinent || onInspect ? 0 : undefined}
+                aria-label={`${c.name.name}, “${c.name.meaning}”`}
+                {...inspectEvents({ kind: "continent", landmass: c.landmass, region: mass.anchor })}
                 onClick={() => dragged() || onContinent?.(c.landmass)}
                 onKeyDown={(e) => {
                   if (onContinent && (e.key === "Enter" || e.key === " ")) {
@@ -1302,7 +1346,6 @@ export function MapView({
                   }
                 }}
               >
-                <title>{`${c.name.name}, “${c.name.meaning}”`}</title>
                 {c.name.name}
               </text>
             );
@@ -1313,7 +1356,7 @@ export function MapView({
             <path key={`${a}-${b}`} className="isogloss" {...bindPath((view) => view.line(ends))} />
           ))}
         </g>
-        <g className="state-borders" aria-hidden="true">
+        <g className="state-borders" ref={stateBorders} aria-hidden="true">
           {realms.map(({ state, edges }) => (
             <path key={state.id} data-state={state.id} {...bindPath((view) => edges.map((ends) => view.line(ends)).join(""))} style={{ stroke: hue(state.id) }} />
           ))}
@@ -1361,6 +1404,7 @@ export function MapView({
               data-lake={lake.id}
               data-label-x={x} data-label-y={y} data-label-dy={0.3} data-label-kind="lake" data-label-priority={1}
               className={`hand-${overview.varieties[name.variety].family % 5}`}
+              {...inspectEvents({ kind: "lake", lake: lake.id, region: lake.regions.find((region) => !hidden(region))! })}
               onClick={() => dragged() || onLake?.(lake.id)}>{name.spelled}</text>;
           })}
         </g> : null}
@@ -1448,6 +1492,7 @@ export function MapView({
                 role="button"
                 tabIndex={0}
                 aria-label={tint.kind === "words" ? `${localName}: ${text}` : localName}
+                {...inspectEvents({ kind: "people", community: c.id, region: c.region })}
                 onClick={() => dragged() || onPeople(c.id)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
@@ -1456,11 +1501,6 @@ export function MapView({
                   }
                 }}
               >
-                <title>
-                  {tint.kind === "words" && word
-                    ? `${localName}: ${word.spelled} /${word.ipa}/`
-                    : `${localName}, ${Math.round(c.size).toLocaleString()} souls`}
-                </title>
                 <circle className="people-dot" cx={0} cy={0} r={0.06 * label}
                   style={{ fill: tint.kind === "words" && word ? hue(word.group) : hue(family(c)) }} />
                 <text x={0} y={0} className={`hand-${family(c) % 5}`}
@@ -1492,9 +1532,10 @@ export function MapView({
                 data-label-x={x} data-label-y={y} data-label-dy={offset} data-label-scale
                 transform={`translate(${x} ${y + offset * label}) scale(${label})`}
                 style={{ "--realm": hue(state.id) } as CSSProperties}
-                role={onState ? "button" : undefined}
-                tabIndex={onState ? 0 : undefined}
+                role={onState || onInspect ? "button" : undefined}
+                tabIndex={onState || onInspect ? 0 : undefined}
                 aria-label={`${state.name}, capital city, ${Math.round(state.city).toLocaleString()} souls`}
+                {...inspectEvents({ kind: "state", state: state.id, region: state.capital })}
                 onClick={() => dragged() || onState?.(state.id)}
                 onKeyDown={(e) => {
                   if (onState && (e.key === "Enter" || e.key === " ")) {
@@ -1503,12 +1544,34 @@ export function MapView({
                   }
                 }}
               >
-                <title>{`${state.name}: ${Math.round(state.city).toLocaleString()} in its capital city`}</title>
                 <path className="city-marker" d="M-.14,.04V-.08H-.08V-.16H.02V-.04H.08V-.11H.14V.04Z" />
                 <text y={0.27} className={`hand-${family(overview.communities[state.rulers]) % 5}`}
                   data-label-kind="state" data-label-priority={3}>{state.name}</text>
               </g>
             );
+          })}
+        </g>
+        <g className="cities">
+          {overview.cities.map((city) => {
+            const state = overview.states.find((s) => s.id === city.state);
+            if (city.since > generation || (state?.fell !== null && state?.fell !== undefined && state.fell <= generation) ||
+              hidden(city.region) || realms.some(({ state }) => state.capital === city.region)) return null;
+            const [x, y] = pointFor(map.regions[city.region].site);
+            const offset = (hearts.get(city.region)?.length ?? 0) / 2 * LINE + 0.2;
+            const radius = 0.055 + Math.cbrt(Math.max(0, city.size)) * 0.003;
+            return <g key={city.id} className="city" ref={bindAnchor(map.regions[city.region].site)}
+              data-region={city.region} data-label-x={x} data-label-y={y} data-label-dy={offset} data-label-scale
+              transform={`translate(${x} ${y + offset * label}) scale(${label})`}
+              role="button" tabIndex={0} aria-label={`${city.name.name}, city, ${Math.round(city.size).toLocaleString()} souls`}
+              {...inspectEvents({ kind: "city", city: city.id, region: city.region })}
+              onClick={() => dragged() || onCity?.(city.id)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onCity?.(city.id); }
+              }}>
+              <circle className="city-hit" r={Math.max(0.18, radius + 0.06)} />
+              <circle className="city-ring" r={radius} />
+              <circle className="city-heart" r={0.025} />
+            </g>;
           })}
         </g>
         <g className="founding-markers">
@@ -1525,9 +1588,10 @@ export function MapView({
                 data-label-x={x} data-label-y={y} data-label-dx={-(0.22 + offset * 0.24)} data-label-dy={-0.22} data-label-scale
                 transform={`translate(${x - (0.22 + offset * 0.24) * label} ${y - 0.22 * label}) scale(${label})`}
                 style={{ "--mark": hue(religion.id) } as CSSProperties}
-                role={onReligion ? "button" : undefined}
-                tabIndex={onReligion ? 0 : undefined}
+                role={onReligion || onInspect ? "button" : undefined}
+                tabIndex={onReligion || onInspect ? 0 : undefined}
                 aria-label={`${religion.name}, founded here`}
+                {...inspectEvents({ kind: "shrine", religion: religion.id, region: religion.land })}
                 onClick={() => dragged() || onReligion?.(religion.id)}
                 onKeyDown={(e) => {
                   if (onReligion && (e.key === "Enter" || e.key === " ")) {
@@ -1536,7 +1600,6 @@ export function MapView({
                   }
                 }}
               >
-                <title>{`${religion.name}, founded here`}</title>
                 <path d="M0,-.12L.09,0L0,.12L-.09,0Z" />
               </g>
             );
@@ -1553,9 +1616,10 @@ export function MapView({
                 data-label-x={x} data-label-y={y} data-label-dx={0.24 + offset * 0.24} data-label-dy={0.2} data-label-scale
                 transform={`translate(${x + (0.24 + offset * 0.24) * label} ${y + 0.2 * label}) scale(${label})`}
                 style={{ "--mark": hue(religion.id) } as CSSProperties}
-                role={onReligion ? "button" : undefined}
-                tabIndex={onReligion ? 0 : undefined}
+                role={onReligion || onInspect ? "button" : undefined}
+                tabIndex={onReligion || onInspect ? 0 : undefined}
                 aria-label={`${shrine.name.name}, holy to ${religion.name}`}
+                {...inspectEvents({ kind: "shrine", religion: religion.id, region: shrine.region })}
                 onClick={() => dragged() || onReligion?.(religion.id)}
                 onKeyDown={(e) => {
                   if (onReligion && (e.key === "Enter" || e.key === " ")) {
@@ -1564,7 +1628,6 @@ export function MapView({
                   }
                 }}
               >
-                <title>{`${shrine.name.name}, holy to ${religion.name}`}</title>
                 <path d="M0,-.13L.035,-.035L.13,0L.035,.035L0,.13L-.035,.035L-.13,0L-.035,-.035Z" />
               </g>
             );
@@ -1582,9 +1645,10 @@ export function MapView({
                 data-label-x={x} data-label-y={y} data-label-dx={0.22} data-label-dy={-0.22} data-label-scale
                 transform={`translate(${x + 0.22 * label} ${y - 0.22 * label}) scale(${label})`}
                 style={{ "--mark": CHANGED } as CSSProperties}
-                role={onCraft ? "button" : undefined}
-                tabIndex={onCraft ? 0 : undefined}
+                role={onCraft || onInspect ? "button" : undefined}
+                tabIndex={onCraft || onInspect ? 0 : undefined}
                 aria-label={`${people.name}, inventor of ${tint.craft}`}
+                {...inspectEvents({ kind: "people", community: people.id, region: people.region })}
                 onClick={() => dragged() || onCraft?.(tint.craft)}
                 onKeyDown={(e) => {
                   if (onCraft && (e.key === "Enter" || e.key === " ")) {
@@ -1593,7 +1657,6 @@ export function MapView({
                   }
                 }}
               >
-                <title>{`${people.name}, inventor of ${tint.craft}`}</title>
                 <path d="M-.1,-.1H.1V.1H-.1Z" />
               </g>
             );
@@ -1605,10 +1668,10 @@ export function MapView({
       {zoomable ? (
         <div className="map-zoom" role="group" aria-label={projection === "globe" ? "Globe controls" : "Chart controls"}>
           {selectedRegions.length > 0 ? <button type="button" title="Fit the selected lands (F)" aria-label="Fit the selected lands" onClick={fitSelection}><LocateFixed size={16} /></button> : null}
-          <button type="button" title="Closer (+)" aria-label="Zoom in" disabled={box[2] <= width * closest + 0.001} onClick={() => zoom(0.7, [view.current[0] + view.current[2] / 2, view.current[1] + view.current[3] / 2])}>
+          <button ref={zoomIn} type="button" title="Closer (+)" aria-label="Zoom in" disabled={box[2] <= width * closest + 0.001} onClick={() => zoom(0.7, [view.current[0] + view.current[2] / 2, view.current[1] + view.current[3] / 2])}>
             <Plus size={16} />
           </button>
-          <button type="button" title="Farther (−)" aria-label="Zoom out" disabled={box[2] >= width - 0.001} onClick={() => zoom(1 / 0.7, [view.current[0] + view.current[2] / 2, view.current[1] + view.current[3] / 2])}>
+          <button ref={zoomOut} type="button" title="Farther (−)" aria-label="Zoom out" disabled={box[2] >= width - 0.001} onClick={() => zoom(1 / 0.7, [view.current[0] + view.current[2] / 2, view.current[1] + view.current[3] / 2])}>
             <Minus size={16} />
           </button>
           <button type="button" title={projection === "globe" ? "The whole globe (Home)" : "The whole chart (Home)"}
