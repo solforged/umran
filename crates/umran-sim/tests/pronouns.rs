@@ -34,7 +34,10 @@ fn pronoun_stability_and_genitive_bands() {
         "four-millennium renewal band: {total}"
     );
     let sample = report::sample_report();
-    assert!(sample.cells >= 6);
+    assert_eq!(
+        sample.cells,
+        sample.systems * 6 + sample.inclusive_exclusive + sample.polite
+    );
     assert!(
         sample.borrowed * 10 <= sample.cells,
         "loans must stay exceptional"

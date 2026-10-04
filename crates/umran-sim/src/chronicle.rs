@@ -36,7 +36,8 @@ use std::collections::BTreeMap;
 /// Revision 48 draws new worlds with ContinentalV5's unequal crust and lakes.
 /// Sacred high forms borrow through Faith, not a duplicate classical channel.
 /// Sacred registers remain immutable under religious-revival purism.
-pub const ENGINE_REVISION: u32 = 48;
+/// Revision 49 decouples gender basis from class count and founds clusivity.
+pub const ENGINE_REVISION: u32 = 49;
 /// Revision 33 replaces flat geography and its region identities with a sphere.
 /// Earlier region-targeted actions cannot be replayed on the spherical mesh.
 pub const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;

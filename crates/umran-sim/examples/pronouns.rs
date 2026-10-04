@@ -15,11 +15,15 @@ pub struct Counts {
     pub polite: usize,
     pub generalised: usize,
     pub emerged: usize,
+    pub systems: usize,
+    pub inclusive_exclusive: usize,
     pub genitive: f32,
 }
 
 pub fn count(world: &World, v: usize, out: &mut Counts) {
     let variety = &world.varieties[v];
+    out.systems += 1;
+    out.inclusive_exclusive += usize::from(variety.pronouns.inclusive_exclusive);
     for (_, _, cell) in variety.pronouns.cells() {
         let word = variety
             .lexicon
@@ -138,11 +142,13 @@ fn main() {
     for profile in PROFILES {
         let n = study(profile, seeds);
         println!(
-            "{profile:12} cells={} renewed={:.1}% loans={} genitive-retained={:.1}%",
+            "{profile:12} cells={} renewed={:.1}% loans={} genitive-retained={:.1}% inclusive/exclusive={}/{}",
             n.cells,
             100.0 * n.renewed as f32 / n.cells as f32,
             n.borrowed,
-            100.0 * n.genitive / seeds as f32
+            100.0 * n.genitive / seeds as f32,
+            n.inclusive_exclusive,
+            n.systems,
         );
         let court = court_study(profile, seeds);
         println!(

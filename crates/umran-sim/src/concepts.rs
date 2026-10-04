@@ -510,6 +510,22 @@ pub static CONCEPTS: &[Concept] = &[
         F,
         UNMARKED,
     ),
+    culture(
+        Basic,
+        "1pl-inclusive",
+        "we (including you)",
+        Function,
+        F,
+        UNMARKED,
+    ),
+    culture(
+        Basic,
+        "1pl-exclusive",
+        "we (excluding you)",
+        Function,
+        F,
+        UNMARKED,
+    ),
 ];
 
 pub fn by_id(id: &str) -> Option<&'static Concept> {

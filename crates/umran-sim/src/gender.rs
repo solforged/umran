@@ -25,24 +25,36 @@ impl ClassChoice {
     pub fn draw(seed: u64) -> Self {
         let mut rng = stream(seed, &[key("noun classes founding")]);
         [Self::None, Self::Sex, Self::Animacy, Self::Many]
-            [weighted_index(&mut rng, [0.5, 0.25, 0.2, 0.05].into_iter())]
+            [weighted_index(&mut rng, [0.60, 0.20, 0.15, 0.05].into_iter())]
     }
-    fn cores(self) -> &'static [Core] {
-        match self {
-            Self::None => &[],
-            Self::Sex => &[Core::Male, Core::Female, Core::Remainder],
-            Self::Animacy => &[Core::Human, Core::Animate, Core::Remainder],
-            Self::Many => &[
-                Core::Human,
-                Core::Animate,
-                Core::Long,
-                Core::Flat,
-                Core::Round,
-                Core::Mass,
-                Core::Remainder,
-                Core::Formal,
-            ],
+    /// Size is independent of the semantic basis. These are founding priors,
+    /// not observed modern frequencies: sound mergers and recruitment follow.
+    pub fn draw_count(self, seed: u64) -> usize {
+        if self == Self::None {
+            return 0;
         }
+        let mut rng = stream(seed, &[key("noun class count founding")]);
+        draw_count(&mut rng)
+    }
+    fn cores(self, count: usize) -> &'static [Core] {
+        use Core::*;
+        let cores: &[Core] = match self {
+            Self::None => return &[],
+            Self::Sex => &[Male, Female, Remainder, Animate, Long, Flat, Round, Mass],
+            Self::Animacy if count == 2 => &[Animate, Remainder],
+            Self::Animacy => &[Human, Animate, Remainder, Long, Flat, Round, Mass, Formal],
+            Self::Many => &[Human, Remainder, Animate, Long, Flat, Round, Mass, Formal],
+        };
+        &cores[..count]
+    }
+}
+
+fn draw_count(rng: &mut impl Rng) -> usize {
+    match weighted_index(rng, [0.34, 0.23, 0.11, 0.32].into_iter()) {
+        0 => 2,
+        1 => 3,
+        2 => 4,
+        _ => 5 + index(rng, 4),
     }
 }
 
@@ -97,7 +109,7 @@ impl Core {
             (Self::Male, N::Male)
                 | (Self::Female, N::Female)
                 | (Self::Human, N::Male | N::Female | N::Human)
-                | (Self::Animate, N::Animate)
+                | (Self::Animate, N::Male | N::Female | N::Human | N::Animate)
                 | (Self::Long, N::Long)
                 | (Self::Flat, N::Flat)
                 | (Self::Round, N::Round)
@@ -198,6 +210,7 @@ impl Gender {
         if choice == ClassChoice::None {
             return gender;
         }
+        let count = choice.draw_count(seed);
         let mut rng = stream(seed, &[key("noun class markers")]);
         let mut candidates = Vec::new();
         for &(vowel, _) in &tactics.nuclei {
@@ -207,7 +220,7 @@ impl Gender {
             }
         }
         let markers = choice
-            .cores()
+            .cores(count)
             .iter()
             .map(|_| {
                 let at = index(&mut rng, candidates.len());
@@ -237,7 +250,7 @@ impl Gender {
             return;
         };
         let start = self.classes.len();
-        for (&core, (marker, source)) in choice.cores().iter().zip(markers) {
+        for (&core, (marker, source)) in choice.cores(markers.len()).iter().zip(markers) {
             let mut agreement = match side {
                 Side::Prefix => morphology.join(&marker, &target.form),
                 Side::Suffix => morphology.join(&target.form, &marker),
@@ -320,8 +333,16 @@ impl Gender {
             && let Some(class) = self
                 .classes
                 .iter()
-                .rev()
                 .find(|c| c.core.matches(noun) && c.born == self.classes.last().unwrap().born)
+        {
+            return self.resolve(class.id);
+        }
+        if !matches!(word.origin, Origin::Borrowed { .. })
+            && let Some(class) = self.classes.iter().find(|c| {
+                c.core == Core::Remainder
+                    && c.basis == Basis::Animacy
+                    && c.born == self.classes.last().unwrap().born
+            })
         {
             return self.resolve(class.id);
         }
@@ -344,8 +365,11 @@ impl Gender {
         }
         active()
             .find(|c| c.core == Core::Remainder)
-            .or_else(|| active().next())
-            .unwrap()
+            .unwrap_or_else(|| {
+                let at =
+                    word.form.segs.last().map_or(0, |s| s.phone.0 as usize) % self.active_count();
+                active().nth(at).unwrap()
+            })
             .id
     }
     pub fn sync(&mut self, lexicon: &Lexicon) {
@@ -409,8 +433,17 @@ impl Gender {
         }
         let choice =
             [ClassChoice::Sex, ClassChoice::Animacy, ClassChoice::Many][index(&mut rng, 3)];
+        let mut count_rng = stream(
+            seed,
+            &[
+                key("noun class count emergence"),
+                variety as u64,
+                generation as u64,
+            ],
+        );
+        let count = draw_count(&mut count_rng);
         let mut markers = Vec::new();
-        for core in choice.cores() {
+        for core in choice.cores(count) {
             let Some(source) = lexicon.word_for(by_id(core.source()).unwrap()) else {
                 return;
             };

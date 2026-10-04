@@ -1,5 +1,6 @@
 use super::*;
 use crate::{Env, Matcher, Params, Rewrite, SoundChange, Variety, World};
+use rand::RngCore;
 
 fn form(ipa: &str) -> Form {
     Form::from_ipa(ipa).unwrap()
@@ -59,7 +60,8 @@ fn founding_assigns_all_nouns_but_not_verbs_and_preserves_semantic_cores() {
     ] {
         let world = world(choice);
         let v = &world.varieties[0];
-        assert_eq!(v.gender.active_count(), choice.cores().len());
+        let founding_seed = stream(7, &[key("found"), 0]).next_u64();
+        assert_eq!(v.gender.active_count(), choice.draw_count(founding_seed));
         for slot in &v.lexicon.slots {
             for variant in &slot.variants {
                 assert_eq!(
@@ -76,7 +78,9 @@ fn founding_assigns_all_nouns_but_not_verbs_and_preserves_semantic_cores() {
                 v.gender.class_of(word(v, "mother"))
             );
         }
-        if matches!(choice, ClassChoice::Animacy | ClassChoice::Many) {
+        if matches!(choice, ClassChoice::Animacy | ClassChoice::Many)
+            && v.gender.active_count() >= 3
+        {
             assert_eq!(
                 v.gender.class_of(word(v, "child")),
                 v.gender.class_of(word(v, "person"))
@@ -241,7 +245,7 @@ fn emergence_is_seeded_static_rate_is_inert_and_daughters_inherit() {
             break;
         }
     }
-    assert!(v.gender.active_count() >= 3);
+    assert!(v.gender.active_count() >= 2);
     assert!(v.gender.classes.iter().all(|c| c.source.is_some()));
     let mut replay = before;
     for generation in 1..=v.gender.classes[0].born {
@@ -284,4 +288,46 @@ fn renewed_system_does_not_assign_new_nouns_to_dead_classes() {
     );
     assert_eq!(v.gender.class_of(word(v, "mother")), Some(4));
     assert_eq!(v.gender.class_of(word(v, "father")), Some(3));
+}
+
+#[test]
+fn each_basis_draws_binary_three_four_and_larger_systems() {
+    for basis in [ClassChoice::Sex, ClassChoice::Animacy, ClassChoice::Many] {
+        let mut sizes = [false; 9];
+        for seed in 0..1000 {
+            sizes[basis.draw_count(seed)] = true;
+        }
+        assert!(sizes[2..].iter().all(|present| *present), "{basis:?}");
+    }
+    assert_eq!(ClassChoice::None.draw_count(0), 0);
+}
+
+#[test]
+fn binary_animacy_includes_people_and_sex_keeps_parent_cores_apart() {
+    for basis in [ClassChoice::Sex, ClassChoice::Animacy] {
+        let seed = (0..1000).find(|&seed| basis.draw_count(seed) == 2).unwrap();
+        let mut profile = SoundProfile::base();
+        profile.grammar.classes = Some(basis);
+        let v = &Variety::found(
+            seed,
+            &profile,
+            crate::Livelihood::Farming,
+            crate::Ethos::default(),
+        );
+        assert_eq!(v.gender.active_count(), 2);
+        if basis == ClassChoice::Sex {
+            assert_ne!(
+                v.gender.class_of(word(v, "father")),
+                v.gender.class_of(word(v, "mother"))
+            );
+        } else {
+            let animate = v.gender.class_of(word(v, "person"));
+            assert_eq!(animate, v.gender.class_of(word(v, "dog")));
+            assert_eq!(animate, v.gender.class_of(word(v, "mother")));
+            // Native non-animate meanings use the inanimate semantic remainder.
+            assert_eq!(v.gender.classes[1].core, Core::Remainder);
+            assert_ne!(animate, v.gender.class_of(word(v, "stone")));
+            assert_ne!(animate, v.gender.class_of(word(v, "water")));
+        }
+    }
 }

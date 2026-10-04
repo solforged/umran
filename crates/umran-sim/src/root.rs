@@ -69,6 +69,7 @@ pub fn mint_roots(
     let index = |id: &str| {
         CONCEPTS
             .iter()
+            .filter(|concept| !crate::pronouns::is_optional_cell(concept.id))
             .position(|c| c.id == id)
             .expect("known concept")
     };

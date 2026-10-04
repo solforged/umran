@@ -393,6 +393,7 @@ export interface Variety {
   specimen: SpecimenWord[];
   pronouns: {
     cell: string;
+    clusivity: "inclusive" | "exclusive" | null;
     person: 1 | 2 | 3;
     number: "sg" | "pl";
     polite: boolean;

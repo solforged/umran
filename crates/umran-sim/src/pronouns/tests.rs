@@ -75,7 +75,7 @@ fn renewal_copies_a_noun_and_regular_laws_leave_retired_forms_alone() {
 }
 
 #[test]
-fn regular_laws_reach_all_six_cells_and_obey_the_size_floor() {
+fn regular_laws_reach_all_cells_and_obey_the_size_floor() {
     let mut world = World::solo(7, &SoundProfile::base(), Params::static_society());
     let v = &mut world.varieties[0];
     v.minimal = MinimalWord::TwoSyllables;
@@ -186,9 +186,10 @@ fn borrowing_requires_intense_sustained_intimate_contact() {
     world
         .connect(a, b, 1.0, ContactKind::Intermarriage)
         .unwrap();
-    for (_, _, cell) in world.varieties[0].pronouns.cells() {
-        put(&mut world.varieties[0], cell, "takama");
-        put(&mut world.varieties[1], cell, "nulu");
+    for (i, v) in world.varieties.iter_mut().enumerate() {
+        for (_, _, cell) in v.pronouns.cells() {
+            put(v, cell, if i == 0 { "takama" } else { "nulu" });
+        }
     }
     world.generation = 8;
     for (kind, intensity, duration, openness) in [
@@ -257,5 +258,69 @@ fn static_society_keeps_pronoun_replacement_off_and_daughters_inherit() {
     let daughter = world.varieties[0].fork(0, 16);
     for (_, _, c) in daughter.pronouns.cells() {
         assert_eq!(word(&daughter, c), word(&world.varieties[0], c));
+    }
+}
+
+#[test]
+fn clusivity_is_seeded_inherited_and_renews_both_plural_cells() {
+    let mut found = None;
+    for seed in 0..100 {
+        let world = World::solo(seed, &SoundProfile::base(), Params::static_society());
+        if world.varieties[0].pronouns.inclusive_exclusive {
+            found = Some(world);
+            break;
+        }
+    }
+    let mut world = found.unwrap();
+    let v = &mut world.varieties[0];
+    assert!(v.lexicon.word_for(by_id("1pl").unwrap()).is_none());
+    assert_eq!(v.pronouns.cells().count(), 7);
+    let daughter = v.fork(0, 1);
+    assert_eq!(daughter.pronouns, v.pronouns);
+    // Keep the other cells unworn, and provide enough distinct lexical
+    // sources: forced renewal cannot reuse an already recruited noun form.
+    v.minimal = MinimalWord::Syllable;
+    for ((_, _, cell), form) in v
+        .pronouns
+        .cells()
+        .take(5)
+        .zip(["mataka", "kumana", "nalaka", "pasuna", "tumaka"])
+    {
+        put(v, cell, form);
+    }
+    for (cell, form) in [
+        ("people", "takamana"),
+        ("person", "nulupana"),
+        ("child", "mikisana"),
+    ] {
+        put(v, cell, form);
+    }
+    for cell in ["1pl-inclusive", "1pl-exclusive"] {
+        assert_eq!(word(&daughter, cell), word(v, cell));
+        put(v, cell, "a");
+    }
+    let before: Vec<_> = ["1pl-inclusive", "1pl-exclusive"]
+        .map(|cell| word(v, cell).id)
+        .into();
+    world.params.pronoun_rate = 1.0;
+    world.generation = 1;
+    world.evolve_pronouns(&[true]);
+    for (cell, old) in ["1pl-inclusive", "1pl-exclusive"].into_iter().zip(before) {
+        let v = &world.varieties[0];
+        assert_ne!(word(v, cell).id, old);
+        assert!(matches!(word(v, cell).origin, Origin::Renewed { .. }));
+        assert_eq!(v.lexicon.get(old).obsolete, Some(1));
+    }
+    let law = crate::catalog()
+        .into_iter()
+        .find(|law| law.id == "apocope")
+        .unwrap();
+    let expected = ["1pl-inclusive", "1pl-exclusive"].map(|cell| {
+        let v = &world.varieties[0];
+        law.apply(&word(v, cell).form, v.minimal, v.stress())
+    });
+    world.apply_law(0, &law);
+    for (cell, form) in ["1pl-inclusive", "1pl-exclusive"].into_iter().zip(expected) {
+        assert_eq!(word(&world.varieties[0], cell).form, form);
     }
 }

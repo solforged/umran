@@ -207,6 +207,9 @@ impl Variety {
             &mut stream(seed, &[key("given")]),
         );
         variety
+            .pronouns
+            .found_clusivity(seed, &phonotactics, &mut variety.lexicon);
+        variety
     }
 
     /// A daughter of this variety, identical at the moment of the split.

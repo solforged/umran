@@ -11,7 +11,7 @@ use crate::{Cause, ContactKind, Form, Mechanism, Variety, World};
 use rand::Rng;
 use std::collections::BTreeMap;
 
-pub const CELLS: [(u8, &str, &str); 7] = [
+pub const CELLS: [(u8, &str, &str); 9] = [
     (1, "sg", "1sg"),
     (1, "pl", "1pl"),
     (2, "sg", "2sg"),
@@ -19,14 +19,17 @@ pub const CELLS: [(u8, &str, &str); 7] = [
     (3, "sg", "3sg"),
     (3, "pl", "3pl"),
     (2, "sg", "2sg-polite"),
+    (1, "pl", "1pl-inclusive"),
+    (1, "pl", "1pl-exclusive"),
 ];
 
 pub fn is_pronoun(concept: &Concept) -> bool {
     CELLS.iter().any(|(_, _, id)| *id == concept.id)
 }
 
-pub(crate) fn is_optional_cell(id: &str) -> bool {
-    id == "2sg-polite"
+/// Optional cells are minted only when a language gains them.
+pub fn is_optional_cell(id: &str) -> bool {
+    matches!(id, "2sg-polite" | "1pl-inclusive" | "1pl-exclusive")
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -36,15 +39,53 @@ pub struct Pronouns {
     pub polite_since: Option<u32>,
     /// Respectful address has replaced familiar address.
     pub generalised: bool,
+    pub inclusive_exclusive: bool,
     pub events: Vec<Notice>,
 }
 
 impl Pronouns {
-    pub fn cells(&self) -> impl Iterator<Item = (u8, &'static str, &'static str)> + use<> {
+    /// Owns its choice, so callers may renew words while walking the cells.
+    pub fn cells(&self) -> impl Iterator<Item = (u8, &'static str, &'static str)> + Clone + use<> {
+        let clusivity = self.inclusive_exclusive;
         let polite = self.polite;
-        CELLS
-            .into_iter()
-            .filter(move |(_, _, cell)| *cell != "2sg-polite" || polite)
+        CELLS.into_iter().filter(move |(_, _, cell)| match *cell {
+            "1pl" => !clusivity,
+            "1pl-inclusive" | "1pl-exclusive" => clusivity,
+            "2sg-polite" => polite,
+            _ => true,
+        })
+    }
+
+    /// Draw after the original founding processes, without shifting their streams.
+    pub(crate) fn found_clusivity(
+        &mut self,
+        seed: u64,
+        tactics: &Phonotactics,
+        lexicon: &mut Lexicon,
+    ) {
+        self.inclusive_exclusive =
+            stream(seed, &[key("pronoun clusivity founding")]).r#gen::<f32>() < 0.315;
+        if !self.inclusive_exclusive {
+            return;
+        }
+        // Retain the old plural's form and word identity as exclusive; there is
+        // no unmarked plural alongside the new opposition and no retired root.
+        let plural = by_id("1pl").unwrap();
+        let exclusive = by_id("1pl-exclusive").unwrap();
+        let old = lexicon.slot(plural).dominant().unwrap();
+        lexicon.slot_mut(plural).variants.clear();
+        lexicon.slot_mut(exclusive).introduce(old, 1.0);
+        lexicon.get_mut(old).first_sense = exclusive;
+        let used: Vec<_> = self
+            .cells()
+            .filter_map(|(_, _, cell)| lexicon.word_for(by_id(cell).unwrap()))
+            .map(|word| word.form.clone())
+            .collect();
+        let mut rng = stream(seed, &[key("pronoun clusivity forms")]);
+        let form = mint_cell(tactics, lexicon.get(old).form.stress, &used, &mut rng);
+        let inclusive = by_id("1pl-inclusive").unwrap();
+        let id = lexicon.coin(form, Origin::Founding, inclusive, 0);
+        lexicon.slot_mut(inclusive).introduce(id, 1.0);
     }
 }
 
@@ -79,43 +120,48 @@ pub enum NoticeKind {
 /// Simple, short syllables favour the same common segments as the founding
 /// inventory. Collisions draw again; a small inventory may need longer forms.
 pub(crate) fn found(seed: u64, tactics: &Phonotactics, lexicon: &mut Lexicon) {
-    let onsets: Vec<_> = tactics
-        .onsets
-        .iter()
-        .filter(|(p, _)| p.len() == 1)
-        .collect();
-    let mut used = Vec::with_capacity(CELLS.len());
-    for (_, _, cell) in Pronouns::default().cells() {
+    let mut used = Vec::with_capacity(6);
+    for (_, _, cell) in CELLS.into_iter().take(6) {
         let id = lexicon
             .slot(by_id(cell).expect("pronoun concept"))
             .dominant()
             .expect("founding pronoun");
         let stress = lexicon.get(id).form.stress.map(|_| 0);
         let mut rng = stream(seed, &[key("pronoun founding"), key(cell)]);
-        let mut attempt = 0;
-        let form = loop {
-            let syllables = 1 + attempt / 32;
-            let mut phones = Vec::with_capacity(syllables * 2);
-            for _ in 0..syllables {
-                if !onsets.is_empty() {
-                    let onset = onsets[weighted_index(&mut rng, onsets.iter().map(|(_, w)| *w))];
-                    phones.push(onset.0[0]);
-                }
-                phones.push(
-                    tactics.nuclei
-                        [weighted_index(&mut rng, tactics.nuclei.iter().map(|(_, w)| *w))]
-                    .0,
-                );
-            }
-            let mut form = Form::from_phones(phones);
-            form.stress = stress;
-            if !used.contains(&form) {
-                break form;
-            }
-            attempt += 1;
-        };
+        let form = mint_cell(tactics, stress, &used, &mut rng);
         lexicon.get_mut(id).form = form.clone();
         used.push(form);
+    }
+}
+
+fn mint_cell(
+    tactics: &Phonotactics,
+    stress: Option<usize>,
+    used: &[Form],
+    rng: &mut impl Rng,
+) -> Form {
+    let onsets = || tactics.onsets.iter().filter(|(p, _)| p.len() == 1);
+    let mut attempt = 0;
+    loop {
+        let syllables = 1 + attempt / 32;
+        let mut phones = Vec::with_capacity(syllables * 2);
+        for _ in 0..syllables {
+            if onsets().next().is_some() {
+                let onset = onsets()
+                    .nth(weighted_index(rng, onsets().map(|(_, w)| *w)))
+                    .unwrap();
+                phones.push(onset.0[0]);
+            }
+            phones.push(
+                tactics.nuclei[weighted_index(rng, tactics.nuclei.iter().map(|(_, w)| *w))].0,
+            );
+        }
+        let mut form = Form::from_phones(phones);
+        form.stress = stress;
+        if !used.contains(&form) {
+            return form;
+        }
+        attempt += 1;
     }
 }
 
@@ -156,16 +202,13 @@ fn replace(
 }
 
 fn clashes(variety: &Variety, cell: &str, form: &Form) -> bool {
-    CELLS.iter().any(|(_, _, other)| {
+    variety.pronouns.cells().any(|(_, _, other)| {
         // Plural-for-polite is an intentional shared form, not a merger.
         let polite_pair = (variety.pronouns.polite
-            && matches!(
-                (cell, *other),
-                ("2sg-polite", "2pl") | ("2pl", "2sg-polite")
-            ))
+            && matches!((cell, other), ("2sg-polite", "2pl") | ("2pl", "2sg-polite")))
             || (variety.pronouns.generalised
-                && matches!((cell, *other), ("2sg", "2pl") | ("2pl", "2sg")));
-        *other != cell
+                && matches!((cell, other), ("2sg", "2pl") | ("2pl", "2sg")));
+        other != cell
             && !polite_pair
             && variety
                 .lexicon
@@ -185,7 +228,7 @@ impl World {
             if !is_spoken {
                 continue;
             }
-            for (_, _, cell) in self.varieties[v].pronouns.cells() {
+            for (_, number, cell) in self.varieties[v].pronouns.cells() {
                 let variety = &self.varieties[v];
                 let word = variety
                     .lexicon
@@ -208,7 +251,7 @@ impl World {
                 if rng.r#gen::<f32>() >= rate {
                     continue;
                 }
-                let nouns: &[&str] = if cell.ends_with("pl") {
+                let nouns: &[&str] = if number == "pl" {
                     &["people", "person", "child"]
                 } else {
                     &["person", "head", "heart", "child"]
@@ -417,9 +460,26 @@ impl World {
                 {
                     continue;
                 }
-                // Third-person plural is less resistant than speaker and addressee.
-                let cell =
-                    CELLS[weighted_index(&mut rng, [1.0, 1.0, 1.0, 1.0, 2.0, 3.0].into_iter())].2;
+                // Only borrow a cell both systems express. Do not import an
+                // undifferentiated "we" into either side of a clusivity contrast.
+                let donor_variety = &self.varieties[d.variety];
+                let cells = || {
+                    own.pronouns.cells().filter(|(_, _, cell)| {
+                        donor_variety
+                            .pronouns
+                            .cells()
+                            .any(|(_, _, other)| other == *cell)
+                    })
+                };
+                let at = weighted_index(
+                    &mut rng,
+                    cells().map(|(person, number, _)| match (person, number) {
+                        (3, "pl") => 3.0,
+                        (3, _) => 2.0,
+                        _ => 1.0,
+                    }),
+                );
+                let cell = cells().nth(at).unwrap().2;
                 let word = self.varieties[d.variety]
                     .lexicon
                     .word_for(by_id(cell).unwrap())

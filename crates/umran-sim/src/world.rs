@@ -369,7 +369,7 @@ impl Default for Params {
             seasons_enabled: true,
             tense_aspect: true,
             pronoun_rate: 0.003,
-            class_emergence_rate: 0.0015,
+            class_emergence_rate: 0.00075,
             harmony_rate: 0.004,
             pattern_analogy_rate: 0.04,
         }

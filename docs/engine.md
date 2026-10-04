@@ -127,11 +127,18 @@ This bookkeeping makes no random draws and does not itself change replay.
   at 0.45/0.35/0.20, and it grammaticalizes from have or hand and erodes
   through the same marker machinery (Heine and Kuteva, *World Lexicon of
   Grammaticalization*).
-- Pronouns (`pronouns.rs`) begin with six lexicon cells: first, second, and
-  third person, singular and plural; respectful address may add a seventh.
-  Founding gives each a short syllable of
-  common segments from the language's own phonotactics, distinct from the
-  others. They then change by regular sound law like every word. A pronoun
+- Pronouns (`pronouns.rs`) are lexicon words: first, second, and third
+  person, singular and plural; respectful address may add a polite
+  singular. A separate founding stream gives 31.5% of
+  systems an inclusive/exclusive first-person plural distinction, replacing
+  unmarked "we" with "we including you" and "we excluding you". This follows
+  the 63 of 200 languages in [Cysouw, WALS 39A](https://wals.info/feature/39A);
+  the five inclusive-only systems are not counted as the full opposition.
+  The choice is inherited, not redrawn when a people splits. Founding gives
+  each cell a short syllable of common segments from the language's own
+  phonotactics, distinct from the others. They then change by regular sound
+  law like every word, and both plural cells take part in renewal. Contact
+  copies only cells that both languages express. A pronoun
   worn below two segments or the minimal word, or merged in sound with
   another, can be renewed from a noun (person, head, heart, child; people
   for plurals), as Malay saya, "I", came from a word for "servant"
@@ -163,11 +170,24 @@ This bookkeeping makes no random draws and does not itself change replay.
   are 40 independent social histories, not 200. The unchanged workbench
   sample had 96 living cells and no address changes. The ignored address
   and stability bands together ran in 31.59 seconds in release mode.
+  In the family-balanced class-and-pronoun band (40 seeds per profile,
+  five profiles, 200 independently seeded founders, 4,000 years), 55/200
+  systems, 27.5%, have the distinction; all 55 still have distinct forms.
+  Related daughters and the separately reported workbench sample are not
+  pooled into that percentage. The founding choice is profile-neutral;
+  case, dual number, and inclusive-only systems are not yet represented.
 - Noun classes (`gender.rs`) sort nouns into groups that other words must
   agree with, following Corbett, *Gender* (1991): agreement is how a class
-  becomes visible. Founding draws none, sex (masculine, feminine, the rest),
-  animacy (people, animals, things), or many shape-and-kind classes at
-  0.50/0.25/0.20/0.05. Assignment is semantic at the core, by each meaning's
+  becomes visible. Founding draws presence and semantic basis separately
+  from class count: sex, animacy, and shape-and-kind systems can have two,
+  three, four, or five to eight classes. Binary sex systems keep masculine
+  and feminine cores; binary animacy groups people and animals together
+  against inanimates. Three-class systems add a remainder or separate
+  people from other animates. Larger systems add shape and material cores.
+  [Corbett, WALS 30A](https://wals.info/feature/30A) reports none/two/three/four/
+  five-plus at 56.4/19.5/10.1/4.7/9.3%; these modern frequencies constrain
+  the four-millennium outcome, not a claim about prehistoric frequencies.
+  Assignment is semantic at the core, by each meaning's
   noun semantics; loans and nouns outside the core are assigned by their
   final sound, as formal gender assigns them. The agreeing word is the
   determiner "this", built with a class affix on the morphology's side and
@@ -175,10 +195,22 @@ This bookkeeping makes no random draws and does not itself change replay.
   Determiners change by regular sound law; when two come to sound alike,
   their classes merge, and when one class is left, the system is lost,
   with the sound law recorded as the trigger. A language without classes
-  can recruit them, rarely (`class_emergence_rate`, 0.0015 a generation,
+  can recruit them, rarely (`class_emergence_rate`, 0.00075 a generation,
   no sooner than 32 generations after a loss), from nouns such as person,
   dog, tree, or stone shortened to their first syllable, the classifier
   route of Greenberg (1978). `static_society()` turns emergence off.
+  Recruitment draws size on its own purpose-keyed stream with the same
+  range as founding; neither process is locked to three or eight classes.
+  Founding chooses no classes with probability 0.60, then sex/animacy/
+  shape-and-kind with probabilities 0.20/0.15/0.05. Conditional on a system,
+  two/three/four/five-plus have weights 0.34/0.23/0.11/0.32, with five
+  through eight equally likely in the last group. These priors leave room
+  for later merging and recruitment. The same 40-seed-per-profile band
+  ends at 106/42/24/10/18 of 200 independent families: 53/21/12/5/9%.
+  Each bucket must stay within ten percentage points of WALS 30A and remain
+  represented. The isolated societies keep sound change and default
+  recruitment and pronoun renewal, without pooling family splits; the
+  full workbench sample is run separately. The release band takes 29s.
 - Word order and possessor order are fixed at founding and inherited by
   daughters; neither drifts. SOV means subject–object–verb, SVO means
   subject–verb–object, and VSO means verb–subject–object. Fully suffixing
@@ -1397,6 +1429,7 @@ cargo run --release -p umran-sim --example ethos -- --band 40 160
 cargo run --release -p umran-sim --example endings -- [seeds]
 cargo run --release -p umran-sim --example tense -- [seeds] [years]
 cargo run --release -p umran-sim --example pronouns -- [seeds]
+cargo run --release -p umran-sim --example gender -- [seeds-per-profile]
 cargo run --release -p umran-sim --example harmony -- [seeds] [generations]
 cargo run --release -p umran-sim --example pattern -- [seeds] [generations]
 cargo run --release -p umran-sim --example tone -- [seeds]

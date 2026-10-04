@@ -311,6 +311,8 @@ export const TERMS = {
     "The prominence of one syllable, heard through a combination of pitch, duration, loudness, and vowel quality. Its position can affect sound change.",
   geminate:
     "A long, or doubled, consonant, as the tt in Italian fatto “done”. Many arise when one consonant assimilates to the next, as Latin factum became fatto.",
+  clusivity:
+    "Whether “we” includes the person spoken to. Many languages, such as Tagalog and Malay, have one word for “we, including you” and another for “we, but not you”.",
   koiné:
     "The new speech that forms where speakers of related dialects or languages crowd together, keeping what most of them share and dropping what few do. Hellenistic Greek and early London English formed this way.",
   diglossia:

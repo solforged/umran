@@ -3573,6 +3573,7 @@ struct VarietyView {
 #[derive(Serialize)]
 struct PronounView {
     cell: &'static str,
+    clusivity: Option<&'static str>,
     person: u8,
     number: &'static str,
     polite: bool,
@@ -3604,6 +3605,11 @@ fn pronoun_view(variety: &Variety) -> Vec<PronounView> {
             };
             Some(PronounView {
                 cell,
+                clusivity: match cell {
+                    "1pl-inclusive" => Some("inclusive"),
+                    "1pl-exclusive" => Some("exclusive"),
+                    _ => None,
+                },
                 person,
                 number,
                 polite: cell == "2sg-polite",
@@ -5073,6 +5079,40 @@ mod tests {
     use super::*;
     use umran_sim::CONCEPTS;
     use umran_sim::chronicle::SPHERICAL_GEOGRAPHY_REVISION;
+
+    #[test]
+    fn pronoun_view_exposes_both_sides_of_clusivity() {
+        let mut observed = false;
+        for seed in 0..40 {
+            let world = World::solo(
+                seed,
+                &umran_sim::SoundProfile::base(),
+                umran_sim::Params::static_society(),
+            );
+            let v = &world.varieties[0];
+            let view = pronoun_view(v);
+            assert_eq!(
+                view.len(),
+                if v.pronouns.inclusive_exclusive { 7 } else { 6 }
+            );
+            if !v.pronouns.inclusive_exclusive {
+                assert!(view.iter().all(|cell| cell.clusivity.is_none()));
+                continue;
+            }
+            observed = true;
+            assert!(!view.iter().any(|cell| cell.cell == "1pl"));
+            for (id, clusivity) in [
+                ("1pl-inclusive", "inclusive"),
+                ("1pl-exclusive", "exclusive"),
+            ] {
+                let cell = view.iter().find(|cell| cell.cell == id).unwrap();
+                assert_eq!(cell.clusivity, Some(clusivity));
+                assert_eq!((cell.person, cell.number), (1, "pl"));
+                assert!(!cell.ipa.is_empty());
+            }
+        }
+        assert!(observed);
+    }
 
     #[test]
     fn entity_ids_preserve_integers_and_reject_js_coercions() {
