@@ -36,7 +36,8 @@ pub struct Harmony {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Trigger {
     Assimilation { generation: u32, law: &'static str },
-    ContrastMerger { law: Option<&'static str> },
+    ContrastMerger { law: &'static str },
+    LexicalAttrition,
     Contact { donor: usize, cause: Option<Cause> },
 }
 
@@ -176,11 +177,92 @@ impl Feature {
         };
         self.agree_range(form, range, value?)
     }
+    /// Marginal vowels still contrast: the borrowing threshold is not a
+    /// phonemicity test, nor does a small lexicon need an accidental minimal pair.
     pub fn has_contrast(self, variety: &Variety) -> bool {
-        let established = variety.established();
-        self.pairs()
-            .iter()
-            .any(|(a, b)| established.contains(a) && established.contains(b))
+        let mut present = 0;
+        for (form, share) in variety.grammar.forms(&variety.lexicon) {
+            if share > 0.0 {
+                present |= self.phone_mask(form.phones());
+            }
+        }
+        self.mask_has_pair(present)
+    }
+    fn phone_mask(self, phones: impl Iterator<Item = PhonemeId>) -> u8 {
+        let mut mask = 0;
+        for phone in phones {
+            for (i, &(a, b)) in self.pairs().iter().enumerate() {
+                if phone == a {
+                    mask |= 1 << (2 * i);
+                } else if phone == b {
+                    mask |= 2 << (2 * i);
+                }
+            }
+        }
+        mask
+    }
+    fn mask_has_pair(self, mask: u8) -> bool {
+        (0..self.pairs().len()).any(|i| mask & (3 << (2 * i)) == 3 << (2 * i))
+    }
+    /// Only attested, productive bound realizations count, not hypothetical
+    /// alternants regenerated from a marker after a law has erased them.
+    fn has_affix_contrast(self, variety: &Variety) -> bool {
+        let mut masks = vec![0; variety.grammar.markers.len()];
+        for word in variety.lexicon.living() {
+            for r in word.paradigms.iter().flat_map(|p| &p.realizations) {
+                let marker = &variety.grammar.markers[r.marker as usize];
+                if r.retired.is_some()
+                    || r.share <= 0.0
+                    || marker.retired.is_some()
+                    || !marker.productive
+                    || marker.kind != MarkerKind::Bound
+                {
+                    continue;
+                }
+                let Some(form) = &r.form else { continue };
+                let edge = r.edge.min(form.segs.len());
+                let affix = match marker.side {
+                    Side::Prefix => &form.segs[..edge],
+                    Side::Suffix => &form.segs[edge..],
+                };
+                let mask = &mut masks[r.marker as usize];
+                *mask |= self.phone_mask(affix.iter().map(|s| s.phone));
+                if self.mask_has_pair(*mask) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+    fn law_changed_vowels(self, variety: &Variety, law: &str, generation: u32) -> bool {
+        let changed = |before: &Form, after: &Form| {
+            !before
+                .phones()
+                .filter(|&p| self.value(p).is_some())
+                .eq(after.phones().filter(|&p| self.value(p).is_some()))
+        };
+        variety.lexicon.living().any(|word| {
+            word.log.last().is_some_and(|entry| {
+                entry.generation == generation
+                    && matches!(&entry.event, Event::SoundLaw { law: id, before }
+                        if *id == law && changed(before, &word.form))
+            }) || word.paradigms.iter().flat_map(|p| &p.realizations).any(|r| {
+                r.retired.is_none() && r.history.last().is_some_and(|entry| {
+                    entry.generation == generation
+                        && matches!(&entry.event, GrammarEvent::SoundLaw { law: id, before }
+                            if *id == law && r.form.as_ref().is_some_and(|after| changed(before, after)))
+                })
+            })
+        })
+            || variety.grammar.markers.iter().any(|marker| {
+                marker.kind == MarkerKind::Particle
+                    && marker.retired.is_none()
+                    && marker.history.last().is_some_and(|entry| {
+                        entry.generation == generation
+                            && matches!(&entry.event, GrammarEvent::SoundLaw { law: id, before }
+                                if *id == law && changed(before, &marker.form))
+                    })
+            })
     }
     /// Productive surface alternatives, rather than an exhaustive paradigm.
     pub fn alternants(self, form: &Form) -> Vec<Form> {
@@ -330,13 +412,43 @@ impl World {
             trigger,
         });
     }
-    pub(crate) fn check_harmony_contrast(&mut self, v: usize, law: Option<&'static str>) {
+    pub(crate) fn check_harmony_contrast(&mut self, v: usize) {
         if self.varieties[v]
             .harmony
             .as_ref()
             .is_some_and(|h| h.active() && !h.feature.has_contrast(&self.varieties[v]))
         {
-            self.lose_harmony(v, Trigger::ContrastMerger { law });
+            self.lose_harmony(v, Trigger::LexicalAttrition);
+        }
+    }
+    /// Check attrition before the law, so a later consonant law cannot take
+    /// credit for an already missing vowel. Capture productive alternation
+    /// before grammar's regular sound change and before harmony can restore it.
+    pub(crate) fn harmony_before_law(&mut self, v: usize) -> Option<(Feature, bool)> {
+        self.check_harmony_contrast(v);
+        self.varieties[v]
+            .harmony
+            .as_ref()
+            .filter(|h| h.active())
+            .map(|h| (h.feature, h.feature.has_affix_contrast(&self.varieties[v])))
+    }
+    pub(crate) fn harmony_after_law(
+        &mut self,
+        v: usize,
+        law: &'static str,
+        before: Option<(Feature, bool)>,
+    ) {
+        let Some((feature, affixes)) = before else {
+            return;
+        };
+        let variety = &self.varieties[v];
+        if !feature.has_contrast(variety) || (affixes && !feature.has_affix_contrast(variety)) {
+            let trigger = if feature.law_changed_vowels(variety, law, self.generation) {
+                Trigger::ContrastMerger { law }
+            } else {
+                Trigger::LexicalAttrition
+            };
+            self.lose_harmony(v, trigger);
         }
     }
     pub(crate) fn evolve_harmony(&mut self, spoken: &[bool]) {
@@ -353,7 +465,7 @@ impl World {
             if !spoken {
                 continue;
             }
-            self.check_harmony_contrast(v, None);
+            self.check_harmony_contrast(v);
             if self.varieties[v]
                 .harmony
                 .as_ref()

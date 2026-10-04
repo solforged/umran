@@ -3988,6 +3988,7 @@ impl World {
     /// and faiths) are kept as they were said.
     pub(crate) fn apply_law(&mut self, v: usize, law: &Law) {
         let generation = self.generation;
+        let harmony_before = self.harmony_before_law(v);
         let variety = &mut self.varieties[v];
         let minimal = variety.minimal;
         let stress = variety.stress();
@@ -4019,7 +4020,7 @@ impl World {
             variety.stress_history.push((generation, stress));
             variety.profile.stress = Some(next);
         }
-        self.check_harmony_contrast(v, Some(law.id));
+        self.harmony_after_law(v, law.id, harmony_before);
         let variety = &mut self.varieties[v];
         variety.harmonize_words(generation);
         self.change_names(v, |name| name.change(law, minimal, stress, generation));

@@ -12,6 +12,9 @@ fn variety() -> Variety {
         plural: GrammarChoice::Suffix,
         past: GrammarChoice::None,
         object: Some(GrammarChoice::None),
+        future: Some(GrammarChoice::None),
+        progressive: Some(GrammarChoice::None),
+        genitive: Some(GrammarChoice::None),
         ..GrammarDesign::default()
     });
     let mut v = Variety::found(7, &profile, Livelihood::Farming, Ethos::default());
@@ -223,7 +226,7 @@ fn merger_stops_productivity_and_does_not_undo_old_forms() {
     assert_eq!(
         w.varieties[0].harmony_events[0].trigger,
         Trigger::ContrastMerger {
-            law: Some("test-unround")
+            law: "test-unround"
         }
     );
 }
@@ -258,4 +261,104 @@ fn contact_loss_needs_sustained_contact_with_a_nonharmonic_donor() {
         w.varieties[0].harmony_events[0].trigger,
         Trigger::Contact { donor: 1, .. }
     ));
+}
+
+#[test]
+fn rare_harmonic_vowels_survive_consonant_laws_below_established_threshold() {
+    // Audit: 184 living words, only three /o/ words, yet /o ~ ø/ survives.
+    // The old established() check lost harmony after degemination.
+    let mut w = world();
+    let v = &mut w.varieties[0];
+    for word in &mut v.lexicon.lexemes {
+        word.form = form("pøtø");
+        word.paradigms.clear();
+    }
+    let concept = crate::concepts::by_id("child").unwrap();
+    while v.lexicon.living().count() < 184 {
+        v.lexicon.coin(form("pøtø"), Origin::Expressive, concept, 0);
+    }
+    for word in v.lexicon.lexemes.iter_mut().take(3) {
+        word.form = form("poːtːo");
+    }
+    v.harmony = Some(Harmony::new(Feature::Backness, 0, 7));
+    v.sync_grammar(0);
+    assert!(!v.established().contains(&CATALOG.id_by_ipa("o").unwrap()));
+    assert!(Feature::Backness.has_contrast(v));
+    let law = w
+        .law_catalog()
+        .iter()
+        .find(|l| l.id == "degemination")
+        .unwrap()
+        .clone();
+    w.generation = 115;
+    w.apply_law(0, &law);
+    assert!(w.varieties[0].harmony.as_ref().unwrap().active());
+    assert!(w.varieties[0].harmony_events.is_empty());
+}
+
+#[test]
+fn lexical_attrition_is_not_credited_to_the_next_consonant_law() {
+    let mut w = world();
+    let v = &mut w.varieties[0];
+    v.harmony = Some(Harmony::new(Feature::Rounding, 0, 7));
+    v.sync_grammar(0);
+    for word in &mut v.lexicon.lexemes {
+        if word
+            .form
+            .phones()
+            .any(|p| p == CATALOG.id_by_ipa("y").unwrap())
+        {
+            word.obsolete = Some(1);
+        }
+    }
+    let law = w
+        .law_catalog()
+        .iter()
+        .find(|l| l.id == "degemination")
+        .unwrap()
+        .clone();
+    w.generation = 2;
+    w.apply_law(0, &law);
+    assert_eq!(
+        w.varieties[0].harmony_events[0].trigger,
+        Trigger::LexicalAttrition
+    );
+}
+
+#[test]
+fn collapse_of_productive_affixes_stops_harmony_with_stem_contrast_intact() {
+    let mut w = world();
+    let v = &mut w.varieties[0];
+    // Stems end in /t/; only affix vowels are word-final.
+    for (i, word) in v.lexicon.lexemes.iter_mut().enumerate() {
+        word.form = form(if i % 2 == 0 { "pit" } else { "pyt" });
+        word.paradigms.clear();
+    }
+    v.harmony = Some(Harmony::new(Feature::Rounding, 0, 7));
+    v.sync_grammar(0);
+    assert!(Feature::Rounding.has_affix_contrast(v));
+    let law = crate::Law {
+        id: "test-final-unround",
+        label: "final vowels unround",
+        commonness: 0.0,
+        stress: None,
+        rules: vec![crate::SoundChange {
+            id: "test-final-unround".into(),
+            target: crate::Matcher::Phone(CATALOG.id_by_ipa("y").unwrap()),
+            result: crate::Rewrite::Phone(CATALOG.id_by_ipa("i").unwrap()),
+            left: crate::Env::Any,
+            right: crate::Env::WordEdge,
+        }],
+    };
+    w.generation = 2;
+    w.apply_law(0, &law);
+    assert!(Feature::Rounding.has_contrast(&w.varieties[0]));
+    assert!(!Feature::Rounding.has_affix_contrast(&w.varieties[0]));
+    assert_eq!(w.varieties[0].harmony.as_ref().unwrap().lost, Some(2));
+    assert_eq!(
+        w.varieties[0].harmony_events[0].trigger,
+        Trigger::ContrastMerger {
+            law: "test-final-unround"
+        }
+    );
 }

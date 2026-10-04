@@ -8,6 +8,9 @@ mod sample;
 fn report(world: &World, name: &str) {
     let mut gained = 0;
     let mut lost = 0;
+    let mut mergers = 0;
+    let mut attrition = 0;
+    let mut contact = 0;
     let mut active = 0;
     let mut loans = 0;
     for (id, v) in world.varieties.iter().enumerate() {
@@ -28,9 +31,15 @@ fn report(world: &World, name: &str) {
                     format!("after {law} in year {}", generation * 25)
                 }
                 Trigger::ContrastMerger { law } => {
-                    format!("contrast lost after {}", law.unwrap_or("lexical turnover"))
+                    mergers += usize::from(!event.gained);
+                    format!("contrast lost after {law}")
+                }
+                Trigger::LexicalAttrition => {
+                    attrition += usize::from(!event.gained);
+                    "contrast lost through lexical attrition".into()
                 }
                 Trigger::Contact { donor, .. } => {
+                    contact += usize::from(!event.gained);
                     format!("sustained contact with language {donor}")
                 }
             };
@@ -65,8 +74,9 @@ fn report(world: &World, name: &str) {
         }
     }
     println!(
-        "{name}: {} varieties, {gained} gains, {lost} losses, {active} active, {loans} recorded loan exceptions",
-        world.varieties.len()
+        "{name}: {} varieties, {gained} gains, {lost} losses, {active} active ({:.2}%), {loans} recorded loan exceptions; losses by cause: merger {mergers}, lexical attrition {attrition}, contact {contact}",
+        world.varieties.len(),
+        100.0 * active as f32 / world.varieties.len() as f32
     );
 }
 

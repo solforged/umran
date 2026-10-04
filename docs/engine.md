@@ -408,14 +408,36 @@ This bookkeeping makes no random draws and does not itself change replay.
   vowel decides; every living word, name, and grammatical form agrees, and
   bound endings take agreeing alternants, as Turkish -lar/-ler. About two
   thirds of disharmonic loans after the gain stay disharmonic, as Turkish
-  kitap. Harmony is lost when the vowels it pairs merge, or after twelve or
-  more generations of strong contact with a language without it, as urban
-  Uzbek lost palatal harmony under Persian. Two new catalog laws carry
+  kitap. Loss is checked against the vowels in living lexical and grammatical
+  forms, not the two-percent `established()` threshold used for adapting loans:
+  a rare harmonic class still counts, without requiring an accidental minimal
+  pair in the small generated dictionary. A sound law ends harmony if it removes
+  the last paired contrast or collapses all attested productive affix alternation.
+  The check runs before agreement could restore the erased alternants. Only a
+  law that actually changed a relevant vowel is recorded as a contrast merger;
+  a contrast already absent before that law is recorded as lexical attrition,
+  without assigning the next consonant law as its cause. Long contact remains
+  a separate loss route, after twelve or more generations of strong contact
+  with a language without harmony, as urban Uzbek under Persian. The distinction
+  between exceptional stems and productive endings follows Kiparsky,
+  [*Domains of Vowel Harmony*, §§17.1–17.4](https://web.stanford.edu/~kiparsky/Papers/vowelharmony2.pdf);
+  the categorical loss rule is a model, not an estimated historical loss rate.
+  Two catalog laws carry
   the rounding and ATR assimilations; the word-level rule is recorded in
   word histories under its own law id. Each decision has its own stream,
   and `static_society()` sets `harmony_rate` to zero. Over 40 seeds and
-  4,000 years, 68 of 290 varieties have harmony, mostly inherited along a
-  family, as in Uralic and Turkic (`tests/harmony_band.rs`).
+  4,000 years, the corrected loss checks leave 60 of 318 varieties active
+  (18.87%), with 75 inherited-inclusive gains and 15 losses, all from sound
+  laws; lexical attrition and contact account for none in this cohort.
+  Before the correction these figures were 61 active (19.18%), 70 gains,
+  and nine losses, all labelled mergers. The workbench sample has no gains.
+  These are related varieties, not independent typological observations
+  (`tests/harmony_band.rs`, about 77 seconds in release). In the separate
+  12-seed, four-profile example, losses change from seven to ten and active
+  harmony from 103/432 (23.84%) to 98/432 (22.69%): genuine affix collapse
+  now ends some systems even while rare stem contrasts preserve others.
+  The audit's Finnic seed 2 has no losses after degemination or nasal
+  assimilation, and keeps all 16 varieties active instead of 12.
 - Tone (`tone.rs`) is pitch that tells words apart, carried on each vowel
   (`Seg::tone`) and written with Chao tone letters after it, as ˥ high,
   ˩ low, ˧˥ rising, ˥˩ falling. It arises through regular sound laws by

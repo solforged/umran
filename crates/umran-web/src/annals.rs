@@ -2511,7 +2511,14 @@ fn harmony_changes(world: &World) -> Vec<Annal> {
                         "Among {people}, vowel harmony faded once the vowels it paired had fallen together."
                     ),
                     "Harmony needs the contrast it rests on; Estonian lost most of the Finnic harmony this way.".into(),
-                    law.into_iter().collect(),
+                    vec![law],
+                    None,
+                    None,
+                ),
+                Trigger::LexicalAttrition => (
+                    format!("Among {people}, vowel harmony faded as the words that set its vowels apart fell out of use."),
+                    "The pairing wore away through the vocabulary, not through any one sound law.".into(),
+                    Vec::new(),
                     None,
                     None,
                 ),
