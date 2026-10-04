@@ -8,7 +8,7 @@ import {
   geoStream,
 } from "d3-geo";
 import type { LineString, Polygon } from "geojson";
-import type { Region, River, WorldMap } from "./model";
+import type { Lake, Region, River, WorldMap } from "./model";
 
 export type MapProjection = "chart" | "globe";
 /** Geographic longitude and latitude at the centre of the globe, in degrees. */
@@ -25,6 +25,8 @@ export interface Cartography {
   region(region: Region): string;
   /** Point arrays and their coordinates are immutable cache keys. */
   line(points: readonly MapPoint[]): string;
+  /** Smooth source-chart outlines, clipped by the same spherical projection as lands. */
+  area(points: readonly MapPoint[]): string;
   /** Longest uninterrupted visible line segment, oriented left to right. */
   labelLine(points: readonly MapPoint[]): string;
   /** Final visible segment in source order; empty if the destination is hidden. */
@@ -46,6 +48,7 @@ interface MapGeometry {
   regions: WeakMap<Region, Polygon>;
   vectors: WeakMap<Region, Vector[]>;
   lines: WeakMap<readonly MapPoint[], LineString>;
+  areas: WeakMap<readonly MapPoint[], Polygon>;
   points: WeakMap<MapPoint, { location: MapPoint; normal: Vector }>;
   borders: Map<number, Map<number, MapPoint[]>>;
   rivers: WeakMap<River, MapPoint[]>;
@@ -59,6 +62,7 @@ function geometryFor(map: WorldMap): MapGeometry {
       regions: new WeakMap(),
       vectors: new WeakMap(),
       lines: new WeakMap(),
+      areas: new WeakMap(),
       points: new WeakMap(),
       borders: new Map(),
       rivers: new WeakMap(),
@@ -143,6 +147,54 @@ function lineGeometry(map: WorldMap, points: readonly MapPoint[]): LineString {
   line = { type: "LineString", coordinates };
   cache.set(points, line);
   return line;
+}
+
+/** A lake's inferred shore is one rounded hull, not separate inset land tiles.
+ * Unwrap around its first land before taking the hull so seam lakes stay local.
+ * Sample a closed cubic B-spline once in the source plane; both projections
+ * then draw and horizon-clip the very same smooth geographic shoreline. */
+export function lakeOutline(map: WorldMap, lake: Lake): { shore: MapPoint[]; ripple: MapPoint[]; center: MapPoint } {
+  const origin = map.regions[lake.regions[0]].site[0];
+  const vertices = lake.regions.flatMap((id) => {
+    const region = map.regions[id];
+    return region.boundary.map((point): MapPoint => {
+      const [x, y] = chartPoint(map, geoInterpolate(region.center, point)(0.75) as MapPoint);
+      return [origin + ((x - origin + map.width * 1.5) % map.width) - map.width / 2, y];
+    });
+  }).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (a: MapPoint, b: MapPoint, c: MapPoint) =>
+    (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  const half = (points: MapPoint[]) => {
+    const out: MapPoint[] = [];
+    for (const point of points) {
+      while (out.length > 1 && cross(out[out.length - 2], out[out.length - 1], point) <= 0) out.pop();
+      out.push(point);
+    }
+    out.pop();
+    return out;
+  };
+  const hull = [...half(vertices), ...half([...vertices].reverse())];
+  const shore: MapPoint[] = [];
+  for (let i = 0; i < hull.length; i++) {
+    const a = hull[(i + hull.length - 1) % hull.length], b = hull[i];
+    const c = hull[(i + 1) % hull.length], d = hull[(i + 2) % hull.length];
+    for (let step = 0; step < 8; step++) {
+      const t = step / 8, t2 = t * t, t3 = t2 * t;
+      const weights = [(1 - 3 * t + 3 * t2 - t3) / 6, (4 - 6 * t2 + 3 * t3) / 6,
+        (1 + 3 * t + 3 * t2 - 3 * t3) / 6, t3 / 6];
+      shore.push([a[0] * weights[0] + b[0] * weights[1] + c[0] * weights[2] + d[0] * weights[3],
+        a[1] * weights[0] + b[1] * weights[1] + c[1] * weights[2] + d[1] * weights[3]]);
+    }
+  }
+  let area = 0, x = 0, y = 0;
+  for (let i = 0; i < shore.length; i++) {
+    const a = shore[i], b = shore[(i + 1) % shore.length], weight = a[0] * b[1] - b[0] * a[1];
+    area += weight; x += (a[0] + b[0]) * weight; y += (a[1] + b[1]) * weight;
+  }
+  const center: MapPoint = area ? [x / (3 * area), y / (3 * area)] : map.regions[lake.regions[0]].site;
+  const ripple = shore.map(([x, y]): MapPoint => [center[0] + (x - center[0]) * 0.84, center[1] + (y - center[1]) * 0.84]);
+  ripple.push(ripple[0]);
+  return { shore, ripple, center };
 }
 
 /** Map geometry and supplied point arrays must not be mutated after use. */
@@ -261,6 +313,15 @@ export function createCartography(
     },
     line(points) {
       return points.length < 2 ? "" : project(lineGeometry(map, points));
+    },
+    area(points) {
+      if (points.length < 3) return "";
+      let polygon = geometry.areas.get(points);
+      if (!polygon) {
+        polygon = polygonGeometry(points.map((point) => geographicPoint(map, point)));
+        geometry.areas.set(points, polygon);
+      }
+      return project(polygon);
     },
     labelLine(points) {
       return points.length < 2 ? "" : continuous(lineGeometry(map, points)).label;

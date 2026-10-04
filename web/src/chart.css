@@ -283,6 +283,13 @@
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
 }
+
+/* Inland water uses one rounded shore and the chart's faint coastal ink. */
+.chart-lake .lake-ripple {
+  fill: none;
+  stroke-width: 0.7;
+  stroke-opacity: 0.22;
+}
 .chart-marks path {
   stroke: var(--ink);
   stroke-width: 0.014;
