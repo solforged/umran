@@ -287,8 +287,9 @@ pub fn language_name(variety: &Variety, people: &Name, spelled: &str, generation
 
 /// Every way a language can be named from its speakers' name, the usual
 /// one first: the other way of forming it (a language that names by the
-/// belonging affix can still say "the X tongue"), then each said in full
-/// rather than clipped, for when the usual name is another language's.
+/// belonging affix can still say "the X tongue"), then each a syllable
+/// longer, then each said in full, for when the usual name is another
+/// language's.
 pub fn language_names(
     variety: &Variety,
     people: &Name,
@@ -322,13 +323,17 @@ pub fn language_names(
         coined: generation,
         log: Vec::new(),
     };
-    let short = ways
-        .iter()
-        .map(|(form, meaning)| name(clipped(form.clone(), MAX_LANGUAGE_NAME), meaning));
+    let at_most = |max: usize| {
+        ways.iter()
+            .map(move |(form, meaning)| name(clipped(form.clone(), max), meaning))
+    };
     let whole = ways
         .iter()
         .map(|(form, meaning)| name(form.clone(), meaning));
-    short.chain(whole).collect()
+    at_most(MAX_LANGUAGE_NAME)
+        .chain(at_most(MAX_LANGUAGE_NAME + 1))
+        .chain(whole)
+        .collect()
 }
 
 /// What a land is like, which decides what it can be named for.

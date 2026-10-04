@@ -307,6 +307,25 @@ This bookkeeping makes no random draws and does not itself change replay.
   Stress shifts to the first syllable or penult are candidates only when
   the rule differs and a living word's accent would move. They change no
   segments, but record word and name histories and spread as waves.
+- Vowel harmony (`harmony.rs`) makes the vowels of a whole word agree in
+  one feature: front with back (backness, as in Finnish and Turkish),
+  rounding (as in Turkish and Mongolian), or tongue-root position (ATR, as
+  in Akan). It grows out of assimilation between neighbouring syllables,
+  as is thought for Finnic and Turkic: within 24 generations of umlaut,
+  rounding assimilation, or ATR assimilation, and while the language keeps
+  the vowel pairs the feature needs, it can become a rule for the word
+  (`harmony_rate`, 0.004 a generation). From then on the first paired stem
+  vowel decides; every living word, name, and grammatical form agrees, and
+  bound endings take agreeing alternants, as Turkish -lar/-ler. About two
+  thirds of disharmonic loans after the gain stay disharmonic, as Turkish
+  kitap. Harmony is lost when the vowels it pairs merge, or after twelve or
+  more generations of strong contact with a language without it, as urban
+  Uzbek lost palatal harmony under Persian. Two new catalog laws carry
+  the rounding and ATR assimilations; the word-level rule is recorded in
+  word histories under its own law id. Each decision has its own stream,
+  and `static_society()` sets `harmony_rate` to zero. Over 40 seeds and
+  4,000 years, 68 of 290 varieties have harmony, mostly inherited along a
+  family, as in Uralic and Turkic (`tests/harmony_band.rs`).
 - Each language has a minimal word (`prosody.rs`), drawn at founding: any
   syllable, a heavy one (two moras), or two syllables, likelier the more
   disyllabic its roots. A rule that would wear a word below it passes that
@@ -377,7 +396,8 @@ This bookkeeping makes no random draws and does not itself change replay.
   an epithet on the old name said short ("the far Goths") tells it apart,
   or else whichever of those needs the fewest syllables more. A new
   language whose usual name is taken is named the other way ("the X
-  tongue" for "of the X") or in full. Names then undergo the same sound
+  tongue" for "of the X"), then either way a syllable longer, and only
+  then in full. Names then undergo the same sound
   laws as their variety's words, so two may still come to sound alike
   over time. Split-off peoples name themselves; a people that shifts
   keeps its name and names its new speech after itself. Exonyms are the
@@ -1069,6 +1089,8 @@ cargo run --release -p umran-sim --example ethos -- [seed] [generations]
 cargo run --release -p umran-sim --example ethos -- --band 40 160
 cargo run --release -p umran-sim --example endings -- [seeds]
 cargo run --release -p umran-sim --example tense -- [seeds] [years]
+cargo run --release -p umran-sim --example pronouns -- [seeds]
+cargo run --release -p umran-sim --example harmony -- [seeds] [generations]
 cargo run --release -p umran-web --example provenance
 ```
 
@@ -1096,7 +1118,7 @@ compounding and derivation after founding beyond renewal and new meanings,
 inflection beyond count noun plural and object marking, the genitive, and verb
 past, future, and progressive, productive root-and-pattern inflection,
 agreement beyond the determiner, combined tense–aspect forms, modal readings and
-clitic stages, pronoun case forms, tone, vowel harmony beyond next-syllable umlaut,
+clitic stages, pronoun case forms, tone, vowel harmony beyond the word,
 prenasalized stops, syntax beyond fixed word
 and possessor order, alignment beyond this object contrast, and doctrinal
 detail beyond the causes of a schism.

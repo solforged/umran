@@ -35,6 +35,9 @@ pub struct Variety {
     pub pronouns: crate::pronouns::Pronouns,
     /// Noun classes and the determiner forms that agree with them.
     pub gender: crate::gender::Gender,
+    /// Productive word-level vowel agreement, including its last loss.
+    pub harmony: Option<crate::harmony::Harmony>,
+    pub harmony_events: Vec<crate::harmony::Notice>,
     /// The smallest word sound change may leave.
     pub minimal: MinimalWord,
     /// Sound laws in the order applied, with their generation. A law may
@@ -127,6 +130,8 @@ impl Variety {
             grammar: Grammar::default(),
             pronouns: crate::pronouns::Pronouns::default(),
             gender: crate::gender::Gender::default(),
+            harmony: None,
+            harmony_events: Vec::new(),
             minimal: MinimalWord::draw(
                 profile.phonotactics.disyllabic_roots,
                 &mut stream(seed, &[key("minimal word")]),
@@ -225,6 +230,7 @@ impl Variety {
     }
 
     pub(crate) fn sync_grammar(&mut self, generation: u32) {
+        self.harmonize_words(generation);
         let stress = self.stress();
         self.grammar
             .sync(&mut self.lexicon, &self.morphology, stress, generation);

@@ -24,7 +24,8 @@ use std::collections::BTreeMap;
 /// Revision 36 adds future and progressive marking.
 /// Revision 37 adds pronouns and the genitive.
 /// Revision 38 adds noun classes with determiner agreement.
-pub const ENGINE_REVISION: u32 = 38;
+/// Revision 39 adds vowel harmony and two assimilation laws.
+pub const ENGINE_REVISION: u32 = 39;
 /// Revision 33 replaces flat geography and its region identities with a sphere.
 /// Earlier region-targeted actions cannot be replayed on the spherical mesh.
 pub const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;

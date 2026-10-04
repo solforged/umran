@@ -38,7 +38,8 @@ pub(crate) struct Annal {
     /// "vernacular", "craft", "faith", "conversion", "meaning",
     /// "respelling", "schism", "pilgrimage", "holy-land", "temper", "grammar",
     /// "pronoun-renewed", "pronoun-polite", "pronoun-borrowed", "class-emerged",
-    /// "class-merged", "class-lost", "climate", "river-flow", or "law".
+    /// "class-merged", "class-lost", "harmony-gained", "harmony-lost",
+    /// "climate", "river-flow", or "law".
     pub kind: &'static str,
     /// The annalist's words. Words of the language are marked `*thus*`.
     pub text: String,
@@ -999,6 +1000,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
     out.extend(grammar_changes(world));
     out.extend(pronoun_changes(world));
     out.extend(class_changes(world));
+    out.extend(harmony_changes(world));
     let shifts = Shifts::of(world);
     fn languages(a: &mut Annal, world: &World, shifts: &Shifts) {
         for member in &mut a.members {
@@ -2184,6 +2186,104 @@ fn pronoun_changes(world: &World) -> Vec<Annal> {
     out
 }
 
+fn harmony_changes(world: &World) -> Vec<Annal> {
+    use umran_sim::harmony::{Feature, Trigger};
+    let shifts = Shifts::of(world);
+    let mut out = Vec::new();
+    for (v, variety) in world.varieties.iter().enumerate() {
+        for (position, notice) in variety
+            .harmony_events
+            .iter()
+            .enumerate()
+            .filter(|(_, notice)| {
+                variety.parent.is_none_or(|fork| {
+                    notice.generation > fork.generation
+                        || (notice.generation == fork.generation
+                            && !world.varieties[fork.variety]
+                                .harmony_events
+                                .contains(notice))
+                })
+            })
+        {
+            let generation = notice.generation;
+            let people = speakers(world, &shifts, v, generation);
+            let agree = match notice.feature {
+                Feature::Backness => "front with front and back with back",
+                Feature::Rounding => "rounded with rounded",
+                Feature::Atr => "tense with tense and lax with lax",
+            };
+            let (text, note, laws, cause, donor) = match notice.trigger {
+                Trigger::Assimilation { law, .. } => (
+                    format!(
+                        "Among {people}, the vowels of a word came to agree, {agree}, and endings changed to match the words they joined."
+                    ),
+                    "Vowel harmony: a change between neighbouring syllables became a rule for the whole word, as harmony is thought to have grown in Finnic and Turkic.".into(),
+                    vec![law],
+                    None,
+                    None,
+                ),
+                Trigger::ContrastMerger { law } => (
+                    format!(
+                        "Among {people}, vowel harmony faded once the vowels it paired had fallen together."
+                    ),
+                    "Harmony needs the contrast it rests on; Estonian lost most of the Finnic harmony this way.".into(),
+                    law.into_iter().collect(),
+                    None,
+                    None,
+                ),
+                Trigger::Contact { donor, cause } => (
+                    format!(
+                        "Among {people}, vowel harmony gave way after long contact with {}, which had none.",
+                        world.language_title_at(donor, generation)
+                    ),
+                    "Urban Uzbek lost its palatal harmony this way, under long contact with Persian.".into(),
+                    Vec::new(),
+                    cause,
+                    Some(donor),
+                ),
+            };
+            out.push(Annal {
+                id: format!("harmony:{v}:{position}"),
+                members: Vec::new(),
+                languages: Vec::new(),
+                generation,
+                kind: if notice.gained {
+                    "harmony-gained"
+                } else {
+                    "harmony-lost"
+                },
+                text,
+                notes: vec![note],
+                cause,
+                variety: Some(v),
+                peoples: (0..world.communities.len())
+                    .filter(|&c| {
+                        let spoken = shifts.spoken_by(world, c, generation);
+                        shifts.alive_at(world, c, generation)
+                            && (spoken == v || donor == Some(spoken))
+                    })
+                    .collect(),
+                lands: Vec::new(),
+                laws,
+                specimen: Vec::new(),
+                states: Vec::new(),
+                religions: Vec::new(),
+                crafts: Vec::new(),
+                temper: None,
+                grammar: None,
+                zones: Vec::new(),
+                rivers: Vec::new(),
+                climate: None,
+                river_flow: None,
+                settlement: None,
+                decision: None,
+                before: None,
+            });
+        }
+    }
+    out
+}
+
 fn class_changes(world: &World) -> Vec<Annal> {
     use umran_sim::gender::{Basis, ClassChange};
     let shifts = Shifts::of(world);
@@ -2289,7 +2389,6 @@ fn class_changes(world: &World) -> Vec<Annal> {
     }
     out
 }
-
 fn grammatical_marker(variety: &Variety, marker: &Marker, generation: u32) -> String {
     let form = grammar_form_at(&marker.form, &marker.history, generation);
     let spelled = variety.spell(form);

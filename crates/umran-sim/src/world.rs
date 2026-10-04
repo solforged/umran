@@ -286,6 +286,8 @@ pub struct Params {
     pub pronoun_rate: f32,
     /// Per-generation chance of recruiting a noun-class agreement system.
     pub class_emergence_rate: f32,
+    /// Chance to phonologize recent vowel assimilation into word harmony.
+    pub harmony_rate: f32,
 }
 
 impl Default for Params {
@@ -350,6 +352,7 @@ impl Default for Params {
             tense_aspect: true,
             pronoun_rate: 0.003,
             class_emergence_rate: 0.0015,
+            harmony_rate: 0.004,
         }
     }
 }
@@ -387,6 +390,7 @@ impl Params {
             tense_aspect: false,
             pronoun_rate: 0.0,
             class_emergence_rate: 0.0,
+            harmony_rate: 0.0,
             ..Self::default()
         }
     }
@@ -2001,6 +2005,7 @@ impl World {
         self.borrow();
         self.grammar_contact(&spoken);
         self.evolve_pronouns(&spoken);
+        self.evolve_harmony(&spoken);
         let prestige = self.variety_prestige();
         for v in (0..self.varieties.len()).filter(|&v| spoken[v]) {
             let clashes = self.varieties[v].lexicon.clashing();
@@ -2063,6 +2068,12 @@ impl World {
         self.temper_generation();
         for variety in &mut self.varieties {
             variety.sync_grammar(self.generation);
+        }
+        let spoken = self.spoken();
+        for (v, spoken) in spoken.into_iter().enumerate() {
+            if spoken {
+                self.harmonize_names(v);
+            }
         }
     }
 
@@ -3897,24 +3908,34 @@ impl World {
             variety.stress_history.push((generation, stress));
             variety.profile.stress = Some(next);
         }
+        self.check_harmony_contrast(v, Some(law.id));
+        let variety = &mut self.varieties[v];
+        variety.harmonize_words(generation);
+        self.change_names(v, |name| name.change(law, minimal, stress, generation));
+        self.harmonize_names(v);
+    }
+
+    /// One traversal for every living name; historical attestations stay frozen.
+    pub(crate) fn change_names(&mut self, v: usize, mut change: impl FnMut(&mut Name)) {
+        let variety = &mut self.varieties[v];
         // Names are words too.
-        variety.name.change(law, minimal, stress, generation);
+        change(&mut variety.name);
         for community in self
             .communities
             .iter_mut()
             .filter(|c| c.variety == v && c.living())
         {
-            community.name.change(law, minimal, stress, generation);
+            change(&mut community.name);
         }
         // And so are the given names in fashion.
         for given in &mut self.varieties[v].given {
-            given.name.change(law, minimal, stress, generation);
+            change(&mut given.name);
         }
         // The name of a state its speakers rule changes with their speech.
         for s in 0..self.states.len() {
             let state = &self.states[s];
             if state.standing() && self.communities[state.rulers].variety == v {
-                self.states[s].name.change(law, minimal, stress, generation);
+                change(&mut self.states[s].name);
             }
         }
         // And so are the names of the lands its speakers hold, each once.
@@ -3926,15 +3947,15 @@ impl World {
             .collect();
         held.sort_unstable();
         held.dedup();
-        self.change_river_names(v, law, minimal, stress, &held);
+        self.change_river_names(v, &held, &mut change);
         for region in held {
             if let Some(p) = self.places[region].last_mut().filter(|p| p.variety == v) {
-                p.name.change(law, minimal, stress, generation);
+                change(&mut p.name);
             }
         }
         // And its names for lands others hold.
         for (_, name) in &mut self.varieties[v].exonyms {
-            name.change(law, minimal, stress, generation);
+            change(name);
         }
     }
 
@@ -6001,13 +6022,14 @@ mod tests {
         );
     }
 
-    /// Mean syllables of the dominant words, and the share of distinct
-    /// dominant words that sound like another.
+    /// Mean syllables of the dominant content words, and the share of
+    /// distinct ones that sound like another. Pronouns are short by design.
     fn shape(world: &World) -> (f32, f32) {
         let lexicon = &world.varieties[0].lexicon;
         let mut words: Vec<LexemeId> = lexicon
             .slots
             .iter()
+            .filter(|slot| !crate::pronouns::is_pronoun(slot.concept))
             .filter_map(crate::lexicon::Slot::dominant)
             .collect();
         words.sort();
@@ -6056,7 +6078,8 @@ mod tests {
         let (short, short_homophony) = mean("pie-like");
         // After four thousand years, languages of long words keep them and
         // languages of short roots stay short, rather than all converging.
-        // Revision 32: 40-seed means 1.763 before / 1.762 after; 12-seed band-edge noise.
+        // Revision 39, content words only: 40-seed means 1.748 and 1.119,
+        // homophony 0.027 and 0.038; 12 seeds sit near the length edge.
         assert!(long > 1.7, "polynesian words wore down to {long:.2}");
         assert!(short < 1.5, "pie-like words grew to {short:.2}");
         assert!(long - short > 0.4);
@@ -6138,9 +6161,11 @@ mod tests {
             for c in &world.communities {
                 assert!(c.name.form.vowel_count() <= 4, "{}", c.name.form.ipa());
             }
+            // A language's name is a syllable longer only where its short
+            // name is another language's.
             for (v, spoken) in world.spoken().into_iter().enumerate() {
                 let name = &world.varieties[v].name.form;
-                assert!(!spoken || name.vowel_count() <= 4, "{}", name.ipa());
+                assert!(!spoken || name.vowel_count() <= 5, "{}", name.ipa());
             }
         }
     }

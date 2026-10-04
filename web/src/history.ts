@@ -23,6 +23,7 @@ const GROUP: Record<Annal["kind"], HistoryGroup> = {
   koine: "Languages & words", temper: "Land & livelihood", grammar: "Languages & words",
   "pronoun-renewed": "Languages & words", "pronoun-polite": "Languages & words", "pronoun-borrowed": "Languages & words",
   "class-emerged": "Languages & words", "class-merged": "Languages & words", "class-lost": "Languages & words",
+  "harmony-gained": "Languages & words", "harmony-lost": "Languages & words",
 };
 export function searchText(text: string): string {
   return text.normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase();

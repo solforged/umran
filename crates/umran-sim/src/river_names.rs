@@ -5,7 +5,7 @@ use crate::adapt::Adapter;
 use crate::names::{Name, PlaceName, PlaceOrigin, river_name};
 use crate::rng::{key, stream};
 use crate::world::{PLACE_HOLD, PLACE_KEEP_KNOWN, PLACE_KEEP_UNKNOWN};
-use crate::{Law, MinimalWord, StressRule, Variety, World};
+use crate::{Variety, World};
 use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -268,10 +268,9 @@ impl World {
     pub(crate) fn change_river_names(
         &mut self,
         variety: usize,
-        law: &Law,
-        minimal: MinimalWord,
-        stress: StressRule,
+        // Shared with productive harmony; callers supply the recorded change.
         held: &[usize],
+        change: &mut impl FnMut(&mut crate::Name),
     ) {
         let mut rivers: Vec<usize> = held
             .iter()
@@ -284,11 +283,11 @@ impl World {
                 .last_mut()
                 .filter(|p| p.variety == variety)
             {
-                place.name.change(law, minimal, stress, self.generation);
+                change(&mut place.name);
             }
         }
         for (_, name) in &mut self.varieties[variety].river_exonyms {
-            name.change(law, minimal, stress, self.generation);
+            change(name);
         }
     }
 
@@ -363,7 +362,7 @@ impl World {
 mod tests {
     use super::*;
     use crate::geography::River;
-    use crate::{Env, Form, Matcher, Params, Rewrite, SoundChange, SoundProfile};
+    use crate::{Env, Form, Law, Matcher, Params, Rewrite, SoundChange, SoundProfile};
     use std::sync::Arc;
 
     // A main course a->b and a tributary c->a. b and c do not border, so

@@ -425,6 +425,8 @@ pub struct Grammar {
     pub summary: GrammarSummary,
     /// Consecutive generations of strong bilingual contact, by donor variety.
     pub contact_generations: BTreeMap<usize, u32>,
+    /// Active stem-controlled agreement; absent after harmony is lost.
+    pub harmony: Option<crate::harmony::Feature>,
     usage: Vec<[f32; Category::ALL.len()]>,
 }
 
@@ -666,6 +668,9 @@ impl Grammar {
             } else {
                 joined.boundaries[0]
             };
+            if let Some(feature) = self.harmony {
+                feature.realize_bound(&mut joined, edge, m.side, base);
+            }
             if stress == StressRule::Free && joined.stress.is_none() {
                 // New unaccented stems have initial lexical stress. Prefixes
                 // carry that syllable across their vowels and any lost hiatus.

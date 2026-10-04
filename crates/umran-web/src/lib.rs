@@ -1676,6 +1676,11 @@ impl Bench {
                         contrast_retention: v.grammar.summary.contrast_retention,
                         grammar: grammar_view(world, id),
                         pronouns: pronoun_view(v),
+                        harmony: v.harmony.as_ref().map(|h| HarmonyView {
+                            feature: h.feature,
+                            since: h.since,
+                            lost: h.lost,
+                        }),
                         standard_of: standards[id],
                         own_words: own_words(world, id),
                         names: v
@@ -3335,6 +3340,7 @@ struct VarietyView {
     contrast_retention: f32,
     grammar: GrammarView,
     pronouns: Vec<PronounView>,
+    harmony: Option<HarmonyView>,
     /// The standing state whose standard it is, if any.
     standard_of: Option<usize>,
     /// How many of its meanings it says with words of its own.
@@ -3404,6 +3410,19 @@ fn pronoun_view(variety: &Variety) -> Vec<PronounView> {
             })
         })
         .collect()
+}
+
+#[derive(Serialize)]
+struct HarmonyView {
+    feature: umran_sim::harmony::Feature,
+    since: u32,
+    lost: Option<u32>,
+}
+
+#[derive(Serialize)]
+struct HarmonyAlternant {
+    spelled: String,
+    ipa: String,
 }
 
 #[derive(Serialize)]
@@ -3778,6 +3797,25 @@ fn grammar_view(world: &World, variety: usize) -> GrammarView {
                     born: marker.born,
                     retired: marker.retired,
                     productive: marker.productive,
+                    alternants: v
+                        .grammar
+                        .harmony
+                        .filter(|_| {
+                            marker.kind == MarkerKind::Bound
+                                && marker.retired.is_none()
+                                && marker.productive
+                        })
+                        .map(|feature| {
+                            feature
+                                .alternants(&marker.form)
+                                .iter()
+                                .map(|form| HarmonyAlternant {
+                                    spelled: v.spell(form),
+                                    ipa: form.ipa(),
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default(),
                     history: grammar_history(
                         world,
                         variety,
@@ -4501,6 +4539,8 @@ struct GrammarMarkerView {
     born: u32,
     retired: Option<u32>,
     productive: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    alternants: Vec<HarmonyAlternant>,
     history: Vec<HistoryLine>,
 }
 

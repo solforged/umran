@@ -80,6 +80,8 @@ export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string 
   "class-emerged": { icon: Languages, name: "Noun classes form" },
   "class-merged": { icon: Languages, name: "Two noun classes merge" },
   "class-lost": { icon: Languages, name: "Noun classes are lost" },
+  "harmony-gained": { icon: Languages, name: "Vowels come to agree" },
+  "harmony-lost": { icon: Languages, name: "Vowel harmony fades" },
 };
 
 export const TERRAIN_NAME: Record<Terrain, string> = {

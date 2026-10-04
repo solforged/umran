@@ -22,6 +22,7 @@ pub mod form;
 pub mod gender;
 pub mod geography;
 pub mod grammar;
+pub mod harmony;
 pub mod ideas;
 pub mod inventory;
 pub mod laws;

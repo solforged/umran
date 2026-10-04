@@ -319,7 +319,7 @@ pub fn catalog() -> Vec<Law> {
     use Place::*;
     let close_front = || vowel(Some(Close), Some(Front), Some(false));
     let mid_front = || vowel(Some(CloseMid), Some(Front), Some(false));
-    vec![
+    let mut laws = vec![
         law(
             "intervocalic-voicing",
             "Voiceless stops voice between vowels",
@@ -1000,7 +1000,9 @@ pub fn catalog() -> Vec<Law> {
                 ),
             ],
         ),
-    ]
+    ];
+    laws.extend(crate::harmony::catalog_laws());
+    laws
 }
 
 #[cfg(test)]
