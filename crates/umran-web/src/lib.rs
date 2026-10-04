@@ -1675,6 +1675,7 @@ impl Bench {
                         how_synthetic: v.grammar.summary.how_synthetic,
                         contrast_retention: v.grammar.summary.contrast_retention,
                         grammar: grammar_view(world, id),
+                        pronouns: pronoun_view(v),
                         standard_of: standards[id],
                         own_words: own_words(world, id),
                         names: v
@@ -3331,6 +3332,7 @@ struct VarietyView {
     /// Eligible uses whose plural, past, or object form differs from the base.
     contrast_retention: f32,
     grammar: GrammarView,
+    pronouns: Vec<PronounView>,
     /// The standing state whose standard it is, if any.
     standard_of: Option<usize>,
     /// How many of its meanings it says with words of its own.
@@ -3356,6 +3358,50 @@ struct VarietyView {
     kept_from_high: Option<f32>,
     /// Named lands remembered by this language, ordered by region.
     known_lands: Vec<KnownLandView>,
+}
+
+#[derive(Serialize)]
+struct PronounView {
+    person: u8,
+    number: &'static str,
+    polite: bool,
+    spelled: String,
+    ipa: String,
+    since: u32,
+    origin: &'static str,
+    source: Option<String>,
+}
+
+fn pronoun_view(variety: &Variety) -> Vec<PronounView> {
+    umran_sim::pronouns::CELLS
+        .into_iter()
+        .filter_map(|(person, number, cell)| {
+            let word = variety
+                .lexicon
+                .word_for(umran_sim::concepts::by_id(cell)?)?;
+            let (origin, source) = match word.origin {
+                Origin::Borrowed { from, source, .. } => (
+                    "borrowed",
+                    Some(format!("variety:{from}:word:{}", source.0)),
+                ),
+                Origin::Renewed { base, .. } => (
+                    "renewed",
+                    Some(variety.lexicon.get(base).first_sense.id.to_owned()),
+                ),
+                _ => ("founding", None),
+            };
+            Some(PronounView {
+                person,
+                number,
+                polite: cell == "2sg" && variety.pronouns.polite,
+                spelled: variety.written_word(word),
+                ipa: word.form.ipa_stressed(variety.stress()),
+                since: word.born,
+                origin,
+                source,
+            })
+        })
+        .collect()
 }
 
 #[derive(Serialize)]
@@ -3738,6 +3784,7 @@ fn grammar_view(world: &World, variety: usize) -> GrammarView {
                         Category::Object => "The object marks the countable thing acted upon.",
                         Category::Future => "Future marks an event after the present.",
                         Category::Progressive => "Progressive marks an event in progress.",
+                        Category::Genitive => "Genitive marks a countable possessor.",
                     },
                     eligible: summary.eligible,
                     how_synthetic: summary.how_synthetic,
@@ -3757,7 +3804,8 @@ fn grammar_sample(variety: &Variety, generation: u32) -> Option<GrammarSample> {
     };
     let mut possession = GrammarRendering::default();
     for concept in possession_order {
-        sample_word(variety, concept, None, generation, &mut possession)?;
+        let category = (concept == "child").then_some(Category::Genitive);
+        sample_word(variety, concept, category, generation, &mut possession)?;
     }
     Some(GrammarSample {
         sentence,
@@ -3831,6 +3879,7 @@ fn sample_word(
             Category::Plural => "PL",
             Category::Future => "FUT",
             Category::Progressive => "PROG",
+            Category::Genitive => "GEN",
         };
         for (index, form) in forms.iter().enumerate() {
             let gloss = match marker.kind {
@@ -6703,6 +6752,66 @@ mod tests {
             ]
         );
     }
+    #[test]
+    fn possession_marks_the_possessor_with_bound_or_separate_genitive() {
+        use umran_sim::grammar::{GrammarDesign, GrammarPrior};
+        for choice in [
+            GrammarChoice::Suffix,
+            GrammarChoice::Prefix,
+            GrammarChoice::Particle,
+            GrammarChoice::None,
+        ] {
+            for order in [PossessorOrder::Before, PossessorOrder::After] {
+                let mut profile = umran_sim::SoundProfile::base();
+                profile.grammar = GrammarPrior::fixed(GrammarDesign {
+                    genitive: Some(choice),
+                    possessor: Some(order),
+                    ..GrammarDesign::default()
+                });
+                let world = World::solo(11, &profile, umran_sim::Params::static_society());
+                let variety = &world.varieties[0];
+                let sample = grammar_sample(variety, 0).unwrap().possession;
+                let child = variety
+                    .lexicon
+                    .word_for(umran_sim::concepts::by_id("child").unwrap())
+                    .unwrap();
+                let fish = variety
+                    .lexicon
+                    .word_for(umran_sim::concepts::by_id("fish").unwrap())
+                    .unwrap();
+                let realization = &child
+                    .paradigms
+                    .iter()
+                    .find(|p| p.category == Category::Genitive)
+                    .unwrap()
+                    .realizations[0];
+                let forms = variety.grammar.surface(&child.form, realization);
+                let mut expected: Vec<_> = forms.iter().collect();
+                if order == PossessorOrder::Before {
+                    expected.push(&fish.form);
+                } else {
+                    expected.insert(0, &fish.form);
+                }
+                assert_eq!(
+                    sample.ipa,
+                    expected
+                        .iter()
+                        .map(|f| f.ipa_stressed(variety.stress()))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                );
+                assert_eq!(
+                    sample.gloss.iter().filter(|g| g.contains("GEN")).count(),
+                    usize::from(choice != GrammarChoice::None)
+                );
+                assert_eq!(
+                    sample.gloss.iter().filter(|g| g.as_str() == "fish").count(),
+                    1
+                );
+            }
+        }
+    }
+
     fn grammar_world(object: GrammarChoice, order: WordOrder) -> World {
         use umran_sim::grammar::{GrammarDesign, GrammarPrior};
         let mut profile = umran_sim::SoundProfile::by_id("germanic").unwrap();
@@ -6710,6 +6819,7 @@ mod tests {
             plural: GrammarChoice::None,
             past: GrammarChoice::Suffix,
             object: Some(object),
+            genitive: Some(GrammarChoice::None),
             order: Some(order),
             possessor: Some(PossessorOrder::Before),
             future: Some(GrammarChoice::Suffix),

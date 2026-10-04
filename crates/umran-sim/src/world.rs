@@ -281,6 +281,9 @@ pub struct Params {
     /// Enables future/progressive renewal, competition, fusion, and analogy.
     /// Founding choices and regular sound laws still apply when disabled.
     pub tense_aspect: bool,
+    /// Chance of repairing a worn/merged pronoun. Court address changes
+    /// six times faster; loans under intense contact are twenty times rarer.
+    pub pronoun_rate: f32,
 }
 
 impl Default for Params {
@@ -343,6 +346,7 @@ impl Default for Params {
             ethos_shifts: true,
             climate_enabled: true,
             tense_aspect: true,
+            pronoun_rate: 0.003,
         }
     }
 }
@@ -378,6 +382,7 @@ impl Params {
             ethos_shifts: false,
             climate_enabled: false,
             tense_aspect: false,
+            pronoun_rate: 0.0,
             ..Self::default()
         }
     }
@@ -1991,6 +1996,7 @@ impl World {
         self.spread_waves(&spoken);
         self.borrow();
         self.grammar_contact(&spoken);
+        self.evolve_pronouns(&spoken);
         let prestige = self.variety_prestige();
         for v in (0..self.varieties.len()).filter(|&v| spoken[v]) {
             let clashes = self.varieties[v].lexicon.clashing();
@@ -3632,6 +3638,9 @@ impl World {
             if rng.r#gen::<f32>() >= keep || new.lexicon.slots[i].variants.len() >= MAX_VARIANTS {
                 continue;
             }
+            if crate::pronouns::is_pronoun(concept) {
+                continue;
+            }
             let Some(word) = self.varieties[old].lexicon.slots[i].dominant() else {
                 continue;
             };
@@ -4161,7 +4170,9 @@ impl World {
             for (i, concept) in CONCEPTS.iter().enumerate() {
                 // Each concept has its own stream. Reject impossible loans
                 // before constructing it; accepted loans keep the same draws.
-                if recipient_lexicon.slots[i].variants.is_empty() {
+                if crate::pronouns::is_pronoun(concept)
+                    || recipient_lexicon.slots[i].variants.is_empty()
+                {
                     continue;
                 }
                 let Some(source) = donor_lexicon.slots[i].dominant() else {
@@ -4495,6 +4506,9 @@ impl World {
         let lexicon = &mut self.varieties[v].lexicon;
         let observed = Phonotactics::observe(lexicon.living().map(|l| &l.form));
         for (i, concept) in CONCEPTS.iter().enumerate() {
+            if crate::pronouns::is_pronoun(concept) {
+                continue;
+            }
             let mut rng = step.rng(&[key("innovate"), key(concept.id)]);
             let dominant = lexicon.slots[i].dominant();
             let clash = dominant.is_some_and(|id| clashes.contains(&id));

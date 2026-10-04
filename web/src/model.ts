@@ -386,6 +386,16 @@ export interface Variety {
   geminates: boolean;
   /// A few basic words, to know the language by.
   specimen: SpecimenWord[];
+  pronouns: {
+    person: 1 | 2 | 3;
+    number: "sg" | "pl";
+    polite: boolean;
+    spelled: string;
+    ipa: string;
+    since: number;
+    origin: "founding" | "renewed" | "borrowed";
+    source: string | null;
+  }[];
   grammar: {
     order: WordOrder;
     possessor: PossessorOrder;
@@ -616,7 +626,7 @@ export interface Annal {
   /// The index of the decision that produced this entry, if one did.
   decision?: number;
   generation: number;
-  kind: "found" | "split" | "settlement" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "climate" | "river-flow" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper" | "grammar";
+  kind: "found" | "split" | "settlement" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "climate" | "river-flow" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper" | "grammar" | "pronoun-renewed" | "pronoun-polite" | "pronoun-borrowed";
   /// The annalist's words; words of the language are marked *thus*.
   text: string;
   /// The apparatus: what a linguist would note, such as sound laws.
@@ -940,6 +950,7 @@ export type Mechanism =
   | "craft"
   | "conquest"
   | "city"
+  | "court"
   | "contact"
   | "pilgrimage"
   | "unfaithful-holder";
@@ -965,7 +976,7 @@ export interface DecisionView {
   annals: string[];
 }
 
-export type GrammarCategory = "plural" | "past" | "object" | "future" | "progressive";
+export type GrammarCategory = "plural" | "past" | "object" | "future" | "progressive" | "genitive";
 export type GrammarChoice = "suffix" | "prefix" | "particle" | "none";
 export type WordOrder = "SOV" | "SVO" | "VSO";
 export type PossessorOrder = "before" | "after";
@@ -975,6 +986,7 @@ export interface GrammarDesign {
   past: GrammarChoice;
   /// Null or omitted means draw at founding.
   object?: GrammarChoice | null;
+  genitive?: GrammarChoice | null;
   order?: WordOrder | null;
   possessor?: PossessorOrder | null;
   future?: GrammarChoice | null;

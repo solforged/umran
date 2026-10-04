@@ -21,6 +21,7 @@ const GROUP: Record<Annal["kind"], HistoryGroup> = {
   faith: "Faith & ideas", conversion: "Faith & ideas", meaning: "Languages & words", respelling: "Languages & words",
   schism: "Faith & ideas", pilgrimage: "Faith & ideas", "holy-land": "Faith & ideas", city: "Rule & cities",
   koine: "Languages & words", temper: "Land & livelihood", grammar: "Languages & words",
+  "pronoun-renewed": "Languages & words", "pronoun-polite": "Languages & words", "pronoun-borrowed": "Languages & words",
 };
 export function searchText(text: string): string {
   return text.normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase();

@@ -37,7 +37,8 @@ pub(crate) struct Annal {
     /// "livelihood", "ended", "rose", "fell", "standard", "classical",
     /// "vernacular", "craft", "faith", "conversion", "meaning",
     /// "respelling", "schism", "pilgrimage", "holy-land", "temper", "grammar",
-    /// "climate", "river-flow", or "law".
+    /// "pronoun-renewed", "pronoun-polite", "pronoun-borrowed", "climate",
+    /// "river-flow", or "law".
     pub kind: &'static str,
     /// The annalist's words. Words of the language are marked `*thus*`.
     pub text: String,
@@ -996,6 +997,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
     }));
     out.extend(sound_changes(world));
     out.extend(grammar_changes(world));
+    out.extend(pronoun_changes(world));
     let shifts = Shifts::of(world);
     fn languages(a: &mut Annal, world: &World, shifts: &Shifts) {
         for member in &mut a.members {
@@ -2073,6 +2075,101 @@ fn grammar_changes(world: &World) -> Vec<Annal> {
                     category: category_id,
                     event,
                 }),
+                zones: Vec::new(),
+                rivers: Vec::new(),
+                climate: None,
+                river_flow: None,
+                settlement: None,
+                decision: None,
+                before: None,
+            });
+        }
+    }
+    out
+}
+
+fn pronoun_changes(world: &World) -> Vec<Annal> {
+    use umran_sim::pronouns::NoticeKind;
+    let shifts = Shifts::of(world);
+    let mut out = Vec::new();
+    for (v, variety) in world.varieties.iter().enumerate() {
+        for (position, notice) in variety.pronouns.events.iter().enumerate() {
+            if variety.parent.is_some_and(|fork| {
+                notice.generation < fork.generation
+                    || (notice.generation == fork.generation
+                        && world.varieties[fork.variety]
+                            .pronouns
+                            .events
+                            .contains(notice))
+            }) {
+                continue;
+            }
+            let generation = notice.generation;
+            let people = speakers(world, &shifts, v, generation);
+            let gloss = |id: &str| umran_sim::concepts::by_id(id).map_or("", |c| c.gloss);
+            let (before, after) = (variety.spell(&notice.before), variety.spell(&notice.after));
+            let meaning = gloss(notice.cell);
+            let (kind, text, note, donor, state) = match &notice.event {
+                NoticeKind::Renewed { concept, merger, .. } => (
+                    "pronoun-renewed",
+                    format!(
+                        "Among {people}, *{after}*, once their word for '{}', took the place of *{before}* for '{meaning}'.",
+                        gloss(concept)
+                    ),
+                    format!(
+                        "{} Languages renew short, worn pronouns from nouns, as Malay saya, 'I', came from a word for 'servant'.",
+                        if *merger {
+                            "The old pronoun had come to sound like another."
+                        } else {
+                            "The old pronoun had worn too short to stand alone."
+                        }
+                    ),
+                    None,
+                    None,
+                ),
+                NoticeKind::Polite { state } => (
+                    "pronoun-polite",
+                    format!("At court, {people} began to address one person with the plural *{after}*, as a mark of respect."),
+                    "Plural address for one person as a courtesy is the T–V distinction, as in French vous.".into(),
+                    None,
+                    Some(*state),
+                ),
+                NoticeKind::Borrowed { from, .. } => (
+                    "pronoun-borrowed",
+                    format!(
+                        "In those days {people} took *{after}* for '{meaning}' from {}, in place of *{before}*.",
+                        world.language_title_at(*from, generation)
+                    ),
+                    "Pronouns are rarely borrowed; it takes long and intense contact, as English they came from Norse.".into(),
+                    Some(*from),
+                    None,
+                ),
+            };
+            out.push(Annal {
+                id: format!("pronoun:{v}:{position}"),
+                members: Vec::new(),
+                languages: Vec::new(),
+                generation,
+                kind,
+                text,
+                notes: vec![note],
+                cause: notice.cause,
+                variety: Some(v),
+                peoples: (0..world.communities.len())
+                    .filter(|&c| {
+                        let spoken = shifts.spoken_by(world, c, generation);
+                        shifts.alive_at(world, c, generation)
+                            && (spoken == v || donor == Some(spoken))
+                    })
+                    .collect(),
+                states: state.into_iter().collect(),
+                lands: Vec::new(),
+                laws: Vec::new(),
+                specimen: Vec::new(),
+                religions: Vec::new(),
+                crafts: Vec::new(),
+                temper: None,
+                grammar: None,
                 zones: Vec::new(),
                 rivers: Vec::new(),
                 climate: None,

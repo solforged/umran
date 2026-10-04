@@ -82,7 +82,7 @@ pub struct CategoryEligibility {
 impl CategoryEligibility {
     pub const fn allows(self, category: Category) -> bool {
         match category {
-            Category::Plural | Category::Object => self.plural,
+            Category::Plural | Category::Object | Category::Genitive => self.plural,
             Category::Past | Category::Future | Category::Progressive => self.past,
         }
     }
@@ -476,6 +476,9 @@ pub static CONCEPTS: &[Concept] = &[
     culture(Basic, "all", "all", Quantity, P, UNMARKED),
     culture(Basic, "finish", "to finish", BasicActions, V, VERB),
     culture(Basic, "have", "to have", Possession, V, VERB),
+    culture(Basic, "1pl", "we, us", Function, F, UNMARKED),
+    culture(Basic, "2pl", "you (plural)", Function, F, UNMARKED),
+    culture(Basic, "3pl", "they, them", Function, F, UNMARKED),
 ];
 
 pub fn by_id(id: &str) -> Option<&'static Concept> {

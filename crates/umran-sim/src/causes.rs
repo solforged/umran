@@ -16,6 +16,7 @@ pub enum Mechanism {
     Contact,
     Pilgrimage,
     UnfaithfulHolder,
+    Court,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

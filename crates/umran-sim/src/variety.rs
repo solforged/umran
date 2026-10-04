@@ -31,6 +31,8 @@ pub struct Variety {
     pub morphology: Morphology,
     /// Grammatical markers, with inherited word and possessor order.
     pub grammar: Grammar,
+    /// Personal pronouns use the lexicon's six person/number slots.
+    pub pronouns: crate::pronouns::Pronouns,
     /// The smallest word sound change may leave.
     pub minimal: MinimalWord,
     /// Sound laws in the order applied, with their generation. A law may
@@ -121,6 +123,7 @@ impl Variety {
             lexicon: Lexicon::found(roots.into_iter().filter(known)),
             morphology,
             grammar: Grammar::default(),
+            pronouns: crate::pronouns::Pronouns::default(),
             minimal: MinimalWord::draw(
                 profile.phonotactics.disyllabic_roots,
                 &mut stream(seed, &[key("minimal word")]),
@@ -164,6 +167,7 @@ impl Variety {
                 }
             }
         }
+        crate::pronouns::found(seed, &phonotactics, &mut variety.lexicon);
         variety.grammar = Grammar::found(
             seed,
             profile,

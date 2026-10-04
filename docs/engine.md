@@ -118,6 +118,27 @@ This bookkeeping makes no random draws and does not itself change replay.
   categories' draws are not consumed by them. `Params.tense_aspect` is true by
   default and false in `static_society()`: turning it off stops their renewal,
   competition, fusion, and analogy, not founding choices or regular sound laws.
+- The genitive marks a countable possessor, as English -'s does. It is a
+  category like the object, drawn at founding as bound, particle, or none
+  at 0.45/0.35/0.20, and it grammaticalizes from have or hand and erodes
+  through the same marker machinery (Heine and Kuteva, *World Lexicon of
+  Grammaticalization*).
+- Pronouns (`pronouns.rs`) are six lexicon words: first, second, and third
+  person, singular and plural. Founding gives each a short syllable of
+  common segments from the language's own phonotactics, distinct from the
+  others. They then change by regular sound law like every word. A pronoun
+  worn below two segments or the minimal word, or merged in sound with
+  another, can be renewed from a noun (person, head, heart, child; people
+  for plurals), as Malay saya, "I", came from a word for "servant"
+  (`pronoun_rate`, 0.003 a generation). A people ruled by a state for eight
+  generations can extend its plural address to one person as courtesy, the
+  T–V distinction of French vous (Brown and Gilman, 1960), six times as
+  often, with the state's rise as its cause. Under rule or intermarriage
+  at intensity 0.9 or more, after eight generations of contact, a very open
+  people may borrow a pronoun, third-person plural most readily, as English
+  they came from Norse; this is twenty times rarer than renewal. Each
+  process has its own purpose-keyed stream, and `static_society()` sets
+  `pronoun_rate` to zero.
 - Word order and possessor order are fixed at founding and inherited by
   daughters; neither drifts. SOV means subject–object–verb, SVO means
   subject–verb–object, and VSO means verb–subject–object. Fully suffixing
@@ -205,10 +226,10 @@ This bookkeeping makes no random draws and does not itself change replay.
   or bare see when no dedicated mark survives. It is `grammar.sample.future`,
   beside `sentence` and `possession`, with the same text/IPA/gloss shape.
   Text and stressed IPA separate spoken words with spaces. The possession
-  sample is "the child's fish", child and fish in possessor order, without
-  a marker: no genitive is modelled. The facade omits the sample if a
+  sample is "the child's fish", child and fish in possessor order, with the
+  child's most-used genitive realization, glossed GEN. The facade omits the sample if a
   required word or form is missing. The design JSON keeps plural and past
-  choices and adds nullable object, future, progressive, order, and possessor
+  choices and adds nullable object, future, progressive, genitive, order, and possessor
   settings; null or omission draws that setting at founding, while a resolved
   design saves each drawn value.
 - Calibration follows the founding language in each solo run, like the
@@ -1056,10 +1077,10 @@ Fleets, rented ports, mixed inland-and-sea itineraries, exact river channels
 and lakes, seasonal weather, resolved travel times, globe wrapping,
 purism within a classical form,
 compounding and derivation after founding beyond renewal and new meanings,
-inflection beyond count noun plural and object marking and verb past, future,
-and progressive, productive root-and-pattern inflection, agreement, grammatical
-gender, combined tense–aspect forms, modal readings and clitic stages, pronoun
-paradigms, genitive marking, tone, vowel harmony beyond next-syllable umlaut,
+inflection beyond count noun plural and object marking, the genitive, and verb
+past, future, and progressive, productive root-and-pattern inflection,
+agreement, grammatical gender, combined tense–aspect forms, modal readings and
+clitic stages, pronoun case forms, tone, vowel harmony beyond next-syllable umlaut,
 prenasalized stops, syntax beyond fixed word
 and possessor order, alignment beyond this object contrast, and doctrinal
 detail beyond the causes of a schism.

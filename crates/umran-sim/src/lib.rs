@@ -34,6 +34,7 @@ pub mod phoneme;
 pub mod phonotactics;
 pub mod polity;
 pub mod profile;
+pub mod pronouns;
 pub mod prosody;
 pub mod provenance;
 pub mod river_names;

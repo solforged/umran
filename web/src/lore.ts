@@ -74,6 +74,9 @@ export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string 
   koine: { icon: Blend, name: "A city's speech forms" },
   temper: { icon: Flame, name: "A people's temper turns" },
   grammar: { icon: Languages, name: "Grammar changes" },
+  "pronoun-renewed": { icon: Languages, name: "A pronoun is renewed" },
+  "pronoun-polite": { icon: Languages, name: "Polite address at court" },
+  "pronoun-borrowed": { icon: Languages, name: "A pronoun is borrowed" },
 };
 
 export const TERRAIN_NAME: Record<Terrain, string> = {
@@ -307,6 +310,7 @@ export const MECHANISM_NAME: Record<Mechanism, string> = {
   craft: "with a craft learned",
   conquest: "after a conquest",
   city: "as the city grew",
+  court: "at court",
   contact: "after a meeting",
   pilgrimage: "along a pilgrim road",
   "unfaithful-holder": "against an unfaithful holder",

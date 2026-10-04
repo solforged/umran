@@ -22,14 +22,16 @@ pub enum Category {
     Object,
     Future,
     Progressive,
+    Genitive,
 }
 impl Category {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Plural,
         Self::Past,
         Self::Object,
         Self::Future,
         Self::Progressive,
+        Self::Genitive,
     ];
     pub fn id(self) -> &'static str {
         match self {
@@ -38,6 +40,7 @@ impl Category {
             Self::Object => "object",
             Self::Future => "future",
             Self::Progressive => "progressive",
+            Self::Genitive => "genitive",
         }
     }
     pub fn label(self) -> &'static str {
@@ -47,6 +50,7 @@ impl Category {
             Self::Object => "the object",
             Self::Future => "future",
             Self::Progressive => "progressive",
+            Self::Genitive => "the possessor",
         }
     }
     pub fn position(self) -> usize {
@@ -56,6 +60,7 @@ impl Category {
             Self::Object => 2,
             Self::Future => 3,
             Self::Progressive => 4,
+            Self::Genitive => 5,
         }
     }
     fn sources(self) -> &'static [&'static str] {
@@ -65,6 +70,7 @@ impl Category {
             Self::Object => &["take", "give", "hand"],
             Self::Future => &["go", "come", "have"],
             Self::Progressive => &["stand"],
+            Self::Genitive => &["have", "hand"],
         }
     }
     fn evolves(self, tense_aspect: bool) -> bool {
@@ -122,6 +128,8 @@ pub struct GrammarDesign {
     pub future: Option<GrammarChoice>,
     #[serde(default)]
     pub progressive: Option<GrammarChoice>,
+    #[serde(default)]
+    pub genitive: Option<GrammarChoice>,
 }
 impl Default for GrammarDesign {
     fn default() -> Self {
@@ -133,6 +141,7 @@ impl Default for GrammarDesign {
             possessor: None,
             future: None,
             progressive: None,
+            genitive: None,
         }
     }
 }
@@ -146,6 +155,7 @@ impl GrammarDesign {
             Category::Progressive => self
                 .progressive
                 .expect("resolved founding progressive choice"),
+            Category::Genitive => self.genitive.expect("resolved founding genitive choice"),
         }
     }
 }
@@ -163,6 +173,8 @@ pub struct GrammarPrior {
     pub future: Option<GrammarChoice>,
     #[serde(default)]
     pub progressive: Option<GrammarChoice>,
+    #[serde(default)]
+    pub genitive: Option<GrammarChoice>,
 }
 impl GrammarPrior {
     pub fn fixed(design: GrammarDesign) -> Self {
@@ -174,6 +186,7 @@ impl GrammarPrior {
             possessor: design.possessor,
             future: design.future,
             progressive: design.progressive,
+            genitive: design.genitive,
         }
     }
     pub fn draw(self, seed: u64, morphology: &MorphologyPrior) -> GrammarDesign {
@@ -185,6 +198,7 @@ impl GrammarPrior {
                 Category::Object => self.object,
                 Category::Future => self.future,
                 Category::Progressive => self.progressive,
+                Category::Genitive => self.genitive,
             };
             choices[category.position()] = resolved.unwrap_or_else(|| {
                 let mut rng = stream(seed, &[key("grammar founding"), key(category.id())]);
@@ -192,6 +206,7 @@ impl GrammarPrior {
                     (Category::Object, _) => (0.45, 0.15, 0.4),
                     (Category::Future, _) => (0.3, 0.3, 0.4),
                     (Category::Progressive, _) => (0.25, 0.35, 0.4),
+                    (Category::Genitive, _) => (0.45, 0.35, 0.20),
                     (_, MorphologyKind::Concatenative) => (0.6, 0.3, 0.1),
                     (_, MorphologyKind::RootPattern) => (0.5, 0.4, 0.1),
                 };
@@ -244,6 +259,7 @@ impl GrammarPrior {
             possessor: Some(possessor),
             future: Some(choices[Category::Future.position()]),
             progressive: Some(choices[Category::Progressive.position()]),
+            genitive: Some(choices[Category::Genitive.position()]),
         }
     }
 }
