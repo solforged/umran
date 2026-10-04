@@ -139,6 +139,15 @@ fn court_address_needs_an_old_standing_state_and_records_its_cause() {
     fallen.generation = 8;
     fallen.polite_pronouns();
     assert!(!fallen.varieties[0].pronouns.polite);
+    // A plural that has merged with the familiar singular offers no contrast.
+    let mut merged = World::solo(8, &SoundProfile::base(), Params::static_society());
+    merged.params.pronoun_rate = 1.0;
+    merged.raise_state(0, None, Rise::Proclaimed);
+    put(&mut merged.varieties[0], "2sg", "ta");
+    put(&mut merged.varieties[0], "2pl", "ta");
+    merged.generation = 8;
+    merged.polite_pronouns();
+    assert!(!merged.varieties[0].pronouns.polite);
 }
 
 #[test]

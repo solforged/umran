@@ -317,6 +317,13 @@ impl World {
             if self.varieties[v].pronouns.polite || self.varieties[v].pronouns.generalised {
                 continue;
             }
+            // Plural-for-polite needs a plural that still sounds unlike the
+            // familiar singular; a merged pair offers no contrast to extend.
+            let variety = &self.varieties[v];
+            let word = |cell| &variety.lexicon.word_for(by_id(cell).unwrap()).unwrap().form;
+            if same_sound(word("2sg"), word("2pl"), variety.stress()) {
+                continue;
+            }
             let mut rng = stream(
                 self.seed,
                 &[key("pronoun politeness"), v as u64, self.generation as u64],

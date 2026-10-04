@@ -144,7 +144,8 @@ This bookkeeping makes no random draws and does not itself change replay.
   for plurals), as Malay saya, "I", came from a word for "servant"
   (`pronoun_rate`, 0.003 a generation). A people ruled by a state for eight
   generations can extend plural address to a separate respectful singular
-  cell, six times as often, with the state's rise as its cause. Familiar
+  cell, six times as often, with the state's rise as its cause, provided
+  its plural "you" still sounds unlike its familiar singular. Familiar
   singular remains alive alongside it: the T–V distinction of French
   tu/vous (Brown and Gilman, 1960;
   [Helmbrecht, WALS 45](https://wals.info/chapter/45)). The respectful cell
