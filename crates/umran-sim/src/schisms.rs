@@ -4,7 +4,7 @@ use crate::ethos::{Effect, Ethos};
 use crate::ideas::Religion;
 use crate::names::{MAX_PEOPLE_NAME, Name, Naming, clipped, given_name};
 use crate::rng::{index, key, stream, weighted_index};
-use crate::world::{ContactKind, World, WorldEvent, route_row, row_distance};
+use crate::world::{ContactKind, World, WorldEvent};
 use rand::Rng;
 use serde::Serialize;
 
@@ -29,12 +29,13 @@ pub enum BranchNaming {
     Epithet,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Pilgrimage {
     pub people: usize,
     pub from: usize,
     pub to: usize,
     pub path: Vec<usize>,
+    pub legs: Vec<crate::Leg>,
     pub since: u32,
 }
 
@@ -487,16 +488,22 @@ impl World {
 
     /// Cheapest permitted journey from a held land to the exact shrine.
     pub fn pilgrim_path(&self, community: usize, to: usize) -> Option<Vec<usize>> {
-        let reach = self.params.pilgrimage_reach;
-        let journey = self.journey_to_within(community, to, reach)?;
-        let from = self.communities[community]
-            .lands
-            .iter()
-            .copied()
-            .find(|&r| {
-                row_distance(&route_row(&self.map, r, reach, journey.by_sea), to) == journey.effort
-            })?;
-        self.map.route_path(from, to, journey.by_sea, reach)
+        self.pilgrim_itinerary(community, to)
+            .map(|route| route.path)
+    }
+
+    fn pilgrim_itinerary(&self, community: usize, to: usize) -> Option<crate::Itinerary> {
+        let mut routes = crate::fleets::Routes::new(self.map.regions.len());
+        routes.search(
+            self,
+            community,
+            &self.communities[community].lands,
+            self.params.pilgrimage_reach,
+            0.0,
+            Some(to),
+            true,
+        );
+        routes.itinerary(self, to)
     }
 
     pub(crate) fn send_pilgrims(&mut self) {
@@ -505,25 +512,22 @@ impl World {
         for religion in 0..self.religions.len() {
             let mut routes = std::mem::take(&mut self.religions[religion].pilgrims);
             let mut meetings = Vec::new();
-            routes.retain(|p| {
+            routes.retain_mut(|p| {
                 if !self.communities[p.people].living()
                     || self.communities[p.people].faith != Some(religion)
                     || !self.communities[p.people].lands.contains(&p.from)
                 {
                     return false;
                 }
-                let by_sea = p
-                    .path
-                    .iter()
-                    .any(|&r| !self.map.regions[r].terrain.is_land());
-                let effort = if by_sea && self.sails(p.people) {
-                    self.map.voyage(p.from, p.to)
-                } else if !by_sea {
-                    self.map.distance(p.from, p.to)
+                if let Some(route) =
+                    self.itinerary(p.people, p.from, p.to, self.params.pilgrimage_reach, 0.0)
+                {
+                    p.path = route.path;
+                    p.legs = route.legs;
+                    true
                 } else {
-                    f32::INFINITY
-                };
-                effort <= self.params.pilgrimage_reach
+                    false
+                }
             });
             let shrines: Vec<_> = self.religions[religion]
                 .shrines()
@@ -573,14 +577,15 @@ impl World {
                         continue;
                     }
                     if !existing && journey.effort > 0.0 {
-                        let path = self
-                            .pilgrim_path(c, to)
-                            .expect("the bounded journey has a path");
+                        let route = self.pilgrim_itinerary(c, to).expect("bounded journey");
+                        self.use_itinerary(c, &route, None);
+                        let path = route.path;
                         routes.push(Pilgrimage {
                             people: c,
                             from: path[0],
                             to,
                             path,
+                            legs: route.legs,
                             since: self.generation,
                         });
                     }

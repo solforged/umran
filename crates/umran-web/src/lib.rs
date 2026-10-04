@@ -1611,6 +1611,7 @@ impl Bench {
                     coined: c.name.coined,
                     faith: c.faith,
                     crafts: c.crafts.clone(),
+                    fleet: c.fleet.clone(),
                     // Only when it was written differently, not just said so.
                     once: c
                         .name
@@ -2390,6 +2391,9 @@ impl Bench {
                 | WorldEvent::TenetAdopted { .. }
                 | WorldEvent::TenetDisputed { .. }
                 | WorldEvent::TabooReplaced { .. }
+                | WorldEvent::FleetBuilt { .. }
+                | WorldEvent::FleetLost { .. }
+                | WorldEvent::SeaRouteOpened { .. }
                 | WorldEvent::Vernacular { .. } => continue,
             };
             out.push(Marker {
@@ -2683,24 +2687,34 @@ fn move_views(world: &World) -> Vec<MoveView> {
                         },
                         by_sea: r.by_sea,
                         path: r.path.clone(),
+                        legs: r.legs.clone(),
                     })
                     .collect::<Vec<_>>();
             }
-            let (community, from, to, kind, by_sea) = match *event {
+            let (community, from, to, kind, by_sea, itinerary) = match event {
                 WorldEvent::Migrated {
                     community,
                     from,
                     to,
                     by_sea,
-                } => (community, from, to, "migration", by_sea),
+                    itinerary,
+                } => (
+                    *community,
+                    *from,
+                    *to,
+                    "migration",
+                    *by_sea,
+                    Some(itinerary),
+                ),
                 WorldEvent::Split {
                     daughter,
                     from,
                     to,
                     by_sea,
                     travelled: true,
+                    itinerary,
                     ..
-                } if from != to => (daughter, from, to, "split", by_sea),
+                } if from != to => (*daughter, *from, *to, "split", *by_sea, itinerary.as_ref()),
                 _ => return Vec::new(),
             };
             vec![MoveView {
@@ -2710,7 +2724,8 @@ fn move_views(world: &World) -> Vec<MoveView> {
                 to,
                 kind,
                 by_sea,
-                path: world.map.journey_path(from, to, by_sea),
+                path: itinerary.map_or_else(Vec::new, |i| i.path.clone()),
+                legs: itinerary.map_or_else(Vec::new, |i| i.legs.clone()),
             }]
         })
         .collect()
@@ -3445,6 +3460,7 @@ struct PlaceNameView {
 #[serde(rename_all = "camelCase")]
 struct MoveView {
     path: Vec<usize>,
+    legs: Vec<umran_sim::Leg>,
     generation: u32,
     community: usize,
     from: usize,
@@ -3499,6 +3515,7 @@ struct CommunityView {
     faith: Option<usize>,
     /// The crafts it holds.
     crafts: Vec<Craft>,
+    fleet: Option<umran_sim::Fleet>,
 }
 
 #[derive(Serialize)]

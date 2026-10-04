@@ -385,6 +385,7 @@ impl World {
             livelihood: source.livelihood,
             faith: source.faith,
             crafts: source.crafts.clone(),
+            fleet: None,
             ethos,
             temper_marks: ethos.temper_marks(),
             ethos_history: vec![(self.generation, ethos)],

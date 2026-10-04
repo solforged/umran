@@ -183,6 +183,7 @@ export interface Community {
   livelihood: Livelihood;
   faith: number | null;
   crafts: Craft[];
+  fleet: { since: number; strength: number; ports: number[] } | null;
   /// Its temper now, or as it was when it ended.
   ethos: Ethos;
   /// The generation it ended, or null while it lives.
@@ -295,6 +296,7 @@ export interface Pilgrimage {
   to: number;
   /// Lands along the road, from `from` to `to`.
   path: number[];
+  legs?: TravelLeg[];
   since: number;
 }
 
@@ -575,8 +577,16 @@ export interface PlaceName {
   once: string | null;
 }
 
+export interface TravelLeg {
+  from: number;
+  to: number;
+  by: "land" | "sea" | "river";
+  km: number;
+}
+
 export interface Move {
   path: number[];
+  legs?: TravelLeg[];
   generation: number;
   community: number;
   from: number;
@@ -643,7 +653,7 @@ export interface Annal {
   /// The index of the decision that produced this entry, if one did.
   decision?: number;
   generation: number;
-  kind: "found" | "split" | "settlement" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "climate" | "river-flow" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper" | "grammar" | "pronoun-renewed" | "pronoun-polite" | "pronoun-generalised" | "pronoun-borrowed" | "class-emerged" | "class-merged" | "class-lost" | "harmony-gained" | "harmony-lost" | "tone-gained" | "tone-lost" | "coinage" | "calque" | "purist-reform" | "purist-replacement" | "tenet-adopted" | "tenet-disputed" | "taboo-replacement" | "drought" | "hard-winter" | "flood";
+  kind: "found" | "split" | "settlement" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "climate" | "river-flow" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper" | "grammar" | "pronoun-renewed" | "pronoun-polite" | "pronoun-generalised" | "pronoun-borrowed" | "class-emerged" | "class-merged" | "class-lost" | "harmony-gained" | "harmony-lost" | "tone-gained" | "tone-lost" | "coinage" | "calque" | "purist-reform" | "purist-replacement" | "tenet-adopted" | "tenet-disputed" | "taboo-replacement" | "drought" | "hard-winter" | "flood" | "fleet-built" | "fleet-lost" | "sea-route-opened";
   /// The annalist's words; words of the language are marked *thus*.
   text: string;
   /// The apparatus: what a linguist would note, such as sound laws.
@@ -967,6 +977,7 @@ export interface SettlementRoute {
   effort: number;
   by_sea: boolean;
   path: number[];
+  legs?: TravelLeg[];
 }
 export interface SettlementPlan {
   choice: SettlementChoice;

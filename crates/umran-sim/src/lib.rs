@@ -20,6 +20,7 @@ pub mod diglossia;
 pub mod doctrine;
 pub mod ethos;
 pub mod flavor;
+pub mod fleets;
 pub mod form;
 pub mod gender;
 pub mod geography;
@@ -72,6 +73,7 @@ pub use design::{LanguageDesign, Sound};
 pub use diglossia::{Classical, Fixing, Vernacular};
 pub use ethos::{Axis, Effect, Ethos, FoundingEthos, Pole, TemperCause};
 pub use flavor::Flavor;
+pub use fleets::{Fleet, Itinerary, Leg, TravelBy};
 pub use form::{Form, Seg, Syllable};
 pub use geography::{
     ClimateZone, GeographyVersion, Landmass, LandmassKind, Map, MapSize, Region, River, Terrain,

@@ -114,12 +114,74 @@ mod tests {
             naming: None,
             intensity: 0.5,
         };
-        assert!(
-            world
-                .plan_settlement(&choice)
-                .unwrap_err()
-                .contains("Every inhabited land")
+        assert_eq!(
+            world.plan_settlement(&choice).unwrap_err(),
+            format!(
+                "Every inhabited land needs a route within {:.0} effort-km on foot or {:.0} by sea, and enough fleet capacity.",
+                world.params.migration_reach, world.params.colony_reach
+            )
         );
+    }
+
+    #[test]
+    fn sea_migration_uses_colony_reach_without_extending_walks() {
+        let mut world = World::with_map(7, Params::static_society(), MapSize::Medium);
+        let (home, destination) = (0..world.map.regions.len())
+            .find_map(|home| {
+                if !world.map.regions[home]
+                    .neighbours
+                    .iter()
+                    .any(|&r| world.map.regions[r].terrain.is_land())
+                {
+                    return None;
+                }
+                world
+                    .map
+                    .voyage_row(home, 1200.0)
+                    .iter()
+                    .find(|&&(to, _)| world.map.overseas(home, to as usize))
+                    .map(|&(to, _)| (home, to as usize))
+            })
+            .expect("separate shores within colony reach");
+        let c = world.found_seeded(
+            &Naming::People,
+            &SoundProfile::base(),
+            7,
+            0.5,
+            0.5,
+            Some(home),
+            Some(crate::Livelihood::Farming),
+            None,
+        );
+        world.communities[c].size = MIN_PEOPLE;
+        world.learn(c, crate::Craft::Seafaring, None);
+        world.communities[c].fleet.as_mut().unwrap().strength = 0.5;
+        let journey = world.journey_to(c, destination).unwrap();
+        assert!(journey.by_sea);
+        world.params.migration_reach = journey.effort - 1.0;
+        world.params.colony_reach = journey.effort;
+        let mut choice = SettlementChoice {
+            community: c,
+            intent: SettlementIntent::Migration,
+            destination,
+            share: 1.0,
+            naming: None,
+            intensity: 0.5,
+        };
+        let plan = world.plan_settlement(&choice).unwrap();
+        assert!(plan.routes[0].by_sea);
+        assert!(plan.routes[0].effort > world.params.migration_reach);
+        world.params.colony_reach = journey.effort - 1.0;
+        assert!(world.plan_settlement(&choice).is_err());
+        choice.destination = world.map.regions[home]
+            .neighbours
+            .iter()
+            .copied()
+            .find(|&r| world.journey_to(c, r).is_some_and(|j| !j.by_sea))
+            .expect("a neighbouring walk");
+        world.params.migration_reach = 0.0;
+        world.params.colony_reach = 1200.0;
+        assert!(world.plan_settlement(&choice).is_err());
     }
 }
 
@@ -139,6 +201,9 @@ pub struct SettlementRoute {
     pub effort: f32,
     pub by_sea: bool,
     pub path: Vec<usize>,
+    pub legs: Vec<crate::Leg>,
+    #[serde(skip)]
+    pub carriers: Vec<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -214,6 +279,7 @@ pub(crate) struct Division {
     pub share: Option<f32>,
     pub by_sea: bool,
     pub record: bool,
+    pub cause: Option<crate::Cause>,
 }
 
 /// A frontier with stable ties: the old heart wins an equal journey.
@@ -352,10 +418,22 @@ impl World {
     pub fn settle(&mut self, choice: &SettlementChoice) -> Result<Option<usize>, String> {
         let plan = self.plan_settlement(choice)?;
         let community = choice.community;
+        for route in &plan.routes {
+            self.use_itinerary(
+                community,
+                &crate::Itinerary {
+                    path: route.path.clone(),
+                    legs: route.legs.clone(),
+                    carriers: route.carriers.clone(),
+                },
+                None,
+            );
+        }
         let daughter = match choice.intent {
             SettlementIntent::Migration => {
                 self.leave_city_residence(community);
                 self.communities[community].lands = plan.arriving.lands.clone();
+                self.refresh_fleet(community, None);
                 self.refresh_city_makeup();
                 self.reconcile_contacts();
                 self.refresh_places();
@@ -371,6 +449,7 @@ impl World {
                     share: (choice.intent == SettlementIntent::Settlers).then_some(choice.share),
                     by_sea: plan.routes.iter().any(|r| r.by_sea),
                     record: false,
+                    cause: None,
                 },
                 None,
             )),
@@ -401,8 +480,7 @@ impl World {
 struct SourceRoutes {
     source: usize,
     population: f32,
-    walking: Vec<(u32, f32)>,
-    voyages: Vec<(u32, f32)>,
+    routes: crate::fleets::Routes,
 }
 
 struct Planner<'a> {
@@ -410,7 +488,7 @@ struct Planner<'a> {
     community: usize,
     spatial: Spatial,
     sources: Vec<SourceRoutes>,
-    reach: f32,
+    walking_reach: f32,
 }
 
 impl<'a> Planner<'a> {
@@ -430,27 +508,32 @@ impl<'a> Planner<'a> {
         {
             return Err("The departing share must be between zero and one.".into());
         }
-        let reach = if intent == SettlementIntent::Migration {
+        let walking_reach = if intent == SettlementIntent::Migration {
             world.params.migration_reach
         } else {
             world.params.colony_reach
         };
+        let reach = walking_reach.max(world.params.colony_reach);
         let sources = world
             .presence_iter(community)
             .filter(|(_, n)| *n > 0.0)
-            .map(|(source, population)| SourceRoutes {
-                source,
-                population,
-                walking: if intent == SettlementIntent::Partition {
-                    Vec::new()
-                } else {
-                    world.map.walking_row(source, reach).into_owned()
-                },
-                voyages: if intent != SettlementIntent::Partition && world.sails(community) {
-                    world.map.voyage_row(source, reach).into_owned()
-                } else {
-                    Vec::new()
-                },
+            .map(|(source, population)| {
+                let mut routes = crate::fleets::Routes::new(world.map.regions.len());
+                if intent != SettlementIntent::Partition {
+                    // Reserve the whole travelling group, not a separate full fleet per source.
+                    let passengers = people.size
+                        * if intent == SettlementIntent::Migration {
+                            1.0
+                        } else {
+                            share
+                        };
+                    routes.search(world, community, &[source], reach, passengers, None, true);
+                }
+                SourceRoutes {
+                    source,
+                    population,
+                    routes,
+                }
             })
             .collect();
         if people.lands.is_empty() {
@@ -461,7 +544,7 @@ impl<'a> Planner<'a> {
             community,
             spatial: world.spatial(),
             sources,
-            reach,
+            walking_reach,
         })
     }
 
@@ -533,36 +616,25 @@ impl<'a> Planner<'a> {
             let population = people.size * share;
             let mut routes = Vec::new();
             for source in &self.sources {
-                let cost = |row: &[(u32, f32)]| {
-                    row.binary_search_by_key(&(destination as u32), |(r, _)| *r)
-                        .ok()
-                        .map(|i| row[i].1)
-                };
-                let (effort, by_sea) = match (cost(&source.walking), cost(&source.voyages)) {
-                    (Some(w), Some(v)) if v < w => (v, true),
-                    (Some(w), _) => (w, false),
-                    (_, Some(v)) => (v, true),
-                    _ => {
-                        return Err(format!(
-                            "Residents of land {} cannot reach this place within {:.0} effort-km{}. Every inhabited land must have a route.",
-                            source.source + 1,
-                            self.reach,
-                            if world.sails(self.community) {
-                                ""
-                            } else {
-                                " on foot; this people has no seafaring"
-                            }
-                        ));
-                    }
-                };
-                let path = if paths {
-                    world
-                        .map
-                        .route_path(source.source, destination, by_sea, self.reach)
-                        .expect("a reachable route has a path")
+                let journey = source.routes.journey(destination)
+                    .filter(|j| j.effort <= if j.by_sea {
+                        world.params.colony_reach
+                    } else {
+                        self.walking_reach
+                    })
+                    .ok_or_else(|| format!(
+                        "Every inhabited land needs a route within {:.0} effort-km on foot or {:.0} by sea, and enough fleet capacity.",
+                        self.walking_reach, world.params.colony_reach))?;
+                let (effort, by_sea) = (journey.effort, journey.by_sea);
+                let itinerary = if paths {
+                    source.routes.itinerary(world, destination)
                 } else {
-                    Vec::new()
+                    None
                 };
+                let (path, legs, carriers) = itinerary.map_or_else(
+                    || (Vec::new(), Vec::new(), Vec::new()),
+                    |i| (i.path, i.legs, i.carriers),
+                );
                 routes.push(SettlementRoute {
                     from: source.source,
                     to: destination,
@@ -570,6 +642,8 @@ impl<'a> Planner<'a> {
                     effort,
                     by_sea,
                     path,
+                    legs,
+                    carriers,
                 });
             }
             let remaining = Allocation {

@@ -836,7 +836,7 @@ mod tests {
             .connect(rulers, parent, 0.8, ContactKind::Rule)
             .unwrap();
         let state = world.rules(rulers).unwrap();
-        world.communities[parent].crafts.push(Craft::Seafaring);
+        world.learn(parent, Craft::Seafaring, None);
         assert!(world.can_rule(parent, daughter));
         assert!(!world.can_rule(rulers, daughter));
 
@@ -853,7 +853,7 @@ mod tests {
                 .any(|k| { k.kind == ContactKind::Rule && (k.a == daughter || k.b == daughter) })
         );
 
-        world.communities[rulers].crafts.push(Craft::Seafaring);
+        world.learn(rulers, Craft::Seafaring, None);
         world.inherit_state(parent, daughter);
         assert_eq!(world.ruled_by(daughter), Some(state));
         assert!(world.rules_over(rulers, daughter));
@@ -866,7 +866,7 @@ mod tests {
         let rulers = found_at(&mut world, home, 0.6);
         let remote = found_at(&mut world, overseas, 0.3);
         let local = found_at(&mut world, home, 0.2);
-        world.communities[rulers].crafts.push(Craft::Seafaring);
+        world.learn(rulers, Craft::Seafaring, None);
         world
             .connect(rulers, remote, 0.8, ContactKind::Rule)
             .unwrap();
@@ -902,7 +902,7 @@ mod tests {
         let (mut world, home, overseas) = coastal_world();
         let rulers = found_at(&mut world, home, 0.9);
         let subject = found_at(&mut world, overseas, 0.3);
-        world.communities[rulers].crafts.push(Craft::Seafaring);
+        world.learn(rulers, Craft::Seafaring, None);
         world
             .connect(rulers, subject, 0.8, ContactKind::Rule)
             .unwrap();

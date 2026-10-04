@@ -352,13 +352,6 @@ impl World {
         k.livelihood.mobility() * if riding { RIDING_MOBILITY } else { 1.0 }
     }
 
-    /// Whether a people can cross the sea.
-    pub(crate) fn sails(&self, community: usize) -> bool {
-        self.communities[community]
-            .crafts
-            .contains(&Craft::Seafaring)
-    }
-
     /// The largest living people speaking `variety`.
     pub(crate) fn speakers(&self, variety: usize) -> Option<usize> {
         self.living()
@@ -474,6 +467,7 @@ impl World {
             from,
         });
         if craft == Craft::Seafaring {
+            self.refresh_fleet(community, self.fleet_craft_cause(community));
             self.nudge_ethos(community, Axis::Seaward, 0.12, TemperCause::Seafaring);
         }
     }

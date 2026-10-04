@@ -18,6 +18,7 @@ const GROUP: Record<Annal["kind"], HistoryGroup> = {
   climate: "Land & livelihood", "river-flow": "Land & livelihood",
   drought: "Land & livelihood", "hard-winter": "Land & livelihood", flood: "Land & livelihood",
   livelihood: "Land & livelihood", ended: "Peoples & journeys", rose: "Rule & cities", fell: "Rule & cities",
+  "fleet-built": "Peoples & journeys", "fleet-lost": "Peoples & journeys", "sea-route-opened": "Peoples & journeys",
   standard: "Languages & words", classical: "Languages & words", vernacular: "Languages & words", craft: "Faith & ideas",
   faith: "Faith & ideas", conversion: "Faith & ideas", meaning: "Languages & words", respelling: "Languages & words",
   schism: "Faith & ideas", pilgrimage: "Faith & ideas", "holy-land": "Faith & ideas", city: "Rule & cities",

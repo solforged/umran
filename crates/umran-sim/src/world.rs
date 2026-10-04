@@ -193,7 +193,7 @@ pub struct Params {
     /// Chance per generation, per unit of strain beyond holding together,
     /// that a people splits.
     pub fission_rate: f32,
-    /// Maximum coast-to-coast colony journey, in effort-km.
+    /// Maximum sea migration or colony journey, in effort-km.
     pub colony_reach: f32,
     /// Chance per generation that a people with no room left takes land
     /// beside its own, scaled by how mobile its way of life makes it.
@@ -247,7 +247,7 @@ pub struct Params {
     /// within reach, scaled by how crowded home is, how mobile its terrain
     /// makes it, and whether a stronger people shares it.
     pub migration_rate: f32,
-    /// Maximum whole-people journey, in effort-km.
+    /// Maximum whole-people walking journey, in effort-km.
     pub migration_reach: f32,
     /// Scales the chance per generation that a sound change spreads from a
     /// variety to one it is in contact with, by the contact's kind and
@@ -426,6 +426,8 @@ impl Params {
 pub struct Journey {
     pub effort: f32,
     pub by_sea: bool,
+    /// Maximum passengers over this route in one generation; unbounded on land.
+    pub capacity: f32,
 }
 
 pub(crate) fn row_distance(row: &[(u32, f32)], region: usize) -> f32 {
@@ -457,28 +459,21 @@ pub(crate) fn route_row(
 }
 
 struct JourneyScratch {
-    best: Vec<Journey>,
-    touched: Vec<usize>,
-    rows: HashMap<(usize, bool), Vec<(u32, f32)>>,
+    routes: crate::fleets::Routes,
 }
 
 impl JourneyScratch {
     fn new(regions: usize) -> Self {
         Self {
-            best: vec![
-                Journey {
-                    effort: f32::INFINITY,
-                    by_sea: false
-                };
-                regions
-            ],
-            touched: Vec::new(),
-            rows: HashMap::new(),
+            routes: crate::fleets::Routes::new(regions),
         }
     }
 
     fn iter(&self) -> impl Iterator<Item = (usize, Journey)> + '_ {
-        self.touched.iter().map(|&r| (r, self.best[r]))
+        self.routes
+            .destinations
+            .iter()
+            .filter_map(|&r| self.routes.journey(r).map(|j| (r, j)))
     }
 }
 
@@ -586,6 +581,7 @@ pub struct Community {
     pub faith: Option<usize>,
     /// The crafts it holds, in `Craft` order.
     pub crafts: Vec<Craft>,
+    pub fleet: Option<crate::fleets::Fleet>,
     pub ethos: Ethos,
     /// Recorded poles in `Axis::ALL` order: high 1, low -1, neither 0.
     pub(crate) temper_marks: [i8; 6],
@@ -687,7 +683,9 @@ pub enum WorldEvent {
         law: Option<&'static str>,
     },
     /// `community` was founded with a new language.
-    Found { community: usize },
+    Found {
+        community: usize,
+    },
     /// `daughter` split off from `community`, speaking a new variety, and
     /// settled region `to`; `from` is the parent's land.
     Split {
@@ -696,6 +694,7 @@ pub enum WorldEvent {
         from: usize,
         to: usize,
         by_sea: bool,
+        itinerary: Option<crate::fleets::Itinerary>,
         travelled: bool,
     },
     /// `community` abandoned variety `from` for a daughter of `toward`'s.
@@ -719,16 +718,23 @@ pub enum WorldEvent {
         kind: ContactKind,
     },
     /// `ruler` came to rule `ruled`, with whom it already had dealings.
-    Conquered { ruler: usize, ruled: usize },
+    Conquered {
+        ruler: usize,
+        ruled: usize,
+    },
     /// The whole of `community` left region `from` for region `to`.
     Migrated {
         community: usize,
         from: usize,
         to: usize,
         by_sea: bool,
+        itinerary: crate::fleets::Itinerary,
     },
     /// `community` took land `to` beside its own, keeping its other lands.
-    Spread { community: usize, to: usize },
+    Spread {
+        community: usize,
+        to: usize,
+    },
     /// `community` was crowded off land `region`, one of several it held,
     /// by `by`, the largest people living there.
     Displaced {
@@ -783,13 +789,21 @@ pub enum WorldEvent {
     },
     /// State `state` arose, by conquest, in answer to a challenge, or by
     /// an author's hand (`State::how`).
-    Rose { state: usize },
+    Rose {
+        state: usize,
+    },
     /// State `state` fell (`State::fell` says how).
-    Fell { state: usize },
+    Fell {
+        state: usize,
+    },
     /// State `state` selected a standard language.
-    Standard { state: usize },
+    Standard {
+        state: usize,
+    },
     /// A state's capital passed the great-city threshold.
-    City { city: usize },
+    City {
+        city: usize,
+    },
     /// A city's mixed speech became a people and a variety of its own.
     Koine {
         city: usize,
@@ -803,7 +817,9 @@ pub enum WorldEvent {
         from: Option<usize>,
     },
     /// Religion `religion` was founded (`Religion::how` says how).
-    Revealed { religion: usize },
+    Revealed {
+        religion: usize,
+    },
     /// A branch broke from `parent` among `community`.
     Schism {
         religion: usize,
@@ -867,15 +883,25 @@ pub enum WorldEvent {
     },
     /// The state whose standard variety `variety` is spelled it anew, as
     /// it now sounds.
-    Respelled { variety: usize },
+    Respelled {
+        variety: usize,
+    },
     /// State `state`'s standard was fixed as a classical form
     /// (`State::classical` says how).
-    Fixed { state: usize },
+    Fixed {
+        state: usize,
+    },
     /// Speakers of `variety` began to write their own speech in place of
     /// a classical form.
-    Vernacular { variety: usize, by: Vernacular },
+    Vernacular {
+        variety: usize,
+        by: Vernacular,
+    },
     /// Keepers reformed a written high form; its episode stores the words.
-    PuristReform { variety: usize, episode: usize },
+    PuristReform {
+        variety: usize,
+        episode: usize,
+    },
     /// One prescribed native replacement in a high form's reform.
     PuristReplacement {
         variety: usize,
@@ -896,6 +922,18 @@ pub enum WorldEvent {
         variety: usize,
         word: LexemeId,
         from: Option<usize>,
+    },
+    FleetBuilt {
+        community: usize,
+    },
+    FleetLost {
+        community: usize,
+        ports: Vec<usize>,
+    },
+    SeaRouteOpened {
+        community: usize,
+        from: usize,
+        to: usize,
     },
 }
 
@@ -972,6 +1010,8 @@ pub struct World {
     pub religions: Vec<Religion>,
     /// Eligible conquest comparisons whose hazard gained holy-land pressure.
     pub holy_war_checks: u32,
+    /// Directed corridors already recorded in the annals.
+    pub sea_routes: std::collections::BTreeSet<(usize, usize, usize)>,
     laws: Vec<Law>,
 }
 
@@ -1039,6 +1079,7 @@ impl World {
             cities: Vec::new(),
             religions: Vec::new(),
             holy_war_checks: 0,
+            sea_routes: Default::default(),
             laws: catalog(),
         }
     }
@@ -1188,6 +1229,7 @@ impl World {
             ended: None,
             faith: None,
             crafts: Vec::new(),
+            fleet: None,
             ethos,
             temper_marks: ethos.temper_marks(),
             ethos_history: vec![(self.generation, ethos)],
@@ -1390,31 +1432,9 @@ impl World {
         near
     }
 
-    /// Exact directed access to a destination, using only the traveller's ships.
+    /// Directed access, including walking to an owned or contacted carrier's port.
     pub fn journey_to(&self, community: usize, region: usize) -> Option<Journey> {
-        let mut best = Journey {
-            effort: f32::INFINITY,
-            by_sea: false,
-        };
-        for &source in &self.communities[community].lands {
-            let walk = self.map.distance(source, region);
-            if walk < best.effort || (walk == best.effort && best.by_sea) {
-                best = Journey {
-                    effort: walk,
-                    by_sea: false,
-                };
-            }
-            if self.sails(community) {
-                let sea = self.map.voyage(source, region);
-                if sea < best.effort {
-                    best = Journey {
-                        effort: sea,
-                        by_sea: true,
-                    };
-                }
-            }
-        }
-        best.effort.is_finite().then_some(best)
+        self.journey_to_within(community, region, f32::INFINITY)
     }
 
     pub(crate) fn journey_to_within(
@@ -1423,64 +1443,54 @@ impl World {
         region: usize,
         reach: f32,
     ) -> Option<Journey> {
-        let mut best = Journey {
-            effort: f32::INFINITY,
-            by_sea: false,
-        };
-        for &source in &self.communities[community].lands {
-            for by_sea in [false, true] {
-                if by_sea && !self.sails(community) {
-                    continue;
-                }
-                let row = route_row(&self.map, source, reach, by_sea);
-                let effort = row_distance(&row, region);
-                if effort <= reach
-                    && (effort < best.effort || (effort == best.effort && best.by_sea && !by_sea))
-                {
-                    best = Journey { effort, by_sea };
-                }
-            }
+        if !self.map.regions[region].terrain.is_land() {
+            return None;
         }
-        best.effort.is_finite().then_some(best)
+        if !self.transport_available(community) {
+            let effort = self.communities[community]
+                .lands
+                .iter()
+                .map(|&source| row_distance(&route_row(&self.map, source, reach, false), region))
+                .fold(f32::INFINITY, f32::min);
+            return (effort.is_finite() && effort <= reach).then_some(Journey {
+                effort,
+                by_sea: false,
+                capacity: f32::INFINITY,
+            });
+        }
+        let mut routes = crate::fleets::Routes::new(self.map.regions.len());
+        routes.search(
+            self,
+            community,
+            &self.communities[community].lands,
+            reach,
+            0.0,
+            Some(region),
+            true,
+        );
+        routes.journey(region)
     }
 
-    /// Exact access from one people to another. Only the departing side supplies ships.
+    /// Exact directed access between two peoples, with known carriers.
     pub fn journey_between(&self, a: usize, b: usize) -> Option<Journey> {
         self.journey_between_within(a, b, f32::INFINITY)
     }
 
     fn journey_between_within(&self, a: usize, b: usize, reach: f32) -> Option<Journey> {
-        let mut best = Journey {
-            effort: f32::INFINITY,
-            by_sea: false,
-        };
-        for &source in &self.communities[a].lands {
-            let row = route_row(&self.map, source, reach, false);
-            for &destination in &self.communities[b].lands {
-                let effort = row_distance(&row, destination);
-                if effort <= reach
-                    && (effort < best.effort || (effort == best.effort && best.by_sea))
-                {
-                    best = Journey {
-                        effort,
-                        by_sea: false,
-                    };
-                }
-            }
-            if self.sails(a) {
-                let row = route_row(&self.map, source, reach, true);
-                for &destination in &self.communities[b].lands {
-                    let effort = row_distance(&row, destination);
-                    if effort <= reach && effort < best.effort {
-                        best = Journey {
-                            effort,
-                            by_sea: true,
-                        };
-                    }
-                }
-            }
+        if !self.transport_available(a) {
+            return self.communities[b]
+                .lands
+                .iter()
+                .filter_map(|&r| self.journey_to_within(a, r, reach))
+                .min_by(|x, y| x.effort.total_cmp(&y.effort));
         }
-        best.effort.is_finite().then_some(best)
+        let mut routes = crate::fleets::Routes::new(self.map.regions.len());
+        routes.search(self, a, &self.communities[a].lands, reach, 0.0, None, true);
+        self.communities[b]
+            .lands
+            .iter()
+            .filter_map(|&r| routes.journey(r))
+            .min_by(|x, y| x.effort.total_cmp(&y.effort).then(x.by_sea.cmp(&y.by_sea)))
     }
 
     /// Merchant or passenger access can be supplied by either side.
@@ -1502,8 +1512,35 @@ impl World {
 
     /// Directed reach belongs to the actual ruler, not the subjects.
     pub(crate) fn can_rule(&self, ruler: usize, subject: usize) -> bool {
-        self.journey_between_within(ruler, subject, self.params.conquest_reach)
-            .is_some()
+        // Most rules are local, including those of seafaring peoples. The
+        // immutable walking rows can answer reachability without a new search.
+        if self.communities[ruler].lands.iter().any(|&r| {
+            let row = route_row(&self.map, r, self.params.conquest_reach, false);
+            self.communities[subject].lands.iter().any(|&s| {
+                let effort = row_distance(&row, s);
+                effort.is_finite() && effort <= self.params.conquest_reach
+            })
+        }) {
+            return true;
+        }
+        if self.communities[ruler].fleet.is_none() {
+            return false;
+        }
+        let mut routes = crate::fleets::Routes::new(self.map.regions.len());
+        // A merchant's rented berth does not carry an invading army.
+        routes.search(
+            self,
+            ruler,
+            &self.communities[ruler].lands,
+            self.params.conquest_reach,
+            0.0,
+            None,
+            false,
+        );
+        self.communities[subject]
+            .lands
+            .iter()
+            .any(|&r| routes.journey(r).is_some())
     }
 
     /// Reachable destinations in region order, keeping the chosen travel mode.
@@ -1515,43 +1552,15 @@ impl World {
     }
 
     fn fill_journeys(&self, community: usize, reach: f32, scratch: &mut JourneyScratch) {
-        for r in scratch.touched.drain(..) {
-            scratch.best[r] = Journey {
-                effort: f32::INFINITY,
-                by_sea: false,
-            };
-        }
-        for &source in &self.communities[community].lands {
-            for by_sea in [false, true] {
-                if by_sea && !self.sails(community) {
-                    continue;
-                }
-                let row = if reach > CACHE_REACH_KM {
-                    Cow::Borrowed(
-                        scratch
-                            .rows
-                            .entry((source, by_sea))
-                            .or_insert_with(|| {
-                                route_row(&self.map, source, reach, by_sea).into_owned()
-                            })
-                            .as_slice(),
-                    )
-                } else {
-                    route_row(&self.map, source, reach, by_sea)
-                };
-                for &(r, effort) in row.iter().filter(|(_, d)| *d <= reach) {
-                    let r = r as usize;
-                    let old = &mut scratch.best[r];
-                    if effort < old.effort || (effort == old.effort && old.by_sea && !by_sea) {
-                        if !old.effort.is_finite() {
-                            scratch.touched.push(r);
-                        }
-                        *old = Journey { effort, by_sea };
-                    }
-                }
-            }
-        }
-        scratch.touched.sort_unstable();
+        scratch.routes.search(
+            self,
+            community,
+            &self.communities[community].lands,
+            reach,
+            0.0,
+            None,
+            true,
+        );
     }
 
     /// Whether two peoples hold any land in common.
@@ -1590,6 +1599,7 @@ impl World {
                 share,
                 by_sea,
                 record: true,
+                cause: None,
             },
             spatial,
         )
@@ -1609,6 +1619,7 @@ impl World {
             share,
             by_sea,
             record,
+            cause,
         } = division;
         let affected = self.communities[community].lands.clone();
         if let Some(view) = spatial.as_deref() {
@@ -1621,6 +1632,17 @@ impl World {
         let mut daughter = self.varieties[parent].fork(parent, self.generation);
         self.inherit_places(parent, &mut daughter);
         let home = self.communities[community].home();
+        let itinerary = (record && share.is_some() && region != home)
+            .then(|| {
+                self.itinerary(
+                    community,
+                    home,
+                    region,
+                    self.params.colony_reach,
+                    self.communities[community].size * share.unwrap_or(0.0),
+                )
+            })
+            .flatten();
         // Leavers may name themselves for the actual river of their new
         // homeland, using its name as they know it, not the word "river".
         let river = (region != home
@@ -1780,6 +1802,7 @@ impl World {
             ended: None,
             faith: parent.faith,
             crafts: parent.crafts.clone(),
+            fleet: None,
             ethos: parent.ethos,
             temper_marks: parent.ethos.temper_marks(),
             ethos_history: Vec::new(),
@@ -1791,6 +1814,8 @@ impl World {
         self.climate.exposure.resize(self.communities.len(), None);
         self.climate.exposure[index] = exposure;
         self.divide_city_residents(community, index, size, share.is_none());
+        self.refresh_fleet(community, None);
+        self.refresh_fleet(index, self.fleet_craft_cause(community));
         if intensity > 0.0 {
             if !by_sea && self.nearness(community, index) > 0.0 {
                 self.link(community, index, intensity, ContactKind::Neighbours);
@@ -1803,17 +1828,21 @@ impl World {
         }
         self.inherit_state(community, index);
         if record {
-            self.events.push((
-                self.generation,
+            self.record_response(
                 WorldEvent::Split {
                     community,
                     daughter: index,
                     from: home,
                     to: region,
                     by_sea,
+                    itinerary: itinerary.clone(),
                     travelled: share.is_some() && region != home,
                 },
-            ));
+                cause,
+            );
+        }
+        if let Some(route) = &itinerary {
+            self.use_itinerary(community, route, None);
         }
         self.inherit_ethos(index, share.is_some() && region != home);
         self.reconcile_contacts();
@@ -1922,6 +1951,16 @@ impl World {
                 mechanism: crate::Mechanism::Contact,
             });
         }
+        if kind == ContactKind::Trade {
+            self.use_contact_route(
+                a,
+                b,
+                Some(crate::Cause {
+                    event,
+                    mechanism: crate::Mechanism::Contact,
+                }),
+            );
+        }
         if changes_rule {
             self.reconcile_contacts();
         }
@@ -1998,6 +2037,7 @@ impl World {
 
     /// Territorial changes end inaccessible relations, even without turnover.
     pub(crate) fn reconcile_contacts(&mut self) {
+        self.refresh_fleets();
         let invalid: Vec<_> = self
             .contacts
             .iter()
@@ -2068,6 +2108,7 @@ impl World {
     }
 
     pub fn step(&mut self) {
+        self.refresh_fleets();
         self.reconcile_contacts();
         self.preserve_places();
         self.generation += 1;
@@ -2144,6 +2185,7 @@ impl World {
         self.reconcile_contacts();
         self.rise_states();
         self.grow_cities();
+        self.refresh_fleets();
         self.standardize();
         self.spread_crafts();
         self.found_religions();
@@ -2324,6 +2366,7 @@ impl World {
             .retain(|k| k.a != community && k.b != community);
         self.events
             .push((self.generation, WorldEvent::Ended { community, into }));
+        self.refresh_fleet(community, None);
     }
 
     /// A people using most of what its lands feed it sometimes takes land
@@ -2499,18 +2542,53 @@ impl World {
                 },
                 cause,
             );
+            self.refresh_fleet(c, cause);
             self.communities[c].ethos_challenged = self.generation;
         }
     }
 
-    /// A people too large for its way of life to hold together, or spread
-    /// too far from its heart, sometimes comes apart along its lands; the
-    /// leavers speak a daughter variety and stay in moderate contact.
+    /// Peoples on several lands part under cohesion strain. On a crowded
+    /// single land, access to ships lets half their number leave when a
+    /// sea destination offers more room per journey effort than nearby land.
     fn split_large(&mut self) {
         let mut spatial = self.spatial();
         for c in self.living().collect::<Vec<_>>() {
             let k = &self.communities[c];
             if k.lands.len() < 2 {
+                if self.params.fission_rate == 0.0
+                    || !self.transport_available(c)
+                    || k.size < 2.0 * MIN_PEOPLE
+                {
+                    continue;
+                }
+                let home = k.home();
+                let crowded: f32 = spatial.dwellers[home].iter().map(|(_, n)| n).sum();
+                let pressure = crowded / self.feeds(home, k.livelihood).max(1.0) - SPREAD_FULL;
+                if pressure <= 0.0 {
+                    continue;
+                }
+                let mut rng = self.community_rng(c, "sea colony");
+                if rng.r#gen::<f32>() >= self.params.fission_rate * pressure {
+                    continue;
+                }
+                let (region, by_sea) =
+                    self.leavers_land(home, k.livelihood, c, k.ethos.factor(Effect::Colony));
+                if by_sea && self.free_room(c, region, &spatial) >= k.size / 4.0 {
+                    self.divide(
+                        c,
+                        None,
+                        FISSION_CONTACT,
+                        crate::settlement::Division {
+                            region,
+                            lands: vec![region],
+                            share: Some(0.5),
+                            by_sea,
+                            record: true,
+                            cause: self.feeding_cause(home, k.livelihood),
+                        },
+                        Some(&mut spatial),
+                    );
+                }
                 continue;
             }
             let heart = k.home();
@@ -2589,23 +2667,50 @@ impl World {
                 continue;
             }
             let stay = fed - here;
-            self.fill_journeys(c, self.params.migration_reach, &mut journeys);
+            journeys.routes.search(
+                self,
+                c,
+                &[home],
+                self.params.migration_reach.max(self.params.colony_reach),
+                size,
+                None,
+                true,
+            );
             let options: Vec<(usize, Journey, f32)> = journeys
                 .iter()
                 .filter(|&(r, _)| r != home)
                 .filter_map(|(r, journey)| {
+                    let reach = if journey.by_sea {
+                        self.params.colony_reach
+                    } else {
+                        self.params.migration_reach
+                    };
+                    if journey.capacity < size || journey.effort > reach {
+                        return None;
+                    }
                     let room = self.free_room(c, r, &spatial);
                     if room <= stay || room < size / 2.0 {
                         return None;
                     }
-                    let d = journey.effort / REFERENCE_TRAVEL_KM;
-                    Some((r, journey, (room - stay) / ((1.0 + d) * (1.0 + d))))
+                    let d = 1.0 + journey.effort / REFERENCE_TRAVEL_KM;
+                    // Boats provision a long journey as they do a colony;
+                    // an overland people still pays the squared distance penalty.
+                    let weight = if journey.by_sea {
+                        (room - stay) / d * self.communities[c].ethos.factor(Effect::Colony)
+                    } else {
+                        (room - stay) / (d * d)
+                    };
+                    Some((r, journey, weight))
                 })
                 .collect();
             if options.is_empty() {
                 continue;
             }
             let (to, journey, _) = options[weighted_index(&mut rng, options.iter().map(|o| o.2))];
+            let itinerary = journeys
+                .routes
+                .itinerary(self, to)
+                .expect("chosen reachable destination");
             before.clear();
             before.extend(self.presence_iter(c));
             self.communities[c].lands = vec![to];
@@ -2616,9 +2721,12 @@ impl World {
                     from: home,
                     to,
                     by_sea: journey.by_sea,
+                    itinerary: itinerary.clone(),
                 },
                 cause,
             );
+            self.use_itinerary(c, &itinerary, None);
+            self.refresh_fleet(c, None);
             self.meet_locals(c, to, &mut rng, &spatial, &mut contacts);
             spatial.replace(self, c, &before);
         }
@@ -3198,7 +3306,7 @@ impl World {
                 let (region, by_sea) = self.leavers_land(
                     heart,
                     c.livelihood,
-                    self.sails(community),
+                    community,
                     c.ethos.factor(Effect::Colony),
                 );
                 (region, vec![region], Some(0.5), by_sea)
@@ -3206,16 +3314,13 @@ impl World {
         }
     }
 
-    /// Where a people leaving `home` goes: the roomiest land beside home if
-    /// it has more room than home, judged before they go. When the land
-    /// beside is full, a seafaring coastal people sends them along or over
-    /// the sea instead, to the coast with the most room for the voyage, as
-    /// Greek cities sent out colonies.
+    /// Leavers compare nearby land with sea destinations by room per journey
+    /// effort. A marginally roomier neighbour must not veto a fertile shore.
     fn leavers_land(
         &self,
         home: usize,
         livelihood: Livelihood,
-        sails: bool,
+        community: usize,
         seaward: f32,
     ) -> (usize, bool) {
         let occupied = self.occupation();
@@ -3227,34 +3332,52 @@ impl World {
                 1.0
             }
         };
-        if let Some(beside) = self.roomiest(&self.map.regions[home].neighbours, livelihood)
-            && room(beside) > room(home)
-        {
-            return (beside, false);
+        let beside = self
+            .roomiest(&self.map.regions[home].neighbours, livelihood)
+            .filter(|&r| room(r) > room(home));
+        if !self.transport_available(community) {
+            return (beside.unwrap_or(home), false);
         }
-        if !sails || !self.map.coastal(home) {
-            return (home, false);
-        }
-        let row = route_row(&self.map, home, self.params.colony_reach, true);
-        let colony = row
+        let mut routes = crate::fleets::Routes::new(self.map.regions.len());
+        routes.search(
+            self,
+            community,
+            &[home],
+            self.params.colony_reach,
+            self.communities[community].size * 0.5,
+            None,
+            true,
+        );
+        let colony = routes
+            .destinations
             .iter()
             .copied()
-            .filter(|&(r, d)| {
-                d <= self.params.colony_reach
-                    && !self.map.regions[home].neighbours.contains(&(r as usize))
-                    && room(r as usize) * attraction(r as usize) > room(home)
+            .filter(|&r| {
+                self.map.regions[r].terrain.is_land()
+                    && routes.journey(r).is_some_and(|j| j.by_sea)
+                    && !self.map.regions[home].neighbours.contains(&r)
+                    && room(r) * attraction(r) > room(home)
             })
-            .map(|(r, d)| {
+            .map(|r| {
                 (
-                    r as usize,
-                    room(r as usize) / (1.0 + d / REFERENCE_TRAVEL_KM) * attraction(r as usize),
+                    r,
+                    room(r) / (1.0 + routes.journey(r).unwrap().effort / REFERENCE_TRAVEL_KM)
+                        * attraction(r),
                 )
             })
             .fold(None, |best: Option<(usize, f32)>, (r, score)| match best {
                 Some((_, s)) if s >= score => best,
                 _ => Some((r, score)),
             });
-        colony.map_or((home, false), |(r, _)| (r, true))
+        if let Some((region, score)) = colony
+            && beside.is_none_or(|r| {
+                score > room(r) / (1.0 + self.map.distance(home, r) / REFERENCE_TRAVEL_KM)
+            })
+        {
+            (region, true)
+        } else {
+            (beside.unwrap_or(home), false)
+        }
     }
 
     /// What `region` is called, as speakers of `variety`, a daughter of
@@ -3553,6 +3676,9 @@ impl World {
         let mut neighbours = Vec::new();
         let mut effort = vec![f32::INFINITY; self.communities.len()];
         let mut partners = Vec::new();
+        // Incoming journeys depend on the carrier's ports and contacts, not
+        // on the prospective passenger. Reuse each row until a contact changes.
+        let mut incoming: HashMap<usize, Vec<(usize, f32)>> = HashMap::new();
         for c in self.living().collect::<Vec<_>>() {
             let mut rng = self.community_rng(c, "contact");
             neighbours.clear();
@@ -3581,16 +3707,16 @@ impl World {
                     self.connect(c, other, intensity, ContactKind::Neighbours)
                         .expect("neighbours have a land border");
                     contacts.insert(*self.contacts.last().unwrap());
+                    incoming.clear();
                 }
             }
             for other in partners.drain(..) {
                 effort[other] = f32::INFINITY;
             }
             self.fill_journeys(c, self.params.trade_reach, &mut journeys);
-            let mut offer = |region: usize, distance: f32, incoming: bool| {
+            let mut offer = |region: usize, distance: f32| {
                 for &other in &spatial.held[region] {
-                    if other == c || contacts.contains(c, other) || (incoming && !self.sails(other))
-                    {
+                    if other == c || contacts.contains(c, other) {
                         continue;
                     }
                     if !effort[other].is_finite() {
@@ -3600,43 +3726,57 @@ impl World {
                 }
             };
             for (region, journey) in journeys.iter() {
-                offer(region, journey.effort, false);
+                offer(region, journey.effort);
             }
-            // The partner may carry the initiating people's merchants.
-            for &source in &self.communities[c].lands {
-                let row = if self.params.trade_reach > CACHE_REACH_KM {
-                    Cow::Borrowed(
-                        journeys
-                            .rows
-                            .entry((source, true))
-                            .or_insert_with(|| {
-                                route_row(&self.map, source, self.params.trade_reach, true)
-                                    .into_owned()
-                            })
-                            .as_slice(),
-                    )
-                } else {
-                    route_row(&self.map, source, self.params.trade_reach, true)
-                };
-                for &(r, distance) in row.iter().filter(|(_, d)| *d <= self.params.trade_reach) {
-                    offer(r as usize, distance, true);
+            // A prospective partner can bring merchants to an inland destination too.
+            for other in self.living() {
+                if other == c
+                    || contacts.contains(c, other)
+                    || self.communities[other].fleet.is_none()
+                {
+                    continue;
+                }
+                let row = incoming.entry(other).or_insert_with(|| {
+                    self.fill_journeys(other, self.params.trade_reach, &mut journeys);
+                    journeys.iter().map(|(r, j)| (r, j.effort)).collect()
+                });
+                let distance = self.communities[c]
+                    .lands
+                    .iter()
+                    .filter_map(|r| {
+                        row.binary_search_by_key(r, |&(r, _)| r)
+                            .ok()
+                            .map(|i| row[i].1)
+                    })
+                    .fold(f32::INFINITY, f32::min);
+                if distance.is_finite() {
+                    if !effort[other].is_finite() {
+                        partners.push(other);
+                    }
+                    effort[other] = effort[other].min(distance);
                 }
             }
             partners.sort_unstable();
             if !partners.is_empty()
                 && rng.r#gen::<f32>()
-                    < self.params.trade_rate * self.communities[c].ethos.factor(Effect::Contact)
+                    < self.params.trade_rate
+                        * self.communities[c].ethos.factor(Effect::Contact)
+                        * partners
+                            .iter()
+                            .map(|&o| self.sea_contact_factor(c, o))
+                            .fold(0.0, f32::max)
             {
                 let other = partners[weighted_index(
                     &mut rng,
                     partners.iter().map(|&o| {
                         let d = effort[o] / REFERENCE_TRAVEL_KM;
-                        1.0 / ((1.0 + d) * (1.0 + d))
+                        self.sea_contact_factor(c, o) / ((1.0 + d) * (1.0 + d))
                     }),
                 )];
-                let intensity = rng.gen_range(0.2..0.6);
+                let intensity = rng.gen_range(0.2..0.6) * self.sea_contact_factor(c, other);
                 self.connect(c, other, intensity, ContactKind::Trade)
                     .expect("trade candidates are physically eligible");
+                incoming.clear();
                 contacts.insert(*self.contacts.last().unwrap());
             }
             if self.ruled_by(c).is_some() {
@@ -3671,6 +3811,7 @@ impl World {
                 let cause = self.holy_war_cause(c, ruled);
                 let event = self.record_response(WorldEvent::Conquered { ruler: c, ruled }, cause);
                 self.subject(c, ruled, contact.intensity.max(CONQUEST_INTENSITY), event);
+                incoming.clear();
                 contacts = self.contact_index();
             }
         }
@@ -4937,7 +5078,7 @@ mod tests {
     }
 
     #[test]
-    fn journeys_require_own_ships_and_respect_inclusive_reach() {
+    fn journeys_require_accessible_ships_and_respect_inclusive_reach() {
         let (mut world, a, b) = water_pair();
         let to = world.communities[b].home();
         assert!(world.journey_to(a, to).is_none());
@@ -4963,7 +5104,16 @@ mod tests {
         world.learn(a, Craft::Seafaring, None);
         let reverse = world.journey_to(a, to).unwrap();
         assert!(reverse.by_sea);
-        assert!((reverse.effort - voyage.effort).abs() < 0.001);
+        // Landing then walking can beat a pure voyage. The reverse may need
+        // a different embarkation port, so mixed access is not symmetric.
+        assert!(reverse.effort <= world.map.voyage(from, to));
+        assert!(voyage.effort <= world.map.voyage(to, from));
+        assert!(world.journey_to_within(a, to, reverse.effort).is_some());
+        assert!(
+            world
+                .journey_to_within(a, to, reverse.effort - 0.01)
+                .is_none()
+        );
         assert!(!world.journey_to(a, from).unwrap().by_sea);
     }
 
@@ -5003,6 +5153,10 @@ mod tests {
         assert!(world.connect(a, b, 0.5, ContactKind::Trade).is_err());
         assert!(world.connect(a, b, 0.5, ContactKind::Neighbours).is_err());
         world.learn(a, Craft::Seafaring, None);
+        let directed = world.journey_between(a, b).unwrap().effort;
+        world.params.conquest_reach = directed - 0.01;
+        assert!(world.connect(a, b, 0.8, ContactKind::Rule).is_err());
+        world.params.conquest_reach = directed;
         world.connect(a, b, 0.8, ContactKind::Rule).unwrap();
         assert!(world.rules_over(a, b));
     }
@@ -5054,7 +5208,7 @@ mod tests {
         world.send_pilgrims();
         assert!(world.contacts.is_empty());
         world.learn(pilgrim, Craft::Seafaring, None);
-        let effort = world.map.voyage(home, shrine);
+        let effort = world.journey_to(pilgrim, shrine).unwrap().effort;
         world.params.pilgrimage_reach = effort - 0.01;
         world.send_pilgrims();
         assert!(world.contacts.is_empty());
@@ -5070,6 +5224,60 @@ mod tests {
         world.send_pilgrims();
         assert_eq!(world.contacts, contacts);
         assert_eq!(world.events, events);
+    }
+
+    #[test]
+    fn automatic_colonies_need_pressure_ships_and_a_reachable_destination() {
+        let (mut world, a, _) = water_pair();
+        let home = world.communities[a].home();
+        let population = world.communities[a].size;
+        world.params.colony_reach = 1800.0;
+        world.params.cohesion_size = f32::INFINITY;
+        world.params.cohesion_reach = f32::INFINITY;
+        world.params.fission_rate = 1000.0;
+        crowd_walkable_lands(&mut world, a);
+        let before = world.communities.len();
+        world.split_large();
+        assert_eq!(
+            world.communities.len(),
+            before,
+            "pressure alone grants no ships"
+        );
+        world.learn(a, Craft::Seafaring, None);
+        world.params.fission_rate = 0.0;
+        world.split_large();
+        assert_eq!(
+            world.communities.len(),
+            before,
+            "static society stays inert"
+        );
+        world.params.fission_rate = 1000.0;
+        world.params.colony_reach = 0.0;
+        world.split_large();
+        assert_eq!(
+            world.communities.len(),
+            before,
+            "a colony must be reachable"
+        );
+        world.params.colony_reach = 1800.0;
+        world.split_large();
+        let daughter = world
+            .events
+            .iter()
+            .find_map(|(_, e)| match e {
+                WorldEvent::Split {
+                    community,
+                    daughter,
+                    by_sea: true,
+                    travelled: true,
+                    ..
+                } if *community == a => Some(*daughter),
+                _ => None,
+            })
+            .expect("land pressure sends an automatic sea colony");
+        assert_ne!(world.communities[daughter].home(), home);
+        assert_eq!(world.communities[a].size, population * 0.5);
+        assert_eq!(world.communities[daughter].size, population * 0.5);
     }
 
     fn crowd_walkable_lands(world: &mut World, community: usize) -> usize {
@@ -5120,7 +5328,7 @@ mod tests {
     }
 
     #[test]
-    fn maritime_moves_record_mode_and_never_borrow_another_peoples_ships() {
+    fn maritime_moves_record_mode_and_cannot_rent_unknown_ships() {
         let (mut world, a, b) = water_pair();
         world.params.migration_rate = 1000.0;
         world.params.migration_reach = 1800.0;
@@ -5130,7 +5338,7 @@ mod tests {
         crowd_walkable_lands(&mut world, a);
         world.learn(b, Craft::Seafaring, None);
         assert_eq!(
-            world.leavers_land(home, Livelihood::Farming, false, 1.0),
+            world.leavers_land(home, Livelihood::Farming, a, 1.0),
             (home, false)
         );
         world.migrate();
@@ -5139,7 +5347,19 @@ mod tests {
         let daughter = world.split(a, None, 0.5);
         let coast = world.communities[daughter].home();
         assert!(world.map.overseas(home, coast));
-        let colony_effort = world.map.voyage(home, coast);
+        let colony = world
+            .events
+            .iter()
+            .find_map(|(_, e)| match e {
+                WorldEvent::Split {
+                    daughter: d,
+                    itinerary: Some(route),
+                    ..
+                } if *d == daughter => Some(route),
+                _ => None,
+            })
+            .unwrap();
+        let colony_effort: f32 = colony.legs.iter().map(|l| l.km).sum();
         assert!(colony_effort.is_finite() && colony_effort <= world.params.colony_reach);
         assert!(world.events.iter().any(|(_, e)| matches!(e,
             WorldEvent::Split { daughter: d, from, to, by_sea: true, travelled: true, .. }
@@ -5151,19 +5371,19 @@ mod tests {
                 .any(|k| k.a == a && k.b == daughter && k.kind == ContactKind::Trade)
         );
         world.migrate();
+        assert_eq!(
+            world.communities[a].home(),
+            home,
+            "a weak fleet carries settlers, not the whole people"
+        );
+        world.communities[a].fleet.as_mut().unwrap().strength = 0.5;
+        world.migrate();
         assert!(world.map.overseas(home, world.communities[a].home()));
         assert!(world.events.iter().any(|(_, e)| matches!(e,
             WorldEvent::Migrated { community, by_sea: true, .. } if *community == a)));
         for (_, event) in &world.events {
-            if let WorldEvent::Migrated {
-                from, to, by_sea, ..
-            } = *event
-            {
-                let effort = if by_sea {
-                    world.map.voyage(from, to)
-                } else {
-                    world.map.distance(from, to)
-                };
+            if let WorldEvent::Migrated { ref itinerary, .. } = *event {
+                let effort: f32 = itinerary.legs.iter().map(|l| l.km).sum();
                 assert!(effort.is_finite() && effort <= world.params.migration_reach);
             }
         }
@@ -6541,22 +6761,26 @@ mod tests {
                 // each journey against the geography when it was made.
                 for (_, event) in &world.events[made..] {
                     if let WorldEvent::Migrated {
-                        from, to, by_sea, ..
+                        from,
+                        to,
+                        by_sea,
+                        ref itinerary,
+                        ..
                     } = *event
                     {
                         moved += 1;
                         assert!(from != to && world.map.regions[to].terrain.is_land());
-                        let effort = if by_sea {
-                            world.map.voyage(from, to)
+                        let effort: f32 = itinerary.legs.iter().map(|l| l.km).sum();
+                        let reach = if by_sea {
+                            world.params.colony_reach
                         } else {
-                            world.map.distance(from, to)
+                            world.params.migration_reach
                         };
                         assert!(
-                            effort.is_finite() && effort <= world.params.migration_reach,
+                            effort.is_finite() && effort <= reach,
                             "seed {seed}, generation {}: {from} -> {to}, by_sea {by_sea}, \
-                             effort {effort}, reach {}",
-                            world.generation,
-                            world.params.migration_reach
+                             effort {effort}, reach {reach}",
+                            world.generation
                         );
                     }
                 }

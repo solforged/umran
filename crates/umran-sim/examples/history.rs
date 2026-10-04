@@ -2,23 +2,30 @@
 //! language shift: hill farmers, a coastal people, and an empire that rules
 //! the coast.
 //!
-//! cargo run --release -p umran-sim --example history -- [seed] [generations]
+//! cargo run --release -p umran-sim --example history -- [seed] [generations] [size]
 
 use umran_sim::compare::intelligibility;
-use umran_sim::{ContactKind, Naming, Params, SoundProfile, World, WorldEvent};
+use umran_sim::{ContactKind, MapSize, Naming, Params, SoundProfile, World, WorldEvent};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let seed: u64 = args.first().map_or(42, |s| s.parse().expect("seed"));
     let generations: u32 = args.get(1).map_or(200, |s| s.parse().expect("generations"));
+    let map_size = match args.get(2).map(String::as_str) {
+        Some("small") => MapSize::Small,
+        Some("large") => MapSize::Large,
+        Some("vast") => MapSize::Vast,
+        _ => MapSize::Medium,
+    };
 
     let profile = |id: &str| SoundProfile::by_id(id).unwrap();
-    let mut world = World::new(
+    let mut world = World::with_map(
         seed,
         Params {
             ethos_enabled: !args.iter().any(|a| a == "--neutral"),
             ..Params::default()
         },
+        map_size,
     );
     let hill = world.found(&profile("familiar"), 0.5, 0.4);
     // Begin with neighbouring peoples; later journeys still obey physical reach.
@@ -50,7 +57,13 @@ fn main() {
     world
         .connect(empire, hill, 0.3, ContactKind::Neighbours)
         .unwrap();
+    let start = std::time::Instant::now();
     world.run(generations);
+    eprintln!(
+        "history profile: seed {seed}, {map_size:?}, {generations} generations, {:.3}s, {:.3}ms/generation",
+        start.elapsed().as_secs_f64(),
+        start.elapsed().as_secs_f64() * 1_000.0 / f64::from(generations),
+    );
 
     println!(
         "seed {seed} · {generations} generations (about {} years)\n",
@@ -101,6 +114,7 @@ fn main() {
                 from,
                 to,
                 by_sea,
+                ..
             } => println!(
                 "  gen {generation:>3}  {} leave {} for {}{}",
                 name(*community),
@@ -387,6 +401,22 @@ fn main() {
                     word.first_sense.gloss
                 );
             }
+            WorldEvent::FleetBuilt { community } => {
+                println!("  gen {generation:>3}  {} built a fleet", name(*community))
+            }
+            WorldEvent::FleetLost { community, .. } => {
+                println!("  gen {generation:>3}  {} lost its fleet", name(*community))
+            }
+            WorldEvent::SeaRouteOpened {
+                community,
+                from,
+                to,
+            } => println!(
+                "  gen {generation:>3}  {} opened a sea route from {} to {}",
+                name(*community),
+                place(*from, *generation),
+                place(*to, *generation)
+            ),
         }
     }
 

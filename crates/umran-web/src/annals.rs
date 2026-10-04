@@ -444,6 +444,42 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 annal.settlement = Some(record.as_ref().clone());
                 annal
             }
+            WorldEvent::FleetBuilt { community } => entry(
+                generation,
+                "fleet-built",
+                format!("The *{}* built ships and took to the sea.", name(community)),
+                &[community],
+                &[],
+            ),
+            WorldEvent::FleetLost {
+                community,
+                ref ports,
+            } => entry(
+                generation,
+                "fleet-lost",
+                format!(
+                    "The *{}* lost their harbours, and their ships with them.",
+                    name(community)
+                ),
+                &[community],
+                ports,
+            ),
+            WorldEvent::SeaRouteOpened {
+                community,
+                from,
+                to,
+            } => entry(
+                generation,
+                "sea-route-opened",
+                format!(
+                    "The *{}* opened a sea road from *{}* to *{}*.",
+                    name(community),
+                    place(world, from, generation),
+                    place(world, to, generation)
+                ),
+                &[community],
+                &[from, to],
+            ),
             WorldEvent::Found { community } => entry(
                 generation,
                 "found",
@@ -495,6 +531,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 from,
                 to,
                 by_sea,
+                ..
             } => {
                 let mut annal = entry(
                     generation,

@@ -128,9 +128,9 @@ pub enum Terrain {
 }
 
 impl Terrain {
-    /// Effort of crossing it, relative to open plain. Open steppe is
-    /// easiest, which is why languages spread so far across it; mountains
-    /// are hardest, which is why they shelter so many.
+    /// Effort relative to walking an open plain. Ships carry people more
+    /// efficiently than walking; access still requires a fleet and each
+    /// embarkation and landing pays a fixed overhead.
     pub fn travel(self) -> f32 {
         match self {
             Terrain::Steppe => 0.8,
@@ -138,7 +138,7 @@ impl Terrain {
             Terrain::Forest => 1.5,
             Terrain::Hills => 2.0,
             Terrain::Desert => 2.5,
-            Terrain::Sea => 3.0,
+            Terrain::Sea => 0.5,
             Terrain::Mountains => 4.0,
         }
     }
@@ -597,6 +597,13 @@ impl Map {
             .iter()
             .find(|(r, _)| *r as usize == b)
             .map(|(_, effort)| *effort)
+    }
+
+    /// A drainage-linked shared border whose current flow permits river travel.
+    pub(crate) fn river_edge(&self, a: usize, b: usize) -> bool {
+        self.valleys
+            .iter()
+            .any(|v| v.usable && (v.regions == [a, b] || v.regions == [b, a]))
     }
 
     /// Exact least land-only walking effort-km; sea endpoints are unreachable.
@@ -2399,7 +2406,13 @@ mod tests {
 
     #[test]
     fn voyages_charge_transitions_and_never_rent_intermediate_ports() {
-        for (sea_cells, expected) in [(1, 600.0), (2, 900.0), (3, 1_200.0), (6, 2_100.0)] {
+        for (sea_cells, expected) in [
+            (1, 350.0),
+            (2, 400.0),
+            (3, 450.0),
+            (6, 600.0),
+            (32, 1_900.0),
+        ] {
             let mut terrain = vec![Terrain::Sea; sea_cells + 2];
             terrain[0] = Terrain::Plains;
             terrain[sea_cells + 1] = Terrain::Plains;
@@ -2432,7 +2445,7 @@ mod tests {
             Terrain::Sea,
             Terrain::Plains,
         ]);
-        assert_eq!(port.voyage(0, 2), 600.0);
+        assert_eq!(port.voyage(0, 2), 350.0);
         assert!(port.voyage(0, 4).is_infinite());
         let inland = linear_map(&[
             Terrain::Plains,
@@ -2441,7 +2454,7 @@ mod tests {
             Terrain::Plains,
         ]);
         assert!(inland.voyage(0, 3).is_infinite());
-        assert_eq!(inland.voyage(1, 3), 600.0);
+        assert_eq!(inland.voyage(1, 3), 350.0);
     }
 
     fn floyd_oracle(map: &Map, land: bool) -> Vec<f64> {

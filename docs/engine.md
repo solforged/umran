@@ -622,16 +622,19 @@ This bookkeeping makes no random draws and does not itself change replay.
   land with real room left (`spread_rate`). One too large for its way of
   life (`cohesion_size`) or spread too far from its heart
   (`cohesion_reach`) splits along its lands: the leavers take the
-  furthest land and every land nearer it than the heart. A people on one
-  land sends half its number to the roomiest bordering land, or, when
-  that is full and it lives by the sea, along or over the sea, as Greek
-  cities sent out colonies. A people on one land may also migrate whole
-  (`migration_rate`): likelier the more crowded home is, the more mobile
-  its land and way of life make it, and when a stronger people shares
-  it. Migrants go to better land within reach, counting half of a weaker
-  people's land as free, so strong peoples push into good land others
-  hold. A stronger people that outnumbers another on one of its several
-  lands crowds it off. Peoples learn a way of life that feeds them half
+  furthest land and every land nearer it than the heart. On a single
+  crowded land, a people with access to ships can send half its number
+  overseas when a sea destination offers more room per journey effort
+  than nearby land. The chance is `fission_rate` times
+  the occupied share above the same 0.6 food threshold used by spreading;
+  the destination must feed at least half the arriving group. A people
+  on one land may also migrate whole (`migration_rate`): likelier the
+  more crowded home is, the more mobile its land and way of life make it,
+  and when a stronger people shares it. Migrants go to better land within
+  `migration_reach` on foot and `colony_reach` by sea. They count half of
+  a weaker people's land as free, so strong peoples push into good land
+  others hold. A stronger people that outnumbers another on one of its
+  several lands crowds it off. Peoples learn a way of life that feeds them half
   again as well from those they deal with (`adoption_rate`); farmers on
   drying land may turn to herding. Foragers and herders on suitable plains
   or river valleys rarely begin to farm of their own accord.
@@ -643,7 +646,7 @@ This bookkeeping makes no random draws and does not itself change replay.
   where they live, including residents of cities. Sending settlers takes a
   chosen share from every inhabited land into one reachable destination;
   moving whole retains the people's identity and language. Every source
-  needs an actual walking route or a voyage their own seafaring permits.
+  needs a permitted itinerary with enough owned or rented fleet capacity.
   Destinations account for the people already living there, including the
   parent's residents who will stay. Preview is read-only; application repeats
   the same validation and records the census, routes, affected capitals and
@@ -693,11 +696,11 @@ This bookkeeping makes no random draws and does not itself change replay.
     stronger, larger co-resident, or `climate` for a recorded climate
     transition still reducing its old land's food. Displacement records
     the meeting with the stronger people actually displacing it.
-  - Automatic splits depend on size and territorial reach, not on a
-    hardship or climate event, so have no cause. Crowding without an event
-    also remains unlinked. Famine and plague reduce population, not food
-    capacity; attaching them to migration or splitting would claim a
-    decision the engine does not make.
+  - Territorial splits depend on size and reach, not on a hardship or
+    climate event, so have no cause. Pressure-driven sea colonies record
+    `climate` when recorded weather still reduces their old land's food.
+    Crowding without an event remains unlinked. Famine and plague reduce
+    population, not food capacity; neither is invented as a movement cause.
   - Livelihood change records `climate` only when recorded weather reduces
     the old livelihood's yield and the new livelihood would not meet the
     adoption gain at baseline. Learning a craft does not change these
@@ -916,10 +919,9 @@ This bookkeeping makes no random draws and does not itself change replay.
   metalworking near 2,900, and writing a few centuries after the first
   great city; riding begins only in worlds with steppe herders.
   Metalworking, and riding for herders, add prestige in war; riding
-  carries a people further and holds it together over more land; only
-  seafarers migrate or send colonies over the sea. An inland holder
-  cannot borrow another people's port, and a subject's ships do not
-  supply its ruler's navy.
+  carries a people further and holds it together over more land. Sea
+  migrants and settlers need their own fleet or rented berths from a
+  contacted carrier. A subject's ships do not supply its ruler's navy.
 - Writing fixes spelling. From the generation a language is first
   written its words keep the spelling they had, while sound laws go on
   changing speech, so spelling falls behind (as English *knight*). A
@@ -990,8 +992,8 @@ This bookkeeping makes no random draws and does not itself change replay.
   Pilgrim roads begin with probability `pilgrimage_rate` (0.02) per
   generation for every follower and shrine within 1,200 effort-km.
   They follow the cheapest permitted directed journey from a held land
-  to the exact site. A boat journey requires the pilgrim's own Seafaring
-  and coastal endpoints, with no borrowed port or inland leg.
+  to the exact site. A boat journey needs an owned or contacted carrier's
+  port, and can include inland and river legs before or after the crossing.
   Roads persist only while their departure land remains held, their
   people follow the faith, and their recorded mode stays reachable.
   Pilgrims open Religion at intensity 0.3 with a shrine holder, weighted
@@ -1153,19 +1155,107 @@ Their `--neutral` switch still disables ethos, not the newer geography.
 ## Physical travel and map scale
 
 Walking traverses land only. Sea endpoints are unreachable even for
-identity. A voyage starts at held coastal land, ends at a coast, and
-has at least one sea cell. It never passes through another coastal port. Each
-embarkation or landing adds 100 effort-km. Same-continent voyages are
-valid. The region graph has no seam or polar boundary. There are no rented
-ports, mixed inland-and-sea legs, fleets, or travel durations.
+identity. Seafaring learned by a coastal people sustains a fleet at its
+held ports; the craft alone supplies no ships inland. A fleet begins at
+strength 0.2 and, with automatic crafts enabled, gains up to 0.3 through
+eight generations of sustained coastal shipbuilding. It also gains 0.1
+per additional port and up to 0.4 from cities at those ports, capped at 1.
+Losing every port loses the fleet and its accumulated experience.
+Each fleet's passenger capacity is its owner's current population
+multiplied by `0.5 + strength`. This is transport over a generation, not
+a fixed count of hulls: even a modest fleet can take a half-population
+colony, while moving the whole people requires strength at least 0.5.
+Population scaling lets a seafaring people's boats grow with its emigrant
+groups, as in Austronesian and Norse settlement, instead of making large
+peoples permanently unable to colonize. A contacted carrier offers one
+quarter of its capacity in rented berths, leaving most transport to its
+own people; contact intensity must be positive. Urban residence alone
+is not a held port.
 
-`World::journey_to` and `journey_between` are directed: only the
-traveller's own Seafaring enables a boat journey. Walking wins a tie.
-`apart` is symmetric, so either participant may provide transport for
-trade, intermarriage, or religious contact. Rule always requires the
-actual ruler's directed access. `World::connect` returns a refusal before
-changing contacts, states, or history when a requested relation is
-physically impossible. Authors bypass chance, not reachability.
+Journeys may walk inland to a port, sail, and continue overland, including
+usable river-valley edges. Each embarkation and landing adds 100
+effort-km. Every sea leg must embark at an owned or contacted carrier's
+port; a landed traveller may continue walking but cannot embark again
+without access to another port. A passenger party must fit every fleet
+it uses. Migration and travelling settlements retain their actual
+land, river, and sea legs rather than reconstructing them from today's
+coasts or river flow. Fleet formation, fleet loss, and the first use of
+each directed sea corridor are recorded in the annals. Rented journeys
+strengthen the passenger people's contact with their carriers.
+
+The old automatic sea-movement failure had three gates, not a lack of
+Seafaring. The 40-world cohort uses seeds 0–39, ten per map size, and six
+founders with rotating profiles: three share a coastal homeland and three
+are freely founded. Only founding is authored; all parameters are defaults.
+Over 4,000 years the `e12e917` engine recorded 46,107 seafaring
+people-generations but 389 land migrations, no sea migrations, and 2,427
+territorial splits with no travelling settlements. The earlier `fecd8e0`
+cohort recorded 363 land migrations and 2,388 splits, also with no sea
+movements. Sea terrain cost three times walking on a plain, plus the
+200-effort-km embarkation and landing overhead. Only 23 of 11,474 coastal
+lands had any boat-shortest destination within the 600-effort-km migration
+radius; none were on Large or Vast maps. Extending sea migration to 1,200
+without changing that cost still produced no sea migrations.
+
+Automatic splitting also skipped every one-land people, so its sea-colony
+selector was never reached. That selector gave any roomier neighbour an
+absolute veto over every overseas destination. Automatic pressure-driven
+colonies now reach the selector; land and sea destinations compete by
+room per journey effort, with the existing seaward preference. Sea effort
+is 0.5 rather than 3. The migration hazard, walking costs, 600-effort-km
+walking radius, and squared walking distance penalty are unchanged. Ships
+use the existing 1,200-effort-km colony radius, linear distance penalty,
+and seaward preference: provisioning a voyage follows the colony model.
+The shortest transport route determines its mode before the applicable
+radius is checked; a pointless boat detour cannot turn a distant walk
+into a sea migration. Climate still supplies pressure through the same
+cached food capacity, rather than a separate sea bonus. Finally, a
+single-port fleet can mature enough to carry its people without first
+acquiring a city. These are illustrative colonisation rates, not estimates
+fitted to a historical census.
+
+The separate authored maritime controls explicitly found coastal seafarers,
+send half-population colonies, and rent berths for small groups. Their
+expedition radius is a selected finite sea corridor's effort, not a change
+to the natural cohort's defaults. The ignored `fleets_band` test keeps
+their capacity checks separate from spontaneous movements.
+
+With the fix and fleets, the default cohort records 368 land and 53 sea
+migrations (12.59% by sea), 2,465 splits including 13 travelling sea
+settlements, 30 rented passenger journeys, and 22 mixed itineraries.
+Land migrations are 5.4% below the current-tree baseline and 1.4% above
+the earlier cohort. It builds 1,319 fleets, loses 251, and opens 152 sea
+corridors. The 40 authored controls make 160 sea settlements (40 rented),
+open 80 corridors, and refuse 40 larger rented groups for insufficient
+capacity. The full sample recipe has 11 fleets built, two land migrations,
+and no sea movements; it is included without inventing a per-world floor.
+
+Those figures were measured on continental-v4 maps. On continental-v5,
+with its broken coasts and more islands, the same cohort at revision 52
+records 330 land and 175 sea migrations (34.65% by sea), 143 travelling
+sea settlements, 152 rented journeys, 62 mixed itineraries, 1,694 fleets
+built and 257 lost, and 448 sea corridors. Land migration stays within
+its earlier band; sea movement adds to it rather than replacing it. Small
+worlds go by sea most often (54% of migrations), medium ones least (17%).
+The full sample recipe builds 27 fleets and makes one sea settlement.
+
+The band runs in 159.96 seconds in release. For the same three-founder
+Vast timing recipe (`calibrate -- geography 1 160 vast 3`), pre-change
+median/p95 step times were 34.71/73.78 ms at 632.76 years/s; with fleets
+and sea movement they are 30.69/66.89 ms at 706.45 years/s. Startup changes
+from 50.46 to 68.93 ms as cheaper sea travel enlarges cached voyage rows.
+These are local measurements, not a portable timing guarantee.
+
+`World::journey_to` and `journey_between` are directed, including rented
+transport where contact already exists. Walking wins a tie. `apart` is
+symmetric, so either participant may provide transport for trade,
+intermarriage, or religious contact. Fleet strength limits the frequency
+and intensity of overseas trade. Rule always requires the actual ruler's
+directed access using its own fleet, never rented berths.
+`World::connect` returns a refusal before changing contacts, states, or
+history when a requested relation is physically impossible. Authors
+bypass chance, not reachability. Resolved travel durations and hull-by-hull
+shipbuilding are not modelled.
 
 Default effort-km parameters are founding separation saturation 800,
 migration 600, colony 1,200, trade 1,800, conquest 800, pilgrimage 1,200,
@@ -1174,9 +1264,9 @@ Founding is independent settlement and needs no ships. Spread remains
 land-adjacent and uncapped. Cohesion and territorial partition use exact
 walking distances without a cache ceiling. Distance preferences use
 `1 + effort / 100`, so changing units does not change reference-grid odds.
-The colony ceiling intentionally rises from the old eight steps to
-twelve, while embarkation adds overhead. On reference plain shores,
-three intervening sea cells cost 1,200 effort-km rather than the old 1,000.
+Ships spend 0.5 effort-km per sea kilometre, against 1 on an open plain;
+access and the fixed embarkation costs still limit journeys. On reference
+plain shores, three intervening 100-km sea cells cost 450 effort-km.
 
 The facade's pure year-zero `founding_preview` reports each pair's exact
 walking and coast-to-coast voyage effort, retaining routes beyond first
@@ -1197,8 +1287,14 @@ are neither searched again nor copied. This also covers newly shorter paths:
 their first changed edge must be reachable through an unchanged prefix.
 Missing cached destinations are outside a bounded query, not necessarily
 unreachable. Exact pair queries use Dijkstra beyond the cache, and uncapped
-consumers reuse full source rows. Authored larger reaches use phase-local
-rows without mutating the shared map.
+consumers reuse full source rows. Land-only directed access retains these
+cached rows, and rule checks them before searching for a sea route. Mixed
+routes use a traveller's currently held and contacted ports in Dijkstra,
+with reusable scratch space for migration and outward contact searches.
+Incoming carrier rows are reused until a contact changes, rather than
+searched again for every prospective partner. Settlement planning searches
+once per inhabited source, not once per destination. Authored larger
+reaches use phase-local rows without mutating the shared map.
 Spatial and contact indexes are derived per phase. Successful spread
 redistributes all old holding presence; later migrants see earlier
 migrants' consumed room. These indexes are not additional replay state.
@@ -1477,11 +1573,13 @@ cargo run --release -p umran-sim --example found -- <seed> <profile>
 cargo run --release -p umran-sim --example drift -- <seed> <profile> <generations> [flavor...]
 cargo run --release -p umran-sim --example contact -- <seed> <donor> <recipient> <kind> <generations> <seeds>
 cargo run --release -p umran-sim --example family -- <seed> <proto> <outsider> <generations>
-cargo run --release -p umran-sim --example history -- <seed> <generations>
+cargo run --release -p umran-sim --example history -- <seed> <generations> [size]
 cargo run --release -p umran-sim --example calibrate -- <seeds> <generations> [profile]
 cargo run --release -p umran-sim --example calibrate -- geography [seeds] [generations] [size] [founders]
 cargo run --release -p umran-sim --example rivers -- [seeds] [size] [generations]
 cargo run --release -p umran-sim --example seasons
+cargo run --release -p umran-sim --example fleets -- [seeds] [generations]
+cargo run --release -p umran-sim --example sea_migration -- [seeds]
 cargo run --release -p umran-sim --example length -- [seeds] [generations]
 cargo run --release -p umran-sim --example audit -- [seeds] [generations]
 cargo run --release -p umran-sim --example faiths -- [seeds] [years] [first-seed] [seeded|natural|sample|sample-unseeded]
@@ -1518,8 +1616,7 @@ can refuse this fixed recipe; the report counts those refusals separately.
 
 ## Not yet modelled
 
-Fleets, rented ports, mixed inland-and-sea itineraries, subregional river
-meanders, changing lake extents, lake salinity, resolved travel times,
+Subregional river meanders, changing lake extents, lake salinity, resolved travel times,
 globe wrapping,
 purism in speech rather than writing, spelling reform as a purist act,
 inflection beyond count noun plural and object marking, the genitive, and verb
