@@ -200,7 +200,10 @@ impl World {
             let reads = self.communities[c].crafts.contains(&Craft::Writing);
             let standing = CLASSICAL_PRESTIGE.max(self.communities[c].prestige + LEARNED_EDGE);
             let mut own = None;
-            if let Some(high) = speech.high {
+            // Sacred high forms have their own Faith borrowing channel.
+            if let Some(high) = speech.high
+                && self.classical_of(high).is_some()
+            {
                 let share = if speech.vernacular.is_some() {
                     VERNACULAR_SHARE
                 } else {
@@ -218,7 +221,7 @@ impl World {
                 let Some(high) = self.varieties[self.communities[o].variety].high else {
                     continue;
                 };
-                if !seen.contains(&high) {
+                if !seen.contains(&high) && self.classical_of(high).is_some() {
                     seen.push(high);
                     out.push((c, high, CLASSICAL_INTENSITY * FOREIGN_SHARE, standing));
                 }
@@ -286,6 +289,31 @@ mod tests {
             drifted += usize::from(world.varieties[v].lexicon.lexemes != frozen);
         }
         assert!(drifted >= 6, "speech changed in only {drifted} of 8");
+    }
+
+    #[test]
+    fn sacred_high_forms_do_not_enter_classical_loan_channels() {
+        let (mut world, state, rulers, subjects) = realm(3, true);
+        let classical = world.states[state].classical.unwrap().variety;
+        world.learn(subjects, Craft::Writing, None);
+        let religion = world.found_religion(subjects, crate::ideas::Revelation::Proclaimed);
+        let sacred = world.religions[religion].sacred;
+        world.write_sacred(world.communities[subjects].variety, sacred);
+
+        let sources = world.classical_sources();
+        for community in [rulers, subjects] {
+            assert!(
+                sources.iter().any(|&(recipient, high, _, _)| {
+                    recipient == community && high == classical
+                })
+            );
+            assert!(
+                !sources
+                    .iter()
+                    .any(|&(recipient, high, _, _)| { recipient == community && high == sacred }),
+                "sacred forms belong to the Faith channel, not own or foreign classical channels"
+            );
+        }
     }
 
     /// Writers borrow words back from the classical form, so an old word

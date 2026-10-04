@@ -61,6 +61,33 @@ fn revival(world: &mut World) -> usize {
 }
 
 #[test]
+fn revival_does_not_reform_a_sacred_high_form() {
+    let (mut world, _, _) = realm(false, 1.0);
+    // Freeze the speech after its loans arrived, so a missing guard would
+    // have borrowed words to replace rather than passing for lack of targets.
+    let religion = world.found_religion(0, Revelation::Proclaimed);
+    world.religions[religion].scripture = true;
+    world.religions[religion].translates = false;
+    let sacred = world.religions[religion].sacred;
+    world.write_sacred(0, sacred);
+    assert!(!world.spoken()[sacred]);
+    assert!(world.varieties[sacred].lexicon.slots.iter().any(|slot| {
+        slot.dominant().is_some_and(|id| {
+            matches!(
+                world.varieties[sacred].lexicon.get(id).origin,
+                Origin::Borrowed { .. }
+            )
+        })
+    }));
+    let original = world.varieties[sacred].lexicon.clone();
+    revival(&mut world);
+    assert!(!world.purist_pressures.is_empty());
+    world.purify_high_forms();
+    assert_eq!(world.varieties[sacred].lexicon, original);
+    assert!(world.varieties[sacred].purism.is_empty());
+}
+
+#[test]
 fn written_revival_revives_archaisms_only_in_high_form_and_retains_causes() {
     let (mut world, state, _) = realm(true, 1.0);
     let high = world.states[state].classical.unwrap().variety;

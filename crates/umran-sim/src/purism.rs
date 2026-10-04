@@ -90,6 +90,10 @@ impl World {
                 .then_some(self.varieties[c.variety].high)
                 .flatten()
         }) {
+            // Revival may restore a sacred register, never rewrite scripture.
+            if self.religions.iter().any(|faith| faith.sacred == high) {
+                return None;
+            }
             return Some((high, None));
         }
         let state = self.state_of(pressure.community)?;
