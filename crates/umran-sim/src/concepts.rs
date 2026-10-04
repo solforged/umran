@@ -148,6 +148,29 @@ pub enum Tier {
 }
 
 impl Concept {
+    /// Semantic cores for noun-class assignment, not biological claims about
+    /// every referent. Body parts and products of animals are not animate.
+    pub fn noun_semantics(&self) -> Option<crate::gender::NounSemantics> {
+        use crate::gender::NounSemantics::*;
+        if self.class != Class::Entity {
+            return None;
+        }
+        Some(match self.id {
+            "mother" => Female,
+            "father" => Male,
+            "child" | "person" | "people" | "chief" | "friend" | "stranger" | "priest"
+            | "smith" | "prophet" | "sorcerer" => Human,
+            "louse" | "fly" | "fish" | "ant" | "dog" | "bird" | "cattle" | "horse" | "herd"
+            | "god" | "spirit" | "demon" => Animate,
+            "root" | "bone" | "tongue" | "neck" | "tail" | "rope" | "tree" | "needle" | "spear"
+            | "bow" | "path" | "river" => Long,
+            "leaf" | "wing" | "cloth" | "skin" | "sail" | "shield" | "book" => Flat,
+            "egg" | "eye" | "stone" | "sun" | "moon" | "seed" | "pot" => Round,
+            _ if !self.categories.plural => Mass,
+            _ => Other,
+        })
+    }
+
     /// How much longer than a language's typical root this concept's word
     /// tends to be: frequent, basic meanings get short words and specialist
     /// ones long (Zipf's law of abbreviation). Core rank stands in for

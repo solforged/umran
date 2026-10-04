@@ -23,7 +23,8 @@ use std::collections::BTreeMap;
 /// Revision 35 draws new worlds with ContinentalV3's geographic wind.
 /// Revision 36 adds future and progressive marking.
 /// Revision 37 adds pronouns and the genitive.
-pub const ENGINE_REVISION: u32 = 37;
+/// Revision 38 adds noun classes with determiner agreement.
+pub const ENGINE_REVISION: u32 = 38;
 /// Revision 33 replaces flat geography and its region identities with a sphere.
 /// Earlier region-targeted actions cannot be replayed on the spherical mesh.
 pub const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;
@@ -787,7 +788,7 @@ fn apply(world: &mut World, action: &Action, index: usize) -> Result<(), String>
             let speech = &world.varieties[*variety];
             if law
                 .assess_weighted(
-                    speech.grammar.forms(&speech.lexicon),
+                    speech.spoken_forms(),
                     &speech.profile.inventory,
                     speech.minimal,
                     speech.stress(),

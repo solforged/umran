@@ -27,6 +27,7 @@ export interface ChapterContext {
 }
 interface SectionProps { variety: Variety; ctx: ChapterContext }
 const PERSON = { 1: "first", 2: "second", 3: "third" } as const;
+const CLASS_BASIS = { sex: "by sex", animacy: "by animacy", shape: "by shape", formal: "by ending" } as const;
 
 export interface ParadigmView {
   category: string;
@@ -121,8 +122,9 @@ export function GrammarSketch({ variety: v, ctx }: SectionProps) {
     </> : null}
     {grammar.categories.map((category) => <section key={category.category} className="grammar-category"><h5>{category.label}</h5><p>{category.description} {category.eligible} eligible words; {Math.round(category.howSynthetic * 100)}% bound marking, {Math.round(category.contrastRetention * 100)}% retain a contrast.</p><ul className="roster">{grammar.markers.filter((m) => m.category === category.category).map((m) => <li key={m.id}><span className="word">{m.spelled || "∅"}</span>{m.said !== null ? <> · said <span className="word">{m.said}</span></> : null} <span className="ipa">/{m.ipa}/</span> · {m.side} {m.kind}, {Math.round(m.share * 100)}% of uses; {m.productive ? "productive" : "not productive"}{m.retired !== null ? `; retired in ${year(m.retired)}` : `; since ${year(m.born)}`}.{m.origin.kind === "grammaticalized" ? <> From the word “{m.origin.gloss}”.</> : m.origin.kind === "imported" ? <> Imported from {language(m.origin.from, ctx)}.</> : m.origin.kind === "fused" ? " Fused from a particle." : " Founding marker."}<details><summary>Recorded changes</summary><ol className="history">{m.history.map((line, i) => <li key={i}><span className="gen">{line.generation * YEARS}</span><span>{line.text}</span></li>)}</ol></details></li>)}</ul></section>)}
     {v.pronouns.length ? <section className="grammar-category"><h5>Pronouns</h5><ul className="roster">{v.pronouns.map((p) => <li key={`${p.person}${p.number}`}><span className="word">{p.spelled}</span> <span className="ipa">/{p.ipa}/</span> · {PERSON[p.person]} person {p.number === "sg" ? "singular" : "plural"}{p.polite ? ", also polite address" : ""}{p.origin === "renewed" ? `; renewed in ${year(p.since)}` : p.origin === "borrowed" ? `; borrowed in ${year(p.since)}` : ""}.</li>)}</ul></section> : null}
+    {grammar.classes.some((c) => c.mergedInto === null && c.members > 0) ? <section className="grammar-category"><h5>Noun classes</h5><p>Every noun belongs to a class, and the word for “this” agrees with it.</p><ul className="roster">{grammar.classes.filter((c) => c.mergedInto === null && c.members > 0).map((c) => <li key={c.id}>{c.marker ? <><span className="word">{c.marker.spelled}</span> <span className="ipa">/{c.marker.ipa}/</span> · </> : null}{CLASS_BASIS[c.basis]}, {c.members} nouns; since {year(c.born)}.</li>)}</ul></section> : null}
     <h4>Not yet modelled</h4>
-    <p className="muted">Agreement, gender and noun classes, and tenses beyond past and future.</p>
+    <p className="muted">Agreement beyond the word for “this”, and tenses beyond past and future.</p>
   </div>;
 }
 

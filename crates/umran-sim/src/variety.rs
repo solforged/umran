@@ -33,6 +33,8 @@ pub struct Variety {
     pub grammar: Grammar,
     /// Personal pronouns use the lexicon's six person/number slots.
     pub pronouns: crate::pronouns::Pronouns,
+    /// Noun classes and the determiner forms that agree with them.
+    pub gender: crate::gender::Gender,
     /// The smallest word sound change may leave.
     pub minimal: MinimalWord,
     /// Sound laws in the order applied, with their generation. A law may
@@ -124,6 +126,7 @@ impl Variety {
             morphology,
             grammar: Grammar::default(),
             pronouns: crate::pronouns::Pronouns::default(),
+            gender: crate::gender::Gender::default(),
             minimal: MinimalWord::draw(
                 profile.phonotactics.disyllabic_roots,
                 &mut stream(seed, &[key("minimal word")]),
@@ -176,6 +179,14 @@ impl Variety {
             variety.stress(),
             &mut variety.lexicon,
         );
+        variety.gender = crate::gender::Gender::found(
+            seed,
+            profile,
+            &phonotactics,
+            &variety.morphology,
+            variety.stress(),
+            &variety.lexicon,
+        );
         variety.given = given_stock(
             &variety,
             livelihood,
@@ -217,6 +228,12 @@ impl Variety {
         let stress = self.stress();
         self.grammar
             .sync(&mut self.lexicon, &self.morphology, stress, generation);
+        self.gender.sync(&self.lexicon);
+    }
+
+    /// Every living lexical or grammatical word used to assess a sound law.
+    pub fn spoken_forms(&self) -> impl Iterator<Item = (&Form, f32)> {
+        self.grammar.forms(&self.lexicon).chain(self.gender.forms())
     }
 
     /// Segments in at least 2% of living words (and at least two): the

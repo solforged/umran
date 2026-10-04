@@ -1426,7 +1426,7 @@ impl Bench {
             .filter(|law| law.id != "koine-levelling")
             .filter_map(|law| {
                 law.assess_weighted(
-                    speech.grammar.forms(&speech.lexicon),
+                    speech.spoken_forms(),
                     &speech.profile.inventory,
                     speech.minimal,
                     stress,
@@ -1799,6 +1799,7 @@ impl Bench {
                     gloss: slot.concept.gloss,
                     field: slot.concept.field.label(),
                     rank: slot.concept.stability,
+                    class: v.gender.class_of(word.id),
                     spelled,
                     said,
                     ipa: word.form.ipa_stressed(v.stress()),
@@ -1841,6 +1842,7 @@ impl Bench {
                     said,
                     ipa: word.form.ipa_stressed(v.stress()),
                     share: var.weight,
+                    class: v.gender.class_of(word.id),
                     origin: origin_view(world, variety, word),
                     senses: v.lexicon.senses(word.id).map(|c| c.gloss).collect(),
                     history: history(world, variety, word),
@@ -3726,6 +3728,22 @@ fn grammar_view(world: &World, variety: usize) -> GrammarView {
             "order"
         },
         sample: grammar_sample(v, world.generation),
+        classes: v
+            .gender
+            .classes
+            .iter()
+            .map(|class| NounClassView {
+                id: class.id,
+                basis: class.basis,
+                marker: (!class.marker.segs.is_empty()).then(|| ClassMarkerView {
+                    spelled: v.spell(&class.marker),
+                    ipa: class.marker.ipa(),
+                }),
+                members: class.members,
+                born: class.born,
+                merged_into: class.merged_into,
+            })
+            .collect(),
         markers: v
             .grammar
             .markers
@@ -3804,6 +3822,9 @@ fn grammar_sample(variety: &Variety, generation: u32) -> Option<GrammarSample> {
     };
     let mut possession = GrammarRendering::default();
     for concept in possession_order {
+        if concept == "fish" {
+            sample_determiner(variety, concept, generation, &mut possession)?;
+        }
         let category = (concept == "child").then_some(Category::Genitive);
         sample_word(variety, concept, category, generation, &mut possession)?;
     }
@@ -3832,9 +3853,34 @@ fn grammar_sentence(
     let mut sentence = GrammarRendering::default();
     for index in order {
         let (concept, category) = words[index];
+        if concept != "see" {
+            sample_determiner(variety, concept, generation, &mut sentence)?;
+        }
         sample_word(variety, concept, category, generation, &mut sentence)?;
     }
     Some(sentence)
+}
+
+fn sample_determiner(
+    variety: &Variety,
+    concept: &'static str,
+    generation: u32,
+    rendering: &mut GrammarRendering,
+) -> Option<()> {
+    let word = variety
+        .lexicon
+        .word_for(umran_sim::concepts::by_id(concept)?)?;
+    if let Some(class) = variety.gender.agreement(word.id) {
+        let form = class.agreement_at(generation);
+        if !rendering.gloss.is_empty() {
+            rendering.text.push(' ');
+            rendering.ipa.push(' ');
+        }
+        rendering.text.push_str(&variety.spell(form));
+        rendering.ipa.push_str(&form.ipa_stressed(variety.stress()));
+        rendering.gloss.push(format!("DEM.CL{}", class.id));
+    }
+    Some(())
 }
 
 fn sample_word(
@@ -4364,6 +4410,8 @@ struct LexiconRow {
     gloss: &'static str,
     field: &'static str,
     rank: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    class: Option<u32>,
     /// As written: as it sounded when the language was first written.
     spelled: String,
     /// As said now, spelled the same way, if writing has fallen behind.
@@ -4390,7 +4438,25 @@ struct GrammarView {
     #[serde(skip_serializing_if = "Option::is_none")]
     sample: Option<GrammarSample>,
     markers: Vec<GrammarMarkerView>,
+    classes: Vec<NounClassView>,
     categories: Vec<GrammarCategoryView>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NounClassView {
+    id: u32,
+    basis: umran_sim::gender::Basis,
+    marker: Option<ClassMarkerView>,
+    members: usize,
+    born: u32,
+    merged_into: Option<u32>,
+}
+
+#[derive(Serialize)]
+struct ClassMarkerView {
+    spelled: String,
+    ipa: String,
 }
 
 #[derive(Serialize)]
@@ -4502,6 +4568,8 @@ struct VariantView {
     said: Option<String>,
     ipa: String,
     share: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    class: Option<u32>,
     origin: OriginView,
     senses: Vec<&'static str>,
     history: Vec<HistoryLine>,
@@ -6824,6 +6892,7 @@ mod tests {
             possessor: Some(PossessorOrder::Before),
             future: Some(GrammarChoice::Suffix),
             progressive: Some(GrammarChoice::None),
+            classes: Some(umran_sim::gender::ClassChoice::None),
         });
         World::solo(7, &profile, umran_sim::Params::static_society())
     }

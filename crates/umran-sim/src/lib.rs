@@ -19,6 +19,7 @@ pub mod diglossia;
 pub mod ethos;
 pub mod flavor;
 pub mod form;
+pub mod gender;
 pub mod geography;
 pub mod grammar;
 pub mod ideas;

@@ -130,6 +130,8 @@ pub struct GrammarDesign {
     pub progressive: Option<GrammarChoice>,
     #[serde(default)]
     pub genitive: Option<GrammarChoice>,
+    #[serde(default)]
+    pub classes: Option<crate::gender::ClassChoice>,
 }
 impl Default for GrammarDesign {
     fn default() -> Self {
@@ -142,6 +144,7 @@ impl Default for GrammarDesign {
             future: None,
             progressive: None,
             genitive: None,
+            classes: None,
         }
     }
 }
@@ -175,6 +178,8 @@ pub struct GrammarPrior {
     pub progressive: Option<GrammarChoice>,
     #[serde(default)]
     pub genitive: Option<GrammarChoice>,
+    #[serde(default)]
+    pub classes: Option<crate::gender::ClassChoice>,
 }
 impl GrammarPrior {
     pub fn fixed(design: GrammarDesign) -> Self {
@@ -187,6 +192,7 @@ impl GrammarPrior {
             future: design.future,
             progressive: design.progressive,
             genitive: design.genitive,
+            classes: design.classes,
         }
     }
     pub fn draw(self, seed: u64, morphology: &MorphologyPrior) -> GrammarDesign {
@@ -260,6 +266,10 @@ impl GrammarPrior {
             future: Some(choices[Category::Future.position()]),
             progressive: Some(choices[Category::Progressive.position()]),
             genitive: Some(choices[Category::Genitive.position()]),
+            classes: Some(
+                self.classes
+                    .unwrap_or_else(|| crate::gender::ClassChoice::draw(seed)),
+            ),
         }
     }
 }

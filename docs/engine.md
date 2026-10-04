@@ -139,6 +139,22 @@ This bookkeeping makes no random draws and does not itself change replay.
   they came from Norse; this is twenty times rarer than renewal. Each
   process has its own purpose-keyed stream, and `static_society()` sets
   `pronoun_rate` to zero.
+- Noun classes (`gender.rs`) sort nouns into groups that other words must
+  agree with, following Corbett, *Gender* (1991): agreement is how a class
+  becomes visible. Founding draws none, sex (masculine, feminine, the rest),
+  animacy (people, animals, things), or many shape-and-kind classes at
+  0.50/0.25/0.20/0.05. Assignment is semantic at the core, by each meaning's
+  noun semantics; loans and nouns outside the core are assigned by their
+  final sound, as formal gender assigns them. The agreeing word is the
+  determiner "this", built with a class affix on the morphology's side and
+  rendered in the sample sentence and possession phrase (glossed DEM.CL).
+  Determiners change by regular sound law; when two come to sound alike,
+  their classes merge, and when one class is left, the system is lost,
+  with the sound law recorded as the trigger. A language without classes
+  can recruit them, rarely (`class_emergence_rate`, 0.0015 a generation,
+  no sooner than 32 generations after a loss), from nouns such as person,
+  dog, tree, or stone shortened to their first syllable, the classifier
+  route of Greenberg (1978). `static_society()` turns emergence off.
 - Word order and possessor order are fixed at founding and inherited by
   daughters; neither drifts. SOV means subject–object–verb, SVO means
   subject–verb–object, and VSO means verb–subject–object. Fully suffixing
@@ -1079,7 +1095,7 @@ purism within a classical form,
 compounding and derivation after founding beyond renewal and new meanings,
 inflection beyond count noun plural and object marking, the genitive, and verb
 past, future, and progressive, productive root-and-pattern inflection,
-agreement, grammatical gender, combined tense–aspect forms, modal readings and
+agreement beyond the determiner, combined tense–aspect forms, modal readings and
 clitic stages, pronoun case forms, tone, vowel harmony beyond next-syllable umlaut,
 prenasalized stops, syntax beyond fixed word
 and possessor order, alignment beyond this object contrast, and doctrinal

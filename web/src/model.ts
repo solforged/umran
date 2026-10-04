@@ -402,6 +402,7 @@ export interface Variety {
     marking: "case" | "order";
     sample?: { sentence: GrammarRendering; possession: GrammarRendering; future: GrammarRendering };
     markers: GrammarMarker[];
+    classes: NounClass[];
     categories: {
       category: GrammarCategory;
       label: string;
@@ -626,7 +627,7 @@ export interface Annal {
   /// The index of the decision that produced this entry, if one did.
   decision?: number;
   generation: number;
-  kind: "found" | "split" | "settlement" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "climate" | "river-flow" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper" | "grammar" | "pronoun-renewed" | "pronoun-polite" | "pronoun-borrowed";
+  kind: "found" | "split" | "settlement" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "climate" | "river-flow" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper" | "grammar" | "pronoun-renewed" | "pronoun-polite" | "pronoun-borrowed" | "class-emerged" | "class-merged" | "class-lost";
   /// The annalist's words; words of the language are marked *thus*.
   text: string;
   /// The apparatus: what a linguist would note, such as sound laws.
@@ -684,6 +685,7 @@ export interface LexiconRow {
   gloss: string;
   field: string;
   rank: number | null;
+  class?: number;
   spelled: string;
   said: string | null;
   ipa: string;
@@ -703,6 +705,7 @@ export interface Variant {
   said: string | null;
   ipa: string;
   share: number;
+  class?: number;
   origin: Origin;
   senses: string[];
   history: HistoryLine[];
@@ -991,6 +994,16 @@ export interface GrammarDesign {
   possessor?: PossessorOrder | null;
   future?: GrammarChoice | null;
   progressive?: GrammarChoice | null;
+  classes?: "none" | "sex" | "animacy" | "many" | null;
+}
+
+export interface NounClass {
+  id: number;
+  basis: "animacy" | "sex" | "shape" | "formal";
+  marker: { spelled: string; ipa: string } | null;
+  members: number;
+  born: number;
+  mergedInto: number | null;
 }
 
 export interface GrammarRendering {

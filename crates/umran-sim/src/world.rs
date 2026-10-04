@@ -284,6 +284,8 @@ pub struct Params {
     /// Chance of repairing a worn/merged pronoun. Court address changes
     /// six times faster; loans under intense contact are twenty times rarer.
     pub pronoun_rate: f32,
+    /// Per-generation chance of recruiting a noun-class agreement system.
+    pub class_emergence_rate: f32,
 }
 
 impl Default for Params {
@@ -347,6 +349,7 @@ impl Default for Params {
             climate_enabled: true,
             tense_aspect: true,
             pronoun_rate: 0.003,
+            class_emergence_rate: 0.0015,
         }
     }
 }
@@ -383,6 +386,7 @@ impl Params {
             climate_enabled: false,
             tense_aspect: false,
             pronoun_rate: 0.0,
+            class_emergence_rate: 0.0,
             ..Self::default()
         }
     }
@@ -2015,6 +2019,16 @@ impl World {
                 self.params.speakers,
                 self.params.tense_aspect,
             );
+            variety.gender.evolve(
+                self.seed,
+                v,
+                self.generation,
+                self.params.class_emergence_rate,
+                &variety.profile,
+                &variety.morphology,
+                stress,
+                &variety.lexicon,
+            );
             self.renew_names(v);
         }
         self.grow();
@@ -3620,6 +3634,8 @@ impl World {
             };
             new.grammar
                 .apply_law(&mut new.lexicon, &law, new.minimal, stress, generation);
+            new.gender
+                .apply_law(&law, new.minimal, stress, generation, &new.lexicon);
             for (_, name) in &mut new.river_exonyms {
                 name.change(&law, new.minimal, stress, generation);
             }
@@ -3817,7 +3833,7 @@ impl World {
             .filter(|law| !recent.contains(law.id))
             .filter_map(|law| {
                 let a = law.assess_weighted(
-                    variety.grammar.forms(&variety.lexicon),
+                    variety.spoken_forms(),
                     prior,
                     variety.minimal,
                     variety.stress(),
@@ -3873,6 +3889,9 @@ impl World {
         variety
             .grammar
             .apply_law(&mut variety.lexicon, law, minimal, stress, generation);
+        variety
+            .gender
+            .apply_law(law, minimal, stress, generation, &variety.lexicon);
         variety.laws.push((generation, law.id));
         if let Some(next) = law.stress {
             variety.stress_history.push((generation, stress));
@@ -3982,7 +4001,7 @@ impl World {
                 .filter_map(|(id, (h, from, _))| {
                     let law = self.laws.iter().find(|l| l.id == id)?;
                     let a = law.assess_weighted(
-                        variety.grammar.forms(&variety.lexicon),
+                        variety.spoken_forms(),
                         &variety.profile.inventory,
                         variety.minimal,
                         variety.stress(),

@@ -77,6 +77,9 @@ export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string 
   "pronoun-renewed": { icon: Languages, name: "A pronoun is renewed" },
   "pronoun-polite": { icon: Languages, name: "Polite address at court" },
   "pronoun-borrowed": { icon: Languages, name: "A pronoun is borrowed" },
+  "class-emerged": { icon: Languages, name: "Noun classes form" },
+  "class-merged": { icon: Languages, name: "Two noun classes merge" },
+  "class-lost": { icon: Languages, name: "Noun classes are lost" },
 };
 
 export const TERRAIN_NAME: Record<Terrain, string> = {

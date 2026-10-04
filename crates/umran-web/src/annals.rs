@@ -37,8 +37,8 @@ pub(crate) struct Annal {
     /// "livelihood", "ended", "rose", "fell", "standard", "classical",
     /// "vernacular", "craft", "faith", "conversion", "meaning",
     /// "respelling", "schism", "pilgrimage", "holy-land", "temper", "grammar",
-    /// "pronoun-renewed", "pronoun-polite", "pronoun-borrowed", "climate",
-    /// "river-flow", or "law".
+    /// "pronoun-renewed", "pronoun-polite", "pronoun-borrowed", "class-emerged",
+    /// "class-merged", "class-lost", "climate", "river-flow", or "law".
     pub kind: &'static str,
     /// The annalist's words. Words of the language are marked `*thus*`.
     pub text: String,
@@ -998,6 +998,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
     out.extend(sound_changes(world));
     out.extend(grammar_changes(world));
     out.extend(pronoun_changes(world));
+    out.extend(class_changes(world));
     let shifts = Shifts::of(world);
     fn languages(a: &mut Annal, world: &World, shifts: &Shifts) {
         for member in &mut a.members {
@@ -2176,6 +2177,112 @@ fn pronoun_changes(world: &World) -> Vec<Annal> {
                 river_flow: None,
                 settlement: None,
                 decision: None,
+                before: None,
+            });
+        }
+    }
+    out
+}
+
+fn class_changes(world: &World) -> Vec<Annal> {
+    use umran_sim::gender::{Basis, ClassChange};
+    let shifts = Shifts::of(world);
+    let mut out = Vec::new();
+    for (v, variety) in world.varieties.iter().enumerate() {
+        let classes = &variety.gender.classes;
+        for (position, notice) in variety
+            .gender
+            .events
+            .iter()
+            .enumerate()
+            .filter(|(_, notice)| {
+                variety.parent.is_none_or(|fork| {
+                    notice.generation > fork.generation
+                        || (notice.generation == fork.generation
+                            && !world.varieties[fork.variety].gender.events.contains(notice))
+                })
+            })
+        {
+            let generation = notice.generation;
+            let people = speakers(world, &shifts, v, generation);
+            let said = |class: u32, at: u32| {
+                format!(
+                    "*{}*",
+                    variety.spell(classes[class as usize].agreement_at(at))
+                )
+            };
+            let (kind, text, note) = match &notice.change {
+                ClassChange::Emerged { classes: new } => {
+                    let by = match new.first().map(|&c| classes[c as usize].basis) {
+                        Some(Basis::Sex) => "masculine, feminine, and the rest",
+                        Some(Basis::Animacy) => "people, animals, and things",
+                        _ => "kind and shape",
+                    };
+                    let forms: Vec<_> = new.iter().map(|&c| said(c, generation)).collect();
+                    (
+                        "class-emerged",
+                        format!(
+                            "Among {people}, the word for 'this' began to agree with its noun, sorting nouns by {by}: {}.",
+                            forms.join(", ")
+                        ),
+                        "Noun classes grow when classifiers or demonstratives become agreement markers (Greenberg, 1978). Agreement is what makes a class visible.",
+                    )
+                }
+                ClassChange::Merged { class, into } => {
+                    let before = generation.saturating_sub(1);
+                    (
+                        "class-merged",
+                        format!(
+                            "Among {people}, {} and {} came to sound alike, and two noun classes became one.",
+                            said(*into, before),
+                            said(*class, before)
+                        ),
+                        "Classes merge when sound change erases the endings that told them apart, as Dutch merged masculine and feminine into common gender.",
+                    )
+                }
+                ClassChange::Lost => (
+                    "class-lost",
+                    format!(
+                        "Among {people}, the last difference between noun classes wore away; 'this' no longer agreed with its noun."
+                    ),
+                    "Gender is often lost as its endings erode, as English lost it after Old English.",
+                ),
+            };
+            out.push(Annal {
+                id: format!("classes:{v}:{position}"),
+                members: Vec::new(),
+                languages: Vec::new(),
+                generation,
+                kind,
+                text,
+                notes: vec![note.into()],
+                cause: None,
+                variety: Some(v),
+                peoples: (0..world.communities.len())
+                    .filter(|&c| {
+                        shifts.alive_at(world, c, generation)
+                            && shifts.spoken_by(world, c, generation) == v
+                    })
+                    .collect(),
+                lands: Vec::new(),
+                laws: notice.cause.map(|c| vec![c.law]).unwrap_or_default(),
+                specimen: Vec::new(),
+                states: Vec::new(),
+                religions: Vec::new(),
+                crafts: Vec::new(),
+                temper: None,
+                grammar: None,
+                zones: Vec::new(),
+                rivers: Vec::new(),
+                climate: None,
+                river_flow: None,
+                settlement: None,
+                decision: notice.cause.and_then(|cause| {
+                    world
+                        .authored_laws
+                        .get(&(v, cause.generation, cause.law))
+                        .copied()
+                }),
                 before: None,
             });
         }
