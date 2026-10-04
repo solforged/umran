@@ -83,7 +83,7 @@ impl CategoryEligibility {
     pub const fn allows(self, category: Category) -> bool {
         match category {
             Category::Plural | Category::Object => self.plural,
-            Category::Past => self.past,
+            Category::Past | Category::Future | Category::Progressive => self.past,
         }
     }
 }
@@ -119,7 +119,7 @@ pub struct Concept {
     pub field: Field,
     pub class: Class,
     /// Explicit per-meaning eligibility: count nouns, not mass or collective
-    /// meanings, take plural; event meanings can take past.
+    /// meanings, take plural; verb meanings can take tense and aspect.
     pub categories: CategoryEligibility,
     /// Rank on the Leipzig–Jakarta list (Tadmor 2009): 1 is the meaning
     /// least often borrowed. `None` for cultural vocabulary.

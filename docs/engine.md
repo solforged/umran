@@ -81,19 +81,43 @@ This bookkeeping makes no random draws and does not itself change replay.
   root skeleton, never a surface reading that includes a pattern's prefix.
   New words come from curated semantic shifts (`RELATED`) or fresh roots.
 - Grammar (`grammar.rs`) begins with count noun plural and object marking,
-  and verb past. The object is the thing acted upon: an accusative-like
-  contrast, not a complete case system. Count nouns name separate things,
+  and verb past, future, and progressive. The object is the thing acted upon:
+  an accusative-like contrast, not a complete case system. Count nouns name separate things,
   so water, fire, and collective people take neither plural nor object
   forms. Eligibility is explicit for each concept and follows a word's
   current senses, not only its first meaning. Designs save each category
   as suffix, prefix, particle, or none. A suffix follows its stem; a prefix
   precedes it; a particle is a separate grammatical word. Missing plural
-  and past choices in older designs remain suffixes; missing object, word
-  order, and possessor choices are drawn at founding. Affix-building
-  profiles draw plural and past bound marking, particles, and no marking at
+  and past choices in older designs remain suffixes; missing object, future,
+  progressive, word order, and possessor choices are drawn at founding.
+  Affix-building profiles draw plural and past bound marking, particles, and no marking at
   weights 0.6/0.3/0.1; root-and-pattern profiles use 0.5/0.4/0.1. Object
   marking uses 0.45/0.15/0.40 in both. The suffixing preference divides
   bound choices between suffixes and prefixes.
+- Future places an event after the present; progressive presents an event
+  as ongoing rather than completed. Both use the existing verb eligibility,
+  including verbs whose ongoing reading depends on context. Future particles
+  come from go, come, or have (motion and obligation); progressive particles
+  come from stand (posture). These are existing meanings, so no lexical
+  founding draws move. The source word keeps its ordinary meaning and the
+  auxiliary has a separate sound history. This follows the pathways described
+  by Bybee, Perkins, and Pagliuca, *The Evolution of Grammar* (1994), and the
+  grammaticalization cycle in Hopper and Traugott, *Grammaticalization*.
+  Founding bound/particle/none weights are 0.30/0.30/0.40 for future and
+  0.25/0.35/0.40 for progressive, in either morphology family. These are model
+  priors, not measured language frequencies. A language may have no dedicated
+  mark and use context instead.
+- Future and progressive auxiliaries enter, compete, fuse, erode, and renew
+  through the same machinery as past. Loss raises the per-generation
+  rebuilding chance from 0.0007 toward 0.0087. A new particle takes an initial
+  share of 0.12 beside the old form; fusion takes 0.18. The old ending can
+  survive on some verbs while the new auxiliary spreads. These are usage
+  shares, not distinct modal meanings: narrower future senses, separate clitic
+  stages, and combined tense–aspect forms are not modelled. The new categories
+  have their own category keys within each grammar purpose stream; earlier
+  categories' draws are not consumed by them. `Params.tense_aspect` is true by
+  default and false in `static_society()`: turning it off stops their renewal,
+  competition, fusion, and analogy, not founding choices or regular sound laws.
 - Word order and possessor order are fixed at founding and inherited by
   daughters; neither drifts. SOV means subject–object–verb, SVO means
   subject–verb–object, and VSO means verb–subject–object. Fully suffixing
@@ -176,13 +200,17 @@ This bookkeeping makes no random draws and does not itself change replay.
   order. Each category uses its most-used living realization, including
   surviving stem changes. Bound forms gloss as see-PAST and dog-OBJ;
   particles have their own PAST or OBJ gloss item, on their recorded side.
+  A future sample, "the child will see the dog", uses the same word order and
+  object form with the most-used future realization of see; its gloss is FUT,
+  or bare see when no dedicated mark survives. It is `grammar.sample.future`,
+  beside `sentence` and `possession`, with the same text/IPA/gloss shape.
   Text and stressed IPA separate spoken words with spaces. The possession
   sample is "the child's fish", child and fish in possessor order, without
   a marker: no genitive is modelled. The facade omits the sample if a
   required word or form is missing. The design JSON keeps plural and past
-  choices and adds nullable object, order, and possessor settings; null or
-  omission draws that setting at founding, while a resolved design saves
-  each drawn value.
+  choices and adds nullable object, future, progressive, order, and possessor
+  settings; null or omission draws that setting at founding, while a resolved
+  design saves each drawn value.
 - Calibration follows the founding language in each solo run, like the
   lexical statistics, rather than counting its cloned daughters as new
   independent observations. With the default 200 seeds and profiles in
@@ -1003,6 +1031,7 @@ cargo run --release -p umran-sim --example cities -- --band 40 160
 cargo run --release -p umran-sim --example ethos -- [seed] [generations]
 cargo run --release -p umran-sim --example ethos -- --band 40 160
 cargo run --release -p umran-sim --example endings -- [seeds]
+cargo run --release -p umran-sim --example tense -- [seeds] [years]
 cargo run --release -p umran-web --example provenance
 ```
 
@@ -1027,9 +1056,10 @@ Fleets, rented ports, mixed inland-and-sea itineraries, exact river channels
 and lakes, seasonal weather, resolved travel times, globe wrapping,
 purism within a classical form,
 compounding and derivation after founding beyond renewal and new meanings,
-inflection beyond count noun plural and object marking and verb past,
-productive root-and-pattern inflection, agreement, grammatical gender,
-tense beyond past, pronoun paradigms, genitive marking, tone, vowel harmony
-beyond next-syllable umlaut, prenasalized stops, syntax beyond fixed word
+inflection beyond count noun plural and object marking and verb past, future,
+and progressive, productive root-and-pattern inflection, agreement, grammatical
+gender, combined tense–aspect forms, modal readings and clitic stages, pronoun
+paradigms, genitive marking, tone, vowel harmony beyond next-syllable umlaut,
+prenasalized stops, syntax beyond fixed word
 and possessor order, alignment beyond this object contrast, and doctrinal
 detail beyond the causes of a schism.

@@ -1,4 +1,4 @@
-//! Three grammatical contrasts and their changing spoken realizations.
+//! Grammatical contrasts and their changing spoken realizations.
 //! Inflection changes a word for grammar. Particles remain separate words.
 
 use crate::concepts::{Concept, by_id};
@@ -20,14 +20,24 @@ pub enum Category {
     Plural,
     Past,
     Object,
+    Future,
+    Progressive,
 }
 impl Category {
-    pub const ALL: [Self; 3] = [Self::Plural, Self::Past, Self::Object];
+    pub const ALL: [Self; 5] = [
+        Self::Plural,
+        Self::Past,
+        Self::Object,
+        Self::Future,
+        Self::Progressive,
+    ];
     pub fn id(self) -> &'static str {
         match self {
             Self::Plural => "plural",
             Self::Past => "past",
             Self::Object => "object",
+            Self::Future => "future",
+            Self::Progressive => "progressive",
         }
     }
     pub fn label(self) -> &'static str {
@@ -35,6 +45,8 @@ impl Category {
             Self::Plural => "plural",
             Self::Past => "past",
             Self::Object => "the object",
+            Self::Future => "future",
+            Self::Progressive => "progressive",
         }
     }
     pub fn position(self) -> usize {
@@ -42,6 +54,8 @@ impl Category {
             Self::Plural => 0,
             Self::Past => 1,
             Self::Object => 2,
+            Self::Future => 3,
+            Self::Progressive => 4,
         }
     }
     fn sources(self) -> &'static [&'static str] {
@@ -49,7 +63,12 @@ impl Category {
             Self::Plural => &["many", "all", "people"],
             Self::Past => &["finish", "have"],
             Self::Object => &["take", "give", "hand"],
+            Self::Future => &["go", "come", "have"],
+            Self::Progressive => &["stand"],
         }
+    }
+    fn evolves(self, tense_aspect: bool) -> bool {
+        tense_aspect || !matches!(self, Self::Future | Self::Progressive)
     }
 }
 
@@ -99,6 +118,10 @@ pub struct GrammarDesign {
     pub order: Option<WordOrder>,
     #[serde(default)]
     pub possessor: Option<PossessorOrder>,
+    #[serde(default)]
+    pub future: Option<GrammarChoice>,
+    #[serde(default)]
+    pub progressive: Option<GrammarChoice>,
 }
 impl Default for GrammarDesign {
     fn default() -> Self {
@@ -108,6 +131,8 @@ impl Default for GrammarDesign {
             object: None,
             order: None,
             possessor: None,
+            future: None,
+            progressive: None,
         }
     }
 }
@@ -117,6 +142,10 @@ impl GrammarDesign {
             Category::Plural => self.plural,
             Category::Past => self.past,
             Category::Object => self.object.expect("resolved founding object choice"),
+            Category::Future => self.future.expect("resolved founding future choice"),
+            Category::Progressive => self
+                .progressive
+                .expect("resolved founding progressive choice"),
         }
     }
 }
@@ -130,6 +159,10 @@ pub struct GrammarPrior {
     pub order: Option<WordOrder>,
     #[serde(default)]
     pub possessor: Option<PossessorOrder>,
+    #[serde(default)]
+    pub future: Option<GrammarChoice>,
+    #[serde(default)]
+    pub progressive: Option<GrammarChoice>,
 }
 impl GrammarPrior {
     pub fn fixed(design: GrammarDesign) -> Self {
@@ -139,6 +172,8 @@ impl GrammarPrior {
             object: design.object,
             order: design.order,
             possessor: design.possessor,
+            future: design.future,
+            progressive: design.progressive,
         }
     }
     pub fn draw(self, seed: u64, morphology: &MorphologyPrior) -> GrammarDesign {
@@ -148,11 +183,15 @@ impl GrammarPrior {
                 Category::Plural => self.plural,
                 Category::Past => self.past,
                 Category::Object => self.object,
+                Category::Future => self.future,
+                Category::Progressive => self.progressive,
             };
             choices[category.position()] = resolved.unwrap_or_else(|| {
                 let mut rng = stream(seed, &[key("grammar founding"), key(category.id())]);
                 let (bound, particle, none) = match (category, morphology.kind) {
                     (Category::Object, _) => (0.45, 0.15, 0.4),
+                    (Category::Future, _) => (0.3, 0.3, 0.4),
+                    (Category::Progressive, _) => (0.25, 0.35, 0.4),
                     (_, MorphologyKind::Concatenative) => (0.6, 0.3, 0.1),
                     (_, MorphologyKind::RootPattern) => (0.5, 0.4, 0.1),
                 };
@@ -203,6 +242,8 @@ impl GrammarPrior {
             object: Some(choices[2]),
             order: Some(order),
             possessor: Some(possessor),
+            future: Some(choices[Category::Future.position()]),
+            progressive: Some(choices[Category::Progressive.position()]),
         }
     }
 }
@@ -982,9 +1023,13 @@ impl Grammar {
         morphology: &Morphology,
         stress: StressRule,
         speakers: u32,
+        tense_aspect: bool,
     ) {
         self.sync(lexicon, morphology, stress, generation);
         for category in Category::ALL {
+            if !category.evolves(tense_aspect) {
+                continue;
+            }
             let i = category.position();
             let state = self.summary.categories[i];
             let loss = if state.eligible >= 5
@@ -1045,6 +1090,9 @@ impl Grammar {
                 continue;
             }
             for p in &mut word.paradigms {
+                if !p.category.evolves(tense_aspect) {
+                    continue;
+                }
                 let mut active = [0usize; 3];
                 let mut active_count = 0;
                 for (i, r) in p.realizations.iter().enumerate() {
@@ -1101,7 +1149,10 @@ impl Grammar {
                 .iter()
                 .any(|m| matches!(m.origin,MarkerOrigin::Fused {particle} if particle==i as u32));
             let marker = &mut self.markers[i];
-            if marker.kind != MarkerKind::Particle || marker.retired.is_some() || !marker.productive
+            if !marker.category.evolves(tense_aspect)
+                || marker.kind != MarkerKind::Particle
+                || marker.retired.is_some()
+                || !marker.productive
             {
                 continue;
             }
@@ -1131,6 +1182,9 @@ impl Grammar {
             self.fuse(particle, lexicon, morphology, stress, generation);
         }
         for category in Category::ALL {
+            if !category.evolves(tense_aspect) {
+                continue;
+            }
             let mut rng = stream(
                 seed,
                 &[
@@ -1694,6 +1748,7 @@ mod tests {
                         &daughter.morphology,
                         stress,
                         1000,
+                        true,
                     );
                 }
                 assert_eq!(

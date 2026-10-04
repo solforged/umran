@@ -278,6 +278,9 @@ pub struct Params {
     pub ethos_shifts: bool,
     /// False freezes seeded regional climate histories at their baseline.
     pub climate_enabled: bool,
+    /// Enables future/progressive renewal, competition, fusion, and analogy.
+    /// Founding choices and regular sound laws still apply when disabled.
+    pub tense_aspect: bool,
 }
 
 impl Default for Params {
@@ -339,6 +342,7 @@ impl Default for Params {
             ethos_enabled: true,
             ethos_shifts: true,
             climate_enabled: true,
+            tense_aspect: true,
         }
     }
 }
@@ -373,6 +377,7 @@ impl Params {
             city_rate: 0.0,
             ethos_shifts: false,
             climate_enabled: false,
+            tense_aspect: false,
             ..Self::default()
         }
     }
@@ -2002,6 +2007,7 @@ impl World {
                 &variety.morphology,
                 stress,
                 self.params.speakers,
+                self.params.tense_aspect,
             );
             self.renew_names(v);
         }

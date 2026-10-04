@@ -3736,6 +3736,8 @@ fn grammar_view(world: &World, variety: usize) -> GrammarView {
                         Category::Plural => "Plural marks more than one countable thing.",
                         Category::Past => "Past marks an event before the present.",
                         Category::Object => "The object marks the countable thing acted upon.",
+                        Category::Future => "Future marks an event after the present.",
+                        Category::Progressive => "Progressive marks an event in progress.",
                     },
                     eligible: summary.eligible,
                     how_synthetic: summary.how_synthetic,
@@ -3747,9 +3749,31 @@ fn grammar_view(world: &World, variety: usize) -> GrammarView {
 }
 
 fn grammar_sample(variety: &Variety, generation: u32) -> Option<GrammarSample> {
+    let sentence = grammar_sentence(variety, generation, Category::Past)?;
+    let future = grammar_sentence(variety, generation, Category::Future)?;
+    let possession_order = match variety.grammar.possessor {
+        PossessorOrder::Before => ["child", "fish"],
+        PossessorOrder::After => ["fish", "child"],
+    };
+    let mut possession = GrammarRendering::default();
+    for concept in possession_order {
+        sample_word(variety, concept, None, generation, &mut possession)?;
+    }
+    Some(GrammarSample {
+        sentence,
+        possession,
+        future,
+    })
+}
+
+fn grammar_sentence(
+    variety: &Variety,
+    generation: u32,
+    tense: Category,
+) -> Option<GrammarRendering> {
     let words = [
         ("child", None),
-        ("see", Some(Category::Past)),
+        ("see", Some(tense)),
         ("dog", Some(Category::Object)),
     ];
     let order = match variety.grammar.order {
@@ -3762,18 +3786,7 @@ fn grammar_sample(variety: &Variety, generation: u32) -> Option<GrammarSample> {
         let (concept, category) = words[index];
         sample_word(variety, concept, category, generation, &mut sentence)?;
     }
-    let possession_order = match variety.grammar.possessor {
-        PossessorOrder::Before => ["child", "fish"],
-        PossessorOrder::After => ["fish", "child"],
-    };
-    let mut possession = GrammarRendering::default();
-    for concept in possession_order {
-        sample_word(variety, concept, None, generation, &mut possession)?;
-    }
-    Some(GrammarSample {
-        sentence,
-        possession,
-    })
+    Some(sentence)
 }
 
 fn sample_word(
@@ -3816,6 +3829,8 @@ fn sample_word(
             Category::Past => "PAST",
             Category::Object => "OBJ",
             Category::Plural => "PL",
+            Category::Future => "FUT",
+            Category::Progressive => "PROG",
         };
         for (index, form) in forms.iter().enumerate() {
             let gloss = match marker.kind {
@@ -4333,6 +4348,7 @@ struct GrammarView {
 struct GrammarSample {
     sentence: GrammarRendering,
     possession: GrammarRendering,
+    future: GrammarRendering,
 }
 
 #[derive(Default, Serialize)]
@@ -6696,6 +6712,8 @@ mod tests {
             object: Some(object),
             order: Some(order),
             possessor: Some(PossessorOrder::Before),
+            future: Some(GrammarChoice::Suffix),
+            progressive: Some(GrammarChoice::None),
         });
         World::solo(7, &profile, umran_sim::Params::static_society())
     }

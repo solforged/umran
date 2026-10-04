@@ -21,7 +21,8 @@ use std::collections::BTreeMap;
 /// Revision 34 adds versioned continental geography and related founding.
 /// Revision-33 recipes retain their original spherical geography.
 /// Revision 35 draws new worlds with ContinentalV3's geographic wind.
-pub const ENGINE_REVISION: u32 = 35;
+/// Revision 36 adds future and progressive marking.
+pub const ENGINE_REVISION: u32 = 36;
 /// Revision 33 replaces flat geography and its region identities with a sphere.
 /// Earlier region-targeted actions cannot be replayed on the spherical mesh.
 pub const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;

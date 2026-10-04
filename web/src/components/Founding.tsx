@@ -391,7 +391,8 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
                   ...(["before", "after"] as PossessorOrder[]).map((possessor) => ({ key: possessor, text: POSSESSOR_PHRASE[possessor].choice }))]}
                 onChange={(key) => setGrammar({ possessor: key === "" ? null : key as PossessorOrder })} />.</p>}
               {speech.grammar.sample ? <><Sample rendering={speech.grammar.sample.sentence} label="Sample sentence" />
-                <Sample rendering={speech.grammar.sample.possession} label="Sample possession" /></> : null}
+                <Sample rendering={speech.grammar.sample.possession} label="Sample possession" />
+                <Sample rendering={speech.grammar.sample.future} label="Sample future" /></> : null}
             </details>
             <details className="founding-identity">
               <summary>Names <span>{speech.name}</span></summary>

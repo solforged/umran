@@ -346,11 +346,11 @@ mod tests {
     }
 
     #[test]
-    fn older_design_draws_missing_object_and_orders_at_founding() {
+    fn older_design_draws_missing_categories_and_orders_at_founding() {
         let design = LanguageDesign::preset("germanic", 9).unwrap();
         let mut json = serde_json::to_value(&design).unwrap();
         let grammar = json["grammar"].as_object_mut().unwrap();
-        for field in ["object", "order", "possessor"] {
+        for field in ["object", "order", "possessor", "future", "progressive"] {
             grammar.remove(field);
         }
         let loaded: LanguageDesign = serde_json::from_value(json).unwrap();
@@ -358,6 +358,8 @@ mod tests {
         assert_eq!(profile.grammar.object, None);
         assert_eq!(profile.grammar.order, None);
         assert_eq!(profile.grammar.possessor, None);
+        assert_eq!(profile.grammar.future, None);
+        assert_eq!(profile.grammar.progressive, None);
         for seed in [0, 7, u64::MAX] {
             let variety = Variety::found(
                 seed,
@@ -406,6 +408,8 @@ mod tests {
                 plural,
                 past: choices[(i + 1) % choices.len()],
                 object: Some(choices[(i + 2) % choices.len()]),
+                future: Some(choices[(i + 3) % choices.len()]),
+                progressive: Some(choices[i]),
                 ..design.grammar
             };
             let json = serde_json::to_string(&design).unwrap();
@@ -428,6 +432,8 @@ mod tests {
                 ("fish", Category::Plural),
                 ("go", Category::Past),
                 ("dog", Category::Object),
+                ("go", Category::Future),
+                ("stand", Category::Progressive),
             ] {
                 let word = variety
                     .lexicon

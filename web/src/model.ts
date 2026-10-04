@@ -390,7 +390,7 @@ export interface Variety {
     order: WordOrder;
     possessor: PossessorOrder;
     marking: "case" | "order";
-    sample?: { sentence: GrammarRendering; possession: GrammarRendering };
+    sample?: { sentence: GrammarRendering; possession: GrammarRendering; future: GrammarRendering };
     markers: GrammarMarker[];
     categories: {
       category: GrammarCategory;
@@ -965,7 +965,7 @@ export interface DecisionView {
   annals: string[];
 }
 
-export type GrammarCategory = "plural" | "past" | "object";
+export type GrammarCategory = "plural" | "past" | "object" | "future" | "progressive";
 export type GrammarChoice = "suffix" | "prefix" | "particle" | "none";
 export type WordOrder = "SOV" | "SVO" | "VSO";
 export type PossessorOrder = "before" | "after";
@@ -977,6 +977,8 @@ export interface GrammarDesign {
   object?: GrammarChoice | null;
   order?: WordOrder | null;
   possessor?: PossessorOrder | null;
+  future?: GrammarChoice | null;
+  progressive?: GrammarChoice | null;
 }
 
 export interface GrammarRendering {
