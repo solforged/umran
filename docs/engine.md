@@ -472,8 +472,18 @@ This bookkeeping makes no random draws and does not itself change replay.
   The audit's Finnic seed 2 has no losses after degemination or nasal
   assimilation, and keeps all 16 varieties active instead of 12.
 - Tone (`tone.rs`) is pitch that tells words apart, carried on each vowel
-  (`Seg::tone`) and written with Chao tone letters after it, as ˥ high,
-  ˩ low, ˧˥ rising, ˥˩ falling. It arises through regular sound laws by
+  (`Seg::tone`). IPA keeps Chao letters: ˥ high, ˩ low, ˧˥ rising,
+  ˥˩ falling, ˩˧ low-rising, and ˧˩ low-falling. Spelling instead adds
+  acute, grave, caron, circumflex, hook above, and dot below respectively
+  (á à ǎ â ả ạ), normalized to Unicode NFC. The mark goes on the vowel's
+  first letter, stacking with its quality and length marks; the low
+  contours do not reuse the palettes' macrons or vowel-quality marks.
+  A profile using acute for length keeps it while atonal; in a tonal
+  language length uses a macron instead, including on untoned words, so
+  acute can distinguish high tone. Serialized profiles keep their original
+  length setting. Names, specimens, historical spellings, and exports use
+  the same renderer; segment histories and IPA are unchanged.
+  Tone arises through regular sound laws by
   the two best-attested routes. Final glottal stops and h or s falling
   silent leave rising or falling tone, as Haudricourt (1954) showed for
   Vietnamese (`coda-tonogenesis`). Voiced and voiceless onsets merging

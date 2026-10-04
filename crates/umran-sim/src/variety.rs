@@ -287,7 +287,9 @@ impl Variety {
     }
 
     pub fn spell(&self, form: &Form) -> String {
-        self.profile.spelling.write(form)
+        self.profile
+            .spelling
+            .write_tonal(form, self.tonal.is_some_and(|period| period.lost.is_none()))
     }
 
     /// How a word is written: as it sounded when the language was first

@@ -11,6 +11,7 @@ libm = "0.2.16"
 rand.workspace = true
 rand_chacha.workspace = true
 serde.workspace = true
+unicode-normalization = "0.1.24"
 
 [dev-dependencies]
 serde_json.workspace = true

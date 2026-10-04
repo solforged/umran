@@ -72,6 +72,9 @@ writes its own history.
   first syllable or the next to last, and stress shapes what follows:
   unstressed vowels weaken and drop, as Latin *calidus* became Italian
   *caldo*, and clusters become long consonants, as *factum* became *fatto*.
+  Lost consonants can leave lexical tone. Spelling marks its six pitches
+  on the vowel (á à ǎ â ả ạ), including in names and exports; IPA keeps
+  Chao tone letters (˥ ˩ and contours).
 - **Waves.** A sound change can spread to neighbouring languages, mostly
   between close relatives. The lines where a change stopped (isoglosses)
   cut across the family tree, as dialect maps of real languages do.
@@ -287,9 +290,8 @@ AGENTS.md          architecture notes and the rules every change keeps
 
 ## Status
 
-Umran is a work in progress. Not yet modelled: tone, vowel harmony,
-inflection and syntax, among others. The full
-list is at the end of
+Umran is a work in progress. The mechanisms not yet modelled are listed
+at the end of
 [`docs/engine.md`](docs/engine.md#not-yet-modelled).
 
 ## The name

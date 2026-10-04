@@ -93,12 +93,6 @@ fn pitch_survives_quality_length_and_boundary_changes() {
     for tone in Tone::ALL {
         let ipa = format!("kaː{}", tone.ipa());
         assert_eq!(form(&ipa).ipa(), ipa);
-        assert!(
-            SoundProfile::base()
-                .spelling
-                .write(&form(&ipa))
-                .ends_with(tone.ipa())
-        );
     }
     assert!(Form::from_ipa("k˥a").is_none());
     assert!(Form::from_ipa("ka˧").is_none());

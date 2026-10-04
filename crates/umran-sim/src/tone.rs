@@ -30,7 +30,7 @@ impl Tone {
         Self::LowFalling,
     ];
 
-    /// Chao tone letters follow the vowel and any length mark, in IPA and spelling.
+    /// Chao tone letters follow the vowel and any length mark in IPA only.
     pub fn ipa(self) -> &'static str {
         match self {
             Self::High => "˥",

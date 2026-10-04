@@ -7007,6 +7007,38 @@ mod tests {
     }
 
     #[test]
+    fn tonal_names_specimens_and_word_renderings_use_diacritics_not_ipa_letters() {
+        let mut profile = umran_sim::SoundProfile::base();
+        profile.spelling.long_vowels = umran_sim::profile::LongVowel::Macron;
+        let mut world = World::solo(8, &profile, umran_sim::Params::static_society());
+        let water = by_id("water").unwrap();
+        let word = world.varieties[0].lexicon.slot(water).dominant().unwrap();
+        for (tone, spelled) in umran_sim::tone::Tone::ALL
+            .into_iter()
+            .zip(["ká", "kà", "kǎ", "kâ", "kả", "kạ"])
+        {
+            let ipa = format!("ka{}", tone.ipa());
+            let variety = &mut world.varieties[0];
+            variety.lexicon.get_mut(word).form = Form::from_ipa(&ipa).unwrap();
+            variety.name.form = Form::from_ipa(&ipa).unwrap();
+            let name = NameView::new(variety, &variety.name);
+            assert_eq!(name.name, umran_sim::names::title(spelled));
+            assert_eq!(name.ipa, ipa);
+            let rows = specimen(variety, 0);
+            let sample = rows.iter().find(|w| w.concept == "water").unwrap();
+            assert_eq!(sample.spelled, spelled);
+            assert_eq!(sample.ipa, ipa);
+            assert_eq!(
+                written_and_said(variety, variety.lexicon.get(word)),
+                (spelled.to_string(), None),
+            );
+            let rendered = rendering(&world, 0, water).unwrap();
+            assert_eq!(rendered.spelled, spelled);
+            assert_eq!(rendered.ipa, ipa);
+        }
+    }
+
+    #[test]
     fn grammatical_spelling_preserves_attestation_and_retired_particle_forms() {
         use umran_sim::grammar::{MarkerKind, Paradigm, Realization, Side};
         use umran_sim::lexicon::Entry;
