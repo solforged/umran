@@ -1,11 +1,11 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, type CSSProperties, type PointerEvent, type RefObject, type SetStateAction } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type RefObject, type SetStateAction } from "react";
 import { LocateFixed, Maximize, Minus, Plus } from "lucide-react";
 import type { ClimateView, Community, Craft, EthosAxis, FoundingPreview, Lake, LakeNamesView, Overview, River, RiverNamesView, SettlementPreview, WordMap, WorldMap } from "../model";
 import type { ShelfPeople } from "../shelf";
 import { reducedMotion } from "../motion";
 import { YEARS } from "../model";
-import { hue, TERRAIN_NAME } from "../lore";
-import { chartPoint, createCartography, geographicPoint, lakeOutline, riverPoints, sharedBorder, type Cartography, type GlobeRotation, type MapPoint, type MapProjection } from "../cartography";
+import { hue, landLabel, LEG_BY, TERRAIN_NAME } from "../lore";
+import { chartPoint, createCartography, geographicPoint, lakeOutline, riverPoints, riverRoutePoints, sharedBorder, type Cartography, type GlobeRotation, type MapPoint, type MapProjection } from "../cartography";
 import { MapProjectionSwitch } from "./MapProjectionSwitch";
 import type { MapFeature } from "../gazetteer";
 
@@ -307,6 +307,7 @@ export function MapView({
   reach,
   onPeople,
   onLand,
+  onClearLand,
   onContinent,
   onState,
   onReligion,
@@ -352,6 +353,8 @@ export function MapView({
   reach?: { preview: FoundingPreview; people: number };
   onPeople: (community: number) => void;
   onLand: (region: number) => void;
+  /// Founding gives the chart one keyboard homeland cursor, not a tab stop per land.
+  onClearLand?: () => void;
   onContinent?: (landmass: number) => void;
   onState?: (state: number) => void;
   onReligion?: (religion: number) => void;
@@ -386,6 +389,7 @@ export function MapView({
   }
   let box = view.current;
   const root = useRef<HTMLDivElement>(null);
+  const [landCursor, setLandCursor] = useState<number | null>(null);
   const scaleText = useRef<HTMLSpanElement>(null);
   const scaleRule = useRef<HTMLSpanElement>(null);
   const zoomIn = useRef<HTMLButtonElement>(null);
@@ -555,6 +559,15 @@ export function MapView({
     for (const text of lettering.current) {
       text.style.visibility = "";
       if (text.dataset.labelKind === "river") text.setAttribute("dy", String(-0.06 * label));
+      if (text.dataset.labelKind === "people") {
+        if (text.textContent !== text.dataset.labelFull) text.textContent = text.dataset.labelFull!;
+        text.setAttribute("x", "0");
+        text.setAttribute("y", "0");
+        text.classList.remove("people-label-mark");
+        text.parentElement?.querySelector(".tongue-name")?.removeAttribute("transform");
+        const leader = text.parentElement?.querySelector<SVGLineElement>(".people-leader");
+        if (leader) leader.style.visibility = "hidden";
+      }
     }
     const measured = lettering.current.map((text) => ({ text, rect: text.getBoundingClientRect() }));
     // Family hands have different ascenders. Place the land's name above
@@ -574,6 +587,24 @@ export function MapView({
       item.rect = item.text.getBoundingClientRect();
     }
     const chartBounds = chart.getBoundingClientRect();
+    const matrix = element.getScreenCTM()!;
+    const surface = new DOMRect(matrix.e, matrix.f, width * pixelsPerUnit, height * pixelsPerUnit);
+    const overlaps = (rect: DOMRect) => occupied.some((other) =>
+      other.left < rect.right + LABEL_GAP && rect.left < other.right + LABEL_GAP &&
+      other.top < rect.bottom + LABEL_GAP && rect.top < other.bottom + LABEL_GAP);
+    const fits = (rect: DOMRect) => {
+      if (rect.left < Math.max(surface.left, chartBounds.left) + LABEL_GAP ||
+        rect.right > Math.min(surface.right, chartBounds.right) - LABEL_GAP ||
+        rect.top < Math.max(surface.top, chartBounds.top) + LABEL_GAP ||
+        rect.bottom > Math.min(surface.bottom, chartBounds.bottom) - LABEL_GAP) return false;
+      if (projection === "globe") {
+        const radius = surface.width / 2 - LABEL_GAP;
+        const x = surface.x + surface.width / 2, y = surface.y + surface.height / 2;
+        if ([rect.left, rect.right].some((left) => [rect.top, rect.bottom].some((top) =>
+          (left - x) ** 2 + (top - y) ** 2 > radius ** 2))) return false;
+      }
+      return !overlaps(rect);
+    };
     for (const item of measured) {
       const { text } = item;
       let { rect } = item;
@@ -584,6 +615,53 @@ export function MapView({
         : kind === "land" || kind === "river" || kind === "lake" ? kmPerPixel < LAND_KM_PER_PIXEL : true;
       const inView = rect.right > chartBounds.left && rect.left < chartBounds.right &&
         rect.bottom > chartBounds.top && rect.top < chartBounds.bottom;
+      let displaced = false;
+      if (kind === "people" && inView && rect.width > 0) {
+        // Search in screen pixels using measured lettering. Keep the homeland
+        // dot fixed, and lead to the closest free label instead of losing a people.
+        const place = (original: DOMRect): DOMRect | null => {
+          if (fits(original)) return original;
+          const step = Math.max(10, original.height + LABEL_GAP);
+          const limit = Math.hypot(chartBounds.width, chartBounds.height);
+          for (let radius = step; radius < limit; radius += step) {
+            const count = Math.ceil(2 * Math.PI * radius / step);
+            for (let i = 0; i < count; i++) {
+              const angle = -Math.PI / 2 + i * 2 * Math.PI / count;
+              const candidate = new DOMRect(original.x + Math.cos(angle) * radius,
+                original.y + Math.sin(angle) * radius, original.width, original.height);
+              if (fits(candidate)) return candidate;
+            }
+          }
+          return null;
+        };
+        let placed = place(rect);
+        if (!placed) {
+          // A compact, stable mark still exposes the full name on focus/hover.
+          text.textContent = String(Number(people) + 1);
+          text.classList.add("people-label-mark");
+          rect = text.getBoundingClientRect();
+          placed = place(rect);
+        }
+        if (placed) {
+          const dx = (placed.x - rect.x) / pixelsPerUnit, dy = (placed.y - rect.y) / pixelsPerUnit;
+          displaced = Math.abs(dx) + Math.abs(dy) > 0.001;
+          text.setAttribute("x", String(dx));
+          text.setAttribute("y", String(dy));
+          const tongue = text.parentElement?.querySelector<SVGTextElement>(".tongue-name");
+          if (tongue) {
+            tongue.setAttribute("transform", `translate(${dx} ${dy})`);
+            const measuredTongue = measured.find((item) => item.text === tongue);
+            if (measuredTongue) measuredTongue.rect = tongue.getBoundingClientRect();
+          }
+          const leader = text.parentElement?.querySelector<SVGLineElement>(".people-leader");
+          if (leader) {
+            leader.setAttribute("x2", String(dx));
+            leader.setAttribute("y2", String(dy));
+            leader.style.visibility = displaced ? "" : "hidden";
+          }
+          rect = placed;
+        }
+      }
       // Water names sit below their centroid. If the land's lettering reaches
       // there, move below its measured ink instead of hiding the lake's name.
       if (kind === "lake" && allowed && rect.width > 0) {
@@ -596,15 +674,14 @@ export function MapView({
           rect = text.getBoundingClientRect();
         }
       }
-      const collides = occupied.some((other) => other.left < rect.right + LABEL_GAP && rect.left < other.right + LABEL_GAP &&
-        other.top < rect.bottom + LABEL_GAP && rect.top < other.bottom + LABEL_GAP);
+      const collides = overlaps(rect);
       const visible = allowed && inView && rect.width > 0 && !collides;
       text.style.visibility = visible ? "" : "hidden";
       if (visible) { occupied.push(rect); if (kind === "people") named.add(people!); }
       if (kind === "people") {
         const dot = text.parentElement?.querySelector<SVGCircleElement>(".people-dot");
         if (dot) {
-          dot.style.visibility = visible ? "hidden" : "";
+          dot.style.visibility = visible && !displaced ? "hidden" : "";
           dot.setAttribute("r", String(Math.max(0.06 * Math.sqrt(ratio), 2.5 / pixelsPerUnit)));
         }
       }
@@ -750,6 +827,55 @@ export function MapView({
       else { glide.current = 0; settle(); }
     };
     glide.current = requestAnimationFrame(step);
+  };
+
+  const showLandCursor = (region: number) => {
+    setLandCursor(region);
+    const [x, y, w, h] = view.current;
+    const land = map.regions[region];
+    if (projection === "globe") {
+      turnTo(land.center, [(width - w) / 2, (height - h) / 2, w, h]);
+    } else {
+      const [px, py] = land.site;
+      if (px < x + w * 0.1 || px > x + w * 0.9 || py < y + h * 0.1 || py > y + h * 0.9)
+        glideTo(clamp([px - w / 2, py - h / 2, w, h]));
+    }
+  };
+  const initialLand = () => {
+    const selected = [...lands].find((id) => map.regions[id]?.terrain !== "sea");
+    if (selected !== undefined) return selected;
+    const [x, y, w, h] = view.current;
+    let closest: number | null = null, distance = Infinity;
+    for (const region of map.regions) {
+      if (region.terrain === "sea") continue;
+      const point = cartography.point(region.site);
+      if (!point) continue;
+      const d = (point[0] - x - w / 2) ** 2 + (point[1] - y - h / 2) ** 2;
+      if (d < distance) { distance = d; closest = region.id; }
+    }
+    return closest;
+  };
+  const stepLandCursor = (key: string) => {
+    if (landCursor === null) {
+      const first = initialLand();
+      if (first !== null) showLandCursor(first);
+      return;
+    }
+    const current = map.regions[landCursor];
+    const dx = key === "ArrowLeft" ? -1 : key === "ArrowRight" ? 1 : 0;
+    const dy = key === "ArrowUp" ? -1 : key === "ArrowDown" ? 1 : 0;
+    let next = current.id, best = 0;
+    for (const id of current.neighbours) {
+      const neighbour = map.regions[id];
+      if (neighbour.terrain === "sea") continue;
+      // Wrap longitude at the chart seam; north stays north on the globe.
+      let x = neighbour.site[0] - current.site[0];
+      x -= Math.round(x / map.width) * map.width;
+      const y = neighbour.site[1] - current.site[1];
+      const score = (x * dx + y * dy) / Math.hypot(x, y);
+      if (score > best) { best = score; next = id; }
+    }
+    if (next !== current.id) showLandCursor(next);
   };
 
   // Bring the focus into view if it lies outside the middle of the view.
@@ -904,7 +1030,17 @@ export function MapView({
   const byRegion = useMemo(() => peoplesByRegion(overview), [overview]);
   const dress = useMemo(() => chartDress(map), [map]);
   const riverPaths = useMemo(() => riverDress(map), [map]);
-  const recordedRoutes = useMemo(() => overview.moves.map((move) => move.path.map((id) => map.regions[id].site)), [overview.moves, map]);
+  const recordedRoutes = useMemo(() => overview.moves.map((move) => {
+    let start = 0;
+    const legs = move.legs?.length ? move.legs : [{ from: move.from, to: move.to, by: move.bySea ? "sea" as const : "land" as const, km: 0 }];
+    return legs.map((leg) => {
+      start = move.path.indexOf(leg.from, start);
+      const end = move.path.indexOf(leg.to, start + 1);
+      const path = move.path.slice(start, end + 1);
+      start = end;
+      return { ...leg, points: leg.by === "river" ? riverRoutePoints(map, path) : path.map((id) => map.regions[id].site) };
+    });
+  }), [overview.moves, map]);
   const settlementRoutes = useMemo(() => settlement?.plan?.routes.map((route) => route.path.map((id) => map.regions[id].site)) ?? [], [settlement?.plan, map]);
   const reachEvidence = useMemo(() => {
     if (!reach) return null;
@@ -1117,7 +1253,11 @@ export function MapView({
     const veiled = !sea && hidden(r.id);
     const colour = veiled ? null : colourOf(r.id);
     return (
-      <g key={r.id} data-chart-region={r.id} onClick={sea ? undefined : () => dragged() || onLand(r.id)}
+      <g key={r.id} data-chart-region={r.id} onClick={sea ? undefined : () => {
+        if (dragged()) return;
+        if (onClearLand) setLandCursor(r.id);
+        onLand(r.id);
+      }}
         {...inspectEvents({ kind: "land", region: r.id })}
         aria-label={sea ? "Sea" : veiled ? "Unknown land" : (nameOf(r.id) ?? `Unnamed ${TERRAIN_NAME[r.terrain].toLowerCase()}`)}>
         <path
@@ -1200,6 +1340,7 @@ export function MapView({
     media.addEventListener("change", instant);
     return () => { window.clearTimeout(timer); clear(); media.removeEventListener("change", instant); };
   }, [overview, animateChanges, motionMemory, cartography, known, tint]);
+  const cursorName = landCursor === null ? "" : `${landLabel(overview, map, landCursor)}, land ${landCursor + 1}`;
 
   return (
     <div ref={root} className={`mapview projection-${projection}${zoomable ? " zoomable" : ""} ${box[2] / width > 0.6 ? "zoom-far" : box[2] / width < 0.25 ? "zoom-close" : "zoom-mid"}`}
@@ -1207,10 +1348,28 @@ export function MapView({
       <svg
         ref={svg}
         viewBox={box.join(" ")}
-        role="group"
-        tabIndex={zoomable ? 0 : undefined}
+        role={onClearLand ? "application" : "group"}
+        tabIndex={zoomable || onClearLand ? 0 : undefined}
+        onFocus={(event) => {
+          if (!onClearLand || event.target !== event.currentTarget) return;
+          const region = landCursor ?? initialLand();
+          if (region !== null) showLandCursor(region);
+        }}
         onKeyDown={(e) => {
           if (!zoomable || e.target !== e.currentTarget) return;
+          if (onClearLand) {
+            if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
+              e.preventDefault(); stepLandCursor(e.key); return;
+            }
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              if (landCursor !== null) onLand(landCursor);
+              return;
+            }
+            if (e.key === "Escape") {
+              e.preventDefault(); setLandCursor(null); onClearLand(); return;
+            }
+          }
           const [x, y, w, h] = view.current;
           if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
             e.preventDefault(); cancelAnimationFrame(glide.current); glide.current = 0;
@@ -1230,7 +1389,8 @@ export function MapView({
             else zoom(e.key === "-" ? 1 / 0.7 : 0.7, [x + w / 2, y + h / 2]);
           }
         }}
-        aria-label={`${projection === "globe" ? "Globe" : "Chart"} of the world in year ${generation * YEARS}`}
+        aria-label={onClearLand ? `${projection === "globe" ? "Globe" : "Chart"}: ${cursorName || "Choose a homeland"}` : `${projection === "globe" ? "Globe" : "Chart"} of the world in year ${generation * YEARS}`}
+        aria-description={onClearLand ? "Arrow keys move between neighbouring lands. Enter selects a homeland. Escape clears the selection." : undefined}
         onPointerDown={down}
         onPointerMove={move}
         onPointerUp={up}
@@ -1264,7 +1424,7 @@ export function MapView({
             const name = namedRiver(river);
             const failed = climateRivers.get(river.id)?.flowing === false;
             return <g key={river.id} className={`chart-river river-tier-${tier}${failed ? " failed" : ""}`}
-              role={onRiver || onInspect ? "button" : undefined} tabIndex={onRiver || onInspect ? 0 : undefined}
+              role={onRiver || onInspect ? "button" : undefined} tabIndex={!onClearLand && (onRiver || onInspect) ? 0 : undefined}
               aria-label={name?.spelled ?? "Unnamed river"}
               {...inspectEvents({ kind: "river", river: river.id, region: river.mouth })}
               onClick={() => dragged() || onRiver?.(river.id)}
@@ -1279,7 +1439,7 @@ export function MapView({
             if (lake.regions.every(hidden)) return null;
             const name = namedLake(lake);
             return <g key={lake.id} className="chart-lake" data-lake={lake.id}
-              role={onLake || onInspect ? "button" : undefined} tabIndex={onLake || onInspect ? 0 : undefined}
+              role={onLake || onInspect ? "button" : undefined} tabIndex={!onClearLand && (onLake || onInspect) ? 0 : undefined}
               aria-label={name?.spelled ?? "Unnamed lake"}
               {...inspectEvents({ kind: "lake", lake: lake.id, region: lake.regions.find((region) => !hidden(region))! })}
               onClick={() => dragged() || onLake?.(lake.id)}
@@ -1335,7 +1495,7 @@ export function MapView({
                 className="continent-name"
                 data-label-kind="continent" data-label-priority={0}
                 role={onContinent || onInspect ? "button" : undefined}
-                tabIndex={onContinent || onInspect ? 0 : undefined}
+                tabIndex={!onClearLand && (onContinent || onInspect) ? 0 : undefined}
                 aria-label={`${c.name.name}, “${c.name.meaning}”`}
                 {...inspectEvents({ kind: "continent", landmass: c.landmass, region: mass.anchor })}
                 onClick={() => dragged() || onContinent?.(c.landmass)}
@@ -1417,19 +1577,21 @@ export function MapView({
               const mine = chosen.has(m.community);
               return (
                 <g key={i}>
-                <path
-                  className={`route${m.bySea ? " overseas" : ""}${mine ? " chosen" : ""}`}
-                  {...bindPath((view) => view.line(recordedRoutes[i]))}
+                {recordedRoutes[i].map((leg, index) => <path
+                  key={index}
+                  className={`route route-${leg.by}${mine ? " chosen" : ""}`}
+                  data-route={i} data-leg={index}
+                  {...bindPath((view) => view.line(leg.points))}
                   style={{
-                    stroke: hue(family(mover)),
+                    stroke: leg.by === "river" ? "var(--ink)" : hue(family(mover)),
                     strokeOpacity: mine ? 1 : 0.3 + 0.6 * Math.max(0, 1 - age / ROUTE_FADE),
                   }}
                 >
                   <title>
-                    {`${mover.name} ${m.kind === "split" ? "went out" : "moved"} to ${nameOf(m.to) ?? "new land"}${m.bySea ? " by sea" : ""}, year ${m.generation * YEARS}`}
+                    {`${mover.name} ${m.kind === "split" ? "went out" : "moved"} to ${nameOf(m.to) ?? "new land"}, ${LEG_BY[leg.by]}, year ${m.generation * YEARS}`}
                   </title>
-                </path>
-                  <path className="route-terminal" {...bindPath((view) => view.endLine(recordedRoutes[i]))}
+                </path>)}
+                  <path className="route-terminal" {...bindPath((view) => view.endLine(recordedRoutes[i].at(-1)?.points ?? []))}
                     markerEnd={`url(#${routeHead})`} pointerEvents="none"
                     fill="none" stroke="transparent" strokeWidth={mine ? 3 : 1.5} vectorEffect="non-scaling-stroke" />
                 </g>
@@ -1490,7 +1652,7 @@ export function MapView({
                 data-label-x={x} data-label-y={y} data-label-dy={offset}
                 transform={`translate(${x} ${y + offset * label})`}
                 role="button"
-                tabIndex={0}
+                tabIndex={onClearLand ? undefined : 0}
                 aria-label={tint.kind === "words" ? `${localName}: ${text}` : localName}
                 {...inspectEvents({ kind: "people", community: c.id, region: c.region })}
                 onClick={() => dragged() || onPeople(c.id)}
@@ -1501,10 +1663,13 @@ export function MapView({
                   }
                 }}
               >
+                <title>{localName}</title>
+                <line className="people-leader" x1={0} y1={0} x2={0} y2={0} pointerEvents="none" />
                 <circle className="people-dot" cx={0} cy={0} r={0.06 * label}
                   style={{ fill: tint.kind === "words" && word ? hue(word.group) : hue(family(c)) }} />
                 <text x={0} y={0} className={`hand-${family(c) % 5}`}
                   data-label-kind="people" data-people={c.id} data-label-priority={100 + c.size}
+                  data-label-full={text}
                   style={{ fill: tint.kind === "words" && word ? hue(word.group) : hue(family(c)) }}>
                   {text}
                 </text>
@@ -1662,9 +1827,12 @@ export function MapView({
             );
           }) : null}
         </g>
+        {onClearLand && landCursor !== null ? <path className="land-cursor" data-cursor-region={landCursor}
+          {...bindPath((view) => view.region(map.regions[landCursor]))} pointerEvents="none" /> : null}
         </g>
         {projection === "globe" ? <path className="globe-limb" d={cartography.sphere} aria-hidden="true" /> : null}
       </svg>
+      {onClearLand ? <span className="sr-only" role="status">{cursorName}</span> : null}
       {zoomable ? (
         <div className="map-zoom" role="group" aria-label={projection === "globe" ? "Globe controls" : "Chart controls"}>
           {selectedRegions.length > 0 ? <button type="button" title="Fit the selected lands (F)" aria-label="Fit the selected lands" onClick={fitSelection}><LocateFixed size={16} /></button> : null}

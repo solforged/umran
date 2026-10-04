@@ -501,9 +501,13 @@
   bottom: 3rem;
   max-width: calc(100% - 5rem);
 }
+:root .stage:not(.setup) .mapview :is(.chart-scale, svg.chart-rose) { bottom: 3.5rem; }
 @media (max-width: 700px) {
   :root .mapview .chart-scale .chart-help { display: none; }
   :root .setup .map-hint { max-width: calc(100% - 3.2rem); }
+  :root .stage:not(.setup) .mapview :is(.chart-scale, svg.chart-rose) { bottom: 4rem; }
+  :root .stage:not(.setup) .mapview.projection-chart .chart-scale { right: 5.5rem; max-width: calc(100% - 6.5rem); }
+  :root .stage:not(.setup) .mapview svg.chart-rose { right: 1rem; width: 3.25rem; height: 3.55rem; }
 }
 
 /* Cities share the capital's ink, but stand as small population-scaled rings. */

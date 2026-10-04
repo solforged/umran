@@ -514,3 +514,40 @@ export function riverPoints(map: WorldMap, river: River): MapPoint[] {
   cache.set(river, course);
   return course;
 }
+
+/** Follow the same river ink as the chart, in either direction. A recorded
+ * river leg can cross a confluence; join its channel sections in path order. */
+export function riverRoutePoints(map: WorldMap, path: readonly number[]): MapPoint[] {
+  if (!path.length) return [];
+  const points: MapPoint[] = [map.regions[path[0]].site];
+  for (let edge = 1; edge < path.length; edge++) {
+    const from = path[edge - 1], to = path[edge];
+    const river = map.rivers.find((river) => {
+      const a = river.course.indexOf(from), b = river.course.indexOf(to);
+      return a >= 0 && b >= 0 && Math.abs(a - b) === 1 ||
+        (river.course.at(-1) === from && (river.joinAt ?? river.mouth) === to) ||
+        (river.course.at(-1) === to && (river.joinAt ?? river.mouth) === from);
+    });
+    if (!river) {
+      // Old maps may record a navigable valley without a drawn channel.
+      points.push(map.regions[to].site);
+      continue;
+    }
+    const channel = riverPoints(map, river);
+    let a = 0, b = 0, fromDistance = Infinity, toDistance = Infinity;
+    for (let i = 0; i < channel.length; i++) {
+      const point = geographicPoint(map, channel[i]);
+      const da = geoDistance(map.regions[from].center, point);
+      const db = geoDistance(map.regions[to].center, point);
+      if (da < fromDistance) { fromDistance = da; a = i; }
+      if (db < toDistance) { toDistance = db; b = i; }
+    }
+    const direction = a <= b ? 1 : -1;
+    for (let i = a; ; i += direction) {
+      points.push(channel[i]);
+      if (i === b) break;
+    }
+  }
+  points.push(map.regions[path.at(-1)!].site);
+  return points;
+}

@@ -291,6 +291,7 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
           zoomable
           onPeople={(id) => { if (currentBuild && founders[id]) choose(founders[id].key); }}
           onInspect={(feature, at) => setInspection(feature ? { feature, at } : null)}
+          onClearLand={() => { setInspected(null); setInspection(null); }}
           onLand={(region) => { if (currentBuild && map.regions[region].terrain !== "sea") setInspected(region); }} /> : null}
         {chartReady ? <MapInspector container={mapContainer} inspection={inspection} map={map} overview={overview} generation={0} selectedVariety={people?.variety} riverNames={riverNames} lakeNames={lakeNames} pinnable={false} /> : null}
         <div className="cartouche founding-cartouche">
