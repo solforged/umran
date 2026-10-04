@@ -34,13 +34,41 @@ fn pronoun_stability_and_genitive_bands() {
         "four-millennium renewal band: {total}"
     );
     let sample = report::sample_report();
-    assert_eq!(sample.cells % 6, 0);
+    assert!(sample.cells >= 6);
     assert!(
         sample.borrowed * 10 <= sample.cells,
         "loans must stay exceptional"
     );
     println!(
         "aggregate renewal={total:.3}; elapsed {:.2}s",
+        start.elapsed().as_secs_f32()
+    );
+}
+
+#[test]
+#[ignore = "40 seeds × five court profiles × 4,000 years, plus the workbench sample"]
+fn polite_address_coexistence_and_generalisation_bands() {
+    let start = std::time::Instant::now();
+    let (mut emerged, mut coexisting, mut generalised) = (0, 0, 0);
+    for profile in report::PROFILES {
+        let counts = report::court_study(profile, 40);
+        println!(
+            "{profile}: courts=40 emerged={} coexisting={} generalised={}",
+            counts.emerged, counts.polite, counts.generalised
+        );
+        assert!((25..=40).contains(&counts.emerged));
+        assert!(counts.polite >= 20, "familiar address normally survives");
+        assert_eq!(counts.emerged, counts.polite + counts.generalised);
+        emerged += counts.emerged;
+        coexisting += counts.polite;
+        generalised += counts.generalised;
+    }
+    let rate = generalised as f32 / emerged as f32;
+    assert!((0.02..0.30).contains(&rate), "later generalisation={rate}");
+    let sample = report::sample_report();
+    assert_eq!(sample.emerged, sample.polite + sample.generalised);
+    println!(
+        "address: courts=200 emerged={emerged} coexisting={coexisting} generalised={generalised} rate={rate:.3}; elapsed {:.2}s",
         start.elapsed().as_secs_f32()
     );
 }

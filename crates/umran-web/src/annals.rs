@@ -37,7 +37,8 @@ pub(crate) struct Annal {
     /// "livelihood", "ended", "rose", "fell", "standard", "classical",
     /// "vernacular", "craft", "faith", "conversion", "meaning",
     /// "respelling", "schism", "pilgrimage", "holy-land", "temper", "grammar",
-    /// "pronoun-renewed", "pronoun-polite", "pronoun-borrowed", "class-emerged",
+    /// "pronoun-renewed", "pronoun-polite", "pronoun-generalised",
+    /// "pronoun-borrowed", "class-emerged",
     /// "class-merged", "class-lost", "harmony-gained", "harmony-lost",
     /// "tone-gained", "tone-lost", "climate", "river-flow", "purist-reform",
     /// "purist-replacement", or "law".
@@ -2406,10 +2407,17 @@ fn pronoun_changes(world: &World) -> Vec<Annal> {
                 ),
                 NoticeKind::Polite { state } => (
                     "pronoun-polite",
-                    format!("At court, {people} began to address one person with the plural *{after}*, as a mark of respect."),
-                    "Plural address for one person as a courtesy is the T–V distinction, as in French vous.".into(),
+                    format!("At court, {people} began to use *{after}* respectfully, keeping *{before}* for familiar singular address."),
+                    "Plural address becomes respectful singular address alongside the familiar form, as in French tu and vous.".into(),
                     None,
                     Some(*state),
+                ),
+                NoticeKind::Generalised => (
+                    "pronoun-generalised",
+                    format!("Among {people}, respectful *{after}* replaced familiar *{before}* in singular address."),
+                    "The former respectful form now serves ordinary address, as English you displaced thou.".into(),
+                    None,
+                    None,
                 ),
                 NoticeKind::Borrowed { from, .. } => (
                     "pronoun-borrowed",

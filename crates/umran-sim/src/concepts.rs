@@ -502,6 +502,14 @@ pub static CONCEPTS: &[Concept] = &[
     culture(Basic, "1pl", "we, us", Function, F, UNMARKED),
     culture(Basic, "2pl", "you (plural)", Function, F, UNMARKED),
     culture(Basic, "3pl", "they, them", Function, F, UNMARKED),
+    culture(
+        Basic,
+        "2sg-polite",
+        "you (respectful singular)",
+        Function,
+        F,
+        UNMARKED,
+    ),
 ];
 
 pub fn by_id(id: &str) -> Option<&'static Concept> {

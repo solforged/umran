@@ -3572,6 +3572,7 @@ struct VarietyView {
 
 #[derive(Serialize)]
 struct PronounView {
+    cell: &'static str,
     person: u8,
     number: &'static str,
     polite: bool,
@@ -3583,8 +3584,9 @@ struct PronounView {
 }
 
 fn pronoun_view(variety: &Variety) -> Vec<PronounView> {
-    umran_sim::pronouns::CELLS
-        .into_iter()
+    variety
+        .pronouns
+        .cells()
         .filter_map(|(person, number, cell)| {
             let word = variety
                 .lexicon
@@ -3601,12 +3603,21 @@ fn pronoun_view(variety: &Variety) -> Vec<PronounView> {
                 _ => ("founding", None),
             };
             Some(PronounView {
+                cell,
                 person,
                 number,
-                polite: cell == "2sg" && variety.pronouns.polite,
+                polite: cell == "2sg-polite",
                 spelled: variety.written_word(word),
                 ipa: word.form.ipa_stressed(variety.stress()),
-                since: word.born,
+                since: if cell == "2sg-polite" {
+                    variety
+                        .pronouns
+                        .polite_since
+                        .unwrap_or(word.born)
+                        .max(word.born)
+                } else {
+                    word.born
+                },
                 origin,
                 source,
             })
@@ -7519,5 +7530,31 @@ mod tests {
             view.sample.unwrap().sentence.gloss,
             ["child", "dog", "see-PAST"]
         );
+    }
+}
+
+#[cfg(test)]
+mod polite_address_tests {
+    use super::*;
+    use umran_sim::{Params, SoundProfile};
+
+    #[test]
+    fn facade_lists_familiar_and_respectful_singular_separately() {
+        let mut world = World::solo(8, &SoundProfile::base(), Params::static_society());
+        world.raise_state(0, None, umran_sim::Rise::Proclaimed);
+        world.params.pronoun_rate = 1.0;
+        world.run(8);
+        let view = pronoun_view(&world.varieties[0]);
+        let familiar = view.iter().find(|p| p.cell == "2sg").unwrap();
+        let polite = view.iter().find(|p| p.cell == "2sg-polite").unwrap();
+        assert_eq!(
+            (familiar.person, familiar.number, familiar.polite),
+            (2, "sg", false)
+        );
+        assert_eq!(
+            (polite.person, polite.number, polite.polite),
+            (2, "sg", true)
+        );
+        assert_eq!(polite.since, 8);
     }
 }

@@ -80,6 +80,7 @@ export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string 
   grammar: { icon: Languages, name: "Grammar changes" },
   "pronoun-renewed": { icon: Languages, name: "A pronoun is renewed" },
   "pronoun-polite": { icon: Languages, name: "Polite address at court" },
+  "pronoun-generalised": { icon: Languages, name: "Polite address becomes ordinary" },
   "pronoun-borrowed": { icon: Languages, name: "A pronoun is borrowed" },
   "class-emerged": { icon: Languages, name: "Noun classes form" },
   "class-merged": { icon: Languages, name: "Two noun classes merge" },

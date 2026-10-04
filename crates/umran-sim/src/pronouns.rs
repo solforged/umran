@@ -11,24 +11,41 @@ use crate::{Cause, ContactKind, Form, Mechanism, Variety, World};
 use rand::Rng;
 use std::collections::BTreeMap;
 
-pub const CELLS: [(u8, &str, &str); 6] = [
+pub const CELLS: [(u8, &str, &str); 7] = [
     (1, "sg", "1sg"),
     (1, "pl", "1pl"),
     (2, "sg", "2sg"),
     (2, "pl", "2pl"),
     (3, "sg", "3sg"),
     (3, "pl", "3pl"),
+    (2, "sg", "2sg-polite"),
 ];
 
 pub fn is_pronoun(concept: &Concept) -> bool {
     CELLS.iter().any(|(_, _, id)| *id == concept.id)
 }
 
+pub(crate) fn is_optional_cell(id: &str) -> bool {
+    id == "2sg-polite"
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Pronouns {
-    /// The second-person singular cell now serves as polite address.
+    /// Familiar and respectful singular address coexist.
     pub polite: bool,
+    pub polite_since: Option<u32>,
+    /// Respectful address has replaced familiar address.
+    pub generalised: bool,
     pub events: Vec<Notice>,
+}
+
+impl Pronouns {
+    pub fn cells(&self) -> impl Iterator<Item = (u8, &'static str, &'static str)> + use<> {
+        let polite = self.polite;
+        CELLS
+            .into_iter()
+            .filter(move |(_, _, cell)| *cell != "2sg-polite" || polite)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -56,6 +73,7 @@ pub enum NoticeKind {
         source: LexemeId,
         source_form: Form,
     },
+    Generalised,
 }
 
 /// Simple, short syllables favour the same common segments as the founding
@@ -67,7 +85,7 @@ pub(crate) fn found(seed: u64, tactics: &Phonotactics, lexicon: &mut Lexicon) {
         .filter(|(p, _)| p.len() == 1)
         .collect();
     let mut used = Vec::with_capacity(CELLS.len());
-    for (_, _, cell) in CELLS {
+    for (_, _, cell) in Pronouns::default().cells() {
         let id = lexicon
             .slot(by_id(cell).expect("pronoun concept"))
             .dominant()
@@ -140,8 +158,13 @@ fn replace(
 fn clashes(variety: &Variety, cell: &str, form: &Form) -> bool {
     CELLS.iter().any(|(_, _, other)| {
         // Plural-for-polite is an intentional shared form, not a merger.
-        let polite_pair =
-            variety.pronouns.polite && matches!((cell, *other), ("2sg", "2pl") | ("2pl", "2sg"));
+        let polite_pair = (variety.pronouns.polite
+            && matches!(
+                (cell, *other),
+                ("2sg-polite", "2pl") | ("2pl", "2sg-polite")
+            ))
+            || (variety.pronouns.generalised
+                && matches!((cell, *other), ("2sg", "2pl") | ("2pl", "2sg")));
         *other != cell
             && !polite_pair
             && variety
@@ -162,7 +185,7 @@ impl World {
             if !is_spoken {
                 continue;
             }
-            for (_, _, cell) in CELLS {
+            for (_, _, cell) in self.varieties[v].pronouns.cells() {
                 let variety = &self.varieties[v];
                 let word = variety
                     .lexicon
@@ -233,6 +256,7 @@ impl World {
         }
         self.polite_pronouns();
         self.borrow_pronouns();
+        self.generalise_address(spoken);
     }
 
     fn polite_pronouns(&mut self) {
@@ -247,7 +271,7 @@ impl World {
             }
         }
         for (v, state) in courts {
-            if self.varieties[v].pronouns.polite {
+            if self.varieties[v].pronouns.polite || self.varieties[v].pronouns.generalised {
                 continue;
             }
             let mut rng = stream(
@@ -267,6 +291,57 @@ impl World {
                 mechanism: Mechanism::Court,
             });
             let variety = &mut self.varieties[v];
+            let before = variety
+                .lexicon
+                .word_for(by_id("2sg").unwrap())
+                .unwrap()
+                .form
+                .clone();
+            let polite = by_id("2sg-polite").unwrap();
+            variety.lexicon.slot_mut(polite).introduce(source, 1.0);
+            variety.lexicon.get_mut(source).log.push(Entry {
+                generation: self.generation,
+                event: Event::Extended { to: polite },
+            });
+            variety.pronouns.polite = true;
+            variety.pronouns.polite_since = Some(self.generation);
+            variety.pronouns.events.push(Notice {
+                generation: self.generation,
+                cell: "2sg-polite",
+                before,
+                after,
+                event: NoticeKind::Polite { state },
+                cause,
+            });
+        }
+    }
+
+    fn generalise_address(&mut self, spoken: &[bool]) {
+        for (v, &is_spoken) in spoken.iter().enumerate() {
+            let pronouns = &self.varieties[v].pronouns;
+            if !is_spoken
+                || !pronouns.polite
+                || !pronouns
+                    .polite_since
+                    .is_some_and(|since| self.generation.saturating_sub(since) >= 24)
+            {
+                continue;
+            }
+            let mut rng = stream(
+                self.seed,
+                &[
+                    key("pronoun address generalisation"),
+                    v as u64,
+                    self.generation as u64,
+                ],
+            );
+            if rng.r#gen::<f32>() >= self.params.pronoun_rate * 0.5 {
+                continue;
+            }
+            let variety = &mut self.varieties[v];
+            let polite = by_id("2sg-polite").unwrap();
+            let word = variety.lexicon.word_for(polite).unwrap();
+            let (source, after) = (word.id, word.form.clone());
             let (_, before) = replace(
                 variety,
                 "2sg",
@@ -277,14 +352,28 @@ impl World {
                 },
                 self.generation,
             );
-            variety.pronouns.polite = true;
+            variety.lexicon.slot_mut(polite).variants.clear();
+            variety.lexicon.get_mut(source).log.push(Entry {
+                generation: self.generation,
+                event: Event::Lost { sense: polite },
+            });
+            if variety.lexicon.senses(source).next().is_none() {
+                let word = variety.lexicon.get_mut(source);
+                word.obsolete = Some(self.generation);
+                word.log.push(Entry {
+                    generation: self.generation,
+                    event: Event::Obsolete,
+                });
+            }
+            variety.pronouns.polite = false;
+            variety.pronouns.generalised = true;
             variety.pronouns.events.push(Notice {
                 generation: self.generation,
                 cell: "2sg",
                 before,
                 after,
-                event: NoticeKind::Polite { state },
-                cause,
+                event: NoticeKind::Generalised,
+                cause: None,
             });
         }
     }

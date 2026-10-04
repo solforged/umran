@@ -20,7 +20,7 @@ fn founding_cells_are_distinct_and_use_the_founding_sounds() {
                 Livelihood::Farming,
                 Ethos::default(),
             );
-            for (_, _, cell) in CELLS {
+            for (_, _, cell) in v.pronouns.cells() {
                 let form = &word(&v, cell).form;
                 assert!(form.vowel_count() > 0);
                 assert!(!clashes(&v, cell, form));
@@ -41,7 +41,7 @@ fn renewal_copies_a_noun_and_regular_laws_leave_retired_forms_alone() {
     let v = &mut world.varieties[0];
     v.minimal = MinimalWord::Syllable;
     v.profile.stress = Some(StressRule::Initial);
-    for (_, _, cell) in CELLS {
+    for (_, _, cell) in v.pronouns.cells() {
         put(v, cell, "kata");
     }
     let old = word(v, "1sg").id;
@@ -69,7 +69,7 @@ fn renewal_copies_a_noun_and_regular_laws_leave_retired_forms_alone() {
     world.apply_law(0, &law);
     assert_eq!(word(&world.varieties[0], "1sg").form, expected);
     assert_eq!(world.varieties[0].lexicon.get(old).form.ipa(), "kata");
-    for (_, _, cell) in CELLS {
+    for (_, _, cell) in world.varieties[0].pronouns.cells() {
         assert!(word(&world.varieties[0], cell).form.vowel_count() > 0);
     }
 }
@@ -79,7 +79,7 @@ fn regular_laws_reach_all_six_cells_and_obey_the_size_floor() {
     let mut world = World::solo(7, &SoundProfile::base(), Params::static_society());
     let v = &mut world.varieties[0];
     v.minimal = MinimalWord::TwoSyllables;
-    for (_, _, cell) in CELLS {
+    for (_, _, cell) in v.pronouns.cells() {
         put(v, cell, "hakata");
     }
     let law = crate::catalog()
@@ -87,7 +87,7 @@ fn regular_laws_reach_all_six_cells_and_obey_the_size_floor() {
         .find(|l| l.id == "h-loss")
         .unwrap();
     world.apply_law(0, &law);
-    for (_, _, cell) in CELLS {
+    for (_, _, cell) in world.varieties[0].pronouns.cells() {
         assert_eq!(word(&world.varieties[0], cell).form.ipa(), "akata");
     }
     let law = crate::catalog()
@@ -96,7 +96,7 @@ fn regular_laws_reach_all_six_cells_and_obey_the_size_floor() {
         .unwrap();
     world.apply_law(0, &law);
     world.apply_law(0, &law);
-    for (_, _, cell) in CELLS {
+    for (_, _, cell) in world.varieties[0].pronouns.cells() {
         assert_eq!(word(&world.varieties[0], cell).form.vowel_count(), 2);
     }
 }
@@ -108,15 +108,23 @@ fn court_address_needs_an_old_standing_state_and_records_its_cause() {
     world.polite_pronouns();
     assert!(!world.varieties[0].pronouns.polite);
     let state = world.raise_state(0, None, Rise::Proclaimed);
+    let familiar = word(&world.varieties[0], "2sg").id;
     world.generation = 7;
     world.polite_pronouns();
     assert!(!world.varieties[0].pronouns.polite);
     world.generation = 8;
     world.polite_pronouns();
     let v = &world.varieties[0];
-    assert_eq!(word(v, "2sg").form, word(v, "2pl").form);
+    assert_eq!(word(v, "2sg").id, familiar);
+    assert_eq!(v.lexicon.get(familiar).obsolete, None);
+    assert_eq!(word(v, "2sg-polite").id, word(v, "2pl").id);
+    assert_ne!(word(v, "2sg").form, word(v, "2sg-polite").form);
     assert!(v.pronouns.polite);
     assert!(!clashes(v, "2sg", &word(v, "2sg").form));
+    assert!(!clashes(v, "2sg-polite", &word(v, "2sg-polite").form));
+    let daughter = v.fork(0, 8);
+    assert_eq!(daughter.pronouns, v.pronouns);
+    assert_eq!(word(&daughter, "2sg-polite"), word(v, "2sg-polite"));
     let notice = v.pronouns.events.last().unwrap();
     assert!(matches!(notice.event, NoticeKind::Polite { state: s } if s == state));
     let cause = notice.cause.unwrap();
@@ -134,6 +142,41 @@ fn court_address_needs_an_old_standing_state_and_records_its_cause() {
 }
 
 #[test]
+fn respectful_address_generalises_only_after_a_long_distinct_stage() {
+    let mut world = World::solo(8, &SoundProfile::base(), Params::static_society());
+    world.raise_state(0, None, Rise::Proclaimed);
+    world.params.pronoun_rate = 2.0;
+    world.generation = 8;
+    world.polite_pronouns();
+    let familiar = word(&world.varieties[0], "2sg").id;
+    let respectful = word(&world.varieties[0], "2sg-polite").form.clone();
+    world.generation = 31;
+    world.generalise_address(&[true]);
+    assert!(world.varieties[0].pronouns.polite);
+    world.generation = 32;
+    world.generalise_address(&[false]);
+    assert!(world.varieties[0].pronouns.polite);
+    world.params.pronoun_rate = 0.0;
+    world.evolve_pronouns(&[true]);
+    assert!(world.varieties[0].pronouns.polite);
+    world.params.pronoun_rate = 2.0;
+    world.generalise_address(&[true]);
+    let v = &world.varieties[0];
+    assert!(!v.pronouns.polite);
+    assert!(v.pronouns.generalised);
+    assert_eq!(word(v, "2sg").form, respectful);
+    assert_eq!(v.lexicon.get(familiar).obsolete, Some(32));
+    assert!(v.lexicon.word_for(by_id("2sg-polite").unwrap()).is_none());
+    assert!(word(v, "2pl").obsolete.is_none());
+    assert!(matches!(
+        v.pronouns.events.last().unwrap().event,
+        NoticeKind::Generalised
+    ));
+    world.polite_pronouns();
+    assert!(!world.varieties[0].pronouns.polite);
+}
+
+#[test]
 fn borrowing_requires_intense_sustained_intimate_contact() {
     let mut world = World::new(2, Params::static_society());
     world.params.pronoun_rate = 100.0;
@@ -143,7 +186,7 @@ fn borrowing_requires_intense_sustained_intimate_contact() {
     world
         .connect(a, b, 1.0, ContactKind::Intermarriage)
         .unwrap();
-    for (_, _, cell) in CELLS {
+    for (_, _, cell) in world.varieties[0].pronouns.cells() {
         put(&mut world.varieties[0], cell, "takama");
         put(&mut world.varieties[1], cell, "nulu");
     }
@@ -195,8 +238,9 @@ fn borrowing_requires_intense_sustained_intimate_contact() {
 fn static_society_keeps_pronoun_replacement_off_and_daughters_inherit() {
     let mut world = World::solo(0, &SoundProfile::base(), Params::static_society());
     world.raise_state(0, None, Rise::Proclaimed);
-    let original: Vec<_> = CELLS
-        .iter()
+    let original: Vec<_> = world.varieties[0]
+        .pronouns
+        .cells()
         .map(|(_, _, c)| word(&world.varieties[0], c).id)
         .collect();
     world.run(16);
@@ -204,13 +248,14 @@ fn static_society_keeps_pronoun_replacement_off_and_daughters_inherit() {
     assert!(!world.varieties[0].pronouns.polite);
     assert_eq!(
         original,
-        CELLS
-            .iter()
+        world.varieties[0]
+            .pronouns
+            .cells()
             .map(|(_, _, c)| word(&world.varieties[0], c).id)
             .collect::<Vec<_>>()
     );
     let daughter = world.varieties[0].fork(0, 16);
-    for (_, _, c) in CELLS {
+    for (_, _, c) in daughter.pronouns.cells() {
         assert_eq!(word(&daughter, c), word(&world.varieties[0], c));
     }
 }

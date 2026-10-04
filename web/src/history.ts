@@ -22,7 +22,7 @@ const GROUP: Record<Annal["kind"], HistoryGroup> = {
   faith: "Faith & ideas", conversion: "Faith & ideas", meaning: "Languages & words", respelling: "Languages & words",
   schism: "Faith & ideas", pilgrimage: "Faith & ideas", "holy-land": "Faith & ideas", city: "Rule & cities",
   koine: "Languages & words", temper: "Land & livelihood", grammar: "Languages & words",
-  "pronoun-renewed": "Languages & words", "pronoun-polite": "Languages & words", "pronoun-borrowed": "Languages & words",
+  "pronoun-renewed": "Languages & words", "pronoun-polite": "Languages & words", "pronoun-generalised": "Languages & words", "pronoun-borrowed": "Languages & words",
   "class-emerged": "Languages & words", "class-merged": "Languages & words", "class-lost": "Languages & words",
   "harmony-gained": "Languages & words", "harmony-lost": "Languages & words",
   "tone-gained": "Languages & words", "tone-lost": "Languages & words",

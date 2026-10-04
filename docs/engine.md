@@ -123,22 +123,42 @@ This bookkeeping makes no random draws and does not itself change replay.
   at 0.45/0.35/0.20, and it grammaticalizes from have or hand and erodes
   through the same marker machinery (Heine and Kuteva, *World Lexicon of
   Grammaticalization*).
-- Pronouns (`pronouns.rs`) are six lexicon words: first, second, and third
-  person, singular and plural. Founding gives each a short syllable of
+- Pronouns (`pronouns.rs`) begin with six lexicon cells: first, second, and
+  third person, singular and plural; respectful address may add a seventh.
+  Founding gives each a short syllable of
   common segments from the language's own phonotactics, distinct from the
   others. They then change by regular sound law like every word. A pronoun
   worn below two segments or the minimal word, or merged in sound with
   another, can be renewed from a noun (person, head, heart, child; people
   for plurals), as Malay saya, "I", came from a word for "servant"
   (`pronoun_rate`, 0.003 a generation). A people ruled by a state for eight
-  generations can extend its plural address to one person as courtesy, the
-  T–V distinction of French vous (Brown and Gilman, 1960), six times as
-  often, with the state's rise as its cause. Under rule or intermarriage
+  generations can extend plural address to a separate respectful singular
+  cell, six times as often, with the state's rise as its cause. Familiar
+  singular remains alive alongside it: the T–V distinction of French
+  tu/vous (Brown and Gilman, 1960;
+  [Helmbrecht, WALS 45](https://wals.info/chapter/45)). The respectful cell
+  initially shares the plural lexeme, including its regular sound changes;
+  later renewal can distinguish it. Only after at least 24 generations
+  (600 years) of coexistence can respectful address generalise, with a
+  separate per-generation chance of half `pronoun_rate` (0.0015 by default).
+  This removes familiar address and retires the separate polite cell,
+  recording a distinct notice, as English you displaced thou. The waiting
+  period and transition rate are model assumptions, not WALS estimates.
+  Generalisation has its own `pronoun address generalisation` stream and
+  remains possible after the court falls. Under rule or intermarriage
   at intensity 0.9 or more, after eight generations of contact, a very open
   people may borrow a pronoun, third-person plural most readily, as English
   they came from Norse; this is twenty times rarer than renewal. Each
   process has its own purpose-keyed stream, and `static_society()` sets
   `pronoun_rate` to zero.
+  In the isolated 40-seed, 4,000-year court cohort, all 40 languages per
+  profile acquired respectful address; 37 kept familiar and respectful
+  singulars together and three generalised the respectful form. Across
+  five profiles this is 185 coexisting systems and 15 generalisations out
+  of 200 (7.5%); the same seeds share social draws across profiles, so these
+  are 40 independent social histories, not 200. The unchanged workbench
+  sample had 96 living cells and no address changes. The ignored address
+  and stability bands together ran in 31.59 seconds in release mode.
 - Noun classes (`gender.rs`) sort nouns into groups that other words must
   agree with, following Corbett, *Gender* (1991): agreement is how a class
   becomes visible. Founding draws none, sex (masculine, feminine, the rest),
