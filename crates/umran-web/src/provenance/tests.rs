@@ -164,11 +164,14 @@ fn audit(world: &World, snapshots: &[Snapshot], band: &mut Band) {
                 } => {
                     person(recipient);
                     assert_eq!(from, classical);
+                    // A high form is a state's classical language or, for a
+                    // faith that keeps its scripture untranslated, its sacred one.
                     assert!(
                         world
                             .states
                             .iter()
                             .any(|s| s.classical.is_some_and(|c| c.variety == classical))
+                            || world.religions.iter().any(|r| r.sacred == classical)
                     );
                     "classical"
                 }
@@ -200,10 +203,12 @@ fn audit(world: &World, snapshots: &[Snapshot], band: &mut Band) {
                     && matches!(e,
                     WorldEvent::Met { a, b, kind: k } if *k == kind &&
                     ((*a == donor && *b == recipient) || (*b == donor && *a == recipient)))));
-            } else if matches!(
-                cause,
-                LoanCause::Shift { .. } | LoanCause::City { .. } | LoanCause::Classical { .. }
-            ) {
+            } else if match cause {
+                LoanCause::Shift { .. } | LoanCause::City { .. } => true,
+                // A sacred high form has no fixing event to point to.
+                LoanCause::Classical { classical, .. } => world.classical_of(classical).is_some(),
+                _ => false,
+            } {
                 panic!("recorded cause must resolve: {cause:?}");
             }
             if seen.insert(world.root_of(v, word.id)) {
