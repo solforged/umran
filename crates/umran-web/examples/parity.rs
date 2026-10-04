@@ -3,6 +3,12 @@ use serde_json::{Value, json};
 use std::io::{self, BufRead, Write};
 use umran_web::Bench;
 
+fn entity_id(value: &Value, missing: &str) -> Result<usize, String> {
+    let id = value.as_u64().ok_or(missing)?;
+    let id = u32::try_from(id).map_err(|error| error.to_string())?;
+    usize::try_from(id).map_err(|error| error.to_string())
+}
+
 fn snapshot(bench: &mut Bench, generation: u32) -> Result<Value, String> {
     let mut overview: Value =
         serde_json::from_str(&bench.overview(generation)?).map_err(|error| error.to_string())?;
@@ -23,7 +29,7 @@ fn snapshot(bench: &mut Bench, generation: u32) -> Result<Value, String> {
     let mut lexicons = Vec::with_capacity(varieties.len());
     let mut competitors = Vec::new();
     for variety in varieties {
-        let id = variety["id"].as_u64().ok_or("Missing variety id")? as usize;
+        let id = entity_id(&variety["id"], "Missing variety id")?;
         let rows: Value = serde_json::from_str(&bench.lexicon(generation, id)?)
             .map_err(|error| error.to_string())?;
         for row in rows.as_array().ok_or("Lexicon is not an array")? {
@@ -50,7 +56,7 @@ fn snapshot(bench: &mut Bench, generation: u32) -> Result<Value, String> {
         .ok_or("Missing rivers")?
         .iter()
         .map(|river| {
-            let id = river["id"].as_u64().ok_or("Missing river id")? as usize;
+            let id = entity_id(&river["id"], "Missing river id")?;
             serde_json::from_str::<Value>(&bench.river(generation, id)?)
                 .map_err(|error| error.to_string())
         })
@@ -111,7 +117,7 @@ fn request(bench: &mut Option<Bench>, input: Value) -> Result<Value, String> {
         "settlement" => {
             let preview = bench.as_ref().ok_or("No world open")?.settlement(
                 &input["point"].to_string(),
-                input["community"].as_u64().ok_or("Missing community")? as usize,
+                entity_id(&input["community"], "Missing community")?,
                 input["intent"].as_str().ok_or("Missing intent")?,
                 input["share"].as_f64().ok_or("Missing share")? as f32,
                 input["destination"].as_i64().ok_or("Missing destination")? as i32,
@@ -119,8 +125,9 @@ fn request(bench: &mut Option<Bench>, input: Value) -> Result<Value, String> {
             serde_json::from_str(&preview).map_err(|e| e.to_string())
         }
         "founding-sites" => {
-            let region = input["region"].as_u64().ok_or("Missing anchor region")? as usize;
-            let count = input["count"].as_u64().ok_or("Missing site count")? as usize;
+            let region = entity_id(&input["region"], "Missing anchor region")?;
+            let count = usize::try_from(input["count"].as_u64().ok_or("Missing site count")?)
+                .map_err(|error| error.to_string())?;
             let sites = bench
                 .as_ref()
                 .ok_or("No world open")?
@@ -134,7 +141,7 @@ fn request(bench: &mut Option<Bench>, input: Value) -> Result<Value, String> {
         "law-choices" => {
             let choices = bench.as_ref().ok_or("No world open")?.law_choices(
                 &input["point"].to_string(),
-                input["variety"].as_u64().ok_or("Missing variety")? as usize,
+                entity_id(&input["variety"], "Missing variety")?,
             )?;
             serde_json::from_str(&choices).map_err(|e| e.to_string())
         }

@@ -219,36 +219,50 @@ impl Workbench {
     pub fn settlement(
         &self,
         point: &str,
-        community: usize,
+        community: f64,
         intent: &str,
         share: f32,
         destination: i32,
     ) -> Result<String, JsValue> {
         self.bench
-            .settlement(point, community, intent, share, destination)
+            .settlement(
+                point,
+                entity_id(community).map_err(fail)?,
+                intent,
+                share,
+                destination,
+            )
             .map_err(fail)
     }
 
     #[wasm_bindgen(js_name = lawChoices)]
-    pub fn law_choices(&self, point: &str, variety: usize) -> Result<String, JsValue> {
-        self.bench.law_choices(point, variety).map_err(fail)
+    pub fn law_choices(&self, point: &str, variety: f64) -> Result<String, JsValue> {
+        self.bench
+            .law_choices(point, entity_id(variety).map_err(fail)?)
+            .map_err(fail)
     }
 
-    pub fn lexicon(&mut self, generation: u32, variety: usize) -> Result<String, JsValue> {
-        self.bench.lexicon(generation, variety).map_err(fail)
+    pub fn lexicon(&mut self, generation: u32, variety: f64) -> Result<String, JsValue> {
+        self.bench
+            .lexicon(generation, entity_id(variety).map_err(fail)?)
+            .map_err(fail)
     }
 
-    pub fn kin(&mut self, generation: u32, variety: usize) -> Result<String, JsValue> {
-        self.bench.kin(generation, variety).map_err(fail)
+    pub fn kin(&mut self, generation: u32, variety: f64) -> Result<String, JsValue> {
+        self.bench
+            .kin(generation, entity_id(variety).map_err(fail)?)
+            .map_err(fail)
     }
 
     pub fn word(
         &mut self,
         generation: u32,
-        variety: usize,
+        variety: f64,
         concept: &str,
     ) -> Result<String, JsValue> {
-        self.bench.word(generation, variety, concept).map_err(fail)
+        self.bench
+            .word(generation, entity_id(variety).map_err(fail)?, concept)
+            .map_err(fail)
     }
 
     pub fn story(&mut self, generation: u32, subject: &str) -> Result<String, JsValue> {
@@ -266,8 +280,10 @@ impl Workbench {
     }
 
     /// A river's names and local forms at `generation`.
-    pub fn river(&mut self, generation: u32, id: usize) -> Result<String, JsValue> {
-        self.bench.river(generation, id).map_err(fail)
+    pub fn river(&mut self, generation: u32, id: f64) -> Result<String, JsValue> {
+        self.bench
+            .river(generation, entity_id(id).map_err(fail)?)
+            .map_err(fail)
     }
 
     /// Every living people's word for `concept`, grouped by common root.
@@ -301,44 +317,50 @@ impl ReadView {
     pub fn settlement(
         &self,
         point: &str,
-        community: usize,
+        community: f64,
         intent: &str,
         share: f32,
         destination: i32,
     ) -> Result<String, JsValue> {
         self.bench
             .borrow()
-            .settlement(point, community, intent, share, destination)
+            .settlement(
+                point,
+                entity_id(community).map_err(fail)?,
+                intent,
+                share,
+                destination,
+            )
             .map_err(fail)
     }
     #[wasm_bindgen(js_name = lawChoices)]
-    pub fn law_choices(&self, point: &str, variety: usize) -> Result<String, JsValue> {
+    pub fn law_choices(&self, point: &str, variety: f64) -> Result<String, JsValue> {
         self.bench
             .borrow()
-            .law_choices(point, variety)
+            .law_choices(point, entity_id(variety).map_err(fail)?)
             .map_err(fail)
     }
-    pub fn lexicon(&mut self, generation: u32, variety: usize) -> Result<String, JsValue> {
+    pub fn lexicon(&mut self, generation: u32, variety: f64) -> Result<String, JsValue> {
         self.bench
             .borrow_mut()
-            .lexicon(generation, variety)
+            .lexicon(generation, entity_id(variety).map_err(fail)?)
             .map_err(fail)
     }
-    pub fn kin(&mut self, generation: u32, variety: usize) -> Result<String, JsValue> {
+    pub fn kin(&mut self, generation: u32, variety: f64) -> Result<String, JsValue> {
         self.bench
             .borrow_mut()
-            .kin(generation, variety)
+            .kin(generation, entity_id(variety).map_err(fail)?)
             .map_err(fail)
     }
     pub fn word(
         &mut self,
         generation: u32,
-        variety: usize,
+        variety: f64,
         concept: &str,
     ) -> Result<String, JsValue> {
         self.bench
             .borrow_mut()
-            .word(generation, variety, concept)
+            .word(generation, entity_id(variety).map_err(fail)?, concept)
             .map_err(fail)
     }
     pub fn story(&mut self, generation: u32, subject: &str) -> Result<String, JsValue> {
@@ -350,8 +372,11 @@ impl ReadView {
     pub fn climate(&mut self, generation: u32) -> Result<String, JsValue> {
         self.bench.borrow_mut().climate(generation).map_err(fail)
     }
-    pub fn river(&mut self, generation: u32, id: usize) -> Result<String, JsValue> {
-        self.bench.borrow_mut().river(generation, id).map_err(fail)
+    pub fn river(&mut self, generation: u32, id: f64) -> Result<String, JsValue> {
+        self.bench
+            .borrow_mut()
+            .river(generation, entity_id(id).map_err(fail)?)
+            .map_err(fail)
     }
     pub fn map(&self) -> Result<String, JsValue> {
         self.bench.borrow().map().map_err(fail)
@@ -2849,6 +2874,15 @@ fn kebab(debug: &str) -> String {
     out
 }
 
+/// Preserve the original JS number until it has been checked against the same
+/// entity-ID domain on native and wasm32 targets. Bench checks existence.
+fn entity_id(value: f64) -> Result<usize, String> {
+    if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value > u32::MAX as f64 {
+        return Err("Choose a valid entity ID.".into());
+    }
+    Ok(value as usize)
+}
+
 fn fail(message: String) -> JsValue {
     JsValue::from_str(&message)
 }
@@ -4612,6 +4646,24 @@ struct MapWord {
 mod tests {
     use super::*;
     use umran_sim::CONCEPTS;
+
+    #[test]
+    fn entity_ids_preserve_integers_and_reject_js_coercions() {
+        for (value, expected) in [(0.0, 0), (42.0, 42), (u32::MAX as f64, u32::MAX as usize)] {
+            assert_eq!(entity_id(value).unwrap(), expected);
+        }
+        for value in [
+            -1.0,
+            0.5,
+            u32::MAX as f64 + 0.5,
+            u32::MAX as f64 + 1.0,
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        ] {
+            assert!(entity_id(value).is_err(), "invalid entity ID: {value}");
+        }
+    }
 
     const PEOPLE: &str = r#"{"kind":"people"}"#;
     const RIVER: &str = r#"{"kind":"place","place":"river"}"#;

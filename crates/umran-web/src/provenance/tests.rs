@@ -220,10 +220,11 @@ fn audit(world: &World, snapshots: &[Snapshot], band: &mut Band) {
 #[test]
 fn provenance_band_40_seeds_4000_years_and_sample() {
     let presets = SoundProfile::presets();
+    let n = presets.len() as u64;
     let mut band = Band::default();
     for seed in 0..40 {
         let mut world = World::new(seed, Params::default());
-        let pick = |i: u64| &presets[((seed * 3 + i) as usize * 7) % presets.len()];
+        let pick = |i: u64| &presets[((((seed % n) * 3 + i) * 7) % n) as usize];
         world.found(pick(0), 0.5, 0.4);
         let home = world.communities[0].home();
         for (i, power, open) in [(1, 0.4, 0.6), (2, 0.85, 0.3)] {

@@ -144,11 +144,12 @@ fn main() {
 fn band(seeds: u64, generations: u32) {
     assert!(seeds > 0, "at least one seed");
     let presets = SoundProfile::presets();
+    let n = presets.len() as u64;
     let mut counts = Vec::new();
     let mut standards = 0;
     let mut worlds_with_standard = 0;
     for seed in 0..seeds {
-        let pick = |i: u64| &presets[((seed * 3 + i) as usize * 7) % presets.len()];
+        let pick = |i: u64| &presets[((((seed % n) * 3 + i) * 7) % n) as usize];
         let mut world = World::new(
             seed,
             Params {

@@ -94,6 +94,10 @@ The browser's world owns a small cache of these views; cards do not own or free
 the underlying WASM allocations. Failed reads leave the account listed and its
 recipe available for recovery.
 
+The JavaScript workbench and scoped read views reject non-finite, negative,
+fractional, or greater-than-`u32::MAX` community, language and river IDs before
+conversion; valid integer IDs still have to exist in the requested reading.
+
 Comparison reads both tellings at one year, bounded by the shorter recorded
 history. It never silently advances either. Ancestry identifies the last proven
 shared reading, normalizing run endpoints before comparing prefixes. Only

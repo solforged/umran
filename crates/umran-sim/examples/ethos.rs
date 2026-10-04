@@ -56,10 +56,11 @@ fn founders(seed: u64, sample: bool, neutral: bool) -> World {
         }
     } else {
         let presets = SoundProfile::presets();
+        let n = presets.len() as u64;
         for (i, power, openness) in [(0, 0.5, 0.4), (1, 0.4, 0.6), (2, 0.85, 0.3)] {
             world.found_seeded(
                 &Naming::People,
-                &presets[((seed * 3 + i) as usize * 7) % presets.len()],
+                &presets[((((seed % n) * 3 + i) * 7) % n) as usize],
                 seed.wrapping_add(i),
                 power,
                 openness,

@@ -15,6 +15,7 @@ fn main() {
     assert!(seeds > 0 && years > 0 && years.is_multiple_of(25));
     assert!(["seeded", "natural", "sample", "sample-unseeded"].contains(&setup.as_str()));
     let presets = SoundProfile::presets();
+    let n = presets.len() as u64;
     let mut band = Band::default();
     for seed in first..first + seeds {
         if setup.starts_with("sample") {
@@ -24,7 +25,7 @@ fn main() {
             }
             continue;
         }
-        let pick = |i: u64| &presets[((seed * 3 + i) as usize * 7) % presets.len()];
+        let pick = |i: u64| &presets[((((seed % n) * 3 + i) * 7) % n) as usize];
         let mut world = World::new(seed, Params::default());
         let hill = world.found(pick(0), 0.5, 0.4);
         let home = world.communities[hill].home();

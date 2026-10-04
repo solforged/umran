@@ -12,9 +12,10 @@ fn main() {
     let seeds: u64 = args.next().map_or(20, |s| s.parse().expect("seeds"));
     let last: u32 = args.next().map_or(255, |s| s.parse().expect("generations"));
     let presets = SoundProfile::presets();
+    let n = presets.len() as u64;
     let mut rows: Vec<Row> = Vec::new();
     for seed in 0..seeds {
-        let pick = |i: u64| &presets[((seed * 3 + i) as usize * 7) % presets.len()];
+        let pick = |i: u64| &presets[((((seed % n) * 3 + i) * 7) % n) as usize];
         let mut world = World::new(
             seed,
             Params {
