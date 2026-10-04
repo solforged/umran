@@ -1190,16 +1190,25 @@ landmass, and the nearest other founder accompany the pairs; nearest means
 the smallest finite walking or voyage effort, breaking ties by community ID.
 This preview does not predict later territorial spread or consume draws.
 
-The immutable map stores sparse walking and voyage rows out to 1,800
-effort-km. Missing cached destinations are outside a bounded query,
-not necessarily unreachable. Exact pair queries use Dijkstra beyond
-the cache, and uncapped consumers reuse full source rows. Authored
-larger reaches use phase-local rows without mutating the shared map.
+The map stores sparse walking and voyage rows out to 1,800 effort-km.
+Walking rows retain separate allocations so a changed river edge rebuilds
+only rows whose old reachable set includes either endpoint; untouched rows
+are neither searched again nor copied. This also covers newly shorter paths:
+their first changed edge must be reachable through an unchanged prefix.
+Missing cached destinations are outside a bounded query, not necessarily
+unreachable. Exact pair queries use Dijkstra beyond the cache, and uncapped
+consumers reuse full source rows. Authored larger reaches use phase-local
+rows without mutating the shared map.
 Spatial and contact indexes are derived per phase. Successful spread
 redistributes all old holding presence; later migrants see earlier
 migrants' consumed room. These indexes are not additional replay state.
 Urban residence adds population at a city, not a territorial holding or
 borrowable port. The phase indexes distinguish residents from land holders.
+
+Facade overview, annal, word-history, and grammar-history views borrow the
+world's existing sound-law catalog rather than rebuilding it for each view.
+These cache changes preserve all costs, histories, and serialized views;
+they do not change the engine revision.
 
 Physical radius and regional resolution are separate:
 
@@ -1340,7 +1349,7 @@ Drainage-connected, usable river reaches multiply the canonical walking
 border effort by 0.65. Adjacent unrelated rivers receive no discount.
 The same costs feed distance, border closeness, migration, cohesion, trade,
 and sound waves. Flow crossing about 17,321 wet km² changes usability;
-only such crossings rebuild sparse walking rows. Newly inaccessible contacts
+only such crossings refresh affected sparse walking rows. Newly inaccessible contacts
 end before the generation's loans or sound waves can use them. Sea journeys
 retain their own costs and permissions. No river grants ships or seafaring.
 

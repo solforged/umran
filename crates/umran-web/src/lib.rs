@@ -30,7 +30,7 @@ use umran_sim::schisms::{BranchNaming, HolyLand, Pilgrimage, SchismCause};
 use umran_sim::{
     Action, CATALOG, CONCEPTS, Challenge, Chronicle, Craft, ENGINE_REVISION, Event, Fall, Flavor,
     Form, HistoryPoint, Lexeme, LexemeId, Livelihood, MapSize, NameStyle, Origin, PhonemeId,
-    ReadingRef, Revelation, Rise, StressRule, TellingId, Terrain, World, WorldEvent, catalog,
+    ReadingRef, Revelation, Rise, StressRule, TellingId, Terrain, World, WorldEvent,
 };
 use umran_sim::{LanguageDesign, MorphologyKind, Naming, Segment, Variety};
 use wasm_bindgen::prelude::*;
@@ -1564,7 +1564,7 @@ impl Bench {
                 born[first] = *g;
             }
         }
-        let laws = catalog();
+        let laws = world.law_catalog();
         let law_label = |id: &str| {
             laws.iter()
                 .find(|l| l.id == id)
@@ -2845,7 +2845,7 @@ fn form_after(word: &Lexeme, i: usize) -> &Form {
 }
 
 fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
-    let laws = catalog();
+    let laws = world.law_catalog();
     let mut out = vec![HistoryLine {
         generation: word.born,
         cause: origin_cause(world, word),
@@ -4387,7 +4387,7 @@ fn grammar_history(
     current: Option<&Form>,
     subject: &str,
 ) -> Vec<HistoryLine> {
-    let laws = catalog();
+    let laws = world.law_catalog();
     let v = &world.varieties[variety];
     let mut out = Vec::with_capacity(entries.len());
     let mut after = current;
@@ -5077,8 +5077,8 @@ struct MapWord {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use umran_sim::CONCEPTS;
     use umran_sim::chronicle::SPHERICAL_GEOGRAPHY_REVISION;
+    use umran_sim::{CONCEPTS, catalog};
 
     #[test]
     fn pronoun_view_exposes_both_sides_of_clusivity() {

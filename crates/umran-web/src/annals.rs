@@ -20,7 +20,7 @@ use umran_sim::rng::{index, key, stream};
 use umran_sim::world::{ContactKind, Hardship};
 use umran_sim::{
     Axis, Challenge, Craft, Event, Fall, Fixing, Form, Lexeme, Livelihood, Origin, Pole,
-    Revelation, Rise, TemperCause, Variety, Vernacular, World, WorldEvent, catalog,
+    Revelation, Rise, TemperCause, Variety, Vernacular, World, WorldEvent,
 };
 
 #[derive(Clone, PartialEq, Serialize)]
@@ -2041,7 +2041,7 @@ fn place_note(world: &World, region: usize, generation: u32) -> Option<String> {
 /// One entry per language and generation in which its sounds changed,
 /// told through a word that changed, with the laws in the apparatus.
 fn sound_changes(world: &World) -> Vec<Annal> {
-    let laws = catalog();
+    let laws = world.law_catalog();
     let label = |id: &str| {
         laws.iter()
             .find(|l| l.id == id)
