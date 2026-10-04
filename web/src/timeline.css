@@ -61,7 +61,7 @@
 .timeline .mark-conquest,
 .timeline .mark-rose,
 .timeline .mark-fell {
-  color: var(--gold);
+  color: var(--ink-soft);
 }
 
 .timeline .mark-fell svg {
@@ -103,7 +103,9 @@
   box-sizing: border-box;
 }
 :root .timeline .mark-cluster {
-  height: 12px;
+  min-width: 24px;
+  height: 24px;
+  bottom: -6px;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -113,10 +115,39 @@
   line-height: 1;
   font-variant-numeric: tabular-nums;
   background: var(--paper);
+  color: var(--ink-soft);
+}
+
+:root .timeline .mark-cluster:is(:hover, :focus-visible) {
+  transform: translate(-50%, 0);
+}
+.timeline-entries {
+  width: min(24rem, calc(100vw - 3rem));
+  touch-action: pan-y;
+}
+:root .timeline-entries button {
+  display: block;
+  width: 100%;
+  min-height: 24px;
+  text-align: left;
+  white-space: normal;
+}
+.timeline-entries button > span {
+  display: block;
+}
+.timeline-entries button > span:first-child {
+  color: var(--ink-soft);
+  font-size: var(--dense-size);
 }
 
 .timeline .ahead {
   opacity: 0.35;
+}
+.timeline .mark-cluster.ahead {
+  opacity: 1;
+}
+.timeline .mark-cluster.ahead svg {
+  opacity: .35;
 }
 
 .timeline-ruler {

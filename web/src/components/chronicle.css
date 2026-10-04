@@ -83,6 +83,20 @@
   padding: .1rem 0;
 }
 
+.chronicle-quiet > summary > span {
+  display: inline-block;
+  max-width: calc(100% - 1.5rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+.chronicle-quiet-detail {
+  font-size: var(--dense-size);
+  line-height: 1.3;
+  color: var(--ink-soft);
+}
+
 .chronicle-quiet[open] > summary {
   margin-bottom: .35rem;
 }

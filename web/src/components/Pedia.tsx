@@ -23,11 +23,11 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, Catalog, CityView, Community, Craft, CraftView, ReadEngine, Ethos, HistoryPoint, HolyLand, NotebookNote, Overview, PlaceExonym, ReligionView, RenderingRow, ShrineKind, StateView, Variety, WordMap, WorldMap } from "../model";
+import type { Annal, Catalog, CityView, Community, Craft, CraftView, ReadEngine, Ethos, HistoryPoint, HolyLand, NotebookNote, Overview, ReligionView, RenderingRow, ShrineKind, StateView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { causePhrase, CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, faithTeaching, FAITH_HOW, FAITH_NAME, FALL_NAME, howCame, howNamed, hue, landLabel, LIVELIHOOD_NAME, peoplePhrases, RISE_NAME, SCHISM_CAUSE, seasonalPhrase, STRONG, temperament, TENET_NOUN, TERRAIN_NAME, unnamedName, weatherDeparture } from "../lore";
+import { causePhrase, CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, faithTeaching, FAITH_HOW, FAITH_NAME, FALL_NAME, howCame, howNamed, hue, landLabel, LIVELIHOOD_NAME, otherNames, peoplePhrases, RISE_NAME, SCHISM_CAUSE, seasonalPhrase, STRONG, temperament, TENET_NOUN, TERRAIN_NAME, unnamedName, weatherDeparture } from "../lore";
 import { filterHistory, findAnnal, individualAnnals, relatedMoments, subjectHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
-import { eras, quietLine, QUIET_KINDS, type Era } from "../eras";
+import { eras, quietLine, quietSummary, QUIET_KINDS, type Era } from "../eras";
 import { bond } from "../words";
 import type { InterventionKind } from "./ActionDialog";
 import { SettlementAccount } from "./SettlementDesk";
@@ -1252,7 +1252,8 @@ function HistoryCard({ context }: { context: Context }) {
                 <div>
                   {year.headlines.length ? <ChronicleEvents annals={year.headlines} context={context} /> : null}
                   {year.quiet.length ? <details className="chronicle-quiet" key={`${view.order}:${year.generation}`}>
-                    <summary>{quietLine(year, overview)}</summary>
+                    <summary><span>{quietSummary(year)}</span></summary>
+                    <p className="chronicle-quiet-detail">{quietLine(year, overview)}</p>
                     <ChronicleEvents annals={year.quiet} context={context} />
                   </details> : null}
                 </div>
@@ -1732,10 +1733,24 @@ function RenderingsLeaf({ title, rows, sacred, context, children }: {
 function LanguageCard({ variety, context }: { variety: number; context: Context }) {
   const v = context.overview.varieties[variety];
   const speakers = context.overview.communities.filter((c) => c.ended === null && c.variety === variety);
+  const openingSpeakers = speakers.length ? speakers : context.overview.communities.filter((c) => c.variety === variety);
+  const speakerIds = new Set(openingSpeakers.map((c) => c.id));
+  const fortunes = individualAnnals(context.overview.annals).filter((annal) => annal.peoples.some((id) => speakerIds.has(id)));
   const ctx = languageChapterContext(context, variety);
   return <div className="language-card">
     <CardHead icon={Languages} kind="A language" title={v.name} tone={hue(v.family)} hand={v.family} sub={v.meaning ? `“${v.meaning}”` : null} />
     <Decisions community={speakers[0]?.id ?? -1} context={context} choices={[["law", "A sound change"]]} disabled={!speakers.length} label="Decide for this language" />
+    <div className="language-opening">
+      {openingSpeakers.map((c) => {
+        const phrases = peoplePhrases(c.ended);
+        return <section key={c.id}>
+          <h3>{phrases.land}</h3>
+          <p>{phrases.homeland} <LandLink region={c.region} context={context} />, {terrain(c.region, context)}.</p>
+          <p>The <PeopleLink c={c} context={context} /> {c.ended === null ? "are" : "were"} <Explained term="way of life">{LIVELIHOOD_NAME[c.livelihood].toLowerCase()}</Explained>.</p>
+        </section>;
+      })}
+      <StoryLeaf title="Their fortunes" annals={fortunes} context={context} />
+    </div>
     <LanguageSpecimen variety={variety} context={context} />
     <Facts rows={[
       ["Spoken by", speakers.length ? <Joined items={speakers} link={(c) => <PeopleLink c={c} context={context} />} /> : "no one now"],
@@ -2102,21 +2117,6 @@ function momentExcerpt(text: string): string {
   return `${cut}${(cut.match(/\*/g)?.length ?? 0) % 2 ? "*" : ""}…`;
 }
 
-/// Languages' names for a land, grouped by how they spell it, those that
-/// say it as its holders do last; within a group, the earliest hearing.
-function otherNames(exonyms: PlaceExonym[], own: string | undefined) {
-  const groups = new Map<string, { spelled: string; ipa: string; heard: number; once: string | null; same: boolean; varieties: number[] }>();
-  for (const x of exonyms) {
-    const group = groups.get(x.spelled);
-    if (!group) {
-      groups.set(x.spelled, { spelled: x.spelled, ipa: x.ipa, heard: x.heard, once: x.once, same: x.spelled === own, varieties: [x.variety] });
-    } else {
-      group.varieties.push(x.variety);
-      if (x.heard < group.heard) Object.assign(group, { heard: x.heard, once: x.once });
-    }
-  }
-  return [...groups.values()].sort((a, b) => Number(a.same) - Number(b.same) || a.heard - b.heard);
-}
 
 function eventHeading(annal: Annal, context: Context) {
   const { overview } = context;

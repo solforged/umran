@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { causePhrase, faithTeaching, seasonalPhrase } from "../web/src/lore";
-import type { Annal, Overview, ReligionView, Seasons } from "../web/src/model";
+import { causePhrase, faithTeaching, otherNames, seasonalPhrase } from "../web/src/lore";
+import type { Annal, Overview, PlaceExonym, ReligionView, Seasons } from "../web/src/model";
 
 const entry = (id: string, kind: Annal["kind"], generation: number, fields: Partial<Annal> = {}) => ({
   id, kind, generation, members: [], languages: [], variety: null,
@@ -68,5 +68,21 @@ describe("faith teaching", () => {
     expect(teaching).toContain("venerated");
     expect(teaching).toContain("no order");
     expect(teaching).toContain("; ");
+  });
+});
+
+describe("land-name apparatus", () => {
+  test("group shared exonyms once with distinct languages and the earliest hearing", () => {
+    const names = [
+      { spelled: "Oro", ipa: "oro", variety: 1, heard: 8, once: null },
+      { spelled: "Oro", ipa: "oro", variety: 2, heard: 4, once: "Ora" },
+      { spelled: "Oro", ipa: "oro", variety: 2, heard: 6, once: null },
+      { spelled: "Home", ipa: "hom", variety: 3, heard: 0, once: null },
+    ] as PlaceExonym[];
+    expect(otherNames(names, "Home")).toEqual([
+      { spelled: "Oro", ipa: "oro", varieties: [1, 2], heard: 4, once: "Ora", same: false },
+      { spelled: "Home", ipa: "hom", varieties: [3], heard: 0, once: null, same: true },
+    ]);
+    expect(names[0].heard).toBe(8);
   });
 });

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type Keyboard
 import type { Annal } from "../model";
 import { YEARS } from "../model";
 import { EVENT_KIND } from "../lore";
+import { Popover } from "./Popover";
 import "../timeline.css";
 
 export type MarkKind = "found" | "split" | "shift" | "conquest" | "rose" | "fell" | "faith" | "craft";
@@ -189,18 +190,30 @@ export function Timeline({ marks, sounds, latest, viewed, onScrub, onOpen }: {
         const ahead = group[0].generation > viewed ? " ahead" : "";
         if (wide && group.length > 1) {
           const first = group[0];
-          const title = group.slice(0, 8).map((mark) => mark.label).join("\n") +
-            (group.length > 8 ? `\nand ${group.length - 8} more` : "");
-          return <button type="button" key={generation}
-            className={`mark mark-cluster mark-${first.kind}${ahead}`}
-            style={{ left: left(generation) }} title={title}
-            aria-label={`${group.length} chronicle entries. ${title}`}
-            data-count={group.length} data-first-year={first.generation * YEARS}
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => { event.stopPropagation(); scrub(first.generation); }}>
-            <svg viewBox="0 0 10 10" width="12" height="12" aria-hidden="true">{shape(first.kind)}</svg>
-            <small>{group.length}</small>
-          </button>;
+          return <Popover key={generation} label={`${group.length} chronicle entries`} side="top"
+            trigger={(props, open) => <button type="button"
+              {...props}
+              className={`mark mark-cluster mark-${first.kind}${ahead}`}
+              style={{ left: `clamp(12px, ${left(generation)}, calc(100% - 12px))` }}
+              aria-label={`${group.length} chronicle entries`}
+              data-count={group.length} data-first-year={first.generation * YEARS}
+              onPointerDown={(event) => event.stopPropagation()}
+              onPointerEnter={(event) => { if (event.pointerType === "mouse" && !open) props.onClick(); }}
+              onFocus={(event) => {
+                if (!open && !(event.relatedTarget instanceof Element && event.relatedTarget.closest(".timeline-entries"))) props.onClick();
+              }}
+              onClick={(event) => { event.stopPropagation(); if (!open) props.onClick(); }}>
+              <svg viewBox="0 0 10 10" width="12" height="12" aria-hidden="true">{shape(first.kind)}</svg>
+              <small>{group.length}</small>
+            </button>}>
+            {(close) => <div className="timeline-entries" onPointerDown={(event) => event.stopPropagation()}>
+              {group.map((mark) => <button type="button" key={mark.annal.id}
+                onClick={(event) => { event.stopPropagation(); close(); onOpen(mark); }}>
+                <span>{mark.label}</span>
+                <span>{mark.annal.text.replace(/\*/g, "")}</span>
+              </button>)}
+            </div>}
+          </Popover>;
         }
         return <div key={generation}>
           {visible.map((mark, stack) => <button

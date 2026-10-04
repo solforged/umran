@@ -77,6 +77,12 @@ export function eras(annals: Annal[], latest: number, overview: Overview): Era[]
   return result;
 }
 
+/// The collapsed row stays brief; the full category account lives inside.
+export function quietSummary(year: EraYear): string {
+  const count = year.quiet.reduce((sum, annal) => sum + (annal.members.length || 1), 0);
+  return `Also this year: ${count} quieter ${count === 1 ? "entry" : "entries"}.`;
+}
+
 /// A folded year describes recorded activity; names remain the engine's.
 export function quietLine(year: EraYear, overview: Overview): string {
   const byKind = new Map<Annal["kind"], Annal[]>();

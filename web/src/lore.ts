@@ -36,7 +36,7 @@ import {
   WholeWord,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, ClimateView, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Mechanism, Overview, PlaceName, ReligionView, Rendering, SchismCause, Seasons, StateView, StressRule, Tenet, Terrain, WorldMap } from "./model";
+import type { Annal, ClimateView, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Mechanism, Overview, PlaceExonym, PlaceName, ReligionView, Rendering, SchismCause, Seasons, StateView, StressRule, Tenet, Terrain, WorldMap } from "./model";
 import { YEARS } from "./model";
 import { findAnnal } from "./history";
 
@@ -451,6 +451,22 @@ export function unnamedName(kind: string, prose = false): string {
 export function landLabel(overview: Overview, map: WorldMap, region: number, prose = false): string {
   return overview.places.find((p) => p.region === region)?.names.at(-1)?.spelled ??
     unnamedName(TERRAIN_NAME[map.regions[region].terrain], prose);
+}
+
+/// Languages' names for a land, grouped by how they spell it, those that
+/// say it as its holders do last; within a group, the earliest hearing.
+export function otherNames(exonyms: PlaceExonym[], own: string | undefined) {
+  const groups = new Map<string, { spelled: string; ipa: string; heard: number; once: string | null; same: boolean; varieties: number[] }>();
+  for (const x of exonyms) {
+    const group = groups.get(x.spelled);
+    if (!group) {
+      groups.set(x.spelled, { spelled: x.spelled, ipa: x.ipa, heard: x.heard, once: x.once, same: x.spelled === own, varieties: [x.variety] });
+    } else {
+      if (!group.varieties.includes(x.variety)) group.varieties.push(x.variety);
+      if (x.heard < group.heard) Object.assign(group, { heard: x.heard, once: x.once });
+    }
+  }
+  return [...groups.values()].sort((a, b) => Number(a.same) - Number(b.same) || a.heard - b.heard);
 }
 
 /** The recorded trigger, including grouped individual entries, not a guessed cause. */

@@ -252,11 +252,16 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
                   {n.once ? `; once ${n.once}` : ""}.
                 </span>
               </li>)}</ol>
-              {place.exonyms.length ? <p>Called by others: {place.exonyms.map((n, i) => <span key={i}>
-                {i ? "; " : ""}<span className="word">{n.spelled}</span> <span className="ipa">/{n.ipa}/</span>
-                {" "}in {ctx.link({ kind: "language", variety: n.variety }, n.language)}, heard in year {n.heard * YEARS}
-                {n.once ? `, once ${n.once}` : ""}
-              </span>)}.</p> : null}
+              {place.exonyms.length ? <>
+                <h5>Called by others</h5>
+                <ul className="book-name-ledger book-exonym-ledger">{lore.otherNames(place.exonyms, place.names.at(-1)?.spelled).map((group) => <li key={group.spelled}>
+                  <span className="gen" title="First heard in year">{group.heard * YEARS}</span>
+                  <span><span className="word">{group.spelled}</span> <span className="ipa">/{group.ipa}/</span>{group.once ? `, once ${group.once}` : ""}</span>
+                  <span>{group.varieties.map((variety, i) => <span key={variety}>
+                    {i ? ", " : ""}{ctx.link({ kind: "language", variety }, overview.varieties[variety]?.name)}
+                  </span>)}</span>
+                </li>)}</ul>
+              </> : null}
             </section>)}
           </article>;
         })}
