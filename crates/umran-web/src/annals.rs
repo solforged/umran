@@ -2395,6 +2395,7 @@ fn grammatical_marker(variety: &Variety, marker: &Marker, generation: u32) -> St
     match marker.kind {
         MarkerKind::None => "no overt marker".into(),
         MarkerKind::Particle => format!("the separate word *{spelled}*"),
+        MarkerKind::Pattern => format!("the internal vowel pattern *{spelled}*"),
         MarkerKind::Bound if form.phones().next().is_none() => "a silent attached marker".into(),
         MarkerKind::Bound => match marker.side {
             Side::Prefix => format!("the prefix *{spelled}-*"),

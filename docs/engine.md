@@ -175,6 +175,40 @@ This bookkeeping makes no random draws and does not itself change replay.
   Daughters inherit grammar with words. Productive endings for new words
   follow the usage-weighted dominant surviving edge, including empty edges,
   rather than repeatedly restoring the founding affix.
+- Root-and-pattern languages can also inflect internally (`inflection.rs`).
+  A founding bound plural or past keeps its chosen affix and adds a
+  three-consonant template with a drawn vowel melody, such as `C1uC2uC3`.
+  Particles and unmarked categories are not overridden. This follows the
+  root tier, consonant–vowel skeleton, and vocalic melody distinguished by
+  McCarthy, “A Prosodic Theory of Nonconcatenative Morphology” (1981),
+  with Arabic broken plurals beside sound plurals as the main model;
+  Hebrew and Amharic provide related internal-inflection systems. It is
+  a small productive class, not a reconstruction of any of those grammars.
+  Germanic ablaut (sing/sang) is not added by this mechanism.
+- Internal inflection requires three recoverable root consonants. Known
+  derivational prefixes are excluded from that root; other words with too
+  few or too many consonants take ordinary native marking rather than a
+  truncated or invented root. Eligible founding words draw the pattern
+  with probability 0.65–0.85; new words use its current usage share, scaled
+  by 0.8 for coinings and 0.4 for loans. A form identical to the base is
+  not acquired as an internal contrast. These are modelling priors, not
+  measured frequencies. Pattern forms enter the ordinary stored paradigm
+  with an 8% affix competitor, whose usage can grow or disappear.
+- Sound laws change the complete internal forms, with the same size and
+  last-vowel protections as attached forms. When all living forms of a
+  pattern agree on a changed melody or vowel length, its productive
+  template changes too, with a marker `SoundLaw` history. Contextual
+  differences remain stored allomorphs (different shapes of the same
+  grammatical mark); a majority never silently overwrites the other
+  forms. Retired forms remain frozen. Rare analogy replaces one internal
+  form with the available native affix and records the old and new forms,
+  as irregular classes can shrink while new words favour affixing.
+  `pattern_analogy_rate` defaults to 0.04 per category per generation
+  and is zero in `Params::static_society()`. Founding, acquisition, and
+  levelling use the separate `pattern founding`, `pattern acquisition`,
+  and `pattern levelling` streams. Language views expose marker kind
+  `pattern` and an optional `template` string; ordinary form histories,
+  contrast retention, and synthesis include internal forms.
 - Sound laws assess and change grammatical forms as well as base words.
   Alternative forms contribute by usage share, and shared particles count
   once. An attached ending has no size floor of its own, but its complete
@@ -1091,6 +1125,7 @@ cargo run --release -p umran-sim --example endings -- [seeds]
 cargo run --release -p umran-sim --example tense -- [seeds] [years]
 cargo run --release -p umran-sim --example pronouns -- [seeds]
 cargo run --release -p umran-sim --example harmony -- [seeds] [generations]
+cargo run --release -p umran-sim --example pattern -- [seeds] [generations]
 cargo run --release -p umran-web --example provenance
 ```
 
@@ -1116,9 +1151,8 @@ and lakes, seasonal weather, resolved travel times, globe wrapping,
 purism within a classical form,
 compounding and derivation after founding beyond renewal and new meanings,
 inflection beyond count noun plural and object marking, the genitive, and verb
-past, future, and progressive, productive root-and-pattern inflection,
-agreement beyond the determiner, combined tense–aspect forms, modal readings and
-clitic stages, pronoun case forms, tone, vowel harmony beyond the word,
-prenasalized stops, syntax beyond fixed word
+past, future, and progressive, agreement beyond the determiner, combined
+tense–aspect forms, modal readings and clitic stages, pronoun case forms,
+tone, vowel harmony beyond the word, prenasalized stops, syntax beyond fixed word
 and possessor order, alignment beyond this object contrast, and doctrinal
 detail beyond the causes of a schism.

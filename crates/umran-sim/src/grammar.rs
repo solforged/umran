@@ -278,6 +278,7 @@ pub enum MarkerKind {
     Bound,
     Particle,
     None,
+    Pattern,
 }
 impl MarkerKind {
     pub fn id(self) -> &'static str {
@@ -285,6 +286,7 @@ impl MarkerKind {
             Self::Bound => "bound",
             Self::Particle => "particle",
             Self::None => "none",
+            Self::Pattern => "pattern",
         }
     }
 }
@@ -325,6 +327,7 @@ pub struct Marker {
     pub kind: MarkerKind,
     pub side: Side,
     pub form: Form,
+    pub template: Option<crate::inflection::Template>,
     pub born: u32,
     pub origin: MarkerOrigin,
     pub productive: bool,
@@ -427,6 +430,7 @@ pub struct Grammar {
     pub contact_generations: BTreeMap<usize, u32>,
     /// Active stem-controlled agreement; absent after harmony is lost.
     pub harmony: Option<crate::harmony::Feature>,
+    pub(crate) pattern_seed: u64,
     usage: Vec<[f32; Category::ALL.len()]>,
 }
 
@@ -572,11 +576,12 @@ impl Grammar {
             };
             grammar.add_marker(category, kind, side, form, origin, true, 0);
         }
+        grammar.found_patterns(seed, tactics, morphology);
         grammar.sync(lexicon, morphology, stress, 0);
         grammar
     }
     #[allow(clippy::too_many_arguments)]
-    fn add_marker(
+    pub(crate) fn add_marker(
         &mut self,
         category: Category,
         kind: MarkerKind,
@@ -596,6 +601,7 @@ impl Grammar {
             kind,
             side,
             form,
+            template: None,
             born: generation,
             origin,
             productive,
@@ -608,7 +614,7 @@ impl Grammar {
         });
         id
     }
-    fn notice(&mut self, generation: u32, category: Category, event: NoticeKind) {
+    pub(crate) fn notice(&mut self, generation: u32, category: Category, event: NoticeKind) {
         self.events.push(GrammarNotice {
             generation,
             category,
@@ -641,7 +647,7 @@ impl Grammar {
             })
             .map(|m| m.id)
     }
-    fn materialize(
+    pub(crate) fn materialize(
         &self,
         marker: u32,
         base: &Form,
@@ -681,6 +687,8 @@ impl Grammar {
                 });
             }
             (Some(joined), edge)
+        } else if let Some(template) = &m.template {
+            (template.realize(base, morphology, stress), 0)
         } else {
             (None, 0)
         };
@@ -733,7 +741,11 @@ impl Grammar {
                 let exists = word.paradigms.iter().any(|p| {
                     p.category == category && p.realizations.iter().any(|r| r.retired.is_none())
                 });
-                if !exists && let Some(marker) = self.productive(category) {
+                if !exists
+                    && let Some(marker) = self
+                        .acquire_pattern(category, word, morphology, generation)
+                        .or_else(|| self.productive(category))
+                {
                     let realization =
                         self.materialize(marker, &word.form, morphology, stress, generation, 1.0);
                     if let Some(p) = word.paradigms.iter_mut().find(|p| p.category == category) {
@@ -743,6 +755,32 @@ impl Grammar {
                             category,
                             realizations: vec![realization],
                         });
+                    }
+                    if self.marker(marker).kind == MarkerKind::Pattern
+                        && let Some(affix) = self
+                            .markers
+                            .iter()
+                            .filter(|m| {
+                                m.category == category
+                                    && m.kind == MarkerKind::Bound
+                                    && m.productive
+                                    && m.retired.is_none()
+                            })
+                            .max_by(|a, b| {
+                                self.marker_share(a.id)
+                                    .total_cmp(&self.marker_share(b.id))
+                                    .then(b.id.cmp(&a.id))
+                            })
+                    {
+                        let competitor = self.materialize(
+                            affix.id, &word.form, morphology, stress, generation, 0.08,
+                        );
+                        let paradigm = word
+                            .paradigms
+                            .iter_mut()
+                            .find(|p| p.category == category)
+                            .expect("new category");
+                        Self::introduce(paradigm, competitor);
                     }
                 }
             }
@@ -813,6 +851,9 @@ impl Grammar {
                 for r in p.realizations.iter().filter(|r| r.retired.is_none()) {
                     if let Some(form) = &r.form {
                         let m = self.marker(r.marker);
+                        if m.kind != MarkerKind::Bound {
+                            continue;
+                        }
                         let edge = r.edge.min(form.segs.len());
                         let segs = match m.side {
                             Side::Prefix => &form.segs[..edge],
@@ -904,6 +945,7 @@ impl Grammar {
         }
         self.uses(lexicon);
         self.update_edges(lexicon, generation, law.id);
+        self.update_patterns(lexicon, generation, law.id);
         self.refresh(lexicon, law.stress.unwrap_or(stress), generation);
     }
     /// Shared particles occur once. Attached alternatives share one category use.
@@ -1241,7 +1283,11 @@ impl Grammar {
                     let r = p
                         .realizations
                         .iter()
-                        .filter(|r| r.retired.is_none() && r.form.is_some())
+                        .filter(|r| {
+                            r.retired.is_none()
+                                && r.form.is_some()
+                                && self.marker(r.marker).kind != MarkerKind::Pattern
+                        })
                         .max_by(|a, b| a.share.total_cmp(&b.share))?;
                     let regular = self
                         .materialize(marker, &word.form, morphology, stress, generation, r.share);
@@ -1262,7 +1308,11 @@ impl Grammar {
             let r = p
                 .realizations
                 .iter_mut()
-                .filter(|r| r.retired.is_none() && r.form.is_some())
+                .filter(|r| {
+                    r.retired.is_none()
+                        && r.form.is_some()
+                        && self.marker(r.marker).kind != MarkerKind::Pattern
+                })
                 .max_by(|a, b| a.share.total_cmp(&b.share))
                 .expect("candidate form");
             let regular =
@@ -1290,10 +1340,19 @@ impl Grammar {
             );
         }
         self.refresh(lexicon, stress, generation);
+        let mut pattern_categories = [false; Category::ALL.len()];
+        for marker in &self.markers {
+            if marker.kind == MarkerKind::Pattern && self.marker_share(marker.id) > 0.0 {
+                pattern_categories[marker.category.position()] = true;
+            }
+        }
         for marker in &mut self.markers {
             if marker.retired.is_none()
                 && self.summary.marker_shares[marker.id as usize] == 0.0
                 && self.summary.categories[marker.category.position()].eligible > 0
+                && !(marker.kind == MarkerKind::Bound
+                    && marker.productive
+                    && pattern_categories[marker.category.position()])
             {
                 marker.retired = Some(generation);
                 marker.productive = false;
@@ -1325,7 +1384,7 @@ impl Grammar {
             })
             .map(|m| m.id)
             .unwrap_or_else(|| {
-                self.add_marker(
+                let marker = self.add_marker(
                     category,
                     pair.kind,
                     pair.side,
@@ -1337,7 +1396,18 @@ impl Grammar {
                     },
                     false,
                     generation,
-                )
+                );
+                if pair.kind == MarkerKind::Pattern {
+                    let template = pair
+                        .form
+                        .as_ref()
+                        .and_then(|form| crate::inflection::Template::from_form(form, 0.0));
+                    if let Some(template) = template {
+                        self.markers[marker as usize].form = template.melody();
+                        self.markers[marker as usize].template = Some(template);
+                    }
+                }
+                marker
             });
         let word = lexicon.get_mut(lexeme);
         let Some(p) = word.paradigms.iter_mut().find(|p| p.category == category) else {

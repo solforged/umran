@@ -288,6 +288,8 @@ pub struct Params {
     pub class_emergence_rate: f32,
     /// Chance to phonologize recent vowel assimilation into word harmony.
     pub harmony_rate: f32,
+    /// Per-category chance to level one internal inflection to its sound affix.
+    pub pattern_analogy_rate: f32,
 }
 
 impl Default for Params {
@@ -353,6 +355,7 @@ impl Default for Params {
             pronoun_rate: 0.003,
             class_emergence_rate: 0.0015,
             harmony_rate: 0.004,
+            pattern_analogy_rate: 0.04,
         }
     }
 }
@@ -391,6 +394,7 @@ impl Params {
             pronoun_rate: 0.0,
             class_emergence_rate: 0.0,
             harmony_rate: 0.0,
+            pattern_analogy_rate: 0.0,
             ..Self::default()
         }
     }
@@ -2033,6 +2037,15 @@ impl World {
                 &variety.morphology,
                 stress,
                 &variety.lexicon,
+            );
+            variety.grammar.level_patterns(
+                self.seed,
+                v,
+                self.generation,
+                &mut variety.lexicon,
+                &variety.morphology,
+                stress,
+                self.params.pattern_analogy_rate,
             );
             self.renew_names(v);
         }
@@ -4433,6 +4446,17 @@ impl World {
                                     stress: None,
                                 };
                                 (Some(form), edge, edge_form, source_form.clone())
+                            }
+                            MarkerKind::Pattern => {
+                                let Some(source_form) = realization.form.as_ref() else {
+                                    continue;
+                                };
+                                let form = adapter.adapt(
+                                    source_form,
+                                    self.params.bilingual_keep * intensity,
+                                    &mut rng,
+                                );
+                                (Some(form), 0, Form::default(), source_form.clone())
                             }
                             MarkerKind::Particle => (
                                 None,

@@ -3785,6 +3785,7 @@ fn grammar_view(world: &World, variety: usize) -> GrammarView {
                     id: marker.id,
                     category: marker.category.id(),
                     kind: marker.kind.id(),
+                    template: marker.template.as_ref().map(|t| t.notation()),
                     side: marker.side.id(),
                     form,
                     spelled,
@@ -3969,8 +3970,10 @@ fn sample_word(
             let gloss = match marker.kind {
                 // A bound mark that sound change has worn to nothing is no
                 // longer audible; the sample says so by glossing it bare.
-                MarkerKind::Bound if form.segs == word.form.segs => concept.into(),
-                MarkerKind::Bound => format!("{concept}-{label}"),
+                MarkerKind::Bound | MarkerKind::Pattern if form.segs == word.form.segs => {
+                    concept.into()
+                }
+                MarkerKind::Bound | MarkerKind::Pattern => format!("{concept}-{label}"),
                 MarkerKind::Particle
                     if (marker.side == Side::Prefix && index == 0)
                         || (marker.side == Side::Suffix && index == 1) =>
@@ -4527,6 +4530,8 @@ struct GrammarMarkerView {
     id: u32,
     category: &'static str,
     kind: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    template: Option<String>,
     side: &'static str,
     /// Current spoken form, rendered in the language's spelling.
     form: String,
@@ -6552,6 +6557,7 @@ mod tests {
                 kind: MarkerKind::Bound,
                 side: Side::Suffix,
                 form: form("i"),
+                template: None,
                 born: 0,
                 origin: MarkerOrigin::Founding,
                 productive: true,
@@ -6565,6 +6571,7 @@ mod tests {
                 kind: MarkerKind::Particle,
                 side: Side::Suffix,
                 form: form("meme"),
+                template: None,
                 born: 0,
                 origin: MarkerOrigin::Imported {
                     from: 1,
@@ -6728,6 +6735,7 @@ mod tests {
                 kind: MarkerKind::Bound,
                 side: Side::Suffix,
                 form: form("ta"),
+                template: None,
                 born: 0,
                 origin: MarkerOrigin::Founding,
                 productive: true,
@@ -6741,6 +6749,7 @@ mod tests {
                 kind: MarkerKind::Particle,
                 side: Side::Suffix,
                 form: form("mamimi"),
+                template: None,
                 born: 0,
                 origin: MarkerOrigin::Founding,
                 productive: false,

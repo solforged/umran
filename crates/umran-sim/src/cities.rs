@@ -918,7 +918,9 @@ mod tests {
             // The hypothetical dialect includes its spoken grammatical forms.
             for marker in &mut v.grammar.markers {
                 marker.form = match marker.kind {
-                    crate::grammar::MarkerKind::Bound => Form::from_ipa("a").unwrap(),
+                    crate::grammar::MarkerKind::Bound | crate::grammar::MarkerKind::Pattern => {
+                        Form::from_ipa("a").unwrap()
+                    }
                     crate::grammar::MarkerKind::Particle => form.clone(),
                     crate::grammar::MarkerKind::None => Form::default(),
                 };

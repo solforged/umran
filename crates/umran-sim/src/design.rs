@@ -230,6 +230,7 @@ mod tests {
                 (MarkerKind::Bound, Side::Prefix) => GrammarChoice::Prefix,
                 (MarkerKind::Particle, _) => GrammarChoice::Particle,
                 (MarkerKind::None, _) => GrammarChoice::None,
+                (MarkerKind::Pattern, _) => unreachable!("patterns supplement the chosen affix"),
             };
             assert_eq!(choice, expected.choice(category), "{}", category.id());
         }

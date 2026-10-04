@@ -1022,7 +1022,8 @@ export type GrammarOrigin =
 export interface GrammarMarker {
   id: number;
   category: GrammarCategory;
-  kind: "bound" | "particle" | "none";
+  kind: "bound" | "particle" | "none" | "pattern";
+  template?: string;
   side: "prefix" | "suffix";
   form: string;
   spelled: string;

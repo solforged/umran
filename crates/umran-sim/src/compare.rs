@@ -466,6 +466,7 @@ mod tests {
                 kind,
                 side: Side::Suffix,
                 form: Form::from_ipa(particle).unwrap(),
+                template: None,
                 born: 0,
                 origin: MarkerOrigin::Founding,
                 productive: true,
