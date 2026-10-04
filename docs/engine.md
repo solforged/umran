@@ -362,9 +362,42 @@ This bookkeeping makes no random draws and does not itself change replay.
   Germanic and later High German. The quiet span applies to inherited
   laws and incoming waves too; the full history keeps every occurrence.
   Stress-conditioned laws reduce unstressed vowels to schwa, syncopate
-  medial vowels between single consonants, delete unstressed final vowels,
+  alternate eligible medial vowels, delete unstressed final vowels,
   lengthen stressed open-syllable vowels, and voice fricatives after an
-  unstressed vowel (Verner's law). Cluster assimilation and gemination
+  unstressed vowel (Verner's law). Syncope counts outward from the input
+  stress on each side, deleting the first, third, and later odd eligible
+  nuclei. It still requires a single, non-geminate consonant immediately
+  on either side, and skips a nucleus whose loss would join more than
+  three consonant segments. Skipped nuclei do not advance the rhythm.
+  The three-consonant bound is local to the word, not a founding-language
+  limit: existing longer clusters elsewhere survive, and other processes
+  may create them. This conservative limit stands in for the syllabic
+  consonants and cluster repairs not yet modelled. The rule remains a
+  deterministic function of the input, with no new random stream or
+  law-id exception; assessment, grammatical edges, names, and ordinary
+  application share the same matches.
+  [Bowers and Hao (2020), §§1 and 3](https://repository.upenn.edu/bitstreams/ad88b760-c451-47e6-84d6-aac391f61ac9/download)
+  describe alternating syncope, including Old Irish and East Slavic
+  precedents, while warning that its long-term productivity is disputed.
+  This is not a claim that all historical syncope was rhythmic: Latin
+  and Romance also show loss confined to individual weak positions
+  ([Adams 2013, ch. V](https://doi.org/10.1017/CBO9780511843433.008)).
+  The `syncope` example follows the same founding varieties as the
+  plausibility probe: seeds 0–39 in each of base, Germanic, Semitic,
+  Finnic, and Polynesian, with default parameters for 4,000 years.
+  Before this change, 6 of 36,709 living words had a consonant run of
+  at least five (respectively 0, 0, 2, 3, and 1 by profile); afterward,
+  none of 36,749 did. The distribution of each founder's largest run
+  changed from `{1: 5, 2: 102, 3: 67, 4: 21, 5: 2, 6: 2, 7: 1}`
+  to `{1: 8, 2: 127, 3: 65}`. These are segment counts, with an
+  affricate or geminate represented as one segment, not IPA character
+  counts. The ignored `syncope_band` test passed in 408.1 seconds;
+  its band permits fewer than five such words across the 200 founders,
+  rather than demanding that every possible history have none.
+  The workbench sample separately had none among 3,245 living words
+  before and after; its 16 related living varieties are not independent
+  observations. Neither cohort is a world-frequency target.
+  Cluster assimilation and gemination
   before j create long consonants; degemination removes length. The
   Western Romance chain voices single intervocalic stops before shortening
   geminates, so the two inputs remain distinct. Loss of a preconsonantal
@@ -1455,6 +1488,7 @@ cargo run --release -p umran-sim --example gender -- [seeds-per-profile]
 cargo run --release -p umran-sim --example harmony -- [seeds] [generations]
 cargo run --release -p umran-sim --example pattern -- [seeds] [generations]
 cargo run --release -p umran-sim --example tone -- [seeds]
+cargo run --release -p umran-sim --example syncope -- [seeds]
 cargo run --release -p umran-web --example provenance
 ```
 
@@ -1482,7 +1516,8 @@ purism in speech rather than writing, spelling reform as a purist act,
 inflection beyond count noun plural and object marking, the genitive, and verb
 past, future, and progressive, agreement beyond the determiner, combined
 tense–aspect forms, modal readings and clitic stages, pronoun case forms,
-tone beyond the word (sandhi), vowel harmony beyond the word, prenasalized stops, syntax beyond fixed word
+tone beyond the word (sandhi), vowel harmony beyond the word, syllabic
+consonants and productive cluster repair, prenasalized stops, syntax beyond fixed word
 and possessor order, alignment beyond this object contrast, and doctrine
 beyond six tenets, with images, pilgrimage, and monasticism recorded but not
 yet acting on the world.

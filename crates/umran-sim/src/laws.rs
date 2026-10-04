@@ -7,6 +7,11 @@ use crate::prosody::{MinimalWord, StressRule};
 use std::borrow::Cow;
 use std::collections::HashSet;
 
+/// Without syllabic consonants or a cluster-repair stage, syncope must not
+/// create the six/seven-consonant runs produced by wholesale vowel deletion.
+/// This is a word-local modelling bound, not a universal phonotactic claim.
+const MAX_SYNCOPATED_CLUSTER: usize = 3;
+
 /// A named sound law: one or more rules applied in order, each regularly
 /// across every living word.
 #[derive(Clone, Debug, PartialEq)]
@@ -874,10 +879,12 @@ pub fn catalog() -> Vec<Law> {
         ),
         law(
             "unstressed-syncope",
-            "Unstressed medial vowels disappear between single consonants",
+            "Every other unstressed vowel between consonants drops out",
             0.45,
             vec![rule(
-                stressed(Matcher::MedialVowel, false),
+                Matcher::RhythmicVowel {
+                    max_cluster: MAX_SYNCOPATED_CLUSTER,
+                },
                 Rewrite::Delete,
                 at(length(Matcher::AnyConsonant, false)),
                 at(length(Matcher::AnyConsonant, false)),

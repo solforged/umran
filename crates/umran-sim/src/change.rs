@@ -33,6 +33,12 @@ pub enum Matcher {
     OpenSyllable(Box<Matcher>),
     /// A noninitial, nonfinal vowel nucleus.
     MedialVowel,
+    /// A rule target: alternate eligible unstressed medial nuclei, starting
+    /// nearest the input stress on each side. Eligibility includes both
+    /// environments and the consonant run that removing this nucleus joins.
+    RhythmicVowel {
+        max_cluster: usize,
+    },
 }
 
 /// What a matched segment becomes. A feature rewrite with no catalog
@@ -121,13 +127,13 @@ impl Matcher {
                 | Matcher::OpenSyllable(target),
                 _,
             ) => target.matches(id),
-            (Matcher::MedialVowel, _) => seg.is_vowel(),
+            (Matcher::MedialVowel | Matcher::RhythmicVowel { .. }, _) => seg.is_vowel(),
             _ => false,
         }
     }
     fn needs_syllables(&self) -> bool {
         match self {
-            Self::Stressed { .. } | Self::OpenSyllable(_) => true,
+            Self::Stressed { .. } | Self::OpenSyllable(_) | Self::RhythmicVowel { .. } => true,
             Self::Length { target, .. } => target.needs_syllables(),
             _ => false,
         }
@@ -162,6 +168,15 @@ impl Matcher {
                 form.is_vowel(i)
                     && (0..i).any(|j| form.is_vowel(j))
                     && (i + 1..form.segs.len()).any(|j| form.is_vowel(j))
+            }
+            Self::RhythmicVowel { max_cluster } => {
+                let Some(n) = syllables.iter().position(|s| s.nucleus == i) else {
+                    return false;
+                };
+                n > 0
+                    && n + 1 < syllables.len()
+                    && stress.is_some_and(|s| s != n)
+                    && syllables[n + 1].nucleus - syllables[n - 1].nucleus - 2 <= *max_cluster
             }
             _ => self.matches(form.segs[i].phone),
         }
@@ -276,20 +291,46 @@ impl SoundChange {
         } else {
             None
         };
-        (0..form.segs.len()).filter_map(move |i| {
-            let seg = form.segs[i];
-            if !self.target.at(form, i, &syllables, stress)
-                || !self.left.at(form, i.checked_sub(1), i, &syllables, stress)
-                || !self.right.at(
+        let rhythmic = matches!(self.target, Matcher::RhythmicVowel { .. });
+        let accent = stress.map(|s| syllables[s].nucleus);
+        let eligible = move |i| {
+            self.target.at(form, i, &syllables, stress)
+                && self.left.at(form, i.checked_sub(1), i, &syllables, stress)
+                && self.right.at(
                     form,
                     (i + 1 < form.segs.len()).then_some(i + 1),
                     i,
                     &syllables,
                     stress,
                 )
-            {
+        };
+        // The output still walks left-to-right. Counting the eligible
+        // pretonic nuclei first lets its rhythm run outward from the accent
+        // without allocating a second list or changing input-based matching.
+        let mut before = if rhythmic {
+            (0..accent.unwrap_or(0)).filter(|&i| eligible(i)).count()
+        } else {
+            0
+        };
+        let mut after = 0;
+        (0..form.segs.len()).filter_map(move |i| {
+            if !eligible(i) {
                 return None;
             }
+            if rhythmic {
+                let ordinal = if accent.is_some_and(|s| i < s) {
+                    let remaining = before;
+                    before -= 1;
+                    remaining
+                } else {
+                    after += 1;
+                    after
+                };
+                if ordinal % 2 == 0 {
+                    return None;
+                }
+            }
+            let seg = form.segs[i];
             let out = match self.result {
                 Rewrite::Length(long) => Some(Seg { long, ..seg }),
                 Rewrite::Tone(change) => change.segment(form, i),

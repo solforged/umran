@@ -105,8 +105,8 @@ fn unstressed_erosion_respects_stress_and_both_guards() {
                 MinimalWord::TwoSyllables,
                 StressRule::Initial
             )
-            .vowel_count(),
-        2
+            .ipa(),
+        "kaldusa"
     );
     assert_eq!(
         syncope.apply(&form("tat"), MinimalWord::Syllable, StressRule::Initial),
@@ -150,6 +150,124 @@ fn unstressed_erosion_respects_stress_and_both_guards() {
             .vowel_count(),
         1
     );
+}
+
+#[test]
+fn syncope_alternates_eligible_vowels_outward_from_input_stress() {
+    let syncope = law("unstressed-syncope");
+    for (input, stress, expected) in [
+        ("katapamitala", StressRule::Initial, "katpamtala"),
+        ("katapamitala", StressRule::Final, "katapmitla"),
+        ("katapamitala", StressRule::Penult, "katpamtala"),
+        // A geminate makes the nearby vowel ineligible; the next eligible
+        // vowel is still first in the rhythm, not second in the syllables.
+        ("katːapamitala", StressRule::Initial, "katːapmitla"),
+        ("kaapamitala", StressRule::Initial, "kaapmitla"),
+    ] {
+        assert_eq!(
+            syncope
+                .apply(&form(input), MinimalWord::Syllable, stress)
+                .ipa(),
+            expected,
+            "{input}, {stress:?}"
+        );
+    }
+    let mut input = form("katapamitalana");
+    input.stress = Some(3);
+    let after = syncope.apply(&input, MinimalWord::Syllable, StressRule::Free);
+    assert_eq!(after.ipa(), "katapmitlana");
+    assert_eq!(after.stress, Some(2));
+    assert_eq!(
+        after,
+        syncope.apply(&input, MinimalWord::Syllable, StressRule::Free)
+    );
+}
+
+#[test]
+fn syncope_limits_the_whole_joined_cluster_not_just_its_neighbors() {
+    let syncope = law("unstressed-syncope");
+    for (input, expected) in [
+        ("kastapra", "kastapra"),
+        ("kastara", "kastra"),
+        ("katastra", "katastra"),
+        ("kastrapamitala", "kastrapmitla"),
+        // Preserve an existing long cluster elsewhere rather than using a
+        // whole-word rejection to suppress an otherwise regular deletion.
+        ("strkatapamitala", "strkatpamtala"),
+        ("toːməritəːmərətəːrəːnəːw", "toːmritmərtəːrnəːw"),
+        ("yltyːltyːltyːpyː", "yltyːltyːltpyː"),
+    ] {
+        let after = syncope.apply(&form(input), MinimalWord::Syllable, StressRule::Initial);
+        assert_eq!(after.ipa(), expected, "{input}");
+    }
+}
+
+#[test]
+fn rhythmic_matching_is_not_tied_to_the_catalog_law_id() {
+    let mut syncope = law("unstressed-syncope");
+    syncope.id = "renamed-syncope";
+    syncope.rules[0].id = "renamed-rule".into();
+    let input = form("katapamitala");
+    assert_eq!(
+        syncope.apply(&input, MinimalWord::Syllable, StressRule::Initial),
+        form("katpamtala")
+    );
+    let assessment = syncope
+        .assess(
+            [&input].into_iter(),
+            &SoundProfile::base().inventory,
+            MinimalWord::Syllable,
+            StressRule::Initial,
+        )
+        .unwrap();
+    assert_eq!(assessment.words, 1);
+    assert_eq!(assessment.shifts.len(), 2);
+    assert!(
+        assessment
+            .shifts
+            .iter()
+            .all(|(_, result, _)| result.is_none())
+    );
+    let serialized = serde_json::to_string(&syncope.rules[0]).unwrap();
+    let restored: SoundChange = serde_json::from_str(&serialized).unwrap();
+    assert_eq!(
+        restored.apply_with_edge(&input, StressRule::Initial, 8),
+        (form("katpamtala"), 6)
+    );
+}
+
+#[test]
+fn syncope_preserves_alternating_nuclei_and_bounded_clusters_across_shapes() {
+    let syncope = law("unstressed-syncope");
+    // Every combination of hiatus and one- to four-consonant medial runs,
+    // with the accent on each of the five syllables.
+    for shape in 0..625 {
+        let mut code = shape;
+        let mut ipa = String::from("ka");
+        for _ in 0..4 {
+            ipa.push_str(&"t".repeat(code % 5));
+            ipa.push('a');
+            code /= 5;
+        }
+        let mut input = form(&ipa);
+        for stress in 0..5 {
+            input.stress = Some(stress);
+            let nuclei: Vec<_> = input.syllables().iter().map(|s| s.nucleus).collect();
+            let deleted: Vec<_> = syncope.rules[0]
+                .hits(&input, StressRule::Free)
+                .map(|(i, result)| {
+                    assert!(result.is_none());
+                    nuclei.iter().position(|&n| n == i).unwrap()
+                })
+                .collect();
+            assert!(deleted.windows(2).all(|pair| pair[1] - pair[0] > 1));
+            for n in deleted {
+                assert_ne!(n, stress);
+                assert!((1..4).contains(&n));
+                assert!(nuclei[n + 1] - nuclei[n - 1] - 2 <= 3);
+            }
+        }
+    }
 }
 
 #[test]

@@ -72,6 +72,21 @@ fn contextual(
                     .iter()
                     .any(|s| CATALOG.get(s.phone).is_vowel())
         }
+        Matcher::RhythmicVowel { max_cluster } => {
+            let left = form.segs[..i]
+                .iter()
+                .rev()
+                .take_while(|s| !CATALOG.get(s.phone).is_vowel())
+                .count();
+            let right = form.segs[i + 1..]
+                .iter()
+                .take_while(|s| !CATALOG.get(s.phone).is_vowel())
+                .count();
+            contextual(&Matcher::MedialVowel, form, i, syllables, stress)
+                && stress.is_some()
+                && syllables.iter().position(|s| s.nucleus == i) != stress
+                && left + right <= *max_cluster
+        }
         Matcher::Phone(phone) => seg.phone == *phone,
         Matcher::AnyConsonant => !CATALOG.get(seg.phone).is_vowel(),
         Matcher::AnyVowel => CATALOG.get(seg.phone).is_vowel(),
@@ -106,7 +121,7 @@ fn contextual(
 
 fn needs_syllables(matcher: &Matcher) -> bool {
     match matcher {
-        Matcher::Stressed { .. } | Matcher::OpenSyllable(_) => true,
+        Matcher::Stressed { .. } | Matcher::OpenSyllable(_) | Matcher::RhythmicVowel { .. } => true,
         Matcher::Length { target, .. } => needs_syllables(target),
         _ => false,
     }
@@ -196,16 +211,38 @@ fn reference_rule(rule: &SoundChange, before: &Form, stress_rule: StressRule) ->
     let stress = needs
         .then(|| before.stressed_syllable(stress_rule))
         .flatten();
+    let eligible = |i: usize| {
+        contextual(&rule.target, before, i, &syllables, stress)
+            && environment(&rule.left, before, i, i.checked_sub(1), &syllables, stress)
+            && environment(
+                &rule.right,
+                before,
+                i,
+                (i + 1 < before.segs.len()).then_some(i + 1),
+                &syllables,
+                stress,
+            )
+    };
+    let rhythmic = matches!(rule.target, Matcher::RhythmicVowel { .. }).then(|| {
+        let candidates: Vec<_> = (0..before.segs.len()).filter(|&i| eligible(i)).collect();
+        let accent = stress.map_or(0, |s| syllables[s].nucleus);
+        let split = candidates.partition_point(|&i| i < accent);
+        candidates[..split]
+            .iter()
+            .rev()
+            .step_by(2)
+            .chain(candidates[split..].iter().step_by(2))
+            .copied()
+            .collect::<Vec<_>>()
+    });
     let mut outcomes: Vec<Option<Seg>> = before
         .segs
         .iter()
         .enumerate()
         .map(|(i, &seg)| {
-            let left = i.checked_sub(1);
-            let right = (i + 1 < before.segs.len()).then_some(i + 1);
-            if contextual(&rule.target, before, i, &syllables, stress)
-                && environment(&rule.left, before, i, left, &syllables, stress)
-                && environment(&rule.right, before, i, right, &syllables, stress)
+            if rhythmic
+                .as_ref()
+                .map_or_else(|| eligible(i), |selected| selected.contains(&i))
             {
                 replacement(&rule.result, seg)
             } else {

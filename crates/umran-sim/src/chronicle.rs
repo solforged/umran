@@ -38,7 +38,8 @@ use std::collections::BTreeMap;
 /// Sacred registers remain immutable under religious-revival purism.
 /// Revision 49 decouples gender basis from class count and founds clusivity.
 /// Revision 50 loses vowel harmony only when its contrast truly goes.
-pub const ENGINE_REVISION: u32 = 50;
+/// Revision 51 makes syncope rhythmic and bounds the clusters it leaves.
+pub const ENGINE_REVISION: u32 = 51;
 /// Revision 33 replaces flat geography and its region identities with a sphere.
 /// Earlier region-targeted actions cannot be replayed on the spherical mesh.
 pub const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;
