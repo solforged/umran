@@ -759,7 +759,13 @@ mod tests {
 
     #[test]
     fn overseas_pilgrims_need_seafaring_and_are_announced_once_per_landmass() {
-        let mut world = World::with_map(3, Params::static_society(), MapSize::Large);
+        // This mechanism fixture relies on V3 seed geography.
+        let mut world = World::with_geography(
+            3,
+            Params::static_society(),
+            MapSize::Large,
+            crate::GeographyVersion::ContinentalV3,
+        );
         let (home, remote) = world
             .map
             .regions

@@ -180,7 +180,13 @@ fn city_responses_link_to_its_recorded_threshold() {
 
 #[test]
 fn an_overseas_pilgrim_contact_causes_conversion() {
-    let mut world = World::with_map(3, Params::static_society(), MapSize::Large);
+    // This mechanism fixture relies on V3 seed geography.
+    let mut world = World::with_geography(
+        3,
+        Params::static_society(),
+        MapSize::Large,
+        crate::GeographyVersion::ContinentalV3,
+    );
     let (home, remote) = world
         .map
         .regions

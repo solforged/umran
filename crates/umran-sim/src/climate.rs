@@ -715,6 +715,7 @@ mod tests {
                 let region = &dry.map.regions[r];
                 region.terrain == Terrain::Plains
                     && dry.map.river_regions[r].is_none()
+                    && dry.map.lake_regions[r].is_none()
                     && region.neighbours.iter().any(|&n| {
                         dry.map.regions[n].terrain == Terrain::Plains
                             && dry.map.regions[n].climate_zone != region.climate_zone
@@ -743,13 +744,21 @@ mod tests {
             dry.climate.zones[zone].cause = ClimateCause::Drought;
             for _ in 0..40 {
                 let from = dry.communities[c].home();
-                let challenged = dry.climate_challenged(c);
+                let exposure = dry.climate.exposure.get(c).copied().flatten();
                 dry.step();
-                if dry.communities[c].home() != from && challenged {
+                if dry.communities[c].home() != from {
                     assert!(
-                        dry.climate_challenged(c),
-                        "moving must not erase climate exposure"
+                        dry.climate.exposure[c] >= exposure,
+                        "moving must not erase climate exposure, seed {seed}"
                     );
+                    // An old exposure may expire on this step, independently
+                    // of migration. Recent hardship must still be remembered.
+                    if exposure.is_some_and(|g| dry.generation.saturating_sub(g) <= 6) {
+                        assert!(
+                            dry.climate_challenged(c),
+                            "recent hardship must survive migration, seed {seed}"
+                        );
+                    }
                 }
             }
             quiet.run(40);

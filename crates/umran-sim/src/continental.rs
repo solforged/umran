@@ -10,6 +10,25 @@ use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 use std::f64::consts::PI;
 
+pub(crate) mod v5;
+
+/// Diagnostic-only sampling; never consumes a simulation stream.
+pub(crate) fn collision_field(seed: u64, cells: &[sphere::Cell], current: bool) -> Vec<f64> {
+    if current {
+        let model = v5::Model::new(seed, cells.len() < 1_000);
+        cells
+            .iter()
+            .map(|cell| model.stress(cell.position).0)
+            .collect()
+    } else {
+        let model = Tectonics::new(seed);
+        cells
+            .iter()
+            .map(|cell| model.stress(cell.position).0)
+            .collect()
+    }
+}
+
 struct Wave {
     direction: Point,
     frequency: f64,

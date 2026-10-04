@@ -33,7 +33,10 @@ use std::collections::BTreeMap;
 /// Revision 45 adds seasonal drought, hard winters, and floods.
 /// Revision 46 keeps familiar address beside polite address at court.
 /// Revision 47 mints no founding root for pronoun cells a language may lack.
-pub const ENGINE_REVISION: u32 = 47;
+/// Revision 48 draws new worlds with ContinentalV5's unequal crust and lakes.
+/// Sacred high forms borrow through Faith, not a duplicate classical channel.
+/// Sacred registers remain immutable under religious-revival purism.
+pub const ENGINE_REVISION: u32 = 48;
 /// Revision 33 replaces flat geography and its region identities with a sphere.
 /// Earlier region-targeted actions cannot be replayed on the spherical mesh.
 pub const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;
@@ -1747,6 +1750,7 @@ mod tests {
             GeographyVersion::ContinentalV2,
             GeographyVersion::ContinentalV3,
             GeographyVersion::ContinentalV4,
+            GeographyVersion::ContinentalV5,
         ] {
             let mut source = if geography == GeographyVersion::CURRENT {
                 Chronicle::new(7, MapSize::Small)

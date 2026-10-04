@@ -176,7 +176,7 @@ mod tests {
     #[test]
     fn v4_adds_lakes_without_redrawing_v3_land() {
         use crate::geography::GeographyVersion;
-        assert_eq!(GeographyVersion::default(), GeographyVersion::ContinentalV4);
+        assert_eq!(GeographyVersion::default(), GeographyVersion::ContinentalV5);
         for size in [
             MapSize::Small,
             MapSize::Medium,
@@ -186,7 +186,7 @@ mod tests {
             let mut count = 0;
             for seed in [0, 7, 21] {
                 let old = Map::generate_with_version(seed, size, GeographyVersion::ContinentalV3);
-                let new = Map::generate(seed, size);
+                let new = Map::generate_with_version(seed, size, GeographyVersion::ContinentalV4);
                 assert_eq!(new.geography, GeographyVersion::ContinentalV4);
                 assert_eq!(new.regions, old.regions);
                 assert_eq!(new.landmasses, old.landmasses);
@@ -197,6 +197,34 @@ mod tests {
             }
             assert!(count > 0, "{size:?} should have lakes");
         }
+    }
+
+    #[test]
+    fn lake_capability_keeps_legacy_versions_dry() {
+        use crate::geography::GeographyVersion;
+        let (regions, _, _, _) = depression(200_000.0);
+        for version in [
+            GeographyVersion::SphericalV1,
+            GeographyVersion::ContinentalV2,
+            GeographyVersion::ContinentalV3,
+        ] {
+            assert!(!version.has_lakes());
+            assert!(
+                crate::rivers::generate(7, &regions, version)
+                    .lakes
+                    .is_empty()
+            );
+        }
+        assert!(GeographyVersion::ContinentalV4.has_lakes());
+        assert!(GeographyVersion::ContinentalV5.has_lakes());
+        let v4 = crate::rivers::generate(7, &regions, GeographyVersion::ContinentalV4);
+        let v5 = crate::rivers::generate(7, &regions, GeographyVersion::ContinentalV5);
+        assert!(!v4.lakes.is_empty());
+        assert_eq!(v4.lakes, v5.lakes);
+        assert_eq!(v4.lake_regions, v5.lake_regions);
+        assert_eq!(v4.drainage, v5.drainage);
+        assert_eq!(v4.drainage_order, v5.drainage_order);
+        assert_eq!(v4.runoff, v5.runoff);
     }
 
     fn depression(runoff_per_land: f32) -> (Vec<Region>, Vec<Option<usize>>, Vec<usize>, Vec<f32>) {
@@ -298,6 +326,7 @@ mod tests {
         ] {
             for seed in 0..4 {
                 let mut map = Map::generate(seed, size);
+                assert_eq!(map.geography, crate::GeographyVersion::ContinentalV5);
                 for river in &map.rivers {
                     for &p in &river.channel {
                         assert!((sphere::dot(p, p) - 1.0).abs() < 1e-12);

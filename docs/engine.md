@@ -27,15 +27,19 @@ This bookkeeping makes no random draws and does not itself change replay.
   chart seam and around both poles. Canonical unit-vector centres and
   boundaries determine spherical area, drainage, landmass anchors, and
   great-circle travel. Terrain is sea, plains, forest, steppe, hills,
-  mountains, or desert. Seeded continental bodies, multiscale coastal
-  variation, curved mountain belts, and island highs form the surface.
+  mountains, or desert. `ContinentalV5` seeds three to six unequal continental
+  cratons, usually four or five, with elongated bodies, broad gulfs and
+  peninsulas, and finer steep-spectrum detail. Convergent plate domains raise
+  coastal and interior belts.
   Latitude and elevation affect warmth; moisture varies with latitude,
   relief, and proximity to sea, with rain shadows downwind of high ground
   under easterlies below 30° and westerlies above. These are static
-  fields, not plate tectonics.
+  tectonic and climate analogues, not moving plates.
   Each connected land body has one `landmass`; sea has none. Bodies of at
-  least 500,000 km² are continents, rather than meeting a cell-count quota.
-  Founders prefer continents to islands.
+  least 500,000 km² are continents. V5 small worlds use 125,000 km² because
+  their sphere has one quarter the area of medium worlds. Founders prefer
+  continents to islands. Earlier geography versions retain their original
+  surfaces, wind fields, and 500,000 km² classification at every size.
   Shared-border great-circle midpoints give centre-to-centre routes.
   Terrain multiplies their physical length to give effort-km, equivalent
   plain kilometres: a 100 km mountain crossing costs 400 effort-km.
@@ -676,6 +680,8 @@ This bookkeeping makes no random draws and does not itself change replay.
   native words. When a state falls the pull stops, and its dialects
   drift apart again.
 - A written high form can also be reformed by purists (`purism.rs`).
+  Sacred registers are exempt: a revival can restore scripture, but it
+  cannot replace words in its frozen language.
   Two recorded challenges start a movement: a neighbouring state of
   another family and greater prestige (Mechanism `foreign-prestige`), or
   a reform schism in a faith with scripture (`religious-revival`). The
@@ -1118,9 +1124,66 @@ Physical radius and regional resolution are separate:
 | vast | 10,242 | 6,371 km | 40,030 km |
 
 Wide and vast use coarser regions, rather than letting planet size demand
-unbounded mesh and route storage. Land fraction, connected bodies, and
-islands emerge from the seeded surface; the old rectangular continent
-budgets no longer apply.
+unbounded mesh and route storage. `ContinentalV5` draws three to six cratons,
+usually four or five. Small worlds use three or four so that their coarse
+mesh resolves each body's gulfs. Continental area shares descend sharply:
+the largest two usually hold about half and one quarter of the land.
+Lambert equal-area coordinates and determinant-one elliptic deformation
+keep body size independent of latitude. The largest two bodies have aspect
+factors of 2.6–3.0 and 2.0–2.8; broad second- and third-harmonic outlines
+form gulfs and peninsulas. Their squared mean normalizes continuous area.
+Finer shore detail falls faster than frequency to the power -1.2.
+The second craton lies near the first, while the rest occupy remaining
+ocean; occasional intervening sea cells form continental straits.
+
+Crust grows continuously from each body's thickest cell, with a priority
+frontier and cumulative spherical-area budgets targeting 28.5–31.5% land
+before coast refinement. Flooded province boundaries preserve straits
+without joining differently sized continents. This replaces the old
+branching assembly, rather than retrying unfavorable generated maps.
+Divergence erodes margins; convergent continental domains raise interior
+sutures, and oceanic neighbours supply
+coastal belts. A separate 6.5% emergent-crust budget grows islands along
+oceanic convergence and on shelves one sea cell off the mainland. A seeded,
+low-frequency shelf field places groups, and flooded straits keep them
+separate. Their characteristic area stays below the physical continent
+cutoff; larger worlds consequently have more islands. No uniform
+microfragment field is added. The measured island band is 3–8% of land,
+with at least two islands at small, six at medium and large, and 15 at vast.
+`sphere::refine_coasts` still supplies shared coastal detail without changing
+region adjacency. V5 retains V3's moisture
+law and geographic wind, and runs the same lake basins, river channels,
+lake naming, and downstream climate buffering as V4 through the shared
+`GeographyVersion::has_lakes` capability. The new crust generator uses only
+`continental-v5` purpose streams; V4 remains the V3 surface with lakes.
+
+`cargo run --release -p umran-sim --example continents -- 40 all` prints V3
+and V5 side by side for every map size. It reports physical land share,
+continent counts, five largest shares, island area and count, compactness,
+mountain cell share, and continent pairs separated by one sea cell.
+Compactness is `4πA/P²` with both area and coastal perimeter measured on the
+pre-refinement cell polygons, not the decorative coast. Its bands are
+0.07–0.38 per continent, 0.12–0.30 for each world's median, and at most
+0.25 for the largest continent. The island-support diagnostic checks one
+intervening sea cell to a continent or one cell to a convergent band;
+mountain diagnostics compare mean stress with other land and count coastal
+mountains. Surface-only band tests sample 12 medium, four vast, and four
+each small and large worlds without building travel caches, including
+continent-count variation and continental straits.
+`continents -- dynamics 12 160` compares default-parameter medium worlds
+with six independent founders, following `calibrate geography`'s profile
+and standing choices. Counts are final living peoples and contacts by kind,
+cumulative states founded and language shifts, and `Met` events by kind.
+Conquests have their own events, so `Met` is not a cumulative rule counter.
+The report does not force founders together or author any contact.
+The authored showcase remains seed 21, medium, now on V5: its river plain is
+region 22, the middle people begin in 1212, and the sea people in coastal
+plain 312. The lake-free plains path `22 → 1212 → 312` connects the three.
+Its native provenance test checks the first realm and writing, the land
+conquest at generation 100, and the subsequent faith and preserved sacred
+language through generation 160.
+`continents -- sites 21` lists lake-free river/coast plains connected by
+at most four land borders when a new geography needs a new showcase.
 
 The facade exposes `radiusKm`, geographic `center` and `boundary`
 coordinates, `Region.areaKm2`, and authoritative `River.lengthKm`.
@@ -1157,17 +1220,18 @@ stored once. Tributary and main-river catchments may overlap because water
 from the tributary supplies both. Short tributaries remain short, and great
 courses can continue for many regions where a landmass permits.
 
-`continental-v4` is the geography for new worlds. It keeps V3's geographic
-wind and adds `lakes.rs`: connected depressions below a common spill surface.
+`continental-v4` introduced lakes on V3's unchanged land and geographic
+wind. V5 uses its new crust with the same `lakes.rs` pipeline: connected
+depressions below a common spill surface.
 Their baseline catchment supply is compared with warmth-dependent evaporation.
 A wet basin overflows its lowest saddle. An endorheic basin has no outlet;
 its rivers end at its lowest land. Its lower water surface covers only part
 of the depression. Lakes occupy parts of land regions, preserving every
 region id, terrain, and landmass. Their extent and outlets do not vary with
-later climate. Older geography versions retain their original drainage
-order, runoff, rivers, and climate, with no lakes or channels.
+later climate. V1–V3 retain their original drainage order, runoff, rivers,
+and climate, with no lakes or channels.
 
-V4 river channels follow unit-vector arcs from each region centre through
+V4 and V5 river channels follow unit-vector arcs from each region centre through
 the shared border to the next centre. Tributaries end at their confluence,
 open rivers at the coast, and closed rivers in a lake. They do not depend
 on a chart projection. This is a regional channel model, not river meanders.
@@ -1233,15 +1297,16 @@ rules to lake names. The first settled shore speakers coin a water-name;
 nearby speakers remember their own forms. Lakes have separate identities
 from rivers even when a river carries their overflow. Dedicated lake-name,
 succession, exonym, and memory-shift streams leave earlier draws untouched.
-The facade exposes static lakes, river topology, V4 channels, and zone ids in `map()`,
+The facade exposes static lakes, river topology, V4/V5 channels, and zone ids in `map()`,
 historical conditions and literal feeding capacities in `climate(generation)`,
 and name histories with local alternatives in `river(generation, id)` and
 `lake(generation, id)`.
 
 The workbench reads those views within the active telling and year. Rivers
 are inked above terrain, with three catchment-width tiers and dashed failed
-flows. Tributaries meet their parent course; main rivers meet the shared
-coast of their sea mouth. The read-only `joinAt` field names the exact
+flows. Tributaries meet their parent course; open main rivers meet the shared
+coast of their sea mouth, while closed rivers stop within their terminal
+lake cell. The read-only `joinAt` field names the exact
 confluence region; a tributary can border several reaches of its parent.
 Close zoom adds attested names in the selected
 people's speech, falling back to the mouth's speakers. River cards retain

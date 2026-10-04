@@ -4888,7 +4888,13 @@ mod tests {
     use super::*;
 
     fn water_pair() -> (World, usize, usize) {
-        let mut world = World::new(7, Params::static_society());
+        // This mechanism fixture relies on V3 seed geography.
+        let mut world = World::with_geography(
+            7,
+            Params::static_society(),
+            MapSize::Medium,
+            GeographyVersion::ContinentalV3,
+        );
         let coast: Vec<_> = (0..world.map.regions.len())
             .filter(|&r| world.map.coastal(r))
             .collect();
@@ -5907,7 +5913,13 @@ mod tests {
     }
 
     fn conquest(seed: u64, params: Params) -> (World, usize, usize) {
-        let mut world = World::new(seed, params);
+        // This mechanism fixture relies on V3 seed geography.
+        let mut world = World::with_geography(
+            seed,
+            params,
+            MapSize::Medium,
+            GeographyVersion::ContinentalV3,
+        );
         let rulers = world.found(&SoundProfile::by_id("iranian").unwrap(), 0.9, 0.3);
         let subjects = world.found(&SoundProfile::by_id("polynesian").unwrap(), 0.2, 0.6);
         let home = world.communities[rulers].home();

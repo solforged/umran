@@ -53,13 +53,30 @@ pub enum GeographyVersion {
     /// ContinentalV2 with zonal wind taken from geographic east.
     ContinentalV3,
     /// ContinentalV3 with lakes and river channels.
-    #[default]
     ContinentalV4,
+    /// Unequal area-balanced cratons with steep-spectrum coasts and lakes.
+    #[default]
+    ContinentalV5,
 }
 
 impl GeographyVersion {
     /// The geography new worlds are drawn with.
-    pub const CURRENT: Self = Self::ContinentalV4;
+    pub const CURRENT: Self = Self::ContinentalV5;
+
+    /// Lake basins, channels, and their downstream climate and naming effects.
+    pub const fn has_lakes(self) -> bool {
+        matches!(self, Self::ContinentalV4 | Self::ContinentalV5)
+    }
+}
+
+fn continent_cutoff(size: MapSize, geography: GeographyVersion) -> f64 {
+    if geography == GeographyVersion::ContinentalV5 && size == MapSize::Small {
+        // Match medium's physical-area classification on a sphere with one
+        // quarter its area. Legacy small-world classifications never change.
+        CONTINENT_AREA_KM2 * 0.25
+    } else {
+        CONTINENT_AREA_KM2
+    }
 }
 
 /// Physical world size and bounded spherical region resolution.
@@ -388,6 +405,7 @@ impl Map {
                     continental::Wind::GeographicEast,
                 )
             }
+            GeographyVersion::ContinentalV5 => continental::v5::surface(seed, &mut mesh, radius_km),
         };
         let landmass = landmasses(&terrain, &mesh.cells);
         let edges = travel_edges(&mesh.cells, &terrain, &mesh.borders, radius_km);
@@ -414,7 +432,7 @@ impl Map {
                 }
             })
             .collect();
-        let landmasses = describe_landmasses(&regions);
+        let landmasses = describe_landmasses(&regions, continent_cutoff(size, geography));
         let climate_zones = rivers::climate_zones(seed, &mut regions, &landmasses);
         let rivers::Hydrology {
             drainage,
@@ -426,7 +444,7 @@ impl Map {
             lake_regions,
             flows,
         } = rivers::generate(seed, &regions, geography);
-        if geography == GeographyVersion::ContinentalV4 {
+        if geography.has_lakes() {
             crate::lakes::channels(&regions, &drainage, &mut rivers);
         }
         let mut map = Map {
@@ -1081,7 +1099,7 @@ fn landmasses(terrain: &[Terrain], cells: &[sphere::Cell]) -> Vec<Option<usize>>
 }
 
 /// Each body of land's kind, regions, and anchor, by its number.
-fn describe_landmasses(regions: &[Region]) -> Vec<Landmass> {
+fn describe_landmasses(regions: &[Region], cutoff: f64) -> Vec<Landmass> {
     let count = regions
         .iter()
         .filter_map(|r| r.landmass)
@@ -1114,7 +1132,7 @@ fn describe_landmasses(regions: &[Region]) -> Vec<Landmass> {
                 .iter()
                 .map(|&r| f64::from(regions[r].area_km2))
                 .sum();
-            let kind = if area >= CONTINENT_AREA_KM2 {
+            let kind = if area >= cutoff {
                 LandmassKind::Continent
             } else {
                 LandmassKind::Island
@@ -1161,6 +1179,200 @@ fn travel_edges(
     RouteRows { offsets, entries }
 }
 
+/// Physical-area diagnostics of one surface, without building travel caches.
+#[derive(Debug)]
+pub struct ContinentDiagnostics {
+    pub land_share: f64,
+    /// Descending physical area; paired with pre-refinement compactness.
+    pub continents: Vec<(f64, f64)>,
+    pub top_shares: [f64; 5],
+    pub island_share: f64,
+    pub island_count: usize,
+    /// Pairs of continents separated by one sea cell.
+    pub continental_straits: usize,
+    /// Island area within one sea cell of a continent or a convergent margin.
+    /// One when there are no islands.
+    pub supported_island_share: f64,
+    /// Mountain cells as a share of land cells.
+    pub mountain_share: f64,
+    pub mountain_collision: f64,
+    pub lowland_collision: f64,
+    pub coastal_mountain_share: f64,
+}
+
+/// Uses the same surface and classification as `Map`, including coast
+/// refinement, but measures compactness on the original cell polygons.
+pub fn continent_diagnostics(
+    seed: u64,
+    size: MapSize,
+    geography: GeographyVersion,
+) -> ContinentDiagnostics {
+    let mut mesh = sphere::mesh(size.subdivisions());
+    let radius = f64::from(size.radius_km());
+    let original_areas: Vec<_> = mesh
+        .cells
+        .iter()
+        .map(|cell| sphere::area(cell.position, &cell.boundary) * radius * radius)
+        .collect();
+    let border_lengths: Vec<_> = mesh
+        .borders
+        .iter()
+        .map(|border| {
+            let a = &mesh.cells[border.a].boundary;
+            let b = &mesh.cells[border.b].boundary;
+            let mut shared = a.iter().copied().filter(|p| b.contains(p));
+            sphere::angle(shared.next().unwrap(), shared.next().unwrap()) * radius
+        })
+        .collect();
+    let collision = if geography == GeographyVersion::SphericalV1 {
+        vec![0.0; mesh.cells.len()]
+    } else {
+        continental::collision_field(
+            seed,
+            &mesh.cells,
+            geography == GeographyVersion::ContinentalV5,
+        )
+    };
+    let (terrain, _, _) = match geography {
+        GeographyVersion::SphericalV1 => surface(seed, &mesh.cells, size.radius_km()),
+        GeographyVersion::ContinentalV2 => continental::surface(
+            seed,
+            &mut mesh,
+            size.radius_km(),
+            continental::Wind::MeshTangent,
+        ),
+        GeographyVersion::ContinentalV3 | GeographyVersion::ContinentalV4 => continental::surface(
+            seed,
+            &mut mesh,
+            size.radius_km(),
+            continental::Wind::GeographicEast,
+        ),
+        GeographyVersion::ContinentalV5 => {
+            continental::v5::surface(seed, &mut mesh, size.radius_km())
+        }
+    };
+    let members = landmasses(&terrain, &mesh.cells);
+    let count = members.iter().flatten().max().map_or(0, |id| id + 1);
+    let mut areas = vec![0.0; count];
+    let mut original = vec![0.0; count];
+    let mut perimeters = vec![0.0; count];
+    let mut region_areas = Vec::with_capacity(mesh.cells.len());
+    for (r, cell) in mesh.cells.iter().enumerate() {
+        // Match Region's stored physical area and its classification precision.
+        let area =
+            f64::from((sphere::area(cell.position, &cell.boundary) * radius * radius) as f32);
+        region_areas.push(area);
+        if let Some(id) = members[r] {
+            areas[id] += area;
+            original[id] += original_areas[r];
+        }
+    }
+    for (border, &length) in mesh.borders.iter().zip(&border_lengths) {
+        if terrain[border.a].is_land() != terrain[border.b].is_land() {
+            let id = members[border.a].or(members[border.b]).unwrap();
+            perimeters[id] += length;
+        }
+    }
+    let land_area: f64 = areas.iter().sum();
+    let cutoff = continent_cutoff(size, geography);
+    let mut continents: Vec<_> = areas
+        .iter()
+        .enumerate()
+        .filter(|&(_, &area)| area >= cutoff)
+        .map(|(id, &area)| {
+            (
+                area,
+                4.0 * PI * original[id] / (perimeters[id] * perimeters[id]),
+            )
+        })
+        .collect();
+    continents.sort_by(|a, b| b.0.total_cmp(&a.0));
+    let top_shares = std::array::from_fn(|i| continents.get(i).map_or(0.0, |c| c.0 / land_area));
+    let (island_count, island_area) = areas
+        .iter()
+        .filter(|&&area| area < cutoff)
+        .fold((0, 0.0), |(count, sum), &area| (count + 1, sum + area));
+    let mut straits = Vec::new();
+    for (r, cell) in mesh.cells.iter().enumerate() {
+        if terrain[r].is_land() {
+            continue;
+        }
+        for (i, &a) in cell.neighbours.iter().enumerate() {
+            let Some(a) = members[a].filter(|&id| areas[id] >= cutoff) else {
+                continue;
+            };
+            for &b in cell.neighbours.iter().skip(i + 1) {
+                let Some(b) = members[b].filter(|&id| areas[id] >= cutoff && id != a) else {
+                    continue;
+                };
+                let pair = (a.min(b), a.max(b));
+                if !straits.contains(&pair) {
+                    straits.push(pair);
+                }
+            }
+        }
+    }
+    let supported: f64 =
+        mesh.cells
+            .iter()
+            .enumerate()
+            .filter(|&(r, cell)| {
+                let island = members[r].is_some_and(|id| areas[id] < cutoff);
+                island
+                    && (collision[r] >= 0.10
+                        || cell.neighbours.iter().any(|&n| {
+                            collision[n] >= 0.10
+                                || members[n].is_some_and(|id| areas[id] >= cutoff)
+                                || mesh.cells[n].neighbours.iter().any(|&next| {
+                                    members[next].is_some_and(|id| areas[id] >= cutoff)
+                                })
+                        }))
+            })
+            .map(|(r, _)| region_areas[r])
+            .sum();
+    let mut mountain_count = 0;
+    let mut land_count = 0;
+    let mut mountain_collision = 0.0;
+    let mut lowland_collision = 0.0;
+    let mut coastal_mountains = 0;
+    for (r, t) in terrain.iter().enumerate() {
+        if !t.is_land() {
+            continue;
+        }
+        land_count += 1;
+        if *t == Terrain::Mountains {
+            mountain_count += 1;
+            mountain_collision += collision[r];
+            if mesh.cells[r]
+                .neighbours
+                .iter()
+                .any(|&n| !terrain[n].is_land())
+            {
+                coastal_mountains += 1;
+            }
+        } else {
+            lowland_collision += collision[r];
+        }
+    }
+    ContinentDiagnostics {
+        land_share: land_area / (4.0 * PI * radius * radius),
+        continents,
+        top_shares,
+        island_share: island_area / land_area,
+        island_count,
+        continental_straits: straits.len(),
+        supported_island_share: if island_area == 0.0 {
+            1.0
+        } else {
+            supported / island_area
+        },
+        mountain_share: mountain_count as f64 / land_count as f64,
+        mountain_collision: mountain_collision / mountain_count.max(1) as f64,
+        lowland_collision: lowland_collision / (land_count - mountain_count).max(1) as f64,
+        coastal_mountain_share: coastal_mountains as f64 / mountain_count.max(1) as f64,
+    }
+}
+
 /// `of` ordered by `value`, lowest first, ties by index.
 fn ranked(of: &[usize], value: &[f64]) -> Vec<usize> {
     let mut out = of.to_vec();
@@ -1175,6 +1387,118 @@ fn share(len: usize, fraction: f64) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn continental_v5_physical_area_shape_and_plate_stress_bands() {
+        let mut coastal = 0.0;
+        let mut worlds = 0;
+        let mut count_seen = [false; 7];
+        let mut complexes = 0;
+        // Surface-only diagnostics avoid expensive route caches. Sample both
+        // resolutions and the small-world classification explicitly.
+        for (size, seeds) in [
+            (MapSize::Small, 4),
+            (MapSize::Medium, 12),
+            (MapSize::Large, 4),
+            (MapSize::Vast, 4),
+        ] {
+            for seed in 0..seeds {
+                let d = continent_diagnostics(seed, size, GeographyVersion::ContinentalV5);
+                if size == MapSize::Medium {
+                    count_seen[d.continents.len()] = true;
+                    complexes += usize::from(d.continental_straits > 0);
+                }
+                assert!(
+                    (0.26..=0.34).contains(&d.land_share),
+                    "{size:?}/{seed}: {d:?}"
+                );
+                let counts = if size == MapSize::Small { 2..=5 } else { 3..=6 };
+                assert!(
+                    counts.contains(&d.continents.len()),
+                    "{size:?}/{seed}: {d:?}"
+                );
+                assert!(
+                    (0.35..=0.60).contains(&d.top_shares[0]),
+                    "{size:?}/{seed}: {d:?}"
+                );
+                assert!(
+                    (0.15..=0.35).contains(&d.top_shares[1]),
+                    "{size:?}/{seed}: {d:?}"
+                );
+                assert!(
+                    d.top_shares[..3].windows(2).all(|p| p[0] - p[1] >= 0.10),
+                    "{size:?}/{seed}: {d:?}"
+                );
+                assert!(
+                    (0.03..=0.08).contains(&d.island_share) && d.supported_island_share >= 0.5,
+                    "{size:?}/{seed}: {d:?}"
+                );
+                let minimum = match size {
+                    MapSize::Small => 2,
+                    MapSize::Medium | MapSize::Large => 6,
+                    MapSize::Vast => 15,
+                };
+                assert!(d.island_count >= minimum, "{size:?}/{seed}: {d:?}");
+                let mut compact: Vec<_> = d.continents.iter().map(|c| c.1).collect();
+                compact.sort_by(f64::total_cmp);
+                assert!(
+                    compact.iter().all(|&c| (0.07..=0.38).contains(&c))
+                        && (0.12..=0.30).contains(
+                            &((compact[(compact.len() - 1) / 2] + compact[compact.len() / 2])
+                                * 0.5)
+                        )
+                        && d.continents[0].1 <= 0.25,
+                    "{size:?}/{seed}: {d:?}"
+                );
+                assert!(
+                    (0.09..=0.101).contains(&d.mountain_share),
+                    "{size:?}/{seed}: {d:?}"
+                );
+                assert!(
+                    d.mountain_collision > 2.0 * d.lowland_collision,
+                    "{size:?}/{seed}: {d:?}"
+                );
+                coastal += d.coastal_mountain_share;
+                worlds += 1;
+            }
+        }
+        assert!(count_seen.into_iter().filter(|&seen| seen).count() >= 2);
+        assert!(
+            complexes > 0,
+            "some bodies nearly meet across continental straits"
+        );
+        assert!(
+            (0.03..0.75).contains(&(coastal / f64::from(worlds))),
+            "belts cross both coasts and interiors"
+        );
+    }
+
+    #[test]
+    fn legacy_continental_v3_keeps_v2_coasts_and_relief() {
+        for seed in 0..4 {
+            let mut v2 = sphere::mesh(3);
+            let mut v3 = sphere::mesh(3);
+            let a = continental::surface(seed, &mut v2, 800.0, continental::Wind::MeshTangent);
+            let b = continental::surface(seed, &mut v3, 800.0, continental::Wind::GeographicEast);
+            assert_eq!(a.1, b.1);
+            for r in 0..v2.cells.len() {
+                assert_eq!(a.0[r].is_land(), b.0[r].is_land());
+                assert_eq!(v2.cells[r].boundary, v3.cells[r].boundary);
+            }
+        }
+        assert_eq!(
+            continent_cutoff(MapSize::Small, GeographyVersion::ContinentalV3),
+            500_000.0
+        );
+        assert_eq!(
+            continent_cutoff(MapSize::Small, GeographyVersion::ContinentalV4),
+            500_000.0
+        );
+        assert_eq!(
+            continent_cutoff(MapSize::Small, GeographyVersion::ContinentalV5),
+            125_000.0
+        );
+    }
 
     #[test]
     fn drainage_spills_hollows_through_the_lowest_saddle() {
@@ -1564,7 +1888,7 @@ mod tests {
                     .sum();
                 assert_eq!(
                     mass.kind == LandmassKind::Continent,
-                    area >= CONTINENT_AREA_KM2
+                    area >= continent_cutoff(size, map.geography)
                 );
             }
             for (id, region) in map.regions.iter().enumerate() {
@@ -1623,7 +1947,10 @@ mod tests {
                 region.site = [f32::NAN; 2];
             }
             assert_eq!(map.walking_row(source, f32::INFINITY).as_ref(), routes);
-            assert_eq!(describe_landmasses(&map.regions), map.landmasses);
+            assert_eq!(
+                describe_landmasses(&map.regions, continent_cutoff(size, map.geography)),
+                map.landmasses
+            );
             let hydrology = rivers::generate(7, &map.regions, map.geography);
             assert_eq!(hydrology.drainage, map.drainage);
             assert_eq!(hydrology.drainage_order, map.drainage_order);
@@ -1754,20 +2081,26 @@ mod tests {
             region.area_km2 =
                 (sphere::area(region.position, &region.boundary) * 1_600.0 * 1_600.0) as f32;
         }
-        assert_eq!(describe_landmasses(&map.regions)[0].anchor, 0);
+        assert_eq!(
+            describe_landmasses(&map.regions, CONTINENT_AREA_KM2)[0].anchor,
+            0
+        );
         map.regions.swap(0, 1);
-        assert_eq!(describe_landmasses(&map.regions)[0].anchor, 1);
+        assert_eq!(
+            describe_landmasses(&map.regions, CONTINENT_AREA_KM2)[0].anchor,
+            1
+        );
         // The same number of regions can change class as physical area grows.
         for r in &mut map.regions {
             r.area_km2 = 150_000.0;
         }
         assert_eq!(
-            describe_landmasses(&map.regions)[0].kind,
+            describe_landmasses(&map.regions, CONTINENT_AREA_KM2)[0].kind,
             LandmassKind::Island
         );
         map.regions[0].area_km2 = 200_000.0;
         assert_eq!(
-            describe_landmasses(&map.regions)[0].kind,
+            describe_landmasses(&map.regions, CONTINENT_AREA_KM2)[0].kind,
             LandmassKind::Continent
         );
     }
@@ -2084,7 +2417,7 @@ mod tests {
             radius_km: 100.0,
             width: TAU as f32,
             height: PI as f32,
-            landmasses: describe_landmasses(&regions),
+            landmasses: describe_landmasses(&regions, CONTINENT_AREA_KM2),
             regions,
             drainage: vec![None; n],
             drainage_order: Vec::new(),

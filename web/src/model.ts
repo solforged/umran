@@ -750,7 +750,7 @@ export interface WordDetail {
 
 export type MapSize = "small" | "medium" | "large" | "vast";
 
-export type GeographyVersion = "spherical-v1" | "continental-v2" | "continental-v3" | "continental-v4";
+export type GeographyVersion = "spherical-v1" | "continental-v2" | "continental-v3" | "continental-v4" | "continental-v5";
 
 export type Terrain = "sea" | "plains" | "forest" | "steppe" | "hills" | "mountains" | "desert";
 

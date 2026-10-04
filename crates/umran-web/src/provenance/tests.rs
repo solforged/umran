@@ -6,6 +6,89 @@ use umran_sim::{Contact, Field, HistoryPoint, Naming, Params, Revelation, SoundP
 #[path = "../../examples/support/sample.rs"]
 mod sample;
 
+#[test]
+fn v5_sample_keeps_its_river_coast_conquest_and_sacred_language() {
+    use umran_sim::{Action, Craft, GeographyVersion, Terrain};
+
+    let mut history = sample::sample();
+    let founding = history.world_at(0);
+    assert_eq!(founding.map.geography, GeographyVersion::ContinentalV5);
+    let sites = [22, 1212, 312];
+    for (people, site) in sites.into_iter().enumerate() {
+        assert_eq!(founding.communities[people].home(), site);
+        assert_eq!(founding.map.regions[site].terrain, Terrain::Plains);
+        assert!(founding.map.lake_regions[site].is_none());
+        assert_eq!(
+            founding.map.regions[site].landmass,
+            founding.map.regions[sites[0]].landmass
+        );
+    }
+    let river = founding
+        .map
+        .rivers
+        .iter()
+        .position(|river| river.course.contains(&sites[0]))
+        .unwrap();
+    assert!(founding.map.coastal(sites[2]));
+    for pair in sites.windows(2) {
+        assert!(founding.map.regions[pair[0]].neighbours.contains(&pair[1]));
+    }
+    assert!(
+        founding
+            .states
+            .iter()
+            .any(|state| state.rulers == 2 && state.rose == 0)
+    );
+    assert!(founding.communities[2].crafts.contains(&Craft::Writing));
+    assert!(!founding.communities[0].crafts.contains(&Craft::Writing));
+    assert!(!founding.communities[1].crafts.contains(&Craft::Writing));
+
+    let conquest_action = history
+        .timeline()
+        .iter()
+        .position(|(generation, action)| {
+            *generation == 100 && matches!(action, Action::Connect { a: 0, b: 2, .. })
+        })
+        .unwrap();
+    let before = history
+        .world_at_point(HistoryPoint {
+            action: conquest_action,
+            offset: 0,
+        })
+        .unwrap();
+    let journey = before.journey_between(0, 2).unwrap();
+    assert!(!journey.by_sea);
+    assert!(journey.effort <= before.params.conquest_reach);
+    let after = history.world_at(100);
+    assert_eq!(
+        after.ruled_by(2).map(|state| after.states[state].rulers),
+        Some(0)
+    );
+    let religion = after
+        .religions
+        .iter()
+        .find(|r| r.people == 2 && r.founded == 100)
+        .unwrap();
+    assert!(religion.scripture);
+    let source = before.communities[2].variety;
+    assert_eq!(
+        after.varieties[religion.sacred].parent.unwrap().variety,
+        source
+    );
+    assert!(after.events.iter().any(|(generation, event)| {
+        *generation == 100 && matches!(event, WorldEvent::Shift { community: 2, toward: 0, from, .. } if *from == source)
+    }));
+    assert_eq!(
+        after.varieties[religion.sacred].lexicon,
+        history.latest().varieties[religion.sacred].lexicon
+    );
+    assert_eq!(history.latest().generation, 160);
+    println!(
+        "V5 SAMPLE seed=21 sites={sites:?}; river={river}; coast=312; land path={sites:?}; conquest at generation100={} effort-km by_sea={}; realm+writing at0; faith+shift at100; sacred={} preserved at160",
+        journey.effort, journey.by_sea, religion.sacred
+    );
+}
+
 #[derive(Default)]
 struct Band {
     causes: HashMap<&'static str, usize>,

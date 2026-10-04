@@ -135,11 +135,12 @@ and the shelf opens recovery with the original data still downloadable.
 An imported older file is refused without changing saved worlds. Its
 region IDs are never guessed onto the new map. A recipe also records its
 `geography` version (`spherical-v1`, `continental-v2`, `continental-v3`,
-`continental-v4`),
+`continental-v4`, `continental-v5`),
 so a change to how the land is drawn adds a version rather than redrawing
 saved worlds; new worlds use `GeographyVersion::CURRENT`. V3 fixes the
 geographic direction of zonal wind. V4 adds lakes, endorheic drainage, and
-river channels. V1–V3 keep their earlier lake-free maps, drainage, rivers,
+river channels. V5 adds unequal continental crust while retaining V4's lake
+pipeline. V1–V3 keep their earlier lake-free maps, drainage, rivers,
 and climate. Missing geography still means `spherical-v1`, never the
 current default. For later revision mismatches, replay still works with a
 warning that the history may differ.

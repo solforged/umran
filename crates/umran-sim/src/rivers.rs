@@ -109,7 +109,7 @@ pub(crate) fn generate(seed: u64, regions: &[Region], geography: GeographyVersio
                 * rng.gen_range(0.85..1.15)
         })
         .collect();
-    let (mut lakes, lake_regions) = if geography == GeographyVersion::ContinentalV4 {
+    let (mut lakes, lake_regions) = if geography.has_lakes() {
         crate::lakes::basins(regions, &mut drainage, &mut drainage_order, &runoff)
     } else {
         (Vec::new(), vec![None; regions.len()])

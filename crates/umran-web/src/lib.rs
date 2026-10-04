@@ -4889,7 +4889,7 @@ fn river_view<'a>(map: &Map, id: usize, river: &'a River) -> Result<RiverView<'a
         ),
         None => None,
     };
-    let length_km = if map.geography == GeographyVersion::ContinentalV4 {
+    let length_km = if map.geography.has_lakes() {
         f64::from(map.radius_km)
             * river
                 .channel
@@ -6547,7 +6547,7 @@ mod tests {
         assert_eq!(decisions[1]["variety"], 1);
         let saved = bench.save().unwrap();
         let recipe: serde_json::Value = serde_json::from_str(&saved).unwrap();
-        assert_eq!(recipe["geography"], "continental-v4");
+        assert_eq!(recipe["geography"], "continental-v5");
         assert_eq!(recipe["tellings"][0]["actions"][1]["kind"], "found-related");
         let mut restored = Bench::load(&saved).unwrap();
         assert_eq!(restored.map().unwrap(), bench.map().unwrap());
@@ -6598,7 +6598,7 @@ mod tests {
         assert_eq!(loaded.lexicon(0, 0).unwrap(), first_speech);
         let fresh: serde_json::Value =
             serde_json::from_str(&Bench::new(5, "small").unwrap().map().unwrap()).unwrap();
-        assert_eq!(fresh["geography"], "continental-v4");
+        assert_eq!(fresh["geography"], "continental-v5");
         assert_ne!(
             fresh["regions"],
             serde_json::from_str::<serde_json::Value>(&old_map).unwrap()["regions"]
@@ -6677,7 +6677,7 @@ mod tests {
         let world = w.chronicle.latest();
         let map = &world.map;
         let reach = world.params.trade_reach;
-        let (coast, across) = map
+        let (coast, across, walking, far) = map
             .regions
             .iter()
             .enumerate()
@@ -6688,30 +6688,30 @@ mod tests {
                         .is_some_and(|mass| map.landmasses[mass].kind == LandmassKind::Continent)
             })
             .find_map(|(source, land)| {
-                map.voyage_row(source, reach)
+                let across = map
+                    .voyage_row(source, reach)
                     .iter()
-                    .find(|&&(r, _)| map.regions[r as usize].landmass != land.landmass)
-                    .map(|&(r, _)| (source, r as usize))
+                    .find(|&&(r, _)| map.regions[r as usize].landmass != land.landmass)?
+                    .0 as usize;
+                let walking = map
+                    .walking_row(source, reach)
+                    .iter()
+                    .find(|&&(r, _)| map.closeness(source, r as usize) == 0.0)?
+                    .0 as usize;
+                let far = map
+                    .regions
+                    .iter()
+                    .enumerate()
+                    .find(|&(r, region)| {
+                        region.terrain.is_land()
+                            && region.landmass == land.landmass
+                            && map.distance(source, r) > reach
+                            && map.voyage(source, r) > reach
+                    })?
+                    .0;
+                Some((source, across, walking, far))
             })
-            .unwrap();
-        let walking = map
-            .walking_row(coast, reach)
-            .iter()
-            .find(|&&(r, _)| map.closeness(coast, r as usize) == 0.0)
-            .unwrap()
-            .0 as usize;
-        let far = map
-            .regions
-            .iter()
-            .enumerate()
-            .find(|&(r, land)| {
-                land.terrain.is_land()
-                    && land.landmass == map.regions[coast].landmass
-                    && map.distance(coast, r) > reach
-                    && map.voyage(coast, r) > reach
-            })
-            .unwrap()
-            .0;
+            .expect("the fixture has a coast with walking, sea, and out-of-reach land routes");
         let far_walk = map.distance(coast, far);
         let sea_effort = map.voyage(coast, across);
         for (i, region) in [coast, walking, across, far].into_iter().enumerate() {
