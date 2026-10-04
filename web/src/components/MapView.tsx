@@ -1118,7 +1118,7 @@ export function MapView({
             else zoom(e.key === "-" ? 1 / 0.7 : 0.7, [x + w / 2, y + h / 2]);
           }
         }}
-        aria-label={`Map of ${map.regions.length} lands in year ${generation * YEARS}`}
+        aria-label={`${projection === "globe" ? "Globe" : "Chart"} of the world in year ${generation * YEARS}`}
         style={{ "--label": label } as CSSProperties}
         onPointerDown={down}
         onPointerMove={move}
@@ -1507,7 +1507,7 @@ export function MapView({
         {projection === "globe" ? <path className="globe-limb" d={cartography.sphere} aria-hidden="true" /> : null}
       </svg>
       {zoomable ? (
-        <div className="map-zoom" role="group" aria-label="Map controls">
+        <div className="map-zoom" role="group" aria-label={projection === "globe" ? "Globe controls" : "Chart controls"}>
           {selectedRegions.length > 0 ? <button type="button" title="Fit the selected lands (F)" aria-label="Fit the selected lands" onClick={fitSelection}><LocateFixed size={16} /></button> : null}
           <button type="button" title="Closer (+)" aria-label="Zoom in" disabled={box[2] <= width * closest + 0.001} onClick={() => zoom(0.7, [view.current[0] + view.current[2] / 2, view.current[1] + view.current[3] / 2])}>
             <Plus size={16} />
@@ -1515,8 +1515,8 @@ export function MapView({
           <button type="button" title="Farther (−)" aria-label="Zoom out" disabled={box[2] >= width - 0.001} onClick={() => zoom(1 / 0.7, [view.current[0] + view.current[2] / 2, view.current[1] + view.current[3] / 2])}>
             <Minus size={16} />
           </button>
-          <button type="button" title={projection === "globe" ? "The whole globe (Home)" : "The whole map (Home)"}
-            aria-label={projection === "globe" ? "The whole globe" : "The whole map"}
+          <button type="button" title={projection === "globe" ? "The whole globe (Home)" : "The whole chart (Home)"}
+            aria-label={projection === "globe" ? "The whole globe" : "The whole chart"}
             onClick={() => projection === "globe" ? turnTo([0, 20], full) : glideTo(full)}>
             <Maximize size={16} />
           </button>

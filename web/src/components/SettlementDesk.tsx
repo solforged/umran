@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { ArrowRight, Footprints, GitFork, MapPinned, X } from "lucide-react";
 import type { Catalog, HistoryPoint, Naming, Overview, SettlementChoice, SettlementIntent, SettlementPlan, SettlementPreview, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { TERRAIN_NAME } from "../lore";
+import { landLabel } from "../lore";
 import { NamingSelect } from "./NamingSelect";
 import { closeClosingDialogs } from "../motion";
 
@@ -22,11 +22,10 @@ const INTENTS = [
 
 const count = (n: number) => Math.round(n).toLocaleString();
 export function landTitle(overview: Overview, map: WorldMap, region: number): string {
-  return overview.places.find((p) => p.region === region)?.names.at(-1)?.spelled ??
-    `${TERRAIN_NAME[map.regions[region].terrain]} · land ${region + 1}`;
+  return `${landLabel(overview, map, region)}${overview.places.find((p) => p.region === region)?.names.length ? "" : ` · land ${region + 1}`}`;
 }
 
-export function SettlementAccount({ plan, overview, map }: { plan: SettlementPlan; overview: Overview; map: WorldMap }) {
+export function SettlementAccount({ plan, overview, map, recorded = false }: { plan: SettlementPlan; overview: Overview; map: WorldMap; recorded?: boolean }) {
   const migration = plan.choice.intent === "migration";
   const territorial = plan.choice.intent === "partition";
   return <div className="settlement-account">
@@ -44,7 +43,7 @@ export function SettlementAccount({ plan, overview, map }: { plan: SettlementPla
       <p className="muted small">Travel effort includes terrain and embarkation. Journeys follow the roads and waters they can travel.</p>
     </details> : null}
     {plan.inhabitants.length > 0 ? <p className="small">Already living here: {plan.inhabitants.map(([c, n]) => `${overview.communities[c]?.name ?? "another people"} (${count(n)})`).join(", ")}.</p> : null}
-    {plan.falling_states.length > 0 ? <p className="telling-note">Capital lost: {plan.falling_states.map((s) => overview.states[s].name).join(", ")}. The state falls with this decision.</p> : null}
+    {plan.falling_states.length > 0 ? <p className="telling-note">{recorded ? "Capital lost" : "Capital would be lost"}: {plan.falling_states.map((s) => overview.states[s].name).join(", ")}. {plan.falling_states.length === 1 ? `The state ${recorded ? "fell" : "would fall"} with this decision.` : `These states ${recorded ? "fell" : "would fall"} with this decision.`}</p> : null}
   </div>;
 }
 

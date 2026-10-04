@@ -3,7 +3,7 @@
 
 import type { Catalog, LexiconRow, Overview, RenderingRow, Variety } from "./model";
 import { YEARS } from "./model";
-import { FAITH_HOW, renderingOrigin } from "./lore";
+import { FAITH_HOW, FAITH_NAME, renderingOrigin } from "./lore";
 
 export function download(name: string, text: string, type = "application/json") {
   const url = URL.createObjectURL(new Blob([text], { type }));
@@ -143,7 +143,7 @@ export function bookMarkdown(title: string, overview: Overview, glossaries: [str
     for (const line of stateLines(overview)) out.push(`- ${line}`);
   }
   if (overview.religions.length > 0) {
-    out.push("", "## Religions", "");
+    out.push("", `## ${FAITH_NAME.plural}`, "");
     const lines = religionLines(overview);
     for (const r of overview.religions) {
       out.push(`### ${r.name}`, "", lines[r.id], "", ...renderingMarkdown(r.words, overview, r.sacred), "");

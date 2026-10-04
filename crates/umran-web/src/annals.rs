@@ -189,7 +189,7 @@ fn temper_cause(cause: TemperCause) -> &'static str {
 
 /// One end of a leaning, as a word for a people; the workbench's
 /// `ETHOS_POLES` uses the same words.
-fn temper_word(axis: Axis, pole: Pole) -> &'static str {
+pub(crate) fn temper_word(axis: Axis, pole: Pole) -> &'static str {
     let (low, high) = match axis {
         Axis::Martial => ("peaceable", "warlike"),
         Axis::Open => ("insular", "welcoming"),
@@ -206,15 +206,12 @@ fn temper_word(axis: Axis, pole: Pole) -> &'static str {
 
 const FOUND: &[&str] = &[
     "The {p} first appeared, calling themselves {p}, “{m}”, and their speech {l}.",
-    "Here begins the account of the {p}, whose name means “{m}”, and of their tongue, {l}.",
+    "The {p} first appeared under that name, meaning “{m}”; they called their tongue {l}.",
     "There was a people who named themselves {p}, that is, “{m}”; their speech they called {l}.",
 ];
 
-const SPLIT: &[&str] = &[
-    "Some of the {p} went out from among them and took the name {d}, “{m}”.",
-    "A part of the {p} went away and called themselves {d}, “{m}”.",
-    "That year the {p} were divided, and those who left were called {d}, “{m}”.",
-];
+const SPLIT: &[&str] =
+    &["The {p} divided into two peoples; the new people called themselves {d}, “{m}”."];
 
 const SPLIT_OVERSEAS: &[&str] = &[
     "Some of the {p} put out to sea and settled in {to}, calling themselves {d}, “{m}”.",
@@ -251,10 +248,7 @@ const LAW_UNSEEN: &[&str] = &[
 
 fn contact_wording(contact: ContactKind) -> &'static [&'static str] {
     match contact {
-        ContactKind::Neighbours => &[
-            "The {a} and the {b} came to live as neighbours.",
-            "The {a} settled within reach of the {b}.",
-        ],
+        ContactKind::Neighbours => &["The {a} and the {b} came into contact as neighbours."],
         ContactKind::Trade => &[
             "The {a} and the {b} began to trade.",
             "Traders began to go between the {a} and the {b}.",
@@ -280,14 +274,8 @@ fn parting_wording(contact: ContactKind) -> &'static [&'static str] {
             "The {a} and the {b} drifted apart and had little more to do with one another.",
             "The {a} and the {b} ceased to be neighbours.",
         ],
-        ContactKind::Trade => &[
-            "The road between the {a} and the {b} fell out of use, and their trade ended.",
-            "Trade between the {a} and the {b} failed.",
-        ],
-        ContactKind::Rule => &[
-            "The {b} threw off the rule of the {a}.",
-            "The rule of the {a} over the {b} came to an end.",
-        ],
+        ContactKind::Trade => &["Trade between the {a} and the {b} ended."],
+        ContactKind::Rule => &["The rule joining the {a} and the {b} came to an end."],
         ContactKind::Religion => &[
             "The {a} and the {b} no longer kept the same feasts.",
             "The {a} and the {b} went their own ways in worship.",
@@ -326,6 +314,7 @@ pub(crate) fn world_event_id(position: usize) -> String {
 pub(crate) fn annals(world: &World) -> Vec<Annal> {
     let meaning = |c: usize| world.communities[c].name.meaning.as_str();
     let mut out: Vec<Annal> = Vec::new();
+    let shifts = Shifts::of(world);
     // Peoples coming to live beside one another and drifting apart, by
     // generation, told together so they do not crowd out the rest.
     let mut neighbours: BTreeMap<u32, Neighbours> = BTreeMap::new();
@@ -374,7 +363,8 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 &[],
             )
         };
-        let tongue = |c: usize| world.language_title_at(world.communities[c].variety, generation);
+        let tongue =
+            |c: usize| world.language_title_at(shifts.spoken_after(world, c, position), generation);
         let g = u64::from(generation);
         let mut annal = match *event {
             WorldEvent::Tone {
@@ -448,7 +438,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 lands.sort_unstable();
                 lands.dedup();
                 let mut annal = entry(generation, "settlement", text, &peoples, &lands);
-                annal.notes = plan.notes.clone();
+                annal.notes = plan.recorded_notes();
                 annal.states = plan.falling_states.clone();
                 annal.settlement = Some(record.as_ref().clone());
                 annal
@@ -726,7 +716,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     generation,
                     "city",
                     format!(
-                        "{}, where {realm} keeps its court, grew into a great city, drawing people from across the realm.",
+                        "{}, where {realm} kept its court, grew into a great city, drawing people from across the realm.",
                         place(world, city.region, generation)
                     ),
                     &[s.rulers],
@@ -1244,7 +1234,6 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
     out.extend(pronoun_changes(world));
     out.extend(class_changes(world));
     out.extend(harmony_changes(world));
-    let shifts = Shifts::of(world);
     fn languages(a: &mut Annal, world: &World, shifts: &Shifts) {
         for member in &mut a.members {
             languages(member, world, shifts);
@@ -1304,7 +1293,7 @@ const RISE_CONQUEST: &[&str] = &[
 ];
 const RISE_HARD_TIMES: &[&str] = &[
     "After the bad years the {r} set a ruler over themselves, and called their realm {n}, “{m}”.",
-    "Hunger taught the {r} to store grain and to obey; they made themselves a realm, {n}, “{m}”, with its court at {c}.",
+    "After hard times, the {r} gathered under one ruler and called their realm {n}, “{m}”.",
 ];
 const RISE_CROWDED: &[&str] = &[
     "Pressed off their lands, the {r} gathered under one rule and called their realm {n}, “{m}”.",
@@ -1554,13 +1543,10 @@ fn learnt_from(craft: Craft) -> &'static [&'static str] {
 
 fn came_upon(craft: Craft) -> &'static [&'static str] {
     match craft {
-        Craft::Metalworking => &["The {p} found how to smelt bronze from the stones."],
+        Craft::Metalworking => &["The {p} learnt to work metal."],
         Craft::Riding => &["The {p} broke horses and began to ride."],
         Craft::Seafaring => &["The {p} built ships and put out to sea."],
-        Craft::Writing => &[
-            "At the court of the {p}, scribes first set words down in signs.",
-            "Among the {p} the first writing began, to count the tribute.",
-        ],
+        Craft::Writing => &["Among the {p}, words were first set down in signs."],
     }
 }
 
@@ -1756,18 +1742,12 @@ const BEGAN_FARMING: &[&str] = &[
     "Among the {p}, some first planted seed and waited for the harvest.",
 ];
 
-const BEGAN_HERDING: &[&str] = &[
-    "The {p} left their fields to follow their herds.",
-    "The {p} turned to their flocks and took up herding.",
-];
+const BEGAN_HERDING: &[&str] = &["The {p} took up herding."];
 
 const BEGAN_FORAGING: &[&str] =
     &["The {p} gave up their old ways and lived by hunting and gathering."];
 
-const DIED_OUT: &[&str] = &[
-    "The last of the {p} died out, and their name was heard no more.",
-    "The {p} dwindled away and were no more.",
-];
+const DIED_OUT: &[&str] = &["The {p} dwindled and were no longer counted as a separate people."];
 
 const MERGED: &[&str] = &[
     "The {p} were absorbed among the {i}.",
@@ -2228,7 +2208,7 @@ fn grammar_changes(world: &World) -> Vec<Annal> {
                 }
                 NoticeKind::ContrastLoss => (
                     if notice.category == Category::Object {
-                        format!("Among {people}, the object's mark wore away; word order now says who did what to whom.")
+                        format!("Among {people}, the object's mark weakened; word order carried more of the distinction between subject and object.")
                     } else {
                         format!(
                             "Among {people}, {category} forms increasingly sounded the same as their unmarked words."
@@ -2836,6 +2816,99 @@ fn change_in(word: &Lexeme, generation: u32) -> Option<(usize, &Form, &Form)> {
 mod cause_tests {
     use super::*;
     use umran_sim::{Naming, Params, SoundProfile};
+
+    #[test]
+    fn founding_keeps_its_original_language_after_a_shift() {
+        for shift_generation in [0, 10] {
+            let mut world = World::new(21, Params::static_society());
+            let home = world.map.landmasses[0].anchor;
+            for seed in 0..2 {
+                world.found_seeded(
+                    &Naming::People,
+                    &SoundProfile::base(),
+                    seed,
+                    0.5,
+                    0.5,
+                    Some(home),
+                    None,
+                    None,
+                );
+            }
+            let original = world.communities[0].variety;
+            let before = annals(&world)
+                .into_iter()
+                .find(|a| a.kind == "found" && a.peoples == [0])
+                .unwrap();
+            assert!(before.text.contains(&world.language_title_at(original, 0)));
+            world.generation = shift_generation;
+            let adopted = world.shift(0, 1);
+            assert_ne!(original, adopted);
+            let after = annals(&world)
+                .into_iter()
+                .find(|a| a.id == before.id)
+                .unwrap();
+            assert_eq!(after.text, before.text);
+            assert_eq!(after.languages, vec![original]);
+        }
+    }
+
+    #[test]
+    fn recorded_settlement_tells_the_fall_but_keeps_the_preview_conditional() {
+        use umran_sim::polity::Rise;
+        use umran_sim::settlement::{SettlementChoice, SettlementIntent};
+
+        let mut world = World::solo(5, &SoundProfile::base(), Params::static_society());
+        let state = world.raise_state(0, None, Rise::Proclaimed);
+        let destination = world
+            .settlement_options(0, SettlementIntent::Migration, 1.0)
+            .unwrap()
+            .into_iter()
+            .find(|option| option.reason.is_none())
+            .unwrap()
+            .region;
+        let choice = SettlementChoice {
+            community: 0,
+            intent: SettlementIntent::Migration,
+            destination,
+            share: 1.0,
+            naming: None,
+            intensity: 0.5,
+        };
+        let preview = world.plan_settlement(&choice).unwrap();
+        assert_eq!(preview.falling_states, vec![state]);
+        assert_eq!(
+            preview.notes.last().unwrap(),
+            "The rulers would give up their capital. Their state will fall when this choice is made."
+        );
+        world.settle(&choice).unwrap();
+        assert!(world.states[state].fell.is_some());
+        let recorded = annals(&world)
+            .into_iter()
+            .find(|a| a.kind == "settlement")
+            .unwrap();
+        assert_eq!(recorded.states, vec![state]);
+        assert_eq!(
+            recorded.notes.last().unwrap(),
+            "The rulers gave up their capital, and their state fell."
+        );
+        assert!(
+            recorded
+                .notes
+                .iter()
+                .all(|note| !note.contains("will fall"))
+        );
+        let plan = &recorded.settlement.unwrap().plan;
+        assert_eq!(plan.notes, preview.notes);
+        let mut no_fall = plan.clone();
+        no_fall.falling_states.clear();
+        assert!(
+            no_fall
+                .recorded_notes()
+                .iter()
+                .all(|note| !note.contains("state fell")),
+            "the recorded state IDs, not retained preview prose, determine the outcome"
+        );
+    }
 
     #[test]
     fn conversion_cause_resolves_inside_grouped_neighbours_and_unknown_is_absent() {

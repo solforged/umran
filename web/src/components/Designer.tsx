@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { frequencyDesign, presetDesign, preview } from "../engine";
 import type { Catalog, LanguageDesign, LongVowelStyle, Naming, SoundInfo } from "../model";
 import { NamingSelect } from "./NamingSelect";
+import { PEOPLE_NAME } from "../lore";
+import { Explained } from "./Explained";
 
 export interface Founding {
   naming: Naming;
@@ -225,7 +227,8 @@ export function Designer({
           {knob("Word length", design.wordLength, (v) => set({ wordLength: v }), "short", "long")}
           {knob("Final consonants", design.finalConsonants, (v) => set({ finalConsonants: v }), "open", "closed")}
           {knob("Long vowels", design.longVowels, (v) => set({ longVowels: v }), "none", "many")}
-          {knob("Repeated consonants", design.repetition, (v) => set({ repetition: v }), "avoided", "common")}
+          {knob("Consonants repeated across syllables", design.repetition, (v) => set({ repetition: v }), "avoided", "common")}
+          <p className="muted small">As in mama; not a long consonant such as tt.</p>
           <label className="check">
             <input type="checkbox" checked={design.innerClusters} onChange={(e) => set({ innerClusters: e.target.checked })} />
             Consonants may meet inside words (kasta, not only kasata)
@@ -242,7 +245,7 @@ export function Designer({
             ).map(([id, label]) => (
               <label key={id} className="check">
                 <input type="radio" name="building" checked={design.building === id} onChange={() => set({ building: id })} />
-                {label}
+                <Explained term={id === "concatenative" ? "affix" : "root and pattern"}>{label}</Explained>
               </label>
             ))}
           </div>
@@ -279,7 +282,7 @@ export function Designer({
           </div>
         </details>
 
-        <Section title="Community">
+        <Section title={PEOPLE_NAME}>
           <label>
             They call themselves
             <NamingSelect catalog={catalog} value={naming} onChange={(n) => n && setNaming(n)} />
@@ -294,7 +297,7 @@ export function Designer({
         <div className="row spread">
           <h3>Preview</h3>
           <button type="button" onClick={() => setSeed(randomSeed())} title="Same design, a different draw of words">
-            Reroll words
+            Hear other words
           </button>
         </div>
         {typeof result === "string" ? (

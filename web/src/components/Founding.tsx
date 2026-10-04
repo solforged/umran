@@ -356,8 +356,8 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
                 choices={[{ key: "", text: `as the land suggests (${LIVELIHOOD_PHRASE[people.livelihood]})` },
                   ...(Object.keys(LIVELIHOOD_NAME) as Livelihood[]).map((livelihood) => ({ key: livelihood, text: `by ${LIVELIHOOD_PHRASE[livelihood]}` }))]}
                 onChange={(key) => update(current.key, { livelihood: key === "" ? null : key as Livelihood })} />.</p>
-            <p>Among them, <Phrase label="Temper" value={current.bent ? `${current.bent.axis} ${current.bent.toward}` : ""}
-              choices={[{ key: "", text: "land and life make their temper" }, ...ETHOS_AXES.flatMap((axis) => [1, -1].map((toward) => ({ key: `${axis} ${toward}`, text: ETHOS_POLES[axis][toward > 0 ? 1 : 0] })))]}
+            <p>They are <Phrase label="Temper" value={current.bent ? `${current.bent.axis} ${current.bent.toward}` : ""}
+              choices={[{ key: "", text: "shaped by land and life" }, ...ETHOS_AXES.flatMap((axis) => [1, -1].map((toward) => ({ key: `${axis} ${toward}`, text: ETHOS_POLES[axis][toward > 0 ? 1 : 0] })))]}
               onChange={(key) => { const [axis, toward] = key.split(" "); update(current.key, { bent: key === "" ? null : { axis: axis as EthosAxis, toward: Number(toward) as 1 | -1 } }); }} />
               {current.bent === null ? ` (${temperament(people.ethos, 2).join(" and ") || "even-tempered"})` : ""}.</p>
             <section className="founding-speech">
@@ -377,19 +377,20 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
             <details className="founding-grammar">
               <summary>Grammar <span>{WORD_ORDER_PHRASE[speech.grammar.order].choice}</span></summary>
               {inherited ? <p>Grammar is inherited too. <button type="button" className="link" onClick={() => choose(speechOwner.key)}>Edit their ancestral speech</button>.</p> : <p>They put <Phrase label="Word order" value={speechOwner.design.grammar?.order ?? ""}
-                choices={[{ key: "", text: `as their speech falls out (${WORD_ORDER_PHRASE[drawn?.order ?? speech.grammar.order].choice})` },
+                choices={[{ key: "", text: `${WORD_ORDER_PHRASE[drawn?.order ?? speech.grammar.order].choice}, as their speech falls out` },
                   ...(["SOV", "SVO", "VSO"] as WordOrder[]).map((order) => ({ key: order, text: WORD_ORDER_PHRASE[order].choice }))]}
                 onChange={(key) => setGrammar({ order: key === "" ? null : key as WordOrder })} />, <Phrase label="Object marking"
                 value={speechOwner.design.grammar?.object == null ? "" : speechOwner.design.grammar.object === "none" ? "order" : "case"}
-                choices={[{ key: "", text: `as their speech falls out (${MARKING_PHRASE[(drawn?.object ?? markerChoice(speech, "object")) === "none" ? "order" : "case"].choice})` },
+                choices={[{ key: "", text: `${MARKING_PHRASE[(drawn?.object ?? markerChoice(speech, "object")) === "none" ? "order" : "case"].choice}, as their speech falls out` },
                   ...(["case", "order"] as const).map((marking) => ({ key: marking, text: MARKING_PHRASE[marking].choice }))]}
                 onChange={(key) => {
                   const object = drawn?.object ?? markerChoice(speech, "object");
                   setGrammar({ object: key === "" ? null : key === "order" ? "none" : object !== "none" ? object : speechOwner.design.suffixing >= 0.5 ? "suffix" : "prefix" });
-                }} />, and say <Phrase label="Possessor placement" value={speechOwner.design.grammar?.possessor ?? ""}
-                choices={[{ key: "", text: `as their speech falls out (${POSSESSOR_PHRASE[drawn?.possessor ?? speech.grammar.possessor].choice})` },
+                }} />, and put <Phrase label="Possessor placement" value={speechOwner.design.grammar?.possessor ?? ""}
+                choices={[{ key: "", text: `${POSSESSOR_PHRASE[drawn?.possessor ?? speech.grammar.possessor].choice}, as their speech falls out` },
                   ...(["before", "after"] as PossessorOrder[]).map((possessor) => ({ key: possessor, text: POSSESSOR_PHRASE[possessor].choice }))]}
                 onChange={(key) => setGrammar({ possessor: key === "" ? null : key as PossessorOrder })} />.</p>}
+              <p className="muted small">Both mean “the child’s fish”; these choices set only the order, not genitive marking.</p>
               {speech.grammar.sample ? <><Sample rendering={speech.grammar.sample.sentence} label="Sample sentence" />
                 <Sample rendering={speech.grammar.sample.possession} label="Sample possession" />
                 <Sample rendering={speech.grammar.sample.future} label="Sample future" /></> : null}
@@ -414,7 +415,7 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
 
       <footer className="timebar setup-foot">
         <span className="year">{error ? <span className="error" role="alert">{error}</span> : founders.length
-          ? <><strong>Year 0.</strong> {founders.length} {founders.length === 1 ? "people" : "peoples"}; their history is still to come.</>
+          ? <><strong>Year 0.</strong> {founders.length} {founders.length === 1 ? "people" : "peoples"}; their chronicle is yet to be written.</>
           : "A world before its first peoples."}</span>
         <button type="button" className="primary begin" disabled={!engine.current || !currentBuild || !chartReady || !founders.length} onClick={() => {
           if (!engine.current || !currentBuild || !founders.length) return;
@@ -432,7 +433,7 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
       {redraw ? <Modal open title="Redraw this world?" onClose={() => setRedraw(null)}
         footer={<><button type="button" onClick={() => setRedraw(null)}>Keep these lands</button>
           <button type="button" className="primary" onClick={() => changeWorld(redraw)}>Redraw and relocate</button></>}>
-        <p>The coastlines and homelands will change. These peoples keep their speech, kinship, and choices, and settle on the new map.</p>
+        <p>The coastlines and homelands will change. These peoples keep their speech, kinship, and choices, and settle in the redrawn world.</p>
       </Modal> : null}
     </div>
   );

@@ -701,7 +701,7 @@ export function Stage({
           </Popover>
         </div>
         {settlement === null ? <div className="map-caption">
-          {generation === 0 ? <span className="chronicle-latest muted">Year 0 · {overview.communities.length} peoples settle {overview.continents.find((c) => c.name)?.name?.name ?? title}</span> : last && LastIcon ? (
+          {generation === 0 ? <span className="chronicle-latest muted">Year 0 · {overview.communities.length === 1 ? "One people settles" : `${overview.communities.length} peoples settle`} {overview.continents.find((c) => c.name)?.name?.name ?? title}</span> : last && LastIcon ? (
             <button
               type="button"
               className="chronicle-latest"
@@ -721,14 +721,14 @@ export function Stage({
           ) : (
             <span className="chronicle-latest muted">Nothing is written yet.</span>
           )}
-          {generation > 0 && last ? <EntryAnnotations annal={last} context={{ go: (next) => { halt(); go(next); } }} /> : null}
+          {generation > 0 && last ? <EntryAnnotations annal={last} context={{ overview, go: (next) => { halt(); go(next); } }} /> : null}
           {generation > 0 && sameYear > 1 ? <span className="chronicle-more muted">and {sameYear - 1} more that year</span> : null}
           <button type="button" className="link chronicle-open" onClick={() => go({ kind: "history" })}>
             <ScrollText size={14} aria-hidden="true" /> Chronicle
           </button>
         </div> : null}
         {known !== null ? <div className="map-perspective">
-          Known to {overview.varieties[knownBy!]?.name}
+          As the speakers of {overview.varieties[knownBy!]?.name} knew it
           <button type="button" className="icon" aria-label="Show the whole known and unknown world" onClick={() => setVeiled(false)}><X size={14} /></button>
         </div> : null}
       </section>

@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import type { Action, Catalog, ContactKind, Craft, EthosAxis, Overview, ReadEngine } from "../model";
 import { YEARS } from "../model";
-import { ETHOS_AXES, ETHOS_POLES, temperament } from "../lore";
+import { CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, FAITH_NAME, PEOPLE_NAME, temperament } from "../lore";
 import { Modal } from "./Modal";
 import { Specimen } from "./Specimen";
 
@@ -13,7 +13,7 @@ const TITLES: Record<Exclude<DialogKind, "found">, string> = {
   connect: "Two peoples meet",
   shift: "A people takes up another language",
   state: "Found a state",
-  religion: "Found a religion",
+  religion: FAITH_NAME.action,
   craft: "Teach a craft",
   temper: "A people's temper turns",
   law: "A sound change",
@@ -230,7 +230,7 @@ export function ActionDialog({
           <p className="muted">There is no other living people to meet. Let a people part, or wait for one to.</p>
         ) : (
           <>
-            {pick("Community", community, setCommunity)}
+            {pick(PEOPLE_NAME, community, setCommunity)}
             {pick("With", other, setOther, community)}
             <fieldset>
               <legend>Kind of contact</legend>
@@ -243,7 +243,7 @@ export function ActionDialog({
                     onChange={() => setContact(c.id as ContactKind)}
                   />
                   <span>
-                    <strong>{c.name}</strong> {c.description}
+                    <strong>{CONTACT_NAME[c.id as ContactKind]}</strong> {c.description}
                   </span>
                 </label>
               ))}
@@ -256,7 +256,7 @@ export function ActionDialog({
           <p className="muted">There is no other living people whose language they could take up.</p>
         ) : (
           <>
-            {pick("Community", community, setCommunity)}
+            {pick(PEOPLE_NAME, community, setCommunity)}
             {pick("Adopts the language of", other, setOther, community)}
             <p className="muted">
               They keep their own sound preferences and some old words, mostly about the land around them.

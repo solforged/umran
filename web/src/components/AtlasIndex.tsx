@@ -3,7 +3,7 @@ import { flushSync } from "react-dom";
 import { ArrowUpRight, Earth, Hammer, Landmark, Languages, MapPin, Search, Sparkles, Users, type LucideIcon } from "lucide-react";
 import type { Overview, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { hue, TERRAIN_NAME } from "../lore";
+import { hue, TERRAIN_NAME, unnamedName } from "../lore";
 import type { Focus } from "./Pedia";
 import { searchText } from "../history";
 import { Modal } from "./Modal";
@@ -35,7 +35,7 @@ export function AtlasIndex({ open, overview, map, onClose, go }: {
   const results = useRef<HTMLUListElement>(null);
   const entries = useMemo<Entry[]>(() => [
     ...overview.continents.map((c): Entry => ({
-      key: `continent-${c.landmass}`, kind: "Lands", name: c.name?.name ?? "Unnamed continent",
+      key: `continent-${c.landmass}`, kind: "Lands", name: c.name?.name ?? unnamedName(map.landmasses[c.landmass].kind),
       detail: `Continent · ${map.landmasses[c.landmass].regions.length} lands`, aliases: c.name?.meaning,
       icon: Earth, focus: { kind: "continent", landmass: c.landmass },
     })),
@@ -87,11 +87,11 @@ export function AtlasIndex({ open, overview, map, onClose, go }: {
     go(focus);
   };
   return (
-    <Modal open={open} title="The atlas index" onClose={onClose} initialFocus="input[type=search]" wide>
+    <Modal open={open} title="Find in this world" onClose={onClose} initialFocus="input[type=search]" wide>
       <p className="index-intro">Find a people, follow a language, or set out for a distant land.</p>
       <div className="index-search">
         <Search size={20} aria-hidden="true" />
-        <input autoFocus type="search" aria-label="Search the atlas" placeholder="A name, an older name, or a meaning…"
+        <input autoFocus type="search" aria-label="Search this world" placeholder="A name, an older name, or a meaning…"
           value={query} onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "ArrowDown") { e.preventDefault(); results.current?.querySelector("button")?.focus(); }

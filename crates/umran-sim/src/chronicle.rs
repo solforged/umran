@@ -295,7 +295,7 @@ impl Chronicle {
 
     fn prefix_of(log: &[Action], point: HistoryPoint) -> Result<Vec<Action>, String> {
         if point.action > log.len() {
-            return Err("that reading is beyond the end of this telling".into());
+            return Err("That point is beyond the end of this telling.".into());
         }
         let mut actions = log[..point.action].to_vec();
         if point.offset > 0 {
@@ -305,7 +305,7 @@ impl Chronicle {
                         generations: point.offset,
                     });
                 }
-                _ => return Err("that reading is not within a recorded run".into()),
+                _ => return Err("That point is not within a recorded run.".into()),
             }
         }
         Ok(actions)
@@ -618,7 +618,7 @@ impl Chronicle {
                     .actions;
                 let prefix = Self::prefix_of(log, parent.point)?;
                 if !holds(&telling.actions, &prefix) {
-                    return Err("A telling does not share its recorded parent's history".into());
+                    return Err("This telling does not match its parent through their recorded point of divergence.".into());
                 }
             }
         }

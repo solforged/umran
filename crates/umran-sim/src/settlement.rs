@@ -155,6 +155,45 @@ pub struct SettlementPlan {
     pub notes: Vec<String>,
 }
 
+impl SettlementPlan {
+    /// Historical apparatus uses the recorded outcome, not the preview warning.
+    pub fn recorded_notes(&self) -> Vec<String> {
+        self.describe(true)
+    }
+
+    fn describe(&self, recorded: bool) -> Vec<String> {
+        let mut notes = Vec::new();
+        match self.choice.intent {
+            SettlementIntent::Partition => notes.push("The people divide where they live. No one travels: each holding stays connected to its chosen heart.".into()),
+            SettlementIntent::Settlers => notes.push("The departing share comes from every inhabited land, including city residents. The new people's speech can diverge from its parent's.".into()),
+            SettlementIntent::Migration => notes.push("Everyone moves, including city residents. The people keeps its identity and language; its old holdings are relinquished.".into()),
+        }
+        if !self.inhabitants.is_empty() {
+            notes.push(if self.choice.intent == SettlementIntent::Partition {
+                "Other peoples share these lands. Their homes stay unchanged; the new people can form its own ties with them."
+            } else {
+                "Other peoples already live here. Arrival can create contact and crowding; it does not remove the inhabitants."
+            }.into());
+        }
+        if self.choice.intent != SettlementIntent::Partition && self.arriving.population > self.room
+        {
+            notes.push("The arrival exceeds the room this land offers. The people can settle, but crowding may bring later hardship or displacement.".into());
+        }
+        if !self.falling_states.is_empty() {
+            notes.push(if recorded {
+                if self.falling_states.len() == 1 {
+                    "The rulers gave up their capital, and their state fell."
+                } else {
+                    "The rulers gave up their capitals, and their states fell."
+                }
+            } else {
+                "The rulers would give up their capital. Their state will fall when this choice is made."
+            }.into());
+        }
+        notes
+    }
+}
+
 /// Evidence retained with the event even after territory and speech change.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct SettlementRecord {
@@ -607,26 +646,7 @@ impl<'a> Planner<'a> {
             counts.insert(self.community, remaining_here);
         }
         let inhabitants: Vec<(usize, f32)> = counts.into_iter().collect();
-        let mut notes = Vec::new();
-        match choice.intent {
-            SettlementIntent::Partition => notes.push("The people divide where they live. No one travels: each holding stays connected to its chosen heart.".into()),
-            SettlementIntent::Settlers => notes.push("The departing share comes from every inhabited land, including city residents. The new people's speech can diverge from its parent's.".into()),
-            SettlementIntent::Migration => notes.push("Everyone moves, including city residents. The people keeps its identity and language; its old holdings are relinquished.".into()),
-        }
-        if !inhabitants.is_empty() {
-            notes.push(if choice.intent == SettlementIntent::Partition {
-                "Other peoples share these lands. Their homes stay unchanged; the new people can form its own ties with them."
-            } else {
-                "Other peoples already live here. Arrival can create contact and crowding; it does not remove the inhabitants."
-            }.into());
-        }
-        if choice.intent != SettlementIntent::Partition && arriving.population > room {
-            notes.push("The arrival exceeds the room this land offers. The people can settle, but crowding may bring later hardship or displacement.".into());
-        }
-        if !falling_states.is_empty() {
-            notes.push("The rulers would give up their capital. Their state will fall when this choice is made.".into());
-        }
-        Ok(SettlementPlan {
+        let mut plan = SettlementPlan {
             choice: choice.clone(),
             before,
             remaining,
@@ -636,7 +656,9 @@ impl<'a> Planner<'a> {
             capacity,
             room,
             falling_states,
-            notes,
-        })
+            notes: Vec::new(),
+        };
+        plan.notes = plan.describe(false);
+        Ok(plan)
     }
 }

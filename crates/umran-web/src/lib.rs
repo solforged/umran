@@ -651,15 +651,10 @@ impl Bench {
                         .find(|l| l.id == law)
                         .expect("authored laws are catalog laws")
                         .label;
-                    let mut chars = label.chars();
-                    let clause: String = match chars.next() {
-                        Some(first) => first.to_lowercase().chain(chars).collect(),
-                        None => String::new(),
-                    };
                     (
                     "law",
                     format!(
-                        "In *{}*, {clause}.",
+                        "The author chose this sound change for *{}*: “{label}”.",
                         world.varieties[*variety].title(world.varieties[*variety].name.form_at(generation)),
                     ),
                     world.events[..decision.events.start]
@@ -685,11 +680,25 @@ impl Bench {
                     amount,
                 } => (
                     "temper",
-                    format!(
-                        "The {} leaning of the *{}* was turned by {amount}.",
-                        axis.id(),
-                        name(*community)
-                    ),
+                    if *amount == 0.0 {
+                        format!(
+                            "The author left the *{}*’s temper unchanged.",
+                            name(*community)
+                        )
+                    } else {
+                        format!(
+                            "The author turned the *{}* towards a more {} temper.",
+                            name(*community),
+                            annals::temper_word(
+                                *axis,
+                                if *amount < 0.0 {
+                                    umran_sim::ethos::Pole::Low
+                                } else {
+                                    umran_sim::ethos::Pole::High
+                                }
+                            )
+                        )
+                    },
                     vec![*community],
                     None,
                 ),
@@ -721,7 +730,7 @@ impl Bench {
             serde_json::from_str(json).map_err(|e| format!("Unreadable note: {e}"))?;
         note.title = note.title.trim().into();
         if note.id.is_empty() || note.title.is_empty() {
-            return Err("Give this notebook entry a title.".into());
+            return Err("Give this note a title.".into());
         }
         // Editing an imported note must remain possible even if its original
         // reading cannot replay. Only a newly selected reference is validated.
@@ -751,7 +760,7 @@ impl Bench {
         let world = &scope
             .fixed
             .as_ref()
-            .ok_or("This note has no exact reading")?
+            .ok_or("This note is not linked to a recorded point in a telling.")?
             .1;
         let present = match &target.subject {
             Subject::World | Subject::History => true,
@@ -779,7 +788,7 @@ impl Bench {
             Ok(())
         } else {
             Err(
-                "The original subject is unavailable at this reading. The note is still kept."
+                "The original subject is unavailable at this point in the telling. The note is still kept."
                     .into(),
             )
         }
@@ -790,7 +799,7 @@ impl Bench {
             .notebook
             .iter()
             .find(|n| n.id == id)
-            .ok_or("That note is not in this notebook")?;
+            .ok_or("That note is not among this world’s notes.")?;
         self.validate_note(note)?;
         to_json(&note.target)
     }
@@ -987,7 +996,7 @@ impl Bench {
     pub fn act_at(&mut self, point: &str, mutation: u32, action: &str) -> Result<(), String> {
         if mutation != self.mutation {
             return Err(
-                "The history has changed since this preview. Read it again before deciding.".into(),
+                "This telling has changed since the preview. Open the decision again before making it.".into(),
             );
         }
         let reading: ReadingRef = serde_json::from_str(point).map_err(|e| e.to_string())?;
@@ -3960,7 +3969,7 @@ fn grammar_view(world: &World, variety: usize) -> GrammarView {
                     description: match category {
                         Category::Plural => "Plural marks more than one countable thing.",
                         Category::Past => "Past marks an event before the present.",
-                        Category::Object => "The object marks the countable thing acted upon.",
+                        Category::Object => "Object marking distinguishes the object of a verb—for example, the dog in “the child saw the dog”. Here it is modelled for count nouns.",
                         Category::Future => "Future marks an event after the present.",
                         Category::Progressive => "Progressive marks an event in progress.",
                         Category::Genitive => "Genitive marks a countable possessor.",
@@ -5098,6 +5107,14 @@ mod tests {
                 serde_json::from_str(&applied.decisions().unwrap()).unwrap();
             assert_eq!(decisions[1]["annals"][0], annal["id"]);
             assert_eq!(decisions[1]["people"], serde_json::json!([0]));
+            assert_eq!(
+                decisions[1]["text"],
+                format!(
+                    "The author chose this sound change for *{}*: “{}”.",
+                    applied.chronicle.latest().language_title_at(0, 0),
+                    choice["label"].as_str().unwrap()
+                )
+            );
             let reloaded = Bench::load(&applied.save().unwrap()).unwrap();
             assert_eq!(
                 reloaded.chronicle.latest().authored_laws,
@@ -5335,6 +5352,44 @@ mod tests {
         assert_eq!(
             live["annals"].as_array().unwrap().last().unwrap()["before"],
             serde_json::json!({"action":4,"offset":0})
+        );
+    }
+
+    #[test]
+    fn temper_decisions_name_the_direction_without_claiming_a_pole_was_reached() {
+        let mut w = Bench::new(5, "medium").unwrap();
+        w.act(&found("Hill", "familiar")).unwrap();
+        let people = w.chronicle.latest().community_name_at(0, 0);
+        for (axis, low, high) in [
+            ("martial", "peaceable", "warlike"),
+            ("open", "insular", "welcoming"),
+            ("pious", "worldly", "devout"),
+            ("hierarchical", "egalitarian", "hierarchical"),
+            ("roving", "rooted", "restless"),
+            ("seaward", "landbound", "seagoing"),
+        ] {
+            for (amount, pole) in [(-0.01, low), (0.01, high)] {
+                w.act(
+                    &serde_json::json!({
+                        "kind": "temper", "community": 0, "axis": axis, "amount": amount
+                    })
+                    .to_string(),
+                )
+                .unwrap();
+                let decisions: serde_json::Value =
+                    serde_json::from_str(&w.decisions().unwrap()).unwrap();
+                assert_eq!(
+                    decisions.as_array().unwrap().last().unwrap()["text"],
+                    format!("The author turned the *{people}* towards a more {pole} temper.")
+                );
+            }
+        }
+        w.act(r#"{"kind":"temper","community":0,"axis":"martial","amount":0}"#)
+            .unwrap();
+        let decisions: serde_json::Value = serde_json::from_str(&w.decisions().unwrap()).unwrap();
+        assert_eq!(
+            decisions.as_array().unwrap().last().unwrap()["text"],
+            format!("The author left the *{people}*’s temper unchanged.")
         );
     }
 

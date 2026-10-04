@@ -65,7 +65,7 @@ export function TellingComparison({ open, engine, overview, map, other, onClose,
       {result.error ? <p className="notice error" role="alert">{result.error} Both saved tellings are still kept.</p> : null}
       {comparison ? <>
         <div className="comparison-maps">
-          {sides.map((side, index) => <section key={side.telling} aria-label={`${title(side)} map`}>
+          {sides.map((side, index) => <section key={side.telling} aria-label={`${title(side)} chart`}>
             <h3>{title(side)}</h3>
             <div className="comparison-map"><MapView map={map} overview={side} generation={generation} tint={{ kind: "peoples" }}
               climate={geography[index].climate} riverNames={geography[index].names}
@@ -96,7 +96,7 @@ export function TellingComparison({ open, engine, overview, map, other, onClose,
                 <p className="comparison-caption">{title(side)}</p>
                 <h3><button type="button" className="link word" onClick={() => read(side, { kind: "people", id: c.id })}>{c.name}</button></h3>
                 <dl className="comparison-facts"><dt>People</dt><dd>{c.ended === null ? `${souls(c.size)} souls` : `Ended in year ${c.ended * YEARS}`}</dd>
-                  <dt>Holdings</dt><dd>{c.ended === null ? c.lands.length : "None living"}</dd>
+                  <dt>Holdings</dt><dd>{c.ended === null ? c.lands.length : "None now"}</dd>
                   <dt>Livelihood</dt><dd>{LIVELIHOOD_NAME[c.livelihood]}</dd>
                   <dt>Rule</dt><dd>{state(side, c)}</dd>
                   <dt>Faith</dt><dd>{c.faith === null ? "Their own gods" : side.religions[c.faith].name}</dd>

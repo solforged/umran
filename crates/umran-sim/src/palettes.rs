@@ -63,7 +63,7 @@ fn indic() -> Flavor {
         id: "indic".into(),
         order: Some(WordOrder::SOV),
         possessor: Some(PossessorOrder::Before),
-        name: "Breathy, with stops let out in a puff".into(),
+        name: "With aspirated and breathy stops".into(),
         brief: "Like Sanskrit: aspirated and breathy stops, retroflexes, long vowels.".into(),
         segments: weighted(&[
             ("pʰ", 2.0),
@@ -119,7 +119,7 @@ fn iranian() -> Flavor {
         id: "iranian".into(),
         order: Some(WordOrder::SOV),
         possessor: Some(PossessorOrder::Before),
-        name: "Soft-spoken, rich in f, th, and kh".into(),
+        name: "Rich in f, th, and kh".into(),
         brief: "Like Old Persian: fricatives where others have stops, three vowels.".into(),
         segments: weighted(&[
             ("f", 1.5),
@@ -213,7 +213,7 @@ fn semitic() -> Flavor {
         id: "semitic".into(),
         order: Some(WordOrder::VSO),
         possessor: Some(PossessorOrder::After),
-        name: "Guttural, built on roots of three consonants".into(),
+        name: "With throat sounds and three-consonant roots".into(),
         brief: "Like Arabic or Hebrew: consonant roots, pharyngeals, three vowels.".into(),
         manner: vec![(Fricative, 0.8)],
         place: vec![(Uvular, 1.5), (Pharyngeal, 2.0), (Glottal, 1.5)],
@@ -442,8 +442,8 @@ fn caucasian() -> Flavor {
         id: "caucasian".into(),
         order: Some(WordOrder::SOV),
         possessor: Some(PossessorOrder::Before),
-        name: "Harsh, crowded with popped stops".into(),
-        brief: "Like the languages of the Caucasus: ejectives, uvulars, few vowels.".into(),
+        name: "Rich in ejective stops and uvular sounds".into(),
+        brief: "Like the languages of the Caucasus: ejectives, uvulars, few vowels. Ejectives are consonants released with compressed air from the throat rather than an ordinary outward breath.".into(),
         segments: weighted(&[
             ("pʼ", 4.0),
             ("tʼ", 4.0),

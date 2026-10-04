@@ -107,9 +107,9 @@ export function quietLine(year: EraYear, overview: Overview): string {
     if (kind === "law" || kind === "grammar") {
       const ids = [...new Set(entries.flatMap((a) => a.variety === null ? a.languages : [a.variety]))];
       const names = ids.map((id) => overview.varieties[id]?.name).filter((name): name is string => name !== undefined);
-      const first = names.slice(0, 2).map((name) => `the ${name}`);
+      const first = names.slice(0, 2);
       if (names.length > 2) first.push(`${countWord(names.length - 2)} more`);
-      if (first.length) phrase += ` among ${first.length === 1 ? first[0] : first.length === 2 ? first.join(" and ") : `${first.slice(0, -1).join(", ")}, and ${first.at(-1)}`}`;
+      if (first.length) phrase += ` in ${first.length === 1 ? first[0] : first.length === 2 ? first.join(" and ") : `${first.slice(0, -1).join(", ")}, and ${first.at(-1)}`}`;
     }
     parts.push(phrase);
   }

@@ -25,13 +25,14 @@ import {
 } from "lucide-react";
 import type { Annal, Catalog, CityView, Community, Craft, CraftView, ReadEngine, Ethos, HistoryPoint, HolyLand, NotebookNote, Overview, PlaceExonym, ReligionView, RenderingRow, ShrineKind, StateView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, FAITH_HOW, FALL_NAME, howCame, howNamed, hue, LIVELIHOOD_NAME, MECHANISM_NAME, RISE_NAME, SCHISM_CAUSE, STRONG, temperament, TENET_NOUN, TENET_TEACHING, TERMS, TERRAIN_NAME, weatherDeparture, type Term } from "../lore";
+import { causePhrase, CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, FAITH_HOW, FAITH_NAME, FALL_NAME, howCame, howNamed, hue, landLabel, LIVELIHOOD_NAME, peoplePhrases, RISE_NAME, SCHISM_CAUSE, STRONG, temperament, TENET_NOUN, TENET_TEACHING, TERRAIN_NAME, unnamedName, weatherDeparture } from "../lore";
 import { filterHistory, findAnnal, individualAnnals, relatedMoments, subjectHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
 import { eras, quietLine, QUIET_KINDS, type Era } from "../eras";
 import { bond } from "../words";
 import type { InterventionKind } from "./ActionDialog";
 import { SettlementAccount } from "./SettlementDesk";
 import { Told } from "./Told";
+import { Explained } from "./Explained";
 import { INITIAL_DICTIONARY, type DictionaryView } from "./Dictionary";
 import { peoplesByRegion } from "./MapView";
 import { Specimen } from "./Specimen";
@@ -329,7 +330,7 @@ function focusLabel(focus: Focus, context: Context): string {
     case "state":
       return overview.states[focus.id]?.name ?? "A state";
     case "religion":
-      return overview.religions[focus.id]?.name ?? "A religion";
+      return overview.religions[focus.id]?.name ?? FAITH_NAME.kind;
     case "craft":
       return overview.crafts.find((c) => c.id === focus.id)?.name ?? "A craft";
     case "language":
@@ -343,7 +344,7 @@ function focusLabel(focus: Focus, context: Context): string {
     case "continent":
       return continentName(focus.landmass, context);
     case "river":
-      return context.engine.river(context.generation, focus.id).names.at(-1)?.spelled ?? "Unnamed river";
+      return context.engine.river(context.generation, focus.id).names.at(-1)?.spelled ?? unnamedName("river");
     case "zone":
       return zoneName(focus.id, context);
     case "event":
@@ -454,54 +455,6 @@ function Facts({ rows }: { rows: [string, ReactNode][] }) {
   );
 }
 
-/// A linguist's term: clicking it floats a short explanation under it, so
-/// the sentence it sits in stays whole. Clicking anywhere, scrolling, or
-/// Escape puts it away.
-function Explained({ term, children }: { term: Term; children: ReactNode }) {
-  const [at, setAt] = useState<CSSProperties | null>(null);
-  const button = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (!at) return;
-    const close = () => setAt(null);
-    const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    const press = (e: PointerEvent) => {
-      if (!button.current?.contains(e.target as Node)) close();
-    };
-    window.addEventListener("scroll", close, true);
-    window.addEventListener("resize", close);
-    window.addEventListener("keydown", key);
-    window.addEventListener("pointerdown", press);
-    return () => {
-      window.removeEventListener("scroll", close, true);
-      window.removeEventListener("resize", close);
-      window.removeEventListener("keydown", key);
-      window.removeEventListener("pointerdown", press);
-    };
-  }, [at]);
-  const toggle = () => {
-    if (at || !button.current) return setAt(null);
-    const r = button.current.getBoundingClientRect();
-    const width = Math.min(320, window.innerWidth - 16);
-    const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
-    // Under the term, or over it when the term is near the foot of the window.
-    const below = r.bottom + 160 < window.innerHeight;
-    setAt(below ? { left, top: r.bottom + 4 } : { left, top: r.top - 4, transform: "translateY(-100%)" });
-  };
-  return (
-    <>
-      <button ref={button} type="button" className="term" aria-expanded={at !== null} onClick={toggle}>
-        {children}
-      </button>
-      {at ? (
-        <span className="term-note" role="note" style={at}>
-          {TERMS[term]}
-        </span>
-      ) : null}
-    </>
-  );
-}
 
 function PeopleLink({ c, context }: { c: Community; context: Context }) {
   const family = context.overview.varieties[c.variety].family;
@@ -569,11 +522,7 @@ function LanguageLink({ variety, context }: { variety: number; context: Context 
 }
 
 function landName(region: number, context: Context): string {
-  const name = context.overview.places.find((p) => p.region === region)?.names.at(-1)?.spelled;
-  const terrain = context.map.regions[region].terrain;
-  // Plural landforms take no article: "nameless hills", but "a nameless forest".
-  const plural = terrain === "plains" || terrain === "hills" || terrain === "mountains";
-  return name ?? `${plural ? "" : "a "}nameless ${TERRAIN_NAME[terrain].toLowerCase()}`;
+  return landLabel(context.overview, context.map, region);
 }
 
 function LandLink({ region, context }: { region: number; context: Context }) {
@@ -587,7 +536,7 @@ function LandLink({ region, context }: { region: number; context: Context }) {
 /// A continent's name on the chart, or a plain description before anyone
 /// has named it.
 function continentName(landmass: number, context: Context): string {
-  return context.overview.continents.find((c) => c.landmass === landmass)?.name?.name ?? "Unnamed continent";
+  return context.overview.continents.find((c) => c.landmass === landmass)?.name?.name ?? unnamedName(context.map.landmasses[landmass].kind);
 }
 
 function ContinentLink({ landmass, context }: { landmass: number; context: Context }) {
@@ -708,7 +657,7 @@ function ContinentCard({ landmass, context }: { landmass: number; context: Conte
       <CardHead
         icon={Earth}
         kind="A continent"
-        title={name?.name ?? "Unnamed continent"}
+        title={name?.name ?? unnamedName(map.landmasses[landmass].kind)}
         sub={name ? <>“{name.meaning}” <span className="ipa">/{name.ipa}/</span></> : null}
       />
       <Facts
@@ -759,7 +708,7 @@ function ContinentCard({ landmass, context }: { landmass: number; context: Conte
       <p className="muted small">
         {name ? <>Entered on the chart from the speech of the {overview.communities[name.people].name}, the first people known to have lived on or heard of it; the name stays as it was written, whatever becomes of their language.</> :
           <>No living people knows any of this land, so the chart has no name for it.</>}{" "}
-        A land here stands for country about 100 km across. Beyond its shores lie{" "}
+        Each land is a region of the world; its area is shown in square kilometres. Lands vary in size. Beyond its shores lie{" "}
         <Joined
           items={[
             ...map.landmasses.map((_, i) => i).filter((i) => i !== landmass && map.landmasses[i].kind === "continent"),
@@ -776,7 +725,7 @@ function ContinentCard({ landmass, context }: { landmass: number; context: Conte
 function RiverLink({ id, context }: { id: number; context: Context }) {
   const view = context.engine.river(context.generation, id);
   return <button type="button" className="link word" onClick={() => context.go({ kind: "river", id })}>
-    {view.names.at(-1)?.spelled ?? "Unnamed river"}
+    {view.names.at(-1)?.spelled ?? unnamedName("river")}
   </button>;
 }
 
@@ -828,7 +777,7 @@ function RiverCard({ id, context }: { id: number; context: Context }) {
   const living = overview.communities.filter((c) => c.ended === null && c.lands.some((land) => river.course.includes(land)));
   const flow = climate.rivers.find((flow) => flow.id === id);
   return <>
-    <CardHead icon={Waves} kind="A river" title={now?.spelled ?? "Unnamed river"}
+    <CardHead icon={Waves} kind="A river" title={now?.spelled ?? unnamedName("river")}
       sub={now ? <span className="ipa">/{now.ipa}/</span> : null} />
     <Facts rows={[
       ["Length", `${Math.round(river.lengthKm).toLocaleString()} km`],
@@ -1114,7 +1063,7 @@ function WorldCard({ context }: { context: Context }) {
   const last = overview.annals.at(-1);
   return <>
     <CardHead icon={Globe} kind="A chart of" title={context.title ?? continent} />
-    <p className="frontispiece-caption">{overview.generation === 0 ? `${peoples.length} peoples settle ${continent}.`
+    <p className="frontispiece-caption">{overview.generation === 0 ? `${peoples.length === 1 ? "One people settles" : `${peoples.length} peoples settle`} ${continent}.`
       : last ? <><Told text={last.text} /><EntryAnnotations annal={last} context={context} /></> : `Year ${overview.generation * YEARS}.`}</p>
     <ul className="frontispiece-peoples">{peoples.map((c) => <li key={c.id}><PeopleLink c={c} context={context} /></li>)}</ul>
     <button type="button" className="primary frontispiece-run" disabled={!overview.atTip || context.running} onClick={context.onRun}><Play size={15} aria-hidden="true" /> Run</button>
@@ -1348,6 +1297,7 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
   const { overview } = context;
   const name = (id: number) => overview.communities[id];
   const v = overview.varieties[c.variety];
+  const phrases = peoplePhrases(c.ended);
   const contacts = overview.contacts.filter((k) => k.a === c.id || k.b === c.id);
   const other = (k: (typeof contacts)[number]) => name(k.a === c.id ? k.b : k.a);
   const kinds = [...new Set(contacts.map((k) => k.kind))];
@@ -1373,25 +1323,25 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
       {c.ended === null ? <Decisions community={c.id} context={context} choices={[
         ["settlement", "Settle, divide, or move"], ["connect", "Meet another people"], ["shift", "Take up another language"],
         ...(!realm ? [["state", "Found a state"] as [InterventionKind, string]] : []),
-        ["religion", "Found a religion"],
+        ["religion", FAITH_NAME.action],
         ...(c.crafts.length < context.catalog.crafts.length ? [["craft", "Teach a craft"] as [InterventionKind, string]] : []),
         ["temper", "Their temper turns"],
       ]} /> : null}
       <section className="people-land">
-        <h3>Where they live</h3>
-        <p>Their heart is <LandLink region={c.region} context={context} />, {terrain(c.region, context)}.</p>
+        <h3>{phrases.land}</h3>
+        <p>{phrases.homeland} <LandLink region={c.region} context={context} />, {terrain(c.region, context)}.</p>
         <p>Lands: <Joined items={c.lands} link={(region) => <LandLink region={region} context={context} />} />.</p>
       </section>
       <section>
-        <h3>How they live</h3>
+        <h3>{phrases.livelihood}</h3>
         <p><Explained term="way of life">{LIVELIHOOD_NAME[c.livelihood]}</Explained> · {Math.round(c.size).toLocaleString()} souls.</p>
       </section>
       <p className="people-temper"><Explained term="temper">{temperament(c.ethos).join(", ") || "Even-tempered"}</Explained>.</p>
       <TemperLeaf c={c} told={told} context={context} />
       <StoryLeaf title="Their fortunes" annals={told} context={context} />
       <section>
-        <h3>What they speak</h3>
-        <p><LanguageLink variety={c.variety} context={context} /></p>
+        <h3>{phrases.speech}</h3>
+        <p>{phrases.lastSpeech}<LanguageLink variety={c.variety} context={context} /></p>
         <LanguageSpecimen variety={c.variety} context={context} />
       </section>
       <KnownWorldLeaf variety={c.variety} context={context} />
@@ -1478,6 +1428,7 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
 function StateCard({ state, context }: { state: StateView; context: Context }) {
   const { overview } = context;
   const rulers = overview.communities[state.rulers];
+  const standard = overview.varieties.find((v) => v.standardOf === state.id);
   const current = state.fell === null ? state.members.filter((m) => m.left === null) : [];
   const former = state.members.filter((m) => m.left !== null);
   const told = subjectHistory({ kind: "state", id: state.id }, overview, context.map);
@@ -1491,7 +1442,7 @@ function StateCard({ state, context }: { state: StateView; context: Context }) {
         hand={overview.varieties[rulers.variety].family}
         sub={<>“{state.meaning}” <span className="ipa">/{state.ipa}/</span>{state.once ? `, once ${state.once}` : ""}</>}
       />
-      {state.fell === null && rulers.ended === null ? <Decisions community={rulers.id} context={context} choices={[["religion", "Found a religion"], ["craft", "Teach a craft"], ["temper", "Their temper turns"]]} /> : null}
+      {state.fell === null && rulers.ended === null ? <Decisions community={rulers.id} context={context} choices={[["religion", FAITH_NAME.action], ["craft", "Teach a craft"], ["temper", "Their temper turns"]]} /> : null}
       <Facts rows={[
         ["Rulers", <PeopleLink c={rulers} context={context} />],
         ["Founder", <><span className="word">{state.founder.name}</span>, “{state.founder.meaning}” <span className="ipa">/{state.founder.ipa}/</span></>],
@@ -1504,7 +1455,7 @@ function StateCard({ state, context }: { state: StateView; context: Context }) {
           </>
         )],
         ["Standard", state.standard === null ? (state.fell === null ? "no court standard yet" : "no court standard arose") : (
-          <><LanguageLink variety={rulers.variety} context={context} />, since year <Year generation={state.standard} context={context} /></>
+          <>{standard ? <LanguageLink variety={standard.id} context={context} /> : "No named court standard recorded"}, since year <Year generation={state.standard} context={context} /></>
         )],
         ["Purism", state.standard === null ? null : (
           <Explained term="purism">{state.purism >= 0.5 ? "guarded against foreign words" : "open to foreign words"}</Explained>
@@ -1562,7 +1513,7 @@ function ReligionCard({ religion, context }: { religion: ReligionView; context: 
   const parent = religion.parent === null ? null : overview.religions[religion.parent];
   return (
     <>
-      <CardHead icon={Sparkles} kind={parent ? "A branch of a faith" : "A religion"} title={<i>{religion.name}</i>}
+      <CardHead icon={Sparkles} kind={parent ? "A branch of a faith" : FAITH_NAME.kind} title={<i>{religion.name}</i>}
         tone={hue(religion.id)}
         sub={<>“{religion.meaning}” <span className="ipa">/{religion.ipa}/</span></>} />
       {overview.communities[religion.people]?.ended === null ? <Decisions community={religion.people} context={context} choices={[["connect", "Meet another people"], ["craft", "Teach a craft"], ["temper", "Their temper turns"]]} /> : null}
@@ -1818,7 +1769,7 @@ function WordCard({ variety, concept, context }: { variety: number; concept: str
       />
       {groups.length > 1 ? (
         <>
-          <h3>Across the map</h3>
+          <h3>Across the chart</h3>
           <p className="muted small">
             Lands are coloured by the root their word comes from; words of one colour are{" "}
             <Explained term="cognate">cognates</Explained>.
@@ -1865,7 +1816,7 @@ function LawCard({ id, context }: { id: string; context: Context }) {
         ]}
       />
       <p className="muted small">
-        A <Explained term="sound law">sound law</Explained>. On the map, orange land underwent it and grey land did not;
+        A <Explained term="sound law">sound law</Explained>. On the chart, orange land underwent it and grey land did not;
         red lines are <Explained term="isogloss">isoglosses</Explained>, where it stopped.
       </p>
       {overview.varieties.filter((v) => v.laws.some((law) => law.id === id)).map((v) => (
@@ -1936,7 +1887,7 @@ function LandCard({ region, context }: { region: number; context: Context }) {
       <CardHead
         icon={MapPin}
         kind="A land"
-        title={now?.spelled ?? "A land without a name"}
+        title={landLabel(overview, map, region)}
         sub={now ? <span className="ipa">/{now.ipa}/</span> : null}
       />
       <Facts
@@ -2176,7 +2127,7 @@ function EventCard({ annal, context }: { annal: Annal; context: Context }) {
         <EntryAnnotations annal={annal} context={context} />
       </p>
       {annal.settlement ? <>
-        <SettlementAccount plan={annal.settlement.plan} overview={overview} map={context.map} />
+        <SettlementAccount plan={annal.settlement.plan} overview={overview} map={context.map} recorded />
       </> : null}
       {annal.before ? <button type="button" className="reconsider" onClick={() => annal.settlement ? context.onReconsider(annal) : context.onReturnBefore(annal.before!)}>Return before this decision</button> : null}
       {annal.variety !== null && annal.specimen.length > 0 ? (
@@ -2242,7 +2193,7 @@ function EventCard({ annal, context }: { annal: Annal; context: Context }) {
       ) : null}
       {annal.religions.some((id) => overview.religions[id]) ? (
         <>
-          <h3>Religions</h3>
+          <h3>{FAITH_NAME.plural}</h3>
           <p><Joined items={annal.religions.filter((id) => overview.religions[id])}
             link={(id) => <ReligionLink religion={overview.religions[id]} context={context} />} /></p>
         </>
@@ -2289,9 +2240,10 @@ function EventCard({ annal, context }: { annal: Annal; context: Context }) {
   );
 }
 
-export function EntryAnnotations({ annal, context }: { annal: Annal; context: Pick<Context, "go"> }) {
+export function EntryAnnotations({ annal, context }: { annal: Annal; context: Pick<Context, "go" | "overview"> }) {
+  const cause = causePhrase(annal, context.overview);
   return <>
     {annal.settlement !== undefined ? <span className="author-decision"> Author's decision</span> : null}
-    {annal.cause ? <> <button type="button" className="link annal-cause" onClick={() => context.go({ kind: "event", id: `world:${annal.cause!.event}` })}>{MECHANISM_NAME[annal.cause.mechanism]} ↗</button></> : null}
+    {cause ? <> <button type="button" className="link annal-cause" onClick={() => context.go({ kind: "event", id: cause.trigger.id })}>{cause.text} ↗</button></> : null}
   </>;
 }

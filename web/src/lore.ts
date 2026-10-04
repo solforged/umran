@@ -36,8 +36,9 @@ import {
   WholeWord,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, ClimateView, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Mechanism, Overview, PlaceName, ReligionView, Rendering, SchismCause, StateView, StressRule, Tenet, Terrain } from "./model";
+import type { Annal, ClimateView, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Mechanism, Overview, PlaceName, ReligionView, Rendering, SchismCause, StateView, StressRule, Tenet, Terrain, WorldMap } from "./model";
 import { YEARS } from "./model";
+import { findAnnal } from "./history";
 
 export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string }> = {
   settlement: { icon: MapPinned, name: "A choice of homeland" },
@@ -114,7 +115,7 @@ export const CONTACT_NAME: Record<ContactKind, string> = {
   neighbours: "Neighbours",
   trade: "Trade",
   rule: "Rule",
-  religion: "Religion",
+  religion: "Religious contact",
   intermarriage: "Intermarriage",
 };
 
@@ -153,8 +154,8 @@ export const STRESS_RULE: Record<StressRule, string> = {
   initial: "on the first syllable",
   penult: "on the next to last syllable",
   final: "on the last syllable",
-  weight: "on the next to last syllable if it is heavy, else the one before",
-  free: "where each word has it",
+  weight: "on a heavy next-to-last syllable, otherwise the syllable before it; on the first syllable in a two-syllable word",
+  free: "on a syllable specified separately for each word",
 };
 
 /// A people's six leanings, in the order a card lists them.
@@ -258,13 +259,13 @@ export const TERMS = {
   "standard language":
     "A form of speech treated as a shared model, here the language of a state’s court. Kindred dialects tend to take up its sounds and words, while the standard itself changes more slowly.",
   "dialect levelling":
-    "Kindred dialects under one standard lose their differences as speakers take up the standard’s sounds and words, as English and French dialects did.",
+    "Dialect differences become less marked as speakers in contact adopt shared forms. Here related dialects can converge on a court standard’s sounds and words.",
   purism:
     "Guarding a language against foreign words, favouring words made from its own resources instead. Here a purist court makes its standard less open to borrowing.",
   "own words":
     "Meanings expressed with a native word used for that meaning alone. Loans come from other languages; shared words are also the main word for another meaning.",
   "sound law":
-    "A change in how a language is pronounced that applies to every word with the right sounds, not word by word. That regularity is what lets linguists reconstruct older forms.",
+    "A regular change in pronunciation affecting words with the same sounds in the same conditions. Here a change also respects the language’s minimum word size and never removes a word’s last vowel.",
   isogloss:
     "A line on a map marking where a feature of speech stops: one side says it one way, the other side another.",
   wave: "A sound change passing from one community to its neighbours, rather than being inherited. Waves are why dialects share changes their ancestor never had.",
@@ -284,25 +285,25 @@ export const TERMS = {
   pejoration:
     "A word’s meaning becoming worse. A new faith may use an older word for a god to mean a demon.",
   "learned word":
-    "A word taken back from a sacred or classical language. English fragile came from Latin beside frail, which had already descended from the same Latin word.",
+    "A word borrowed through study or formal tradition, often from a classical or sacred language. French fragile was borrowed from Latin beside frêle, which French inherited from the same Latin source.",
   schism:
     "A faith dividing into branches that each claim the true teaching, as Christianity did between Rome and Constantinople, and again at the Reformation.",
   pilgrimage:
     "A journey to a holy place. Pilgrims meet speakers of other tongues on the road and at the shrine, and carry words home.",
   stress:
-    "The extra force one syllable of a word gets. Where it falls shapes sound change: unstressed vowels weaken and drop, as Latin calidus became Italian caldo.",
+    "The prominence of one syllable, heard through a combination of pitch, duration, loudness, and vowel quality. Its position can affect sound change.",
   geminate:
     "A long, or doubled, consonant, as the tt in Italian fatto “done”. Many arise when one consonant assimilates to the next, as Latin factum became fatto.",
   koiné:
     "The new speech that forms where speakers of related dialects or languages crowd together, keeping what most of them share and dropping what few do. Hellenistic Greek and early London English formed this way.",
   diglossia:
-    "Two forms of one language for different purposes: a fixed, written high form for law, worship, and learning, and the everyday speech everyone grows up with. Latin beside the early Romance languages and Classical Arabic beside the spoken dialects are examples.",
+    "Different varieties used for different purposes: a high variety for formal settings and an everyday variety for ordinary life. Here the high variety is preserved while everyday speech changes.",
   "classical language":
-    "A standard fixed as it stood, by grammarians or by the fall of its state, and written long after its speakers’ everyday speech has moved on. It keeps lending learned words.",
+    "A language preserved for learned or literary use after everyday speech has changed. Here a court standard is fixed by grammarians or when its state falls.",
   vernacular:
-    "The everyday speech of a people, as against a classical or sacred language. Writing the vernacular, as Dante did Italian, ends diglossia.",
+    "The everyday speech of a community. It can be written while a classical or sacred language remains in formal use. Here beginning to write it marks the end of the modelled high-language writing arrangement.",
   doublet:
-    "Two words in one language that came from the same older word by different routes. English frail and fragile are a doublet: one inherited, the other learned from Latin.",
+    "Two words in one language that ultimately come from the same source by different routes. French frêle and fragile are a doublet: one inherited, the other learned from Latin.",
   "given name":
     "A personal name used to call someone, such as Wulfstan. Here names come from the language’s words and change with its sounds.",
   "dithematic name":
@@ -311,6 +312,18 @@ export const TERMS = {
     "Writing can keep an older form after speech changes. English knight still writes sounds that are no longer said; respelling brings writing closer to speech again.",
   "meaning extension by livelihood":
     "A familiar word taking on a meaning shaped by how people live. Herders may count wealth in cattle: Latin pecunia, “money”, comes from pecus, “cattle”.",
+  "minimal word": "The shortest independent word a language permits. Here sound change cannot reduce a word below that size.",
+  "heavy syllable": "A syllable with two units of weight, or moras: here a long vowel or a short vowel followed by a closing consonant.",
+  affix: "A meaningful piece attached to a word: a prefix before the stem or a suffix after it.",
+  "root and pattern": "Words built by fitting a consonant root into a pattern of vowels and, sometimes, other sounds.",
+  paradigm: "The related grammatical forms of one word, such as its singular and plural.",
+  particle: "A separate word with a grammatical job, such as marking past time.",
+  productive: "Available for making new forms, rather than surviving only in particular old words.",
+  "grammatical contrast": "An audible difference that distinguishes a grammatical category; it may be carried by a stem change, affix, or separate word.",
+  grammaticalization: "A word or construction developing a grammatical role; here an ordinary lexical word also supplies a separate marker.",
+  fusion: "A separate grammatical word becoming attached to its neighbour.",
+  analogy: "A form changing to follow a pattern found in other forms.",
+  IPA: "International Phonetic Alphabet: symbols for speech sounds.",
 } as const;
 
 export type Term = keyof typeof TERMS;
@@ -319,7 +332,7 @@ export type Term = keyof typeof TERMS;
 export const MECHANISM_NAME: Record<Mechanism, string> = {
   hardship: "after hard times",
   crowding: "pressed for land",
-  "stronger-neighbour": "under a stronger neighbour",
+  "stronger-neighbour": "under pressure from a stronger neighbour",
   climate: "as the weather turned",
   craft: "with a craft learned",
   conquest: "after a conquest",
@@ -361,13 +374,13 @@ export const WORD_ORDER_PHRASE = {
 } as const;
 
 export const MARKING_PHRASE = {
-  case: { choice: "mark the thing acted on", prose: "the thing acted on is marked on the noun", summary: "object marked on the noun" },
-  order: { choice: "let the order say who did what", prose: "word order says who did what", summary: "word order marks the object" },
+  case: { choice: "mark the object", prose: "the object has a grammatical marker", summary: "object marked" },
+  order: { choice: "let word order distinguish the roles", prose: "word order distinguishes subject and object", summary: "roles shown by word order" },
 } as const;
 
 export const POSSESSOR_PHRASE = {
-  before: { choice: "the child's fish", prose: "the possessor comes before", summary: "possessor before" },
-  after: { choice: "the fish of the child", prose: "the possessor comes after", summary: "possessor after" },
+  before: { choice: "the possessor first (“child — fish”)", prose: "the possessor comes before", summary: "possessor before" },
+  after: { choice: "the possessor last (“fish — child”)", prose: "the possessor comes after", summary: "possessor after" },
 } as const;
 
 /// The chronicle's quiet apparatus shares its nouns with cards and the book.
@@ -394,4 +407,42 @@ export const CHRONICLE = {
 
 export function countWord(count: number): string {
   return ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"][count] ?? count.toLocaleString();
+}
+
+export const FAITH_NAME = { action: "Found a faith", kind: "A faith", plural: "Faiths" } as const;
+export const PEOPLE_NAME = "People";
+
+export function peoplePhrases(ended: Community["ended"]) {
+  return ended === null
+    ? { land: "Where they live", homeland: "Their heart is", livelihood: "How they live", speech: "What they speak", lastSpeech: "" }
+    : { land: "Where they lived", homeland: "Their last homeland was", livelihood: "How they lived", speech: "What they spoke", lastSpeech: "Their last recorded speech was " };
+}
+
+export function unnamedName(kind: string, prose = false): string {
+  const lower = kind.toLowerCase();
+  const plural = lower === "plains" || lower === "hills" || lower === "mountains";
+  return prose ? `${plural ? "" : "an "}unnamed ${lower}` : `Unnamed ${lower}`;
+}
+
+export function landLabel(overview: Overview, map: WorldMap, region: number, prose = false): string {
+  return overview.places.find((p) => p.region === region)?.names.at(-1)?.spelled ??
+    unnamedName(TERRAIN_NAME[map.regions[region].terrain], prose);
+}
+
+/** The recorded trigger, including grouped individual entries, not a guessed cause. */
+export function causePhrase(annal: Annal, overview: Overview): { trigger: Annal; text: string } | null {
+  if (!annal.cause) return null;
+  const trigger = findAnnal(overview.annals, `world:${annal.cause.event}`);
+  if (!trigger) return null;
+  const year = trigger.generation * YEARS;
+  const place = trigger.lands.length ? overview.places.find((p) => p.region === trigger.lands[0])?.names.filter((n) => n.since <= trigger.generation).at(-1)?.spelled : undefined;
+  const where = place ? ` in ${place}` : "";
+  let text: string;
+  switch (annal.cause.mechanism) {
+    case "hardship": text = `after hard times${where} in ${year}`; break;
+    case "stronger-neighbour": text = `under pressure from a stronger neighbour, after ${trigger.kind === "contact" || trigger.kind === "neighbours" ? "their meeting" : trigger.kind === "rose" ? "a state rose" : "the recorded event"} in ${year}`; break;
+    case "city": text = `after the city grew in ${year}`; break;
+    default: text = `${MECHANISM_NAME[annal.cause.mechanism]} in ${year}`;
+  }
+  return { trigger, text };
 }

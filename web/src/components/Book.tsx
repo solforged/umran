@@ -62,14 +62,8 @@ function subjectId(subject: Subject, overview: Overview): string {
 }
 
 function CausePhrase({ annal, overview }: { annal: Annal; overview: Overview }) {
-  const cause = (annal as Annal & { cause?: { event: number | string; mechanism: string } }).cause;
-  const eventId = cause?.event ?? annal.temper?.cause;
-  if (eventId === undefined || eventId === null) return null;
-  // Current cause ids are strings; numeric ids are supported by the lane contract.
-  const trigger = findAnnal(overview.annals, String(eventId));
-  if (!trigger) return null;
-  const names = (lore as typeof lore & { MECHANISM_NAME?: Record<string, string> }).MECHANISM_NAME;
-  return <span className="book-cause"> After <a href={`#event-${trigger.id}`} title={trigger.text}>{lore.EVENT_KIND[trigger.kind].name.toLowerCase()} in year {trigger.generation * YEARS}</a>{cause ? ` · ${names?.[cause.mechanism] ?? cause.mechanism}` : ""}.</span>;
+  const cause = lore.causePhrase(annal, overview);
+  return cause ? <span className="book-cause"> <a href={`#event-${cause.trigger.id}`} title={cause.trigger.text}>{cause.text[0].toUpperCase() + cause.text.slice(1)}</a>.</span> : null;
 }
 
 /// `marked` names the author's decision on the entry itself; the whole
@@ -92,16 +86,17 @@ export function PeopleChapter({ community: c, ctx }: { community: Community; ctx
   const contacts = overview.contacts.filter((contact) => contact.a === c.id || contact.b === c.id);
   const kin = overview.communities.filter((other) => other.id !== c.id && (c.parents.includes(other.id) || other.parents.includes(c.id) || c.parents.some((parent) => other.parents.includes(parent))));
   const language = overview.varieties[c.variety];
-  const landLink = (region: number) => ctx.link({ kind: "land", region }, overview.places.find((p) => p.region === region)?.names.at(-1)?.spelled ?? `Land ${region + 1}`);
+  const phrases = lore.peoplePhrases(c.ended);
+  const landLink = (region: number) => ctx.link({ kind: "land", region }, lore.landLabel(overview, map, region));
   const personLink = (id: number) => ctx.link({ kind: "people", id }, overview.communities[id]?.name ?? "An unrecorded people");
   return <article className="book-subject people-chapter" id={`people-${c.id}`}>
     <h3>{c.name}</h3><p className="book-subtitle">“{c.meaning}” · <span className="ipa">/{c.ipa}/</span>{c.once ? ` · once ${c.once}` : ""}{c.ended !== null ? ` · ended in year ${c.ended * YEARS}` : ""}</p>
-    <h4>Where they live</h4><p>{c.ended === null ? "Their heart is" : "Their last heart was"} {landLink(c.region)}, {map.regions[c.region].coastal ? "coastal " : ""}{TERRAIN_NAME[map.regions[c.region].terrain].toLowerCase()}{map.regions[c.region].island ? ", on an island" : ""}. {c.lands.length > 1 ? <>Their lands: {c.lands.map((region, i) => <span key={region}>{i ? ", " : ""}{landLink(region)}</span>)}.</> : null}</p>
-    <h4>How they live</h4><p>{LIVELIHOOD_NAME[c.livelihood]}; {Math.round(c.size).toLocaleString()} people{c.ended !== null ? " when they ended" : " now"}.</p>
+    <h4>{phrases.land}</h4><p>{phrases.homeland} {landLink(c.region)}, {map.regions[c.region].coastal ? "coastal " : ""}{TERRAIN_NAME[map.regions[c.region].terrain].toLowerCase()}{map.regions[c.region].island ? ", on an island" : ""}. {c.lands.length > 1 ? <>Their lands: {c.lands.map((region, i) => <span key={region}>{i ? ", " : ""}{landLink(region)}</span>)}.</> : null}</p>
+    <h4>{phrases.livelihood}</h4><p>{LIVELIHOOD_NAME[c.livelihood]}; {Math.round(c.size).toLocaleString()} people{c.ended !== null ? " when they ended" : " now"}.</p>
     <h4>What they are like</h4><p>{temperament(c.ethos, 6).join(", ") || "No marked leaning"}.</p>
     {annals.some((a) => a.temper !== null) ? <ol className="book-chronicle">{annals.filter((a) => a.temper !== null).map((a) => <ChronicleEntry key={a.id} annal={a} overview={overview} />)}</ol> : null}
     <h4>Their fortunes</h4>{annals.length ? <ol className="book-chronicle">{annals.map((a) => <ChronicleEntry key={a.id} annal={a} overview={overview} />)}</ol> : <p className="muted">No fortunes recorded.</p>}
-    <h4>What they speak</h4><p>{ctx.link({ kind: "language", variety: language.id }, language.name)}{language.meaning ? `, “${language.meaning}”` : ""}.</p><Specimen words={language.specimen} onWord={(concept) => ctx.open({ kind: "word", variety: language.id, concept })} />
+    <h4>{phrases.speech}</h4><p>{phrases.lastSpeech}{ctx.link({ kind: "language", variety: language.id }, language.name)}{language.meaning ? `, “${language.meaning}”` : ""}.</p><Specimen words={language.specimen} onWord={(concept) => ctx.open({ kind: "word", variety: language.id, concept })} />
     <dl className="chapter-facts">
       <div><dt>Kin</dt><dd>{kin.length ? kin.map((other, i) => <span key={other.id}>{i ? ", " : ""}{personLink(other.id)}</span>) : "No recorded parents, daughters, or siblings"}.</dd></div>
       <div><dt>Dealings</dt><dd>{contacts.length ? contacts.map((contact, i) => <span key={i}>{i ? "; " : ""}{CONTACT_NAME[contact.kind]} with {personLink(contact.a === c.id ? contact.b : contact.a)}</span>) : "No current contact recorded"}.</dd></div>
@@ -219,7 +214,7 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
           const continent = overview.continents.find((c) => c.landmass === mass.id);
           const places = overview.places.filter((p) => map.regions[p.region].landmass === mass.id);
           return <article className="book-subject" id={`continent-${mass.id}`} key={mass.id}>
-            <h3>{continent?.name?.name ?? (mass.kind === "island" ? "An unnamed island" : "An unnamed continent")}</h3>
+            <h3>{continent?.name?.name ?? lore.unnamedName(mass.kind)}</h3>
             {continent?.name ? <p>
               “{continent.name.meaning}” · <span className="ipa">/{continent.name.ipa}/</span>;
               entered on the chart in year {continent.name.since * YEARS}, from{" "}
@@ -227,7 +222,7 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
             </p> : null}
             <p>{mass.regions.length} lands; {Array.from(new Set(mass.regions.map((id) => TERRAIN_NAME[map.regions[id].terrain].toLowerCase()))).join(", ")}.</p>
             {places.map((place) => <section className="book-land" id={`land-${place.region}`} key={place.region}>
-              <h4>{place.names.at(-1)?.spelled ?? `Land ${place.region + 1}`}</h4>
+              <h4>{lore.landLabel(overview, map, place.region)}</h4>
               <p>{map.regions[place.region].coastal ? "Coastal " : ""}{TERRAIN_NAME[map.regions[place.region].terrain].toLowerCase()}
                 {map.regions[place.region].island ? ", on an island" : ""}.
               </p>
@@ -251,7 +246,7 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
         {climate.zones.map((zone) => <p key={zone.id}>Weather zone {zone.id + 1}: {weatherDeparture(zone)}.</p>)}
         <ul className="roster">{map.rivers.map((river) => {
           const name = engine.river(generation, river.id).names.at(-1);
-          return <li key={river.id}>{name?.spelled ?? `River ${river.id + 1}`} · {climate.rivers.find((flow) => flow.id === river.id)?.flowing ? "flowing" : "flow has failed"}.</li>;
+          return <li key={river.id}>{name?.spelled ?? lore.unnamedName("river")} · {climate.rivers.find((flow) => flow.id === river.id)?.flowing ? "flowing" : "flow has failed"}.</li>;
         })}</ul>
       </section>
       <section className="book-chapter" id="book-peoples" data-book-chapter="peoples">
@@ -286,14 +281,16 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
       <section className="book-chapter" id="book-institutions" data-book-chapter="institutions">
         {head(4, [...states, ...religions, ...crafts, ...overview.religions.flatMap((faith) => renderingLines(faith.words, overview)), ...overview.crafts.flatMap((craft) => renderingLines(craft.words, overview))])}
         <h2>States, faiths, crafts, cities</h2><h3>States</h3>
-        {overview.states.length ? overview.states.map((state, i) => (
+        {overview.states.length ? overview.states.map((state, i) => {
+          const standard = overview.varieties.find((v) => v.standardOf === state.id);
+          return (
           <article className="book-subject" id={`state-${state.id}`} key={state.id}>
             <h4>{state.name}</h4><p>{states[i]}.</p>
-            <p>{state.standard !== null ? <>Court speech: {ctx.link({ kind: "language", variety: state.standard }, overview.varieties[state.standard]?.name)}.</> : "No court standard recorded."}
+            <p>{state.standard !== null && standard ? <>Court speech: {ctx.link({ kind: "language", variety: standard.id }, standard.name)}; standard since year {state.standard * YEARS}.</> : "No court standard recorded."}
               {" "}{state.classical ? <>Classical form: {ctx.link({ kind: "language", variety: state.classical.variety }, overview.varieties[state.classical.variety]?.name)}, fixed in year {state.classical.fixed * YEARS}.</> : null}
             </p>
           </article>
-        )) : <p className="muted">No states yet.</p>}
+        ); }) : <p className="muted">No states yet.</p>}
         <h3>Faiths</h3>
         {overview.religions.length ? overview.religions.map((faith) => (
           <article className="book-subject" id={`religion-${faith.id}`} key={faith.id}>
@@ -376,7 +373,7 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
               : undefined;
             return <li key={t.id}>
               <h3>{t.name}</h3>
-              <p>{t.parent ? `Diverged in year ${(t.from ?? 0) * YEARS}, at decision ${t.parent.point.action}` : "The first telling"}; latest year {t.latest * YEARS}.</p>
+              <p>{t.parent ? `Diverged in year ${(t.from ?? 0) * YEARS}` : "The first telling"}; latest year {t.latest * YEARS}.</p>
               {diverging ? <p>The diverging decision: <Told text={diverging.text} /></p> : null}
             </li>;
           })}
