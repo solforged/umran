@@ -43,6 +43,7 @@ pub fn mint_roots(
     let mut by_field: HashMap<Field, HashSet<Form>> = HashMap::new();
     let mut out: Vec<Minted> = CONCEPTS
         .iter()
+        .filter(|concept| !crate::pronouns::is_optional_cell(concept.id))
         .map(|concept| {
             let mut rng = stream(seed, &[key("root"), key(concept.id)]);
             let field = by_field.entry(concept.field).or_default();

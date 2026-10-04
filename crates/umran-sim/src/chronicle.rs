@@ -32,7 +32,8 @@ use std::collections::BTreeMap;
 /// Revision 44 adds doctrine: six tenets, disputes at schism, and taboo.
 /// Revision 45 adds seasonal drought, hard winters, and floods.
 /// Revision 46 keeps familiar address beside polite address at court.
-pub const ENGINE_REVISION: u32 = 46;
+/// Revision 47 mints no founding root for pronoun cells a language may lack.
+pub const ENGINE_REVISION: u32 = 47;
 /// Revision 33 replaces flat geography and its region identities with a sphere.
 /// Earlier region-targeted actions cannot be replayed on the spherical mesh.
 pub const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;
