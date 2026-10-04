@@ -857,6 +857,7 @@ mod tests {
             && a.climate == b.climate
             && a.places == b.places
             && a.river_names == b.river_names
+            && a.lake_names == b.lake_names
             && a.continent_names == b.continent_names
             && a.cities == b.cities
             && a.events == b.events
@@ -1055,6 +1056,7 @@ mod tests {
             assert_eq!(world.authored_laws, before.authored_laws);
             assert_eq!(world.places, before.places);
             assert_eq!(world.river_names, before.river_names);
+            assert_eq!(world.lake_names, before.lake_names);
             assert_eq!(world.continent_names, before.continent_names);
             assert_eq!(world.cities, before.cities);
             for (a, b) in world.varieties.iter().zip(&before.varieties) {
@@ -1063,6 +1065,7 @@ mod tests {
                 assert_eq!(a.laws, b.laws);
                 assert_eq!(a.exonyms, b.exonyms);
                 assert_eq!(a.river_exonyms, b.river_exonyms);
+                assert_eq!(a.lake_exonyms, b.lake_exonyms);
             }
         }
         let mut history = Chronicle::new(7, MapSize::Small);
@@ -1734,6 +1737,7 @@ mod tests {
             GeographyVersion::SphericalV1,
             GeographyVersion::ContinentalV2,
             GeographyVersion::ContinentalV3,
+            GeographyVersion::ContinentalV4,
         ] {
             let mut source = if geography == GeographyVersion::CURRENT {
                 Chronicle::new(7, MapSize::Small)

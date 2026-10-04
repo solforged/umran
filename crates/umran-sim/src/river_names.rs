@@ -417,12 +417,14 @@ mod tests {
                 mouth,
                 catchment: vec![a, b, c],
                 joins: None,
+                channel: Vec::new(),
             },
             River {
                 course: vec![c],
                 mouth,
                 catchment: vec![c],
                 joins: Some(0),
+                channel: Vec::new(),
             },
         ];
         let map = Arc::make_mut(&mut world.map);

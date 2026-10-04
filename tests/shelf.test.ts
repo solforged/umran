@@ -41,6 +41,8 @@ describe("saved shelf geography", () => {
     expect(bookLand("new", 34)).toEqual({ seed: 5, size: "large", geography: "continental-v2" });
     save("current", { revision: 35, seed: 5, map: "large", geography: "continental-v3" });
     expect(bookLand("current", 35)).toEqual({ seed: 5, size: "large", geography: "continental-v3" });
+    save("lakes", { revision: 42, seed: 5, map: "large", geography: "continental-v4" });
+    expect(bookLand("lakes", 42)).toEqual({ seed: 5, size: "large", geography: "continental-v4" });
   });
 
   test("implicit geography follows the recipe migration default, not the current engine default", () => {

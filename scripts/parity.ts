@@ -340,7 +340,7 @@ async function relatedFamily(seed: number): Promise<void> {
   const bench = new Workbench(seed, size);
   try {
     const map = object(json(JSON.parse(bench.map())));
-    if (map.geography !== "continental-v3") throw new Error("New founding worlds must use continental-v3");
+    if (map.geography !== "continental-v4") throw new Error("New founding worlds must use continental-v4");
     const nativeBefore = await rpc({ kind: "save" });
     const wasmBefore = bench.save();
     let sites: number[] | undefined;
@@ -464,13 +464,17 @@ async function relatedFamily(seed: number): Promise<void> {
   } finally { bench.free(); }
 }
 
-async function legacyGeography(seed: number): Promise<void> {
+async function legacyGeography(seed: number, geography: "spherical-v1" | "continental-v2" | "continental-v3"): Promise<void> {
   const size = ["small", "medium", "large", "vast"][seed % 4];
-  const label = `legacy/spherical-v1/${size}`;
-  await rpc({ kind: "new", seed, map: size, geography: "spherical-v1" });
-  const original = Workbench.withGeography(seed, size, "spherical-v1");
+  const label = `legacy/${geography}/${size}`;
+  await rpc({ kind: "new", seed, map: size, geography });
+  const original = Workbench.withGeography(seed, size, geography);
   try {
     const map = json(JSON.parse(original.map()));
+    if (array(object(map).lakes).length !== 0
+      || array(object(map).rivers).some(r => array(object(r).channel).length !== 0)) {
+      throw new Error("Legacy geography acquired lakes or river channels");
+    }
     const anchor = number(object(array(object(map).landmasses)[0]).anchor);
     const founder: JsonObject = {
       kind: "found", preset: "germanic", seed: (seed + 31) >>> 0,
@@ -484,23 +488,25 @@ async function legacyGeography(seed: number): Promise<void> {
     wasmAct(original, run);
     const nativeRecipe = object(json(JSON.parse(string(await rpc({ kind: "save" })))));
     const wasmRecipe = object(json(JSON.parse(original.save())));
-    assertExact(nativeRecipe, wasmRecipe, "Explicit spherical-v1 recipes differ");
-    if (wasmRecipe.geography !== "spherical-v1") throw new Error("Old geography must remain explicit on export");
-    // Recreate the actual revision-33 spelling: old maps had no version field.
-    nativeRecipe.revision = 33;
-    wasmRecipe.revision = 33;
-    delete nativeRecipe.geography;
-    delete wasmRecipe.geography;
+    assertExact(nativeRecipe, wasmRecipe, `Explicit ${geography} recipes differ`);
+    if (wasmRecipe.geography !== geography) throw new Error("Old geography must remain explicit on export");
+    if (geography === "spherical-v1") {
+      // Recreate the actual revision-33 spelling: old maps had no version field.
+      nativeRecipe.revision = 33;
+      wasmRecipe.revision = 33;
+      delete nativeRecipe.geography;
+      delete wasmRecipe.geography;
+    }
     await rpc({ kind: "load", recipe: JSON.stringify(nativeRecipe) });
     const loaded = Workbench.load(JSON.stringify(wasmRecipe));
     try {
       await compare(loaded, label, seed, 2 * YEARS);
-      assertExact(json(JSON.parse(loaded.map())), map, "Revision-33 load redrew the saved map");
+      assertExact(json(JSON.parse(loaded.map())), map, "Legacy load redrew the saved map");
       const resaved = loaded.save();
       const savedRecipe = object(json(JSON.parse(resaved)));
-      if (savedRecipe.geography !== "spherical-v1") throw new Error("Re-saving lost the old geography");
+      if (savedRecipe.geography !== geography) throw new Error("Re-saving lost the old geography");
       assertExact(json(JSON.parse(string(await rpc({ kind: "save" })))), savedRecipe,
-        "Migrated revision-33 recipes differ");
+        "Migrated legacy recipes differ");
       await rpc({ kind: "load", recipe: resaved });
       const replay = Workbench.load(resaved);
       try {
@@ -517,7 +523,7 @@ async function legacyGeography(seed: number): Promise<void> {
         };
         assertExact(branched, expectedYearZero, "An old-geography branch changed its original year-zero world");
         const branchRecipe = replay.save();
-        if (object(json(JSON.parse(branchRecipe))).geography !== "spherical-v1") {
+        if (object(json(JSON.parse(branchRecipe))).geography !== geography) {
           throw new Error("Branching changed the old geography version");
         }
         await rpc({ kind: "load", recipe: branchRecipe });
@@ -648,7 +654,9 @@ try {
   for (const seed of onlySeed === undefined ? seeds : [onlySeed]) {
     await generated(seed);
     await relatedFamily(seed);
-    await legacyGeography(seed);
+    for (const geography of ["spherical-v1", "continental-v2", "continental-v3"] as const) {
+      await legacyGeography(seed, geography);
+    }
   }
   if (onlySeed === undefined || onlySeed === 21) await sample();
   for (const [key, record] of drift) {

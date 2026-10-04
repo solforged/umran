@@ -12,8 +12,8 @@ import type { Region, River, WorldMap } from "../web/src/model";
 function world(cells: { center: MapPoint; boundary?: MapPoint[]; neighbours?: number[]; terrain?: Region["terrain"] }[] = []): WorldMap {
   const map: WorldMap = {
     size: "small", radiusKm: 18000 / Math.PI, width: 360, height: 180, kmPerUnit: 100,
-    geography: "continental-v3",
-    regions: [], landmasses: [], rivers: [], climateZones: [],
+    geography: "continental-v4",
+    regions: [], landmasses: [], rivers: [], lakes: [], climateZones: [],
   };
   map.regions = cells.map(({ center, boundary = [], neighbours = [], terrain = "plains" }, id) => ({
     id, center, boundary, neighbours, terrain,
@@ -326,8 +326,8 @@ describe("canonical coastal borders and river courses", () => {
   });
 
   test("an ambiguous tributary ends at its actual confluence, not the first adjacent parent reach", () => {
-    const tributary: River = { id: 0, course: [0], mouth: 1, catchment: [0], joins: 1, joinAt: 3, lengthKm: 500 };
-    const parent: River = { id: 1, course: [2, 3], mouth: 1, catchment: [0, 2, 3], joins: null, joinAt: null, lengthKm: 1000 };
+    const tributary: River = { id: 0, course: [0], channel: [], mouth: 1, catchment: [0], joins: 1, joinAt: 3, lengthKm: 500 };
+    const parent: River = { id: 1, course: [2, 3], channel: [], mouth: 1, catchment: [0, 2, 3], joins: null, joinAt: null, lengthKm: 1000 };
     const map = world([
       { center: [0, 0], neighbours: [2, 3] }, { center: [90, 0], terrain: "sea" },
       { center: [20, 0] }, { center: [3, 4] },
@@ -337,7 +337,7 @@ describe("canonical coastal borders and river courses", () => {
   });
 
   test("a sea outlet ends at the actual shared coast, not the sea centre or centre-to-centre midpoint", () => {
-    const river: River = { id: 0, course: [0], mouth: 1, catchment: [0], joins: null, joinAt: null, lengthKm: 1000 };
+    const river: River = { id: 0, course: [0], channel: [], mouth: 1, catchment: [0], joins: null, joinAt: null, lengthKm: 1000 };
     const map = world([
       { center: [0, 0], boundary: [[-10, -10], [-10, 10], [10, 10], [10, -10]], neighbours: [1] },
       { center: [40, 0], boundary: [[10, -10], [10, 10], [50, 10], [50, -10]], neighbours: [0], terrain: "sea" },
@@ -356,7 +356,7 @@ describe("canonical coastal borders and river courses", () => {
     ]);
     const border = sharedBorder(map, 0, 1);
     expect(border.map((point) => geographicPoint(map, point))).toEqual([[0, 20], [0, 17], [0, 0], [10, 0]]);
-    const river: River = { id: 0, course: [0], mouth: 1, catchment: [0], joins: null, joinAt: null, lengthKm: 1000 };
+    const river: River = { id: 0, course: [0], channel: [], mouth: 1, catchment: [0], joins: null, joinAt: null, lengthKm: 1000 };
     const outlet = geographicPoint(map, riverPoints(map, river).at(-1)!);
     expect(outlet[0]).toBeCloseTo(0, 6);
     expect(outlet[1]).toBeCloseTo(5, 6);
@@ -365,7 +365,7 @@ describe("canonical coastal borders and river courses", () => {
   });
 
   test("a high-latitude seam outlet uses the shared great-circle midpoint", () => {
-    const river: River = { id: 0, course: [0], mouth: 1, catchment: [0], joins: null, joinAt: null, lengthKm: 1038 };
+    const river: River = { id: 0, course: [0], channel: [], mouth: 1, catchment: [0], joins: null, joinAt: null, lengthKm: 1038 };
     const map = world([
       { center: [180, 50], boundary: [[170, 60], [-170, 60], [180, 40]], neighbours: [1] },
       { center: [180, 70], boundary: [[-170, 60], [170, 60], [180, 80]], neighbours: [0], terrain: "sea" },

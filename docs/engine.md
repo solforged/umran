@@ -1121,14 +1121,15 @@ their exact bits through JSON, as they do with the browser's `JSON.parse`.
 
 `rivers.rs` builds a coast-inward priority flood. Each land drains through
 one shared-border neighbour toward the sea, staying within its landmass.
-Enclosed hollows receive a lowest-saddle spill route without changing their
-visible elevation or terrain. Region ids break ties, and the upstream order
+In `spherical-v1`, `continental-v2`, and `continental-v3`, enclosed hollows
+receive a lowest-saddle spill route without changing their visible elevation
+or terrain. Region ids break ties, and the upstream order
 cannot loop. Runoff accumulates physical wet catchment area, with a separate
 seeded local variation. A reach becomes a river at about 25,981 wet km²,
 not at a fraction of the map. At the coarser wide and vast resolutions,
 one wet region can already supply a named headwater reach.
 
-Every river has a stable id, an ordered main course, an ultimate sea mouth,
+Every river has a stable id, an ordered main course, an ultimate sea or lake mouth,
 and its upstream catchment, the land supplying its water. The strongest
 branch continues the main course;
 other branches keep their own ids and join it. Shared downstream reaches are
@@ -1136,12 +1137,33 @@ stored once. Tributary and main-river catchments may overlap because water
 from the tributary supplies both. Short tributaries remain short, and great
 courses can continue for many regions where a landmass permits.
 
+`continental-v4` is the geography for new worlds. It keeps V3's geographic
+wind and adds `lakes.rs`: connected depressions below a common spill surface.
+Their baseline catchment supply is compared with warmth-dependent evaporation.
+A wet basin overflows its lowest saddle. An endorheic basin has no outlet;
+its rivers end at its lowest land. Its lower water surface covers only part
+of the depression. Lakes occupy parts of land regions, preserving every
+region id, terrain, and landmass. Their extent and outlets do not vary with
+later climate. Older geography versions retain their original drainage
+order, runoff, rivers, and climate, with no lakes or channels.
+
+V4 river channels follow unit-vector arcs from each region centre through
+the shared border to the next centre. Tributaries end at their confluence,
+open rivers at the coast, and closed rivers in a lake. They do not depend
+on a chart projection. This is a regional channel model, not river meanders.
+The depression model follows the priority-flood approach of Barnes, Lehman,
+and Mulla (2014); the water-balance distinction follows the open and closed
+lake basins described in Wetzel's *Limnology* (2001).
+
 Water gives an immediate, bounded, additive floodplain farming benefit,
 including in steppe and desert. Foragers gain fishing and gathering food,
 and herders gain less. Hills receive a smaller farming benefit, and mountain
 streams do not become grain plains. Flow depends on upstream rain, so a
 locally dry valley can be a refuge until its wider catchment dries. Cold
 still limits farming beside a flowing river. There is no irrigation craft.
+Lake shores receive an additive food benefit capped with the river benefit.
+Their warmth and wetness anomalies are reduced to 65% of the zone departure.
+This coarse buffering does not simulate lake currents, salinity, or seasons.
 
 Drainage-connected, usable river reaches multiply the canonical walking
 border effort by 0.65. Adjacent unrelated rivers receive no discount.
@@ -1186,7 +1208,12 @@ local forms without merging tributary identities. They inherit, borrow,
 and retain those forms through language shift. Regular sound laws change
 spoken local names and remembered forms, while deserted attestations
 freeze. Nearby land and departing peoples can be named for a real river.
-The facade exposes static river topology and zone ids in `map()`,
+`lake_names.rs` applies the same inheritance, borrowing, shift, and sound-law
+rules to lake names. The first settled shore speakers coin a water-name;
+nearby speakers remember their own forms. Lakes have separate identities
+from rivers even when a river carries their overflow. Dedicated lake-name,
+succession, exonym, and memory-shift streams leave earlier draws untouched.
+The facade exposes static lakes, river topology, V4 channels, and zone ids in `map()`,
 historical conditions and literal feeding capacities in `climate(generation)`,
 and name histories with local alternatives in `river(generation, id)`.
 
@@ -1249,8 +1276,9 @@ can refuse this fixed recipe; the report counts those refusals separately.
 
 ## Not yet modelled
 
-Fleets, rented ports, mixed inland-and-sea itineraries, exact river channels
-and lakes, seasonal weather, resolved travel times, globe wrapping,
+Fleets, rented ports, mixed inland-and-sea itineraries, subregional river
+meanders, changing lake extents, lake salinity, seasonal weather, resolved
+travel times, globe wrapping,
 purism in speech rather than writing, spelling reform as a purist act,
 inflection beyond count noun plural and object marking, the genitive, and verb
 past, future, and progressive, agreement beyond the determiner, combined

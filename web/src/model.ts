@@ -742,7 +742,7 @@ export interface WordDetail {
 
 export type MapSize = "small" | "medium" | "large" | "vast";
 
-export type GeographyVersion = "spherical-v1" | "continental-v2" | "continental-v3";
+export type GeographyVersion = "spherical-v1" | "continental-v2" | "continental-v3" | "continental-v4";
 
 export type Terrain = "sea" | "plains" | "forest" | "steppe" | "hills" | "mountains" | "desert";
 
@@ -791,18 +791,20 @@ export interface WorldMap {
   regions: Region[];
   landmasses: Landmass[];
   rivers: River[];
+  lakes: { id: number; regions: number[]; outlet: number | null }[];
   climateZones: { id: number; regions: number[] }[];
 }
 
 export interface River {
   id: number;
   course: number[];
+  channel: [number, number, number][];
   mouth: number;
   catchment: number[];
   joins: number | null;
-  /// Exact downstream region at the confluence; null for a sea outlet.
+  /// Exact downstream region at the confluence; null for a sea or closed lake outlet.
   joinAt: number | null;
-  /// Geodesic center-to-center course through its actual confluence/coastal outlet.
+  /// Geodesic length along the canonical channel (legacy versions use region centers).
   lengthKm: number;
 }
 

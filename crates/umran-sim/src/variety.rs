@@ -68,6 +68,8 @@ pub struct Variety {
     /// Remembered hydronyms, indexed by river rather than land. Local
     /// alternatives survive handovers and evolve with this language.
     pub river_exonyms: Vec<(usize, Name)>,
+    /// Remembered lake names, independent of river identities.
+    pub lake_exonyms: Vec<(usize, Name)>,
     /// The classical form its speakers write, or wrote before writing
     /// their own speech (`diglossia.rs`).
     pub high: Option<usize>,
@@ -152,6 +154,7 @@ impl Variety {
             written: None,
             exonyms: Vec::new(),
             river_exonyms: Vec::new(),
+            lake_exonyms: Vec::new(),
             high: None,
             vernacular: None,
             purism: Vec::new(),

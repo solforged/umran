@@ -226,8 +226,11 @@ impl Climate {
                 continue;
             }
             let zone = &self.zones[region.climate_zone.expect("land has climate")];
-            current.wetness = (self.baseline_wetness[r] + zone.wetness).clamp(0.015, 1.0);
-            current.warmth = (region.warmth + zone.warmth).clamp(0.0, 1.0);
+            let lake = map.lake_regions[r].is_some();
+            let exposure = if lake { 0.65 } else { 1.0 };
+            current.wetness =
+                (self.baseline_wetness[r] + zone.wetness * exposure).clamp(0.015, 1.0);
+            current.warmth = (region.warmth + zone.warmth * exposure).clamp(0.0, 1.0);
             let rain = (current.wetness / self.baseline_wetness[r]).clamp(0.04, 1.35);
             self.flows[r] = map.runoff[r] * rain;
             current.vegetation = match region.terrain {
@@ -265,6 +268,13 @@ impl Climate {
             let rain = (current.wetness / self.baseline_wetness[r]).clamp(0.04, 1.35);
             let cold = ((current.warmth + 0.2) / (region.warmth + 0.2)).clamp(0.2, 1.1);
             let river = current.river_flow / (current.river_flow + 30_000.0);
+            // Lakes occupy parts of their regions; shore food attracts settlement
+            // without turning existing land IDs into impassable water cells.
+            let lake = if map.lake_regions[r].is_some() {
+                0.35
+            } else {
+                0.0
+            };
             let relief = match region.terrain {
                 Terrain::Mountains => 0.04,
                 Terrain::Hills => 0.22,
@@ -276,7 +286,8 @@ impl Climate {
                     Livelihood::Herding => (rain * cold, 0.065),
                     Livelihood::Foraging => (rain.sqrt() * cold, 0.025),
                 };
-                (livelihood.feeds(region.terrain) * weather + river * water * relief * cold)
+                (livelihood.feeds(region.terrain) * weather
+                    + (river + lake).min(1.0) * water * relief * cold)
                     * region.area_km2
                     / REFERENCE_AREA_KM2
             });
@@ -467,6 +478,134 @@ impl World {
 mod tests {
     use super::*;
     use crate::{MapSize, Naming, Params, SoundProfile};
+
+    #[test]
+    fn legacy_maps_match_pre_lake_drainage_rivers_and_climate() {
+        use crate::geography::GeographyVersion;
+        for geography in [
+            GeographyVersion::SphericalV1,
+            GeographyVersion::ContinentalV2,
+            GeographyVersion::ContinentalV3,
+        ] {
+            for size in [
+                MapSize::Small,
+                MapSize::Medium,
+                MapSize::Large,
+                MapSize::Vast,
+            ] {
+                for seed in [0, 7, 21] {
+                    let map = Map::generate_with_version(seed, size, geography);
+                    assert!(map.lakes.is_empty());
+                    assert!(map.lake_regions.iter().all(Option::is_none));
+                    assert!(map.rivers.iter().all(|river| river.channel.is_empty()));
+
+                    // The pre-lake construction: priority flood directly into
+                    // runoff accumulation and courses, with no basin rerouting.
+                    let (drainage, order) = crate::rivers::drainage(&map.regions);
+                    let runoff: Vec<f32> = map
+                        .regions
+                        .iter()
+                        .enumerate()
+                        .map(|(r, region)| {
+                            if !region.terrain.is_land() {
+                                return 0.0;
+                            }
+                            let mut rng = stream(seed, &[key("river runoff"), r as u64]);
+                            region.area_km2
+                                * (0.25 + 1.5 * region.moisture.clamp(0.0, 1.0))
+                                * rng.gen_range(0.85..1.15)
+                        })
+                        .collect();
+                    let mut flows = runoff.clone();
+                    for &r in &order {
+                        if let Some(n) = drainage[r] {
+                            flows[n] += flows[r];
+                        }
+                    }
+                    let (rivers, owners) =
+                        crate::rivers::courses(&map.regions, &drainage, &order, &flows);
+                    assert_eq!(map.drainage, drainage, "{geography:?} {size:?} {seed}");
+                    assert_eq!(map.drainage_order, order);
+                    assert_eq!(map.runoff, runoff);
+                    assert_eq!(map.rivers, rivers);
+                    assert_eq!(map.river_regions, owners);
+                    let mut before = map.clone();
+                    before.drainage = drainage;
+                    before.drainage_order = order;
+                    before.runoff = runoff;
+                    before.rivers = rivers;
+                    before.river_regions = owners;
+                    let mut climate = Climate::new(seed, &map);
+                    assert_eq!(climate, Climate::new(seed, &before));
+
+                    // Independently retain the old lake-free cache arithmetic,
+                    // comparing bits both at baseline and during climate epochs.
+                    for generation in 0..40 {
+                        if generation > 0 {
+                            climate.advance(seed, generation, &map);
+                        }
+                        let mut flows = vec![0.0; before.regions.len()];
+                        for (r, region) in before.regions.iter().enumerate() {
+                            if !region.terrain.is_land() {
+                                continue;
+                            }
+                            let zone = &climate.zones[region.climate_zone.unwrap()];
+                            let base = climate.baseline_wetness[r];
+                            let wetness = (base + zone.wetness).clamp(0.015, 1.0);
+                            let warmth = (region.warmth + zone.warmth).clamp(0.0, 1.0);
+                            assert_eq!(climate.regions[r].wetness.to_bits(), wetness.to_bits());
+                            assert_eq!(climate.regions[r].warmth.to_bits(), warmth.to_bits());
+                            flows[r] = before.runoff[r] * (wetness / base).clamp(0.04, 1.35);
+                        }
+                        for &r in &before.drainage_order {
+                            if let Some(n) = before.drainage[r]
+                                && before.regions[n].terrain.is_land()
+                            {
+                                flows[n] += flows[r];
+                            }
+                        }
+                        for (r, region) in before.regions.iter().enumerate() {
+                            if !region.terrain.is_land() {
+                                continue;
+                            }
+                            let current = &climate.regions[r];
+                            let flow = if before.river_regions[r].is_some() {
+                                flows[r]
+                            } else {
+                                0.0
+                            };
+                            assert_eq!(current.river_flow.to_bits(), flow.to_bits());
+                            let river = flow / (flow + 30_000.0);
+                            let rain =
+                                (current.wetness / climate.baseline_wetness[r]).clamp(0.04, 1.35);
+                            let cold =
+                                ((current.warmth + 0.2) / (region.warmth + 0.2)).clamp(0.2, 1.1);
+                            let relief = match region.terrain {
+                                Terrain::Mountains => 0.04,
+                                Terrain::Hills => 0.22,
+                                _ => 1.0,
+                            };
+                            let feeding = Livelihood::ALL.map(|livelihood| {
+                                let (weather, water) = match livelihood {
+                                    Livelihood::Farming => (rain * rain * cold * cold, 0.9),
+                                    Livelihood::Herding => (rain * cold, 0.065),
+                                    Livelihood::Foraging => (rain.sqrt() * cold, 0.025),
+                                };
+                                (livelihood.feeds(region.terrain) * weather
+                                    + river * water * relief * cold)
+                                    * region.area_km2
+                                    / REFERENCE_AREA_KM2
+                            });
+                            assert_eq!(
+                                current.feeding.map(f32::to_bits),
+                                feeding.map(f32::to_bits)
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn static_society_freezes_weather_flow_and_feeding() {
@@ -692,5 +831,35 @@ mod tests {
             world = preview;
         }
         panic!("the drought did not close the valley route");
+    }
+    #[test]
+    fn lake_shores_buffer_weather_and_add_food_without_advancing_static_climate() {
+        let map = Map::generate(5, crate::MapSize::Medium);
+        let region = map
+            .regions
+            .iter()
+            .position(|r| r.terrain == Terrain::Plains)
+            .unwrap();
+        let mut shore = map.clone();
+        shore.lake_regions[region] = Some(0);
+        let mut inland = map.clone();
+        inland.lake_regions[region] = None;
+        let mut buffered = Climate::new(5, &shore);
+        let mut exposed = Climate::new(5, &inland);
+        assert!(buffered.regions[region].feeding[0] > exposed.regions[region].feeding[0]);
+        for climate in [&mut buffered, &mut exposed] {
+            let zone = map.regions[region].climate_zone.unwrap();
+            climate.zones[zone].wetness = -0.4;
+            climate.zones[zone].warmth = -0.3;
+        }
+        buffered.cache(&shore);
+        exposed.cache(&inland);
+        assert!(buffered.regions[region].wetness > exposed.regions[region].wetness);
+        assert!(buffered.regions[region].warmth > exposed.regions[region].warmth);
+        assert!(buffered.regions[region].feeding[0] > exposed.regions[region].feeding[0]);
+        let mut world = World::new(5, crate::Params::static_society());
+        let before = world.climate.clone();
+        world.run(8);
+        assert_eq!(world.climate, before);
     }
 }

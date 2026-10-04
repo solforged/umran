@@ -8,7 +8,7 @@ import { Modal } from "./Modal";
 import { Told } from "./Told";
 import "./chartroom.css";
 
-const UNKNOWN: WorldMap = { size: "medium", geography: "continental-v3", radiusKm: 1600, width: 2 * Math.PI * 1600 / 100, height: Math.PI * 1600 / 100, kmPerUnit: 100, regions: [], landmasses: [], rivers: [], climateZones: [] };
+const UNKNOWN: WorldMap = { size: "medium", geography: "continental-v4", radiusKm: 1600, width: 2 * Math.PI * 1600 / 100, height: Math.PI * 1600 / 100, kmPerUnit: 100, regions: [], landmasses: [], rivers: [], lakes: [], climateZones: [] };
 
 function Chart({ land, peoples }: { land: BookLand | null; peoples?: ShelfPeople[] }) {
   const [loaded, setLoaded] = useState<(BookLand & { map: WorldMap }) | null>(null);

@@ -1,7 +1,9 @@
 //! Static drainage, named regional courses, and connected climate districts.
 //! These purpose-keyed draws never consume the terrain generator's stream.
 
-use crate::geography::{ClimateZone, Landmass, RIVER_FORMATION_FLOW, Region, River};
+use crate::geography::{
+    ClimateZone, GeographyVersion, Landmass, RIVER_FORMATION_FLOW, Region, River,
+};
 use crate::rng::{key, stream};
 use rand::Rng;
 use std::cmp::{Ordering, Reverse};
@@ -13,6 +15,8 @@ pub(crate) struct Hydrology {
     pub runoff: Vec<f32>,
     pub rivers: Vec<River>,
     pub river_regions: Vec<Option<usize>>,
+    pub lakes: Vec<crate::lakes::Lake>,
+    pub lake_regions: Vec<Option<usize>>,
     pub flows: Vec<f32>,
 }
 
@@ -90,8 +94,8 @@ pub(crate) fn drainage(regions: &[Region]) -> (Vec<Option<usize>>, Vec<usize>) {
     (downstream, order)
 }
 
-pub(crate) fn generate(seed: u64, regions: &[Region]) -> Hydrology {
-    let (drainage, drainage_order) = drainage(regions);
+pub(crate) fn generate(seed: u64, regions: &[Region], geography: GeographyVersion) -> Hydrology {
+    let (mut drainage, mut drainage_order) = drainage(regions);
     let runoff: Vec<f32> = regions
         .iter()
         .enumerate()
@@ -105,6 +109,11 @@ pub(crate) fn generate(seed: u64, regions: &[Region]) -> Hydrology {
                 * rng.gen_range(0.85..1.15)
         })
         .collect();
+    let (mut lakes, lake_regions) = if geography == GeographyVersion::ContinentalV4 {
+        crate::lakes::basins(regions, &mut drainage, &mut drainage_order, &runoff)
+    } else {
+        (Vec::new(), vec![None; regions.len()])
+    };
     let mut flows = runoff.clone();
     for &r in &drainage_order {
         if let Some(n) = drainage[r] {
@@ -112,12 +121,17 @@ pub(crate) fn generate(seed: u64, regions: &[Region]) -> Hydrology {
         }
     }
     let (rivers, river_regions) = courses(regions, &drainage, &drainage_order, &flows);
+    for lake in &mut lakes {
+        lake.outlet = lake.spill.and_then(|r| river_regions[r]);
+    }
     Hydrology {
         drainage,
         drainage_order,
         runoff,
         rivers,
         river_regions,
+        lakes,
+        lake_regions,
         flows,
     }
 }
@@ -148,11 +162,10 @@ pub(crate) fn courses(
     }
     let mut mouths = vec![0; regions.len()];
     for &r in order.iter().rev() {
-        let n = drainage[r].expect("land has a downstream region");
-        mouths[r] = if regions[n].terrain.is_land() {
-            mouths[n]
-        } else {
-            n
+        mouths[r] = match drainage[r] {
+            Some(n) if regions[n].terrain.is_land() => mouths[n],
+            Some(n) => n,
+            None => r,
         };
     }
     let mut rivers = Vec::new();
@@ -162,8 +175,9 @@ pub(crate) fn courses(
         if !reach(end) {
             continue;
         }
-        let next = drainage[end].expect("a river drains to land or sea");
-        if regions[next].terrain.is_land() && main_upstream[next] == Some(end) {
+        if drainage[end]
+            .is_some_and(|next| regions[next].terrain.is_land() && main_upstream[next] == Some(end))
+        {
             continue;
         }
         let id = rivers.len();
@@ -194,11 +208,12 @@ pub(crate) fn courses(
             mouth: mouths[end],
             catchment,
             joins: None,
+            channel: Vec::new(),
         });
     }
     for river in &mut rivers {
         let end = *river.course.last().unwrap();
-        river.joins = owner[drainage[end].unwrap()];
+        river.joins = drainage[end].and_then(|n| owner[n]);
     }
     (rivers, owner)
 }

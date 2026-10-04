@@ -51,13 +51,15 @@ pub enum GeographyVersion {
     SphericalV1,
     ContinentalV2,
     /// ContinentalV2 with zonal wind taken from geographic east.
-    #[default]
     ContinentalV3,
+    /// ContinentalV3 with lakes and river channels.
+    #[default]
+    ContinentalV4,
 }
 
 impl GeographyVersion {
     /// The geography new worlds are drawn with.
-    pub const CURRENT: Self = Self::ContinentalV3;
+    pub const CURRENT: Self = Self::ContinentalV4;
 }
 
 /// Physical world size and bounded spherical region resolution.
@@ -194,12 +196,14 @@ pub struct Landmass {
 #[derive(Clone, Debug, PartialEq)]
 pub struct River {
     pub course: Vec<usize>,
-    /// Ultimate sea outlet, including for tributaries.
+    /// Ultimate sea outlet or terminal lake region, including for tributaries.
     pub mouth: usize,
     /// All upstream land supplying the course's final reach, in region order.
     pub catchment: Vec<usize>,
-    /// The river owning the next downstream reach; none at the sea.
+    /// The river owning the next downstream reach; none at the sea or a closed lake.
     pub joins: Option<usize>,
+    /// Canonical unit-vector course through shared borders, upstream first.
+    pub channel: Vec<[f64; 3]>,
 }
 
 /// A connected district sharing one climate history.
@@ -339,7 +343,7 @@ pub struct Map {
     pub regions: Vec<Region>,
     /// Its bodies of land, numbered as `Region::landmass` numbers them.
     pub landmasses: Vec<Landmass>,
-    /// Each land's next bordering land or sea; sea has no downstream region.
+    /// Each land's next bordering region; sea and endorheic sinks have none.
     pub drainage: Vec<Option<usize>>,
     /// Land-only topological order, upstream before downstream.
     pub drainage_order: Vec<usize>,
@@ -348,6 +352,8 @@ pub struct Map {
     /// Stable river IDs are indices, and each reach belongs to exactly one.
     pub rivers: Vec<River>,
     pub river_regions: Vec<Option<usize>>,
+    pub lakes: Vec<crate::lakes::Lake>,
+    pub lake_regions: Vec<Option<usize>>,
     pub climate_zones: Vec<ClimateZone>,
     /// Symmetric centre-to-centre effort through each shared border midpoint.
     edges: RouteRows,
@@ -374,12 +380,14 @@ impl Map {
             GeographyVersion::ContinentalV2 => {
                 continental::surface(seed, &mut mesh, radius_km, continental::Wind::MeshTangent)
             }
-            GeographyVersion::ContinentalV3 => continental::surface(
-                seed,
-                &mut mesh,
-                radius_km,
-                continental::Wind::GeographicEast,
-            ),
+            GeographyVersion::ContinentalV3 | GeographyVersion::ContinentalV4 => {
+                continental::surface(
+                    seed,
+                    &mut mesh,
+                    radius_km,
+                    continental::Wind::GeographicEast,
+                )
+            }
         };
         let landmass = landmasses(&terrain, &mesh.cells);
         let edges = travel_edges(&mesh.cells, &terrain, &mesh.borders, radius_km);
@@ -412,10 +420,15 @@ impl Map {
             drainage,
             drainage_order,
             runoff,
-            rivers,
+            mut rivers,
             river_regions,
+            lakes,
+            lake_regions,
             flows,
-        } = rivers::generate(seed, &regions);
+        } = rivers::generate(seed, &regions, geography);
+        if geography == GeographyVersion::ContinentalV4 {
+            crate::lakes::channels(&regions, &drainage, &mut rivers);
+        }
         let mut map = Map {
             size,
             geography,
@@ -429,6 +442,8 @@ impl Map {
             runoff,
             rivers,
             river_regions,
+            lakes,
+            lake_regions,
             climate_zones,
             edges,
             walking: RouteRows::default(),
@@ -1207,12 +1222,12 @@ mod tests {
         for r in &mut map.regions {
             r.area_km2 = 0.1 * REFERENCE_AREA_KM2;
         }
-        let small = rivers::generate(17, &map.regions);
+        let small = rivers::generate(17, &map.regions, map.geography);
         assert!(small.rivers.is_empty());
         // One broad wet headwater can supply a long course through small
         // polygons. Changing subdivision count is not the formation rule.
         map.regions[0].area_km2 = 4.0 * REFERENCE_AREA_KM2;
-        let broad = rivers::generate(17, &map.regions);
+        let broad = rivers::generate(17, &map.regions, map.geography);
         assert_eq!(broad.rivers.len(), 1);
         assert_eq!(broad.rivers[0].course, (0..12).collect::<Vec<_>>());
         assert_eq!(broad.rivers[0].catchment, (0..12).collect::<Vec<_>>());
@@ -1264,19 +1279,22 @@ mod tests {
                     course: vec![1],
                     mouth: 7,
                     catchment: vec![1],
-                    joins: Some(2)
+                    joins: Some(2),
+                    channel: Vec::new(),
                 },
                 River {
                     course: vec![3, 4],
                     mouth: 7,
                     catchment: vec![3, 4],
-                    joins: Some(2)
+                    joins: Some(2),
+                    channel: Vec::new(),
                 },
                 River {
                     course: vec![0, 2, 5, 6],
                     mouth: 7,
                     catchment: vec![0, 1, 2, 3, 4, 5, 6],
-                    joins: None
+                    joins: None,
+                    channel: Vec::new(),
                 },
             ]
         );
@@ -1311,17 +1329,26 @@ mod tests {
                 for (i, &r) in map.drainage_order.iter().enumerate() {
                     assert_eq!(rank[r], usize::MAX);
                     rank[r] = i;
-                    let next = map.drainage[r].unwrap();
-                    flows[next] += flows[r];
+                    if let Some(next) = map.drainage[r] {
+                        flows[next] += flows[r];
+                    }
                 }
                 for &r in &map.drainage_order {
-                    assert!(rank[r] < rank[map.drainage[r].unwrap()]);
+                    if let Some(next) = map.drainage[r] {
+                        assert!(rank[r] < rank[next]);
+                    }
                 }
                 let mut course_owner = vec![None; n];
                 for (id, river) in map.rivers.iter().enumerate() {
                     let end = *river.course.last().unwrap();
-                    assert!(!map.regions[river.mouth].terrain.is_land());
-                    assert_eq!(river.joins, map.river_regions[map.drainage[end].unwrap()]);
+                    assert!(
+                        !map.regions[river.mouth].terrain.is_land()
+                            || map.lake_regions[river.mouth].is_some()
+                    );
+                    assert_eq!(
+                        river.joins,
+                        map.drainage[end].and_then(|n| map.river_regions[n])
+                    );
                     for &r in &river.course {
                         assert!(course_owner[r].replace(id).is_none());
                     }
@@ -1333,13 +1360,13 @@ mod tests {
                     // Propagate membership upstream through the independent
                     // topological order instead of walking every source path.
                     for &r in map.drainage_order.iter().rev() {
-                        feeds[r] = feeds[r] || feeds[map.drainage[r].unwrap()];
+                        feeds[r] = feeds[r] || map.drainage[r].is_some_and(|n| feeds[n]);
                     }
                     let catchment: Vec<_> = (0..n).filter(|&r| feeds[r]).collect();
                     assert_eq!(river.catchment, catchment);
                     let mut outlet = end;
-                    while map.regions[outlet].terrain.is_land() {
-                        outlet = map.drainage[outlet].unwrap();
+                    while let Some(next) = map.drainage[outlet] {
+                        outlet = next;
                     }
                     assert_eq!(river.mouth, outlet);
                 }
@@ -1358,7 +1385,7 @@ mod tests {
                             assert_eq!(region.landmass, map.regions[next].landmass);
                         }
                     } else {
-                        assert!(!region.terrain.is_land());
+                        assert!(!region.terrain.is_land() || map.lake_regions[r].is_some());
                     }
                 }
                 for (id, zone) in map.climate_zones.iter().enumerate() {
@@ -1597,10 +1624,10 @@ mod tests {
             }
             assert_eq!(map.walking_row(source, f32::INFINITY).as_ref(), routes);
             assert_eq!(describe_landmasses(&map.regions), map.landmasses);
-            assert_eq!(
-                rivers::drainage(&map.regions),
-                (map.drainage, map.drainage_order)
-            );
+            let hydrology = rivers::generate(7, &map.regions, map.geography);
+            assert_eq!(hydrology.drainage, map.drainage);
+            assert_eq!(hydrology.drainage_order, map.drainage_order);
+            assert_eq!(hydrology.lakes, map.lakes);
         }
     }
 
@@ -2064,6 +2091,8 @@ mod tests {
             runoff: vec![0.0; n],
             rivers: Vec::new(),
             river_regions: vec![None; n],
+            lakes: Vec::new(),
+            lake_regions: vec![None; n],
             climate_zones: Vec::new(),
             edges,
             walking: RouteRows::default(),

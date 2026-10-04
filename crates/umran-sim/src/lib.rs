@@ -28,6 +28,8 @@ pub mod harmony;
 pub mod ideas;
 pub mod inflection;
 pub mod inventory;
+pub mod lake_names;
+pub mod lakes;
 pub mod laws;
 pub mod lexicon;
 pub mod livelihood;

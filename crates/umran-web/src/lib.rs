@@ -1951,6 +1951,16 @@ impl Bench {
                 .enumerate()
                 .map(|(id, river)| river_view(map, id, river))
                 .collect::<Result<Vec<_>, _>>()?,
+            lakes: map
+                .lakes
+                .iter()
+                .enumerate()
+                .map(|(id, lake)| LakeView {
+                    id,
+                    regions: &lake.regions,
+                    outlet: lake.outlet,
+                })
+                .collect(),
             climate_zones: map
                 .climate_zones
                 .iter()
@@ -4772,22 +4782,34 @@ fn river_view<'a>(map: &Map, id: usize, river: &'a River) -> Result<RiverView<'a
         ),
         None => None,
     };
-    let endpoint = if let Some(region) = join_at {
-        map.regions[region].position
+    let length_km = if map.geography == GeographyVersion::ContinentalV4 {
+        f64::from(map.radius_km)
+            * river
+                .channel
+                .windows(2)
+                .map(|pair| angular_distance(pair[0], pair[1]))
+                .sum::<f64>()
     } else {
-        map.shared_midpoint(last, river.mouth)
-            .ok_or_else(|| format!("River {id} has no shared coastal boundary."))?
+        let endpoint = if let Some(region) = join_at {
+            map.regions[region].position
+        } else {
+            map.shared_midpoint(last, river.mouth)
+                .ok_or_else(|| format!("River {id} has no shared coastal boundary."))?
+        };
+        let course_radians: f64 = river
+            .course
+            .windows(2)
+            .map(|pair| {
+                angular_distance(map.regions[pair[0]].position, map.regions[pair[1]].position)
+            })
+            .sum();
+        f64::from(map.radius_km)
+            * (course_radians + angular_distance(map.regions[last].position, endpoint))
     };
-    let course_radians: f64 = river
-        .course
-        .windows(2)
-        .map(|pair| angular_distance(map.regions[pair[0]].position, map.regions[pair[1]].position))
-        .sum();
-    let length_km = f64::from(map.radius_km)
-        * (course_radians + angular_distance(map.regions[last].position, endpoint));
     Ok(RiverView {
         id,
         course: &river.course,
+        channel: &river.channel,
         mouth: river.mouth,
         catchment: &river.catchment,
         joins: river.joins,
@@ -4809,6 +4831,7 @@ struct MapView<'a> {
     regions: Vec<RegionView>,
     landmasses: Vec<LandmassView>,
     rivers: Vec<RiverView<'a>>,
+    lakes: Vec<LakeView<'a>>,
     climate_zones: Vec<ClimateZoneView<'a>>,
 }
 
@@ -4850,11 +4873,19 @@ struct LandmassView {
 struct RiverView<'a> {
     id: usize,
     course: &'a [usize],
+    channel: &'a [[f64; 3]],
     mouth: usize,
     catchment: &'a [usize],
     joins: Option<usize>,
     join_at: Option<usize>,
     length_km: f64,
+}
+
+#[derive(Serialize)]
+struct LakeView<'a> {
+    id: usize,
+    regions: &'a [usize],
+    outlet: Option<usize>,
 }
 
 #[derive(Serialize)]
@@ -5582,6 +5613,11 @@ mod tests {
             mouth: 3,
             catchment: vec![0, 1],
             joins: Some(0),
+            channel: vec![
+                map.regions[0].position,
+                map.regions[1].position,
+                map.regions[2].position,
+            ],
         };
         let view = river_view(&map, 1, &tributary).unwrap();
         assert_eq!(view.join_at, Some(2));
@@ -5627,6 +5663,10 @@ mod tests {
             mouth: coast.1,
             catchment: vec![coast.0],
             joins: None,
+            channel: vec![
+                map.regions[coast.0].position,
+                map.shared_midpoint(coast.0, coast.1).unwrap(),
+            ],
         };
         let outlet = map.shared_midpoint(coast.0, coast.1).unwrap();
         let length = river_view(&map, 0, &river).unwrap().length_km;
@@ -5636,6 +5676,41 @@ mod tests {
         );
         map.regions[coast.1].position = map.regions[coast.0].position;
         assert_eq!(river_view(&map, 0, &river).unwrap().length_km, length);
+    }
+
+    #[test]
+    fn legacy_river_lengths_keep_the_pre_channel_geometry() {
+        for geography in ["spherical-v1", "continental-v2", "continental-v3"] {
+            let bench = Bench::with_geography(7, "small", geography).unwrap();
+            let map = &bench.chronicle.latest().map;
+            assert!(map.lakes.is_empty());
+            assert!(!map.rivers.is_empty());
+            for (id, river) in map.rivers.iter().enumerate() {
+                assert!(river.channel.is_empty());
+                let last = *river.course.last().unwrap();
+                let endpoint = if river.joins.is_some() {
+                    map.regions[map.drainage[last].unwrap()].position
+                } else {
+                    map.shared_midpoint(last, river.mouth).unwrap()
+                };
+                let course: f64 = river
+                    .course
+                    .windows(2)
+                    .map(|pair| {
+                        angular_distance(
+                            map.regions[pair[0]].position,
+                            map.regions[pair[1]].position,
+                        )
+                    })
+                    .sum();
+                let expected = f64::from(map.radius_km)
+                    * (course + angular_distance(map.regions[last].position, endpoint));
+                assert_eq!(
+                    river_view(map, id, river).unwrap().length_km.to_bits(),
+                    expected.to_bits()
+                );
+            }
+        }
     }
 
     #[test]
@@ -6235,7 +6310,7 @@ mod tests {
         assert_eq!(decisions[1]["variety"], 1);
         let saved = bench.save().unwrap();
         let recipe: serde_json::Value = serde_json::from_str(&saved).unwrap();
-        assert_eq!(recipe["geography"], "continental-v3");
+        assert_eq!(recipe["geography"], "continental-v4");
         assert_eq!(recipe["tellings"][0]["actions"][1]["kind"], "found-related");
         let mut restored = Bench::load(&saved).unwrap();
         assert_eq!(restored.map().unwrap(), bench.map().unwrap());
@@ -6286,7 +6361,7 @@ mod tests {
         assert_eq!(loaded.lexicon(0, 0).unwrap(), first_speech);
         let fresh: serde_json::Value =
             serde_json::from_str(&Bench::new(5, "small").unwrap().map().unwrap()).unwrap();
-        assert_eq!(fresh["geography"], "continental-v3");
+        assert_eq!(fresh["geography"], "continental-v4");
         assert_ne!(
             fresh["regions"],
             serde_json::from_str::<serde_json::Value>(&old_map).unwrap()["regions"]

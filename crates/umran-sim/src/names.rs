@@ -461,9 +461,24 @@ pub fn place_name(
 /// A hydronym from the first settlers' own word for river or water,
 /// optionally qualified as a long, dark, wide, or otherwise marked river.
 pub fn river_name(variety: &Variety, rng: &mut impl Rng, generation: u32) -> Option<Name> {
+    water_name(variety, &["river", "water"], rng, generation)
+}
+
+/// A lake's conservative water-name uses the language's word for water.
+pub fn lake_name(variety: &Variety, rng: &mut impl Rng, generation: u32) -> Option<Name> {
+    water_name(variety, &["water"], rng, generation)
+}
+
+fn water_name(
+    variety: &Variety,
+    heads: &[&str],
+    rng: &mut impl Rng,
+    generation: u32,
+) -> Option<Name> {
     let word = |id| variety.lexicon.word_for(by_id(id)?).map(|l| &l.form);
-    let heads: Vec<_> = ["river", "water"]
-        .into_iter()
+    let heads: Vec<_> = heads
+        .iter()
+        .copied()
         .filter_map(|id| word(id).map(|form| (id, form)))
         .collect();
     if heads.is_empty() {
