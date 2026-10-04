@@ -195,6 +195,30 @@ impl Tectonics {
     }
 }
 
+/// Which tangent the zonal wind follows. ContinentalV2 recorded the mesh's
+/// arbitrary tangent basis, which flips near 64 degrees of latitude; its
+/// worlds keep it so they replay unchanged.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Wind {
+    MeshTangent,
+    GeographicEast,
+}
+
+/// Easterlies below 30 degrees of latitude, westerlies above.
+fn prevailing_wind(p: Point, basis: Wind) -> Point {
+    let east = match basis {
+        Wind::MeshTangent => tangent(p).0,
+        // At either exact pole, use the east of the longitude-zero meridian.
+        Wind::GeographicEast if p[0] == 0.0 && p[1] == 0.0 => [0.0, 1.0, 0.0],
+        Wind::GeographicEast => unit([-p[1], p[0], 0.0]),
+    };
+    if p[2].abs() < 0.50 {
+        east.map(|v| -v)
+    } else {
+        east
+    }
+}
+
 /// O(N log N) time (sea-level ranking and coast-distance heap), O(N) storage;
 /// the bounded crust/plate fields add O(N). Geometry refinement has the same
 /// bounds and never changes the number or identity of the simulation cells.
@@ -202,6 +226,7 @@ pub(crate) fn surface(
     seed: u64,
     mesh: &mut sphere::Mesh,
     radius_km: f32,
+    wind: Wind,
 ) -> (Vec<Terrain>, Vec<f64>, Vec<f64>) {
     let model = Tectonics::new(seed);
     let mut shore = Vec::with_capacity(mesh.cells.len());
@@ -249,12 +274,7 @@ pub(crate) fn surface(
             let latitude = p[2].abs();
             let equatorial = math::exp64(-latitude * latitude / 0.045);
             let subtropical = math::exp64(-((latitude - 0.48) / 0.17) * ((latitude - 0.48) / 0.17));
-            let (east, _) = tangent(p);
-            let wind = if latitude < 0.50 {
-                east.map(|v| -v)
-            } else {
-                east
-            };
+            let wind = prevailing_wind(p, wind);
             let mut shadow: f64 = 0.0;
             let mut uplift: f64 = 0.0;
             for &n in &cell.neighbours {
@@ -299,4 +319,53 @@ pub(crate) fn surface(
         };
     }
     (terrain, elevation, moisture)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    const WIND: Wind = Wind::GeographicEast;
+
+    fn position(longitude: f64, latitude: f64) -> Point {
+        let (longitude, latitude) = (longitude.to_radians(), latitude.to_radians());
+        [
+            math::cos(latitude) * math::cos(longitude),
+            math::cos(latitude) * math::sin(longitude),
+            math::sin(latitude),
+        ]
+    }
+
+    #[test]
+    fn upwind_stays_zonal_across_the_mesh_basis_switch() {
+        for longitude in [-170.0, -90.0, 0.0, 45.0, 120.0, 180.0] {
+            for hemisphere in [-1.0, 1.0] {
+                let below = prevailing_wind(position(longitude, hemisphere * 64.0), WIND);
+                let above = prevailing_wind(position(longitude, hemisphere * 65.0), WIND);
+                assert!(dot(below, above) > 1.0 - 1e-12);
+                for latitude in [64.0, 65.0, 80.0, 89.999] {
+                    let p = position(longitude, hemisphere * latitude);
+                    let wind = prevailing_wind(p, WIND);
+                    assert_eq!(wind[2], 0.0, "zonal wind has no northward component");
+                    assert!(dot(wind, p).abs() < 1e-12);
+                    assert!((dot(wind, wind) - 1.0).abs() < 1e-12);
+                    let west = position(longitude - 1.0, hemisphere * latitude);
+                    let east = position(longitude + 1.0, hemisphere * latitude);
+                    assert!(-dot(west, wind) > 0.0, "western relief is upwind");
+                    assert!(-dot(east, wind) < 0.0, "eastern relief is downwind");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn exact_poles_have_a_fixed_wind_and_tropics_keep_easterlies() {
+        for pole in [-1.0, 1.0] {
+            assert_eq!(prevailing_wind([0.0, 0.0, pole], WIND), [0.0, 1.0, 0.0]);
+        }
+        for latitude in [-20.0, 0.0, 20.0] {
+            let wind = prevailing_wind(position(0.0, latitude), WIND);
+            assert!(-dot(position(1.0, latitude), wind) > 0.0);
+            assert!(-dot(position(-1.0, latitude), wind) < 0.0);
+        }
+    }
 }

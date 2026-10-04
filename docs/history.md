@@ -130,11 +130,15 @@ The import validates identities, parent references and shared action prefixes.
 An unreadable inactive telling stays retained; it does not prevent reading a
 valid active account. Bump `ENGINE_REVISION` whenever a change would make an
 existing recipe replay differently. Revision 33 changes flat geography to
-a sphere, replacing region identities: the facade refuses earlier recipes
+a sphere, replacing region identities: the engine refuses earlier recipes
 and the shelf opens recovery with the original data still downloadable.
 An imported older file is refused without changing saved worlds. Its
-region IDs are never guessed onto the new map. For later revision
-mismatches, replay still works with a warning that the history may differ.
+region IDs are never guessed onto the new map. A recipe also records its
+`geography` version (`spherical-v1`, `continental-v2`, `continental-v3`),
+so a change to how the land is drawn adds a version rather than redrawing
+saved worlds; new worlds use `GeographyVersion::CURRENT`. For later
+revision mismatches, replay still works with a warning that the history
+may differ.
 Shelf miniatures are drawn only when the save matches the running revision.
 Resolved-state saves remain possible later work if exact preservation
 across versions matters.

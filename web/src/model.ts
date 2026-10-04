@@ -710,7 +710,7 @@ export interface WordDetail {
 
 export type MapSize = "small" | "medium" | "large" | "vast";
 
-export type GeographyVersion = "spherical-v1" | "continental-v2";
+export type GeographyVersion = "spherical-v1" | "continental-v2" | "continental-v3";
 
 export type Terrain = "sea" | "plains" | "forest" | "steppe" | "hills" | "mountains" | "desert";
 
@@ -728,7 +728,6 @@ export interface Region {
   boundary: [number, number][];
   /// Derived equirectangular drawing coordinates, not a physical distance metric.
   site: [number, number];
-  outline: [number, number][];
   coastal: boolean;
   /// Land on an island rather than a continent.
   island: boolean;

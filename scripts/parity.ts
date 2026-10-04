@@ -98,7 +98,7 @@ function digest(value: Json): string {
 const FLOAT_FIELDS: Record<string, true | undefined> = {
   size: true, prestige: true, power: true, openness: true, intensity: true,
   purism: true, city: true, keptFromHigh: true, share: true,
-  width: true, height: true, site: true, outline: true,
+  width: true, height: true, site: true,
   radiusKm: true, center: true, boundary: true, lengthKm: true,
   elevation: true, moisture: true, warmth: true, wetness: true,
   targetWetness: true, targetWarmth: true, riverFlow: true, flow: true,
@@ -340,7 +340,7 @@ async function relatedFamily(seed: number): Promise<void> {
   const bench = new Workbench(seed, size);
   try {
     const map = object(json(JSON.parse(bench.map())));
-    if (map.geography !== "continental-v2") throw new Error("New founding worlds must use continental-v2");
+    if (map.geography !== "continental-v3") throw new Error("New founding worlds must use continental-v3");
     const nativeBefore = await rpc({ kind: "save" });
     const wasmBefore = bench.save();
     let sites: number[] | undefined;

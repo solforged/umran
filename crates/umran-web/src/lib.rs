@@ -35,10 +35,6 @@ use umran_sim::{
 use umran_sim::{LanguageDesign, MorphologyKind, Naming, Segment, Variety};
 use wasm_bindgen::prelude::*;
 
-/// Revision 33 replaces the flat mesh and its region identities with a sphere.
-/// Earlier region-targeted actions cannot be reinterpreted as spherical locations.
-const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;
-
 /// The browser-facing history; `Bench` holds the logic so it can be tested
 /// natively, where `JsValue` is unavailable.
 #[wasm_bindgen]
@@ -269,7 +265,7 @@ impl Workbench {
         self.bench.story(generation, subject).map_err(fail)
     }
 
-    /// The land: regions with their outlines and terrain.
+    /// The land: regions with their spherical boundaries and terrain.
     pub fn map(&self) -> Result<String, JsValue> {
         self.bench.map().map_err(fail)
     }
@@ -429,7 +425,7 @@ pub struct Bench {
 
 impl Bench {
     pub fn new(seed: u32, size: &str) -> Result<Bench, String> {
-        Self::new_with_geography(seed, size, GeographyVersion::ContinentalV2)
+        Self::new_with_geography(seed, size, GeographyVersion::CURRENT)
     }
 
     /// Generate the recipe's geography without replaying its authored history.
@@ -465,9 +461,6 @@ impl Bench {
         let document: Document =
             serde_json::from_str(json).map_err(|e| format!("Not an Umran save: {e}"))?;
         let recipe = document.recipe;
-        if recipe.revision < SPHERICAL_GEOGRAPHY_REVISION {
-            return Err("This save uses the earlier flat geography. Its original is still available for recovery; it cannot be replayed on a spherical world.".into());
-        }
         let chronicle = Chronicle::from_recipe(&recipe)?;
         Ok(Bench {
             chronicle,
@@ -1907,7 +1900,6 @@ impl Bench {
                     center: geographic(r.position),
                     boundary: r.boundary.iter().copied().map(geographic).collect(),
                     site: r.site,
-                    outline: r.outline.clone(),
                     coastal: map.coastal(id),
                     island: map.island(id),
                     neighbours: r.neighbours.clone(),
@@ -4542,7 +4534,6 @@ struct RegionView {
     boundary: Vec<[f64; 2]>,
     /// Derived equirectangular drawing coordinates, never physical distances.
     site: [f32; 2],
-    outline: Vec<[f32; 2]>,
     coastal: bool,
     /// Land on an island rather than a continent.
     island: bool,
@@ -4646,6 +4637,7 @@ struct MapWord {
 mod tests {
     use super::*;
     use umran_sim::CONCEPTS;
+    use umran_sim::chronicle::SPHERICAL_GEOGRAPHY_REVISION;
 
     #[test]
     fn entity_ids_preserve_integers_and_reject_js_coercions() {
@@ -5347,8 +5339,6 @@ mod tests {
                 < 1e-12
         );
         map.regions[coast.1].position = map.regions[coast.0].position;
-        map.regions[coast.0].outline = vec![[1_000_000.0, 1_000_000.0]; 4];
-        map.regions[coast.1].outline.clear();
         assert_eq!(river_view(&map, 0, &river).unwrap().length_km, length);
     }
 
@@ -5949,7 +5939,7 @@ mod tests {
         assert_eq!(decisions[1]["variety"], 1);
         let saved = bench.save().unwrap();
         let recipe: serde_json::Value = serde_json::from_str(&saved).unwrap();
-        assert_eq!(recipe["geography"], "continental-v2");
+        assert_eq!(recipe["geography"], "continental-v3");
         assert_eq!(recipe["tellings"][0]["actions"][1]["kind"], "found-related");
         let mut restored = Bench::load(&saved).unwrap();
         assert_eq!(restored.map().unwrap(), bench.map().unwrap());
@@ -6000,7 +5990,7 @@ mod tests {
         assert_eq!(loaded.lexicon(0, 0).unwrap(), first_speech);
         let fresh: serde_json::Value =
             serde_json::from_str(&Bench::new(5, "small").unwrap().map().unwrap()).unwrap();
-        assert_eq!(fresh["geography"], "continental-v2");
+        assert_eq!(fresh["geography"], "continental-v3");
         assert_ne!(
             fresh["regions"],
             serde_json::from_str::<serde_json::Value>(&old_map).unwrap()["regions"]
@@ -6298,12 +6288,13 @@ mod tests {
 
     #[test]
     fn flat_geography_recipes_are_rejected_without_reinterpreting_region_actions() {
-        let mut bench = Bench::new(5, "small").unwrap();
+        let mut bench = Bench::with_geography(5, "small", "spherical-v1").unwrap();
         let home = bench.chronicle.latest().map.landmasses[0].anchor;
         bench.act(&found_at("Hill", "familiar", home)).unwrap();
         bench.set_title("Kept original");
         let saved = bench.save().unwrap();
         let mut original: serde_json::Value = serde_json::from_str(&saved).unwrap();
+        original.as_object_mut().unwrap().remove("geography");
         // This ID is valid on the new mesh, but did not identify this land on
         // the flat one. Successful action replay would still be misleading.
         for revision in [0, SPHERICAL_GEOGRAPHY_REVISION - 1] {

@@ -100,7 +100,7 @@ export function bookLand(id: string, revision: number): BookLand | null {
       || recipe.revision < 33 || recipe.revision > revision
       || typeof recipe.seed !== "number" || typeof recipe.map !== "string") return null;
     const geography = recipe.geography === undefined ? "spherical-v1" : recipe.geography;
-    if (geography !== "spherical-v1" && geography !== "continental-v2") return null;
+    if (geography !== "spherical-v1" && geography !== "continental-v2" && geography !== "continental-v3") return null;
     return { seed: recipe.seed, size: recipe.map as MapSize, geography };
   } catch {
     return null;

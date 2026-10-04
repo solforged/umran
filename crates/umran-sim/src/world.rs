@@ -907,7 +907,7 @@ impl World {
 
     /// A world on a map of `size`, drawn from `seed`.
     pub fn with_map(seed: u64, params: Params, size: MapSize) -> Self {
-        Self::with_geography(seed, params, size, GeographyVersion::ContinentalV2)
+        Self::with_geography(seed, params, size, GeographyVersion::CURRENT)
     }
 
     /// A world drawn with the geography recorded by its recipe.

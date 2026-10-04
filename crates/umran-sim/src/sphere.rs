@@ -643,8 +643,12 @@ mod tests {
         for (level, radius) in [(3, 800.0), (4, 1_600.0), (4, 3_200.0), (5, 6_371.0)] {
             for seed in [0, 7, 31] {
                 let mut mesh = mesh(level);
-                let (terrain, elevation, moisture) =
-                    crate::continental::surface(seed, &mut mesh, radius);
+                let (terrain, elevation, moisture) = crate::continental::surface(
+                    seed,
+                    &mut mesh,
+                    radius,
+                    crate::continental::Wind::GeographicEast,
+                );
                 assert_refined_tiling(&mesh);
                 let land_area: f64 = mesh
                     .cells

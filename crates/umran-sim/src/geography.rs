@@ -2,7 +2,7 @@
 //!
 //! Regions are the dual cells of a subdivided icosahedron. Canonical unit
 //! vectors determine area, drainage adjacency, landmass anchors and travel;
-//! the equirectangular `site` and `outline` are drawing compatibility only.
+//! the equirectangular `site` is drawing compatibility only.
 
 use crate::rng::{key, stream};
 use crate::sphere::{Point, add, dot, tangent, unit};
@@ -49,8 +49,15 @@ const MAX_CLOSENESS: f32 = 0.9;
 #[serde(rename_all = "kebab-case")]
 pub enum GeographyVersion {
     SphericalV1,
-    #[default]
     ContinentalV2,
+    /// ContinentalV2 with zonal wind taken from geographic east.
+    #[default]
+    ContinentalV3,
+}
+
+impl GeographyVersion {
+    /// The geography new worlds are drawn with.
+    pub const CURRENT: Self = Self::ContinentalV3;
 }
 
 /// Physical world size and bounded spherical region resolution.
@@ -146,8 +153,6 @@ pub struct Region {
     pub boundary: Vec<[f64; 3]>,
     /// Derived equirectangular drawing point, never a physical coordinate.
     pub site: [f32; 2],
-    /// Derived drawing ring, locally unwrapped around `site`.
-    pub outline: Vec<[f32; 2]>,
     /// Physical area of the canonical spherical polygon.
     pub area_km2: f32,
     pub terrain: Terrain,
@@ -355,7 +360,7 @@ pub struct Map {
 impl Map {
     /// The closed world `seed` draws at the physical scale of `size`.
     pub fn generate(seed: u64, size: MapSize) -> Map {
-        Self::generate_with_version(seed, size, GeographyVersion::ContinentalV2)
+        Self::generate_with_version(seed, size, GeographyVersion::CURRENT)
     }
 
     /// Replays a recorded geography without changing its geometry or streams.
@@ -366,7 +371,15 @@ impl Map {
         let mut mesh = sphere::mesh(size.subdivisions());
         let (terrain, elevation, moisture) = match geography {
             GeographyVersion::SphericalV1 => surface(seed, &mesh.cells, radius_km),
-            GeographyVersion::ContinentalV2 => continental::surface(seed, &mut mesh, radius_km),
+            GeographyVersion::ContinentalV2 => {
+                continental::surface(seed, &mut mesh, radius_km, continental::Wind::MeshTangent)
+            }
+            GeographyVersion::ContinentalV3 => continental::surface(
+                seed,
+                &mut mesh,
+                radius_km,
+                continental::Wind::GeographicEast,
+            ),
         };
         let landmass = landmasses(&terrain, &mesh.cells);
         let edges = travel_edges(&mesh.cells, &terrain, &mesh.borders, radius_km);
@@ -376,23 +389,6 @@ impl Map {
             .enumerate()
             .map(|(i, cell)| {
                 let site = chart_point(cell.position, width, height);
-                let outline = cell
-                    .boundary
-                    .iter()
-                    .map(|&p| {
-                        let mut point = chart_point(p, width, height);
-                        // Keep the legacy ring local, but canonical boundary owns
-                        // seam/pole clipping and is the only physical geometry.
-                        let delta = f64::from(point[0]) - f64::from(site[0]);
-                        if delta > width / 2.0 {
-                            point[0] -= width as f32;
-                        }
-                        if delta < -width / 2.0 {
-                            point[0] += width as f32;
-                        }
-                        point
-                    })
-                    .collect();
                 Region {
                     position: cell.position,
                     area_km2: (sphere::area(cell.position, &cell.boundary)
@@ -400,7 +396,6 @@ impl Map {
                         * f64::from(radius_km)) as f32,
                     boundary: cell.boundary,
                     site,
-                    outline,
                     terrain: terrain[i],
                     elevation: elevation[i] as f32,
                     moisture: moisture[i] as f32,
@@ -453,7 +448,7 @@ impl Map {
         if ra.neighbours.binary_search(&b).is_err() {
             return None;
         }
-        if self.geography == GeographyVersion::ContinentalV2 {
+        if self.geography != GeographyVersion::SphericalV1 {
             // Canonicalize traversal so asking b→a returns exactly the same point.
             let (first, second) = if a < b { (ra, rb) } else { (rb, ra) };
             return sphere::shared_midpoint(&first.boundary, &second.boundary);
@@ -1599,7 +1594,6 @@ mod tests {
             assert_eq!(map.voyage_cached(coast), bounded);
             for region in &mut map.regions {
                 region.site = [f32::NAN; 2];
-                region.outline.clear();
             }
             assert_eq!(map.walking_row(source, f32::INFINITY).as_ref(), routes);
             assert_eq!(describe_landmasses(&map.regions), map.landmasses);
@@ -1677,7 +1671,6 @@ mod tests {
                         position: cell.position,
                         boundary: cell.boundary.clone(),
                         site: [0.0; 2],
-                        outline: Vec::new(),
                         area_km2: 1.0,
                         terrain: terrain[r],
                         elevation: elevation[r] as f32,
@@ -2040,11 +2033,6 @@ mod tests {
                 position: mesh.cells[r].position,
                 boundary: mesh.cells[r].boundary.clone(),
                 site: chart_point(mesh.cells[r].position, 2.0 * PI, PI),
-                outline: mesh.cells[r]
-                    .boundary
-                    .iter()
-                    .map(|&p| chart_point(p, 2.0 * PI, PI))
-                    .collect(),
                 area_km2: REFERENCE_AREA_KM2,
                 terrain: terrain[r],
                 elevation: 0.5,
@@ -2065,7 +2053,7 @@ mod tests {
         }
         let mut map = Map {
             size: MapSize::Small,
-            geography: GeographyVersion::ContinentalV2,
+            geography: GeographyVersion::CURRENT,
             radius_km: 100.0,
             width: TAU as f32,
             height: PI as f32,

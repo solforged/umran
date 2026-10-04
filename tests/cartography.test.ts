@@ -12,12 +12,12 @@ import type { Region, River, WorldMap } from "../web/src/model";
 function world(cells: { center: MapPoint; boundary?: MapPoint[]; neighbours?: number[]; terrain?: Region["terrain"] }[] = []): WorldMap {
   const map: WorldMap = {
     size: "small", radiusKm: 18000 / Math.PI, width: 360, height: 180, kmPerUnit: 100,
-    geography: "continental-v2",
+    geography: "continental-v3",
     regions: [], landmasses: [], rivers: [], climateZones: [],
   };
   map.regions = cells.map(({ center, boundary = [], neighbours = [], terrain = "plains" }, id) => ({
     id, center, boundary, neighbours, terrain,
-    site: chartPoint(map, center), outline: boundary.map((point) => chartPoint(map, point)),
+    site: chartPoint(map, center),
     areaKm2: 1, elevation: 0, moisture: 0, warmth: 0, climateZone: null,
     coastal: false, island: false, landmass: null,
   }));

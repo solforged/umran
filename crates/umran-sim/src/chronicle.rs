@@ -20,7 +20,11 @@ use std::collections::BTreeMap;
 /// differently. Saves record it so a mismatch can be reported.
 /// Revision 34 adds versioned continental geography and related founding.
 /// Revision-33 recipes retain their original spherical geography.
-pub const ENGINE_REVISION: u32 = 34;
+/// Revision 35 draws new worlds with ContinentalV3's geographic wind.
+pub const ENGINE_REVISION: u32 = 35;
+/// Revision 33 replaces flat geography and its region identities with a sphere.
+/// Earlier region-targeted actions cannot be replayed on the spherical mesh.
+pub const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;
 /// Identifies saved recipes. Kept from the project's first name, langgen,
 /// so files saved before the rename still load.
 pub const FORMAT: &str = "langgen-sim-recipe";
@@ -175,7 +179,7 @@ pub struct Chronicle {
 
 impl Chronicle {
     pub fn new(seed: u64, map: MapSize) -> Self {
-        Self::with_geography(seed, map, GeographyVersion::ContinentalV2)
+        Self::with_geography(seed, map, GeographyVersion::CURRENT)
     }
 
     /// A history whose map recipe remains fixed through every telling and reading.
@@ -573,12 +577,15 @@ impl Chronicle {
         }
     }
 
-    /// Rebuilds a history from a recipe. A recipe from another engine
-    /// revision still loads, but its words may differ from when it was
-    /// saved; callers should say so.
+    /// Rebuilds a history from a recipe. Pre-spherical recipes are refused.
+    /// Other revision mismatches still load, but their histories may differ;
+    /// callers should say so.
     pub fn from_recipe(recipe: &Recipe) -> Result<Self, String> {
         if recipe.format != FORMAT {
             return Err(format!("not a {FORMAT} file"));
+        }
+        if recipe.revision < SPHERICAL_GEOGRAPHY_REVISION {
+            return Err("This save uses the earlier flat geography. Its original is still available for recovery; it cannot be replayed on a spherical world.".into());
         }
         let ids: std::collections::BTreeSet<_> = recipe.tellings.iter().map(|t| t.id).collect();
         if ids.len() != recipe.tellings.len() {
@@ -1686,16 +1693,43 @@ mod tests {
     }
 
     #[test]
+    fn pre_spherical_recipes_cannot_reinterpret_valid_region_actions() {
+        let mut source =
+            Chronicle::with_geography(7, MapSize::Small, GeographyVersion::SphericalV1);
+        let home = source.latest().map.landmasses[0].anchor;
+        let mut action = found("First", "familiar");
+        if let Action::Found { region, .. } = &mut action {
+            *region = Some(home);
+        }
+        source.act(action).unwrap();
+        let mut saved = serde_json::to_value(source.recipe()).unwrap();
+        saved.as_object_mut().unwrap().remove("geography");
+        for revision in [0, SPHERICAL_GEOGRAPHY_REVISION - 1] {
+            saved["revision"] = revision.into();
+            let recipe: Recipe = serde_json::from_value(saved.clone()).unwrap();
+            assert_eq!(recipe.geography, GeographyVersion::SphericalV1);
+            assert!(Chronicle::from_recipe(&recipe).is_err());
+        }
+        for revision in [SPHERICAL_GEOGRAPHY_REVISION, ENGINE_REVISION + 1] {
+            saved["revision"] = revision.into();
+            let recipe: Recipe = serde_json::from_value(saved.clone()).unwrap();
+            let restored = Chronicle::from_recipe(&recipe).unwrap();
+            assert!(same(restored.latest(), source.latest()));
+            assert_eq!(restored.latest().communities[0].home(), home);
+        }
+    }
+
+    #[test]
     fn geography_survives_legacy_migration_readings_checkpoints_and_tellings() {
         for geography in [
             GeographyVersion::SphericalV1,
             GeographyVersion::ContinentalV2,
+            GeographyVersion::ContinentalV3,
         ] {
-            let mut source = match geography {
-                GeographyVersion::SphericalV1 => {
-                    Chronicle::with_geography(7, MapSize::Small, geography)
-                }
-                GeographyVersion::ContinentalV2 => Chronicle::new(7, MapSize::Small),
+            let mut source = if geography == GeographyVersion::CURRENT {
+                Chronicle::new(7, MapSize::Small)
+            } else {
+                Chronicle::with_geography(7, MapSize::Small, geography)
             };
             let empty = World::with_geography(7, Params::default(), MapSize::Small, geography);
             assert!(same(source.latest(), &empty));

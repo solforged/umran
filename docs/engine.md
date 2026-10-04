@@ -30,7 +30,9 @@ This bookkeeping makes no random draws and does not itself change replay.
   mountains, or desert. Seeded continental bodies, multiscale coastal
   variation, curved mountain belts, and island highs form the surface.
   Latitude and elevation affect warmth; moisture varies with latitude,
-  relief, and proximity to sea. These are static fields, not plate tectonics.
+  relief, and proximity to sea, with rain shadows downwind of high ground
+  under easterlies below 30° and westerlies above. These are static
+  fields, not plate tectonics.
   Each connected land body has one `landmass`; sea has none. Bodies of at
   least 500,000 km² are continents, rather than meeting a cell-count quota.
   Founders prefer continents to islands.
