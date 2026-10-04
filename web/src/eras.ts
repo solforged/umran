@@ -1,6 +1,6 @@
 import type { Annal, Overview } from "./model";
 import { YEARS } from "./model";
-import { CHRONICLE, countWord } from "./lore";
+import { CHRONICLE, countWord, EVENT_KIND } from "./lore";
 
 export type Era = {
   opening: Annal | null;
@@ -18,7 +18,10 @@ export type EraYear = {
   quiet: Annal[];
 };
 export const ERA_OPENERS: ReadonlySet<Annal["kind"]> = new Set(["rose", "fell", "conquest", "faith", "classical"]);
-export const QUIET_KINDS: ReadonlySet<Annal["kind"]> = new Set(["neighbours", "spread", "displaced", "parted", "contact", "climate", "river-flow", "meaning", "respelling", "temper", "law", "grammar", "pronoun-renewed", "pronoun-borrowed", "class-merged", "harmony-gained", "harmony-lost", "tone-gained", "tone-lost", "coinage", "calque", "purist-replacement", "tenet-adopted"]);
+export const QUIET_KINDS: ReadonlySet<Annal["kind"]> = new Set(["neighbours", "spread", "displaced", "parted", "contact", "climate", "river-flow", "meaning", "respelling", "temper", "law", "grammar", "pronoun-renewed", "pronoun-borrowed", "class-merged", "harmony-gained", "harmony-lost", "tone-gained", "tone-lost", "coinage", "calque", "purist-replacement", "tenet-adopted", "drought", "hard-winter", "flood"]);
+/// Quiet kinds `quietLine` describes in its own words; the rest are named
+/// by their chronicle heading.
+const DESCRIBED: ReadonlySet<Annal["kind"]> = new Set(["neighbours", "spread", "displaced", "parted", "contact", "climate", "river-flow", "temper", "law", "grammar", "meaning", "respelling"]);
 /// An opener within this many generations of an era's start stays a
 /// headline inside it; two hundred years is the shortest era.
 export const MIN_ERA = 8;
@@ -112,6 +115,11 @@ export function quietLine(year: EraYear, overview: Overview): string {
       if (first.length) phrase += ` in ${first.length === 1 ? first[0] : first.length === 2 ? first.join(" and ") : `${first.slice(0, -1).join(", ")}, and ${first.at(-1)}`}`;
     }
     parts.push(phrase);
+  }
+  for (const [kind, entries] of byKind) {
+    if (DESCRIBED.has(kind)) continue;
+    const name = EVENT_KIND[kind].name;
+    parts.push(`${name[0].toLowerCase()}${name.slice(1)}${entries.length > 1 ? ` (${countWord(entries.length)} times)` : ""}`);
   }
   return `${CHRONICLE.also}: ${parts.join("; ")}.`;
 }

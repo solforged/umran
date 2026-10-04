@@ -165,8 +165,15 @@ impl World {
                 .lands
                 .iter()
                 .filter(|&&r| self.climate.regions[r].severe)
-                .filter_map(|&r| self.map.regions[r].climate_zone)
-                .find_map(|z| self.triggers.climate.get(&z).copied());
+                .find_map(|&r| {
+                    self.seasonal_feeding_cause(r, k.livelihood)
+                        .map(|cause| cause.event)
+                        .or_else(|| {
+                            self.map.regions[r]
+                                .climate_zone
+                                .and_then(|z| self.triggers.climate.get(&z).copied())
+                        })
+                });
             ongoing.or_else(|| {
                 self.climate
                     .exposure

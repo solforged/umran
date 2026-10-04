@@ -2023,6 +2023,7 @@ impl Bench {
                         farming: world.feeds(id, Livelihood::Farming),
                     },
                     severe: region.severe,
+                    seasons: world.climate.seasons.profiles[id],
                 })
                 .collect(),
             rivers: world
@@ -2231,6 +2232,14 @@ impl Bench {
                         place.as_deref().unwrap_or("a land without a name")
                     )
                 }
+                WorldEvent::SeasonalHazard { region, hazard, .. } => format!(
+                    "{} in {}",
+                    hazard.id(),
+                    latest
+                        .place_at(*region, *generation)
+                        .as_deref()
+                        .unwrap_or("a land without a name")
+                ),
                 WorldEvent::Climate { zone, change, .. } => {
                     format!("Climate {} in zone {zone}", kebab(&format!("{change:?}")))
                 }
@@ -2527,6 +2536,7 @@ fn place_views(world: &World) -> Vec<PlaceView> {
         .filter(|(_, names)| !names.is_empty())
         .map(|(region, names)| PlaceView {
             region,
+            seasons: world.climate.seasons.profiles[region],
             exonyms: (0..world.varieties.len())
                 .filter(|&v| spoken[v] && names.last().is_some_and(|p| p.variety != v))
                 .filter_map(|v| {
@@ -3309,6 +3319,7 @@ struct TellingView {
 #[derive(Serialize)]
 struct PlaceView {
     region: usize,
+    seasons: umran_sim::seasons::SeasonalProfile,
     /// Its names, oldest first; the last is its name now.
     names: Vec<PlaceNameView>,
     /// What speakers of other living languages call it now, each heard
@@ -4936,6 +4947,7 @@ struct RegionClimateView {
     river_flow: f32,
     feeding: FeedingView,
     severe: bool,
+    seasons: umran_sim::seasons::SeasonalProfile,
 }
 
 #[derive(Serialize)]

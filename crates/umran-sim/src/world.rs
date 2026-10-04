@@ -287,6 +287,8 @@ pub struct Params {
     pub ethos_shifts: bool,
     /// False freezes seeded regional climate histories at their baseline.
     pub climate_enabled: bool,
+    /// False disables sampled seasonal hazards, but retains geographic profiles.
+    pub seasons_enabled: bool,
     /// Enables future/progressive renewal, competition, fusion, and analogy.
     /// Founding choices and regular sound laws still apply when disabled.
     pub tense_aspect: bool,
@@ -364,6 +366,7 @@ impl Default for Params {
             ethos_enabled: true,
             ethos_shifts: true,
             climate_enabled: true,
+            seasons_enabled: true,
             tense_aspect: true,
             pronoun_rate: 0.003,
             class_emergence_rate: 0.0015,
@@ -407,6 +410,7 @@ impl Params {
             purism_rate: 0.0,
             ethos_shifts: false,
             climate_enabled: false,
+            seasons_enabled: false,
             tense_aspect: false,
             pronoun_rate: 0.0,
             class_emergence_rate: 0.0,
@@ -747,6 +751,13 @@ pub enum WorldEvent {
         wetness: f32,
         warmth: f32,
         lands: Vec<usize>,
+        peoples: Vec<usize>,
+    },
+    /// The strongest food hazard in a region's sampled seasonal year.
+    SeasonalHazard {
+        region: usize,
+        hazard: crate::seasons::SeasonalHazard,
+        severity: f32,
         peoples: Vec<usize>,
     },
     /// A fixed river course becomes usable or dries below its flow threshold.
@@ -2063,6 +2074,7 @@ impl World {
         if self.advance_climate() {
             self.reconcile_contacts();
         }
+        self.advance_seasons();
         let spoken = self.spoken();
         let areal = self.areal_targets();
         for (v, targets) in areal.iter().enumerate() {
@@ -5953,7 +5965,7 @@ mod tests {
 
     #[test]
     fn subjugated_communities_tend_to_shift_on_their_own() {
-        let shifted = (0..20u64)
+        let shifted = (0..40u64)
             .filter(|&seed| {
                 let (mut world, _, subjects) = conquest(seed, Params::default());
                 world.run(60);
@@ -5963,11 +5975,12 @@ mod tests {
                 world.varieties[v].parent.is_some()
             })
             .count();
+        // Seeds 0..39 at revision 45: 13/40 shifted on lake-free maps without
+        // seasons, 10/40 with lakes, 9/40 with seasons, 6/40 with both.
+        // Seasonal hardship shortens rule; these are the default worlds.
         // Rule ends in time, so many subjects outlast their rulers, as the
-        // Britons, Greeks, and Persians did; a sizable share still shift.
-        // V4 gives 4/20 here and 10/40 in the larger calibration cohort.
-        // Keep the quick test tolerant of the smaller sample's band edge.
-        assert!((4..=15).contains(&shifted), "{shifted} of 20 shifted");
+        // Britons, Greeks, and Persians did; a share still shift.
+        assert!((4..=30).contains(&shifted), "{shifted} of 40 shifted");
     }
 
     #[test]

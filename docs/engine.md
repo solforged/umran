@@ -1228,6 +1228,55 @@ name records, exonyms, and flow annals. Weather colouring uses zone departures,
 and climate annals lead to zone cards. Far, middle, and close chart views
 disclose progressively finer detail; a kilometre scale follows the camera.
 
+### Seasonal weather
+
+`seasons.rs` derives each land's seasonal profile from spherical latitude,
+distance inland, elevation, and terrain. Thermal amplitude increases toward
+the poles and continental interiors. Summer falls half a year apart in the
+two hemispheres. Low-latitude large landmasses can have monsoon-like summer
+rains; subtropical coasts can have winter rains. The profile exposes a
+normalized thermal range, wet-season id, and river-flood susceptibility.
+
+Each generation samples one representative seasonal year, not all twenty-five
+individual harvests. A new `seasonal weather` stream, keyed by generation
+and climate zone, draws after the existing climate history. Neighbouring
+lands share anomalies but differ in susceptibility. Drought is likelier in
+dry climates and where a monsoon can fail. Harsh winters require a cold
+winter baseline. Damaging floods require a low-relief river reach; upstream
+seasonal runoff contributes to their likelihood, including in dry valleys.
+These are fictional risk bands, not calibrated Earth return periods.
+
+Only the strongest food hazard in a land's sampled year is retained.
+Its bottleneck reduces the current generation's feeding capacity, more for
+crops than for mixed gathering. It does not change annual-mean climate,
+river navigability, or the ordinary benefit of floodplain water. The next
+sample restores yields before applying new losses, so shocks do not compound.
+Severe shocks feed the existing hardship and remembered-exposure paths.
+Migration records the active hazard when it reduces food. Livelihood change
+records it only when removing the shock removes the adoption advantage.
+Only severe shocks on inhabited land enter the record, as drought, hard
+winter, or flood annals naming the land and its peoples; milder or
+unwitnessed ones still cost food but leave no entry, so a response to them
+has no recorded cause. `Seasons::struck` tallies every sampled hazard for
+the band. Over 40 worlds of 4,000 years, 5.5% of land-years saw drought,
+3.6% a hard winter, and 0.8% a flood; 1,461 severe shocks on inhabited land
+were recorded, and 35 migrations cite one. No harvest loss is reported as
+deaths.
+`Params::static_society()` disables hazards through `seasons_enabled = false`.
+
+Seasonal hardship can shorten rule and leave fewer subjects shifting to a
+ruler's language. In the 40-seed subjugation band, 13 of 40 shifted on
+lake-free maps without seasons, 9 with seasons, and 6 with seasons and
+lakes together; default worlds keep both.
+
+The model follows the latitude and land–sea contrast described in Dennis
+Hartmann's *Global Physical Climatology* and the monsoon seasonality in
+Colin Ramage's *Monsoon Meteorology*. The Nile and Yellow River motivate
+the distinction between useful seasonal water and damaging floods.
+Historical comparisons include the debated drought contribution to the Late
+Bronze Age collapse and the exceptional cold of 536 described by Procopius;
+the engine does not claim a single climatic cause for either history.
+
 ## Studying one mechanism
 
 Each example prints a readable report; profiles are preset ids
@@ -1242,6 +1291,7 @@ cargo run --release -p umran-sim --example history -- <seed> <generations>
 cargo run --release -p umran-sim --example calibrate -- <seeds> <generations> [profile]
 cargo run --release -p umran-sim --example calibrate -- geography [seeds] [generations] [size] [founders]
 cargo run --release -p umran-sim --example rivers -- [seeds] [size] [generations]
+cargo run --release -p umran-sim --example seasons
 cargo run --release -p umran-sim --example length -- [seeds] [generations]
 cargo run --release -p umran-sim --example audit -- [seeds] [generations]
 cargo run --release -p umran-sim --example faiths -- [seeds] [years] [first-seed] [seeded|natural|sample|sample-unseeded]
@@ -1277,8 +1327,8 @@ can refuse this fixed recipe; the report counts those refusals separately.
 ## Not yet modelled
 
 Fleets, rented ports, mixed inland-and-sea itineraries, subregional river
-meanders, changing lake extents, lake salinity, seasonal weather, resolved
-travel times, globe wrapping,
+meanders, changing lake extents, lake salinity, resolved travel times,
+globe wrapping,
 purism in speech rather than writing, spelling reform as a purist act,
 inflection beyond count noun plural and object marking, the genitive, and verb
 past, future, and progressive, agreement beyond the determiner, combined

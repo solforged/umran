@@ -30,7 +30,8 @@ use std::collections::BTreeMap;
 /// Revision 42 adds native coinage and calques after founding.
 /// Revision 43 adds purist reform of a written high form.
 /// Revision 44 adds doctrine: six tenets, disputes at schism, and taboo.
-pub const ENGINE_REVISION: u32 = 44;
+/// Revision 45 adds seasonal drought, hard winters, and floods.
+pub const ENGINE_REVISION: u32 = 45;
 /// Revision 33 replaces flat geography and its region identities with a sphere.
 /// Earlier region-targeted actions cannot be replayed on the spherical mesh.
 pub const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;
@@ -1687,8 +1688,14 @@ mod tests {
         let mut world = Chronicle::new(1, MapSize::default());
         world.act(found("Hill", "familiar")).unwrap();
         let ran = world.run_until_event(400);
-        assert!(ran < 400, "a growing community eventually splits");
-        assert_eq!(world.latest().events.len(), 2, "the founding and the split");
+        assert!(ran < 400, "a growing world eventually records an event");
+        assert!(world.latest().events.len() > 1);
+        assert!(
+            world.latest().events[1..]
+                .iter()
+                .all(|(generation, _)| *generation == ran),
+            "stop at the first event-bearing generation, including simultaneous weather"
+        );
     }
 
     #[test]

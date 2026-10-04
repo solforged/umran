@@ -530,9 +530,16 @@ export interface ContinentName extends NameView {
   since: number;
 }
 
+export interface Seasons {
+  amplitude: number;
+  wet: "none" | "summer" | "winter" | "monsoon";
+  floods: boolean;
+}
+
 /// A land's names, oldest first; the last is its name now.
 export interface Place {
   region: number;
+  seasons: Seasons;
   names: PlaceName[];
   /// What speakers of other living languages call it now, each heard once
   /// from its holders and changed since by their own sound laws.
@@ -634,7 +641,7 @@ export interface Annal {
   /// The index of the decision that produced this entry, if one did.
   decision?: number;
   generation: number;
-  kind: "found" | "split" | "settlement" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "climate" | "river-flow" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper" | "grammar" | "pronoun-renewed" | "pronoun-polite" | "pronoun-borrowed" | "class-emerged" | "class-merged" | "class-lost" | "harmony-gained" | "harmony-lost" | "tone-gained" | "tone-lost" | "coinage" | "calque" | "purist-reform" | "purist-replacement" | "tenet-adopted" | "tenet-disputed" | "taboo-replacement";
+  kind: "found" | "split" | "settlement" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "climate" | "river-flow" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper" | "grammar" | "pronoun-renewed" | "pronoun-polite" | "pronoun-borrowed" | "class-emerged" | "class-merged" | "class-lost" | "harmony-gained" | "harmony-lost" | "tone-gained" | "tone-lost" | "coinage" | "calque" | "purist-reform" | "purist-replacement" | "tenet-adopted" | "tenet-disputed" | "taboo-replacement" | "drought" | "hard-winter" | "flood";
   /// The annalist's words; words of the language are marked *thus*.
   text: string;
   /// The apparatus: what a linguist would note, such as sound laws.
@@ -830,6 +837,7 @@ export interface ClimateView {
     riverFlow: number;
     feeding: Record<Livelihood, number>;
     severe: boolean;
+    seasons: Seasons;
   }[];
   rivers: { id: number; flow: number; flowing: boolean }[];
 }

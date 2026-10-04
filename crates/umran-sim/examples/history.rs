@@ -163,6 +163,16 @@ fn main() {
                 place(*region, *generation),
                 share * 100.0
             ),
+            WorldEvent::SeasonalHazard {
+                region,
+                hazard,
+                severity,
+                ..
+            } => println!(
+                "  gen {generation:>3}  {} in {}, severity {severity:.2}",
+                hazard.id(),
+                place(*region, *generation)
+            ),
             WorldEvent::Climate {
                 zone,
                 cause,

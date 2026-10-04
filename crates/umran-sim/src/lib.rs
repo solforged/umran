@@ -50,6 +50,7 @@ mod rivers;
 pub mod rng;
 pub mod root;
 pub mod schisms;
+pub mod seasons;
 pub mod settlement;
 mod spelling;
 mod sphere;

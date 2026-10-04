@@ -56,6 +56,7 @@ pub struct RegionClimate {
 pub struct Climate {
     pub zones: Vec<ZoneClimate>,
     pub regions: Vec<RegionClimate>,
+    pub seasons: crate::seasons::Seasons,
     /// Last climate exposure by people, so moving does not erase hardship.
     pub exposure: Vec<Option<u32>>,
     baseline_wetness: Vec<f32>,
@@ -120,6 +121,7 @@ impl Climate {
                 })
                 .collect(),
             exposure: Vec::new(),
+            seasons: crate::seasons::Seasons::new(map),
             baseline_wetness,
             baseline_feeding: vec![[0.0; 3]; map.regions.len()],
             flows: vec![0.0; map.regions.len()],
@@ -305,8 +307,26 @@ impl World {
         region: usize,
         livelihood: crate::Livelihood,
     ) -> Option<crate::Cause> {
-        let i = livelihood as usize;
-        if self.climate.regions[region].feeding[i] >= self.climate.baseline_feeding[region][i] {
+        self.seasonal_feeding_cause(region, livelihood)
+            .or_else(|| self.epoch_feeding_cause(region, livelihood))
+    }
+
+    fn unseasonal_feeding(&self, region: usize, livelihood: crate::Livelihood) -> f32 {
+        if self.climate.seasons.impacts[region].is_some() {
+            self.climate.seasons.feeding[region][livelihood as usize]
+        } else {
+            self.climate.regions[region].feeding[livelihood as usize]
+        }
+    }
+
+    fn epoch_feeding_cause(
+        &self,
+        region: usize,
+        livelihood: crate::Livelihood,
+    ) -> Option<crate::Cause> {
+        if self.unseasonal_feeding(region, livelihood)
+            >= self.climate.baseline_feeding[region][livelihood as usize]
+        {
             return None;
         }
         let zone = self.map.regions[region].climate_zone?;
@@ -323,6 +343,19 @@ impl World {
         next: crate::Livelihood,
     ) -> Option<crate::Cause> {
         let lands = &self.communities[community].lands;
+        let unseasonal = |l: crate::Livelihood| {
+            lands
+                .iter()
+                .map(|&r| self.unseasonal_feeding(r, l))
+                .sum::<f32>()
+        };
+        if unseasonal(next) < crate::world::ADOPT_GAIN * unseasonal(own)
+            && let Some(cause) = lands
+                .iter()
+                .find_map(|&r| self.seasonal_feeding_cause(r, own))
+        {
+            return Some(cause);
+        }
         let baseline = |l: crate::Livelihood| {
             lands
                 .iter()
@@ -332,7 +365,7 @@ impl World {
         if baseline(next) >= crate::world::ADOPT_GAIN * baseline(own) {
             return None;
         }
-        lands.iter().find_map(|&r| self.feeding_cause(r, own))
+        lands.iter().find_map(|&r| self.epoch_feeding_cause(r, own))
     }
 
     pub(crate) fn climate_challenged(&self, community: usize) -> bool {
@@ -358,6 +391,13 @@ impl World {
     /// Returns whether changed valley routes need contact reconciliation.
     pub(crate) fn advance_climate(&mut self) -> bool {
         if !self.params.climate_enabled {
+            // Restore unmodified yields before this year's seasonal sample,
+            // including the first step after seasonal weather is switched off.
+            if self.params.seasons_enabled
+                || self.climate.seasons.impacts.iter().any(Option::is_some)
+            {
+                self.climate.cache(&self.map);
+            }
             return false;
         }
         let changes = self.climate.advance(self.seed, self.generation, &self.map);

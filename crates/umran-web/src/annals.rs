@@ -608,6 +608,42 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 &[],
                 &[region],
             ),
+            WorldEvent::SeasonalHazard {
+                region,
+                hazard,
+                ref peoples,
+                ..
+            } => {
+                // Only severe hazards on inhabited land are recorded, so
+                // there is always a people to name.
+                let who = match peoples.as_slice() {
+                    [one] => format!("the {}", name(*one)),
+                    [first, ..] => format!("the {} and their neighbours", name(*first)),
+                    [] => "its people".into(),
+                };
+                let land = place(world, region, generation);
+                let text = match hazard {
+                    umran_sim::seasons::SeasonalHazard::Drought => {
+                        format!("The rains failed in {land}, and {who} went hungry.")
+                    }
+                    umran_sim::seasons::SeasonalHazard::HardWinter => {
+                        format!("A hard winter fell on {land}, and {who} went hungry.")
+                    }
+                    umran_sim::seasons::SeasonalHazard::Flood => {
+                        format!("The river rose over the fields of {land}, and {who} went hungry.")
+                    }
+                };
+                let mut annal = entry(generation, hazard.id(), text, peoples, &[region]);
+                if let Some(zone) = world.map.regions[region].climate_zone {
+                    annal.zones.push(zone);
+                }
+                if hazard == umran_sim::seasons::SeasonalHazard::Flood
+                    && let Some(river) = world.map.river_regions[region]
+                {
+                    annal.rivers.push(river);
+                }
+                annal
+            }
             WorldEvent::Climate {
                 zone,
                 cause,
