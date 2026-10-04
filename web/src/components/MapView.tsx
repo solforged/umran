@@ -1418,7 +1418,7 @@ export function MapView({
               return (
                 <g key={i}>
                 <path
-                  className={`route${m.overseas ? " overseas" : ""}${mine ? " chosen" : ""}`}
+                  className={`route${m.bySea ? " overseas" : ""}${mine ? " chosen" : ""}`}
                   {...bindPath((view) => view.line(recordedRoutes[i]))}
                   style={{
                     stroke: hue(family(mover)),
@@ -1426,7 +1426,7 @@ export function MapView({
                   }}
                 >
                   <title>
-                    {`${mover.name} ${m.kind === "split" ? "went out" : "moved"} to ${nameOf(m.to) ?? "new land"}${m.overseas ? " by sea" : ""}, year ${m.generation * YEARS}`}
+                    {`${mover.name} ${m.kind === "split" ? "went out" : "moved"} to ${nameOf(m.to) ?? "new land"}${m.bySea ? " by sea" : ""}, year ${m.generation * YEARS}`}
                   </title>
                 </path>
                   <path className="route-terminal" {...bindPath((view) => view.endLine(recordedRoutes[i]))}

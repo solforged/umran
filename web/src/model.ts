@@ -586,13 +586,14 @@ export interface TravelLeg {
 
 export interface Move {
   path: number[];
-  legs?: TravelLeg[];
+  legs: TravelLeg[];
   generation: number;
   community: number;
   from: number;
   to: number;
   kind: "migration" | "split";
-  overseas: boolean;
+  /// Whether they crossed the sea.
+  bySea: boolean;
 }
 
 /// A history set aside by undoing, or by writing on from an earlier year.

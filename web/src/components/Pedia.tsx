@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import type { Annal, Catalog, CityView, Community, Craft, CraftView, ReadEngine, Ethos, HistoryPoint, HolyLand, NotebookNote, Overview, ReligionView, RenderingRow, ShrineKind, StateView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { causePhrase, CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, faithTeaching, FAITH_HOW, FAITH_NAME, FALL_NAME, howCame, howNamed, hue, landLabel, LIVELIHOOD_NAME, otherNames, peoplePhrases, RISE_NAME, SCHISM_CAUSE, seasonalPhrase, STRONG, temperament, TENET_NOUN, TERRAIN_NAME, unnamedName, weatherDeparture } from "../lore";
+import { causePhrase, CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, faithTeaching, FAITH_HOW, FAITH_NAME, FALL_NAME, howCame, howNamed, hue, landLabel, LEG_BY, LIVELIHOOD_NAME, otherNames, peoplePhrases, RISE_NAME, SCHISM_CAUSE, seasonalPhrase, STRONG, temperament, TENET_NOUN, TERRAIN_NAME, unnamedName, weatherDeparture } from "../lore";
 import { filterHistory, findAnnal, individualAnnals, relatedMoments, subjectHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
 import { eras, quietLine, quietSummary, QUIET_KINDS, type Era } from "../eras";
 import { bond } from "../words";
@@ -1456,7 +1456,18 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
                 <Year generation={m.generation} context={context} />
                 <span>
                   {m.kind === "split" ? "Went out to" : "Moved to"} <LandLink region={m.to} context={context} />
-                  {m.overseas ? " over the sea" : ""}
+                  {m.legs.length > 1 ? (
+                    <span className="muted">
+                      {" "}(
+                      {m.legs.map((leg, j) => (
+                        <Fragment key={j}>
+                          {j > 0 ? ", then " : ""}
+                          {LEG_BY[leg.by]} {Math.round(leg.km).toLocaleString()} km to <LandLink region={leg.to} context={context} />
+                        </Fragment>
+                      ))}
+                      )
+                    </span>
+                  ) : m.bySea ? " over the sea" : ""}
                 </span>
               </li>
             ))}
@@ -1467,6 +1478,7 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
       <Facts rows={[
         ["Faith", c.faith === null ? "its own gods" : <ReligionLink religion={overview.religions[c.faith]} context={context} />],
         ["Crafts", c.crafts.length === 0 ? "none yet" : <Joined items={c.crafts} link={(craft) => <CraftLink craft={craft} context={context} />} />],
+        ["Ships", c.fleet === null ? null : <>since year <Year generation={c.fleet.since} context={context} />, sailing from <Joined items={c.fleet.ports} link={(port) => <LandLink region={port} context={context} />} /></>],
       ]} />
       {c.exonyms.length ? <section><h3>Called by others</h3><p><Joined items={c.exonyms} link={(e) => <><span className="word">{e.name}</span> by the <PeopleLink c={name(e.by)} context={context} /></>} /></p></section> : null}
     </>
@@ -2099,7 +2111,7 @@ function LandCard({ region, context }: { region: number; context: Context }) {
                   <PeopleLink c={overview.communities[m.community]} context={context} />{" "}
                   {m.to === region ? "came from " : "left for "}
                   <LandLink region={m.to === region ? m.from : m.to} context={context} />
-                  {m.overseas ? " over the sea" : ""}
+                  {m.bySea ? " over the sea" : ""}
                 </span>
               </li>
             ))}

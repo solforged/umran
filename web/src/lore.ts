@@ -38,7 +38,7 @@ import {
   WholeWord,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, ClimateView, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Mechanism, Overview, PlaceExonym, PlaceName, ReligionView, Rendering, SchismCause, Seasons, StateView, StressRule, Tenet, Terrain, WorldMap } from "./model";
+import type { Annal, ClimateView, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Mechanism, Overview, PlaceExonym, PlaceName, ReligionView, Rendering, SchismCause, Seasons, StateView, StressRule, Tenet, Terrain, TravelLeg, WorldMap } from "./model";
 import { YEARS } from "./model";
 import { findAnnal } from "./history";
 
@@ -101,6 +101,13 @@ export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string 
   "tenet-adopted": { icon: Sparkles, name: "A faith holds a teaching" },
   "tenet-disputed": { icon: Split, name: "A faith parts over a teaching" },
   "taboo-replacement": { icon: Sparkles, name: "A word is forbidden" },
+};
+
+/// How one leg of a journey was travelled.
+export const LEG_BY: Record<TravelLeg["by"], string> = {
+  land: "overland",
+  sea: "by sea",
+  river: "by river",
 };
 
 export const TERRAIN_NAME: Record<Terrain, string> = {
