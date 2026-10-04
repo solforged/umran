@@ -86,6 +86,8 @@ export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string 
   "tone-lost": { icon: Languages, name: "Tone is lost" },
   coinage: { icon: Languages, name: "A word is made" },
   calque: { icon: Languages, name: "A word is translated" },
+  "purist-reform": { icon: Languages, name: "Borrowed words are struck out" },
+  "purist-replacement": { icon: Languages, name: "A native word is written" },
 };
 
 export const TERRAIN_NAME: Record<Terrain, string> = {
@@ -324,6 +326,9 @@ export const MECHANISM_NAME: Record<Mechanism, string> = {
   contact: "after a meeting",
   pilgrimage: "along a pilgrim road",
   "unfaithful-holder": "against an unfaithful holder",
+  "foreign-prestige": "against a prouder neighbour's tongue",
+  "religious-revival": "in a revival of the faith",
+  "purist-norm": "by the purists' rule",
 };
 
 export const WORD_ORDER_PHRASE = {

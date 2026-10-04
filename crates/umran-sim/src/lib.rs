@@ -41,6 +41,7 @@ pub mod profile;
 pub mod pronouns;
 pub mod prosody;
 pub mod provenance;
+pub mod purism;
 pub mod river_names;
 mod rivers;
 pub mod rng;

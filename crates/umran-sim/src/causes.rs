@@ -18,6 +18,9 @@ pub enum Mechanism {
     UnfaithfulHolder,
     Court,
     WordNeed,
+    ForeignPrestige,
+    ReligiousRevival,
+    PuristNorm,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -48,6 +48,8 @@ pub enum Fixing {
     Age,
     /// Its state fell and left it behind.
     Fall,
+    /// A purist reform separated its written norm from changing speech.
+    Purism,
 }
 
 /// A state's standard, frozen as it stood when fixed.

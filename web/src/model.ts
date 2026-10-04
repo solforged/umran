@@ -236,7 +236,7 @@ export interface StateView {
   purism: number;
   /// Its standard frozen as a classical form, once fixed: by grammarians
   /// ("age") or by the state's fall ("fall").
-  classical: { variety: number; fixed: number; how: "age" | "fall" } | null;
+  classical: { variety: number; fixed: number; how: "age" | "fall" | "purism" } | null;
   city: number;
   lands: number[];
 }
@@ -421,6 +421,7 @@ export interface Variety {
   names: GivenView[];
   nameStyle: "single" | "double";
   written: number | null;
+  purism: { since: number; cause: Cause | null; replaced: { concept: string; loan: string; native: string }[] }[];
   sacredOf: number | null;
   /// The state whose classical form it is, if it is one.
   classicalOf: number | null;
@@ -631,7 +632,7 @@ export interface Annal {
   /// The index of the decision that produced this entry, if one did.
   decision?: number;
   generation: number;
-  kind: "found" | "split" | "settlement" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "climate" | "river-flow" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper" | "grammar" | "pronoun-renewed" | "pronoun-polite" | "pronoun-borrowed" | "class-emerged" | "class-merged" | "class-lost" | "harmony-gained" | "harmony-lost" | "tone-gained" | "tone-lost" | "coinage" | "calque";
+  kind: "found" | "split" | "settlement" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "climate" | "river-flow" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper" | "grammar" | "pronoun-renewed" | "pronoun-polite" | "pronoun-borrowed" | "class-emerged" | "class-merged" | "class-lost" | "harmony-gained" | "harmony-lost" | "tone-gained" | "tone-lost" | "coinage" | "calque" | "purist-reform" | "purist-replacement";
   /// The annalist's words; words of the language are marked *thus*.
   text: string;
   /// The apparatus: what a linguist would note, such as sound laws.
@@ -971,7 +972,10 @@ export type Mechanism =
   | "court"
   | "contact"
   | "pilgrimage"
-  | "unfaithful-holder";
+  | "unfaithful-holder"
+  | "foreign-prestige"
+  | "religious-revival"
+  | "purist-norm";
 
 export interface Cause {
   /// The annal that triggered this one.

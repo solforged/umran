@@ -655,6 +655,25 @@ This bookkeeping makes no random draws and does not itself change replay.
   less, its loans lose ground in use, and concepts held by loans gain
   native words. When a state falls the pull stops, and its dialects
   drift apart again.
+- A written high form can also be reformed by purists (`purism.rs`).
+  Two recorded challenges start a movement: a neighbouring state of
+  another family and greater prestige (Mechanism `foreign-prestige`), or
+  a reform schism in a faith with scripture (`religious-revival`). The
+  pressure lasts 24 generations while its keepers live and keep their
+  speech; each generation it reforms with chance `purism_rate` (0.08),
+  at most once in 12 generations per high form. A reform strikes out
+  about two fifths of the borrowed words that hold their meaning in the
+  written form. Each is replaced by a surviving native competitor, then
+  an attested archaism, then a word derived from a native base, and only
+  then a fresh root. If the standard was not yet fixed, the reform fixes
+  it as a classical form (`Fixing::Purism`), so the vernacular keeps its
+  loans and goes on changing. Icelandic, Hungarian language reform, and
+  the Turkish reform of the 1930s are the models; the high form changes,
+  speech follows only through the standard's ordinary pull. Over 20
+  default six-people worlds of 4,000 years, one reform replaced four
+  words among 96 written standards: rare, as in history. The ignored
+  `tests/purism.rs` band runs 40 authored revival courts, where 35
+  reform and 1,011 of 1,251 replacements revive older native words.
 - Cities (`cities.rs`) first enter the record at 10,000 people, once per
   state. Migrants come from rulers and subjects, weighted by their number
   divided by one plus travel distance to the capital; `city_rate` closes
@@ -1212,7 +1231,7 @@ can refuse this fixed recipe; the report counts those refusals separately.
 
 Fleets, rented ports, mixed inland-and-sea itineraries, exact river channels
 and lakes, seasonal weather, resolved travel times, globe wrapping,
-purism within a classical form,
+purism in speech rather than writing, spelling reform as a purist act,
 inflection beyond count noun plural and object marking, the genitive, and verb
 past, future, and progressive, agreement beyond the determiner, combined
 tense–aspect forms, modal readings and clitic stages, pronoun case forms,

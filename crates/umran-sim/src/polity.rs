@@ -656,6 +656,11 @@ impl World {
                 if let Some(cause) = cause {
                     self.causes.insert(self.triggers.states[&state], cause);
                 }
+                if challenge == Challenge::Neighbour
+                    && let Some(rival) = neighbour
+                {
+                    self.purist_rival(state, rival);
+                }
             }
         }
     }

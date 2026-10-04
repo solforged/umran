@@ -309,6 +309,22 @@ fn main() {
                 "  gen {generation:>3}  {} is written in its own right",
                 world.language_title(*variety)
             ),
+            WorldEvent::PuristReform { variety, episode } => println!(
+                "  gen {generation:>3}  {} reforms {} written words",
+                world.language_title(*variety),
+                world.varieties[*variety].purism[*episode].replaced.len()
+            ),
+            WorldEvent::PuristReplacement {
+                variety,
+                episode,
+                replacement,
+            } => {
+                let word = &world.varieties[*variety].purism[*episode].replaced[*replacement];
+                println!(
+                    "  gen {generation:>3}  {}: {} replaces {}",
+                    word.concept, word.native_form, word.loan_form
+                );
+            }
             WorldEvent::Temper {
                 community,
                 axis,

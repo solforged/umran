@@ -1699,6 +1699,23 @@ impl Bench {
                         written: v.written,
                         sacred_of: world.religions.iter().position(|r| r.sacred == id),
                         classical_of: world.classical_of(id),
+                        purism: v
+                            .purism
+                            .iter()
+                            .map(|episode| PurismView {
+                                since: episode.since,
+                                cause: Some(episode.cause),
+                                replaced: episode
+                                    .replaced
+                                    .iter()
+                                    .map(|word| PuristWordView {
+                                        concept: word.concept,
+                                        loan: word.loan_form.clone(),
+                                        native: word.native_form.clone(),
+                                    })
+                                    .collect(),
+                            })
+                            .collect(),
                         high: v.high,
                         vernacular: v.vernacular,
                         // How much of the core its written form still
@@ -2273,6 +2290,8 @@ impl Bench {
                 | WorldEvent::HolyLand { .. }
                 | WorldEvent::Temper { .. }
                 | WorldEvent::Tone { .. }
+                | WorldEvent::PuristReform { .. }
+                | WorldEvent::PuristReplacement { .. }
                 | WorldEvent::Vernacular { .. } => continue,
             };
             out.push(Marker {
@@ -3428,6 +3447,7 @@ struct VarietyView {
     sacred_of: Option<usize>,
     /// The state whose classical form it is, if it is one.
     classical_of: Option<usize>,
+    purism: Vec<PurismView>,
     /// The classical form its speakers write, or wrote before writing
     /// their own speech.
     high: Option<usize>,
@@ -3496,6 +3516,20 @@ struct HarmonyView {
 struct HarmonyAlternant {
     spelled: String,
     ipa: String,
+}
+
+#[derive(Serialize)]
+struct PurismView {
+    since: u32,
+    cause: Option<umran_sim::Cause>,
+    replaced: Vec<PuristWordView>,
+}
+
+#[derive(Serialize)]
+struct PuristWordView {
+    concept: &'static str,
+    loan: String,
+    native: String,
 }
 
 #[derive(Serialize)]

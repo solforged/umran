@@ -1512,7 +1512,7 @@ function StateCard({ state, context }: { state: StateView; context: Context }) {
         ["Classical form", state.classical === null ? null : (
           <><LanguageLink variety={state.classical.variety} context={context} />, fixed in year{" "}
             <Year generation={state.classical.fixed} context={context} />{" "}
-            {state.classical.how === "age" ? "by grammarians" : "when the state fell"}</>
+            {state.classical.how === "age" ? "by grammarians" : state.classical.how === "purism" ? "by purists" : "when the state fell"}</>
         )],
         ["Current subjects", current.length > 0 ? (
           <Joined items={current} link={(m) => <PeopleLink c={overview.communities[m.community]} context={context} />} />

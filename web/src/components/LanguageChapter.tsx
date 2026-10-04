@@ -238,6 +238,9 @@ export function Standing({ variety: v, ctx }: SectionProps) {
       {v.vernacular !== null ? <div><dt>Vernacular</dt><dd>
         Its own speech written since {year(v.vernacular)}{v.high !== null ? <>, in place of {language(v.high, ctx)}</> : null}.
       </dd></div> : null}
+      {v.purism.length ? <div><dt>Purism</dt><dd>
+        {v.purism.map((p, i) => <span key={p.since}>{i ? "; " : ""}in {year(p.since)} its keepers wrote {p.replaced.slice(0, 3).map((w, j) => <span key={w.concept}>{j ? ", " : ""}<span className="word">{w.native}</span> for <span className="word">{w.loan}</span></span>)}{p.replaced.length > 3 ? `, and ${p.replaced.length - 3} more` : ""}</span>)}.
+      </dd></div> : null}
       {v.koineOf !== null ? <div><dt>City speech</dt><dd>
         A koiné{city ? ` of ${city.name.name}` : ""}, levelled from {v.koineOf.map((s, i) => <span key={s.variety}>
           {i ? ", " : ""}{language(s.variety, ctx)} {Math.round(s.share * 100)}%

@@ -39,7 +39,8 @@ pub(crate) struct Annal {
     /// "respelling", "schism", "pilgrimage", "holy-land", "temper", "grammar",
     /// "pronoun-renewed", "pronoun-polite", "pronoun-borrowed", "class-emerged",
     /// "class-merged", "class-lost", "harmony-gained", "harmony-lost",
-    /// "tone-gained", "tone-lost", "climate", "river-flow", or "law".
+    /// "tone-gained", "tone-lost", "climate", "river-flow", "purist-reform",
+    /// "purist-replacement", or "law".
     pub kind: &'static str,
     /// The annalist's words. Words of the language are marked `*thus*`.
     pub text: String,
@@ -1011,6 +1012,56 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
             WorldEvent::Vernacular { variety, by } => {
                 vernacular_annal(world, generation, variety, by)
             }
+            WorldEvent::PuristReform { variety, episode } => {
+                let reform = &world.varieties[variety].purism[episode];
+                let mut annal = entry(
+                    generation,
+                    "purist-reform",
+                    format!(
+                        "The keepers of written {} struck out {} borrowed {} and wrote native ones in their place.",
+                        world.language_title_at(variety, generation),
+                        reform.replaced.len(),
+                        if reform.replaced.len() == 1 {
+                            "word"
+                        } else {
+                            "words"
+                        }
+                    ),
+                    &[],
+                    &[],
+                );
+                annal.variety = Some(variety);
+                annal.notes = reform
+                    .replaced
+                    .iter()
+                    .take(3)
+                    .map(|w| format!("*{}* for *{}*", w.native_form, w.loan_form))
+                    .collect();
+                annal.states.extend(world.classical_of(variety));
+                annal
+            }
+            WorldEvent::PuristReplacement {
+                variety,
+                episode,
+                replacement,
+            } => {
+                let word = &world.varieties[variety].purism[episode].replaced[replacement];
+                let mut annal = entry(
+                    generation,
+                    "purist-replacement",
+                    format!(
+                        "In written {}, *{}* took the place of the borrowed *{}* for '{}'.",
+                        world.language_title_at(variety, generation),
+                        word.native_form,
+                        word.loan_form,
+                        umran_sim::concepts::by_id(word.concept).map_or(word.concept, |c| c.gloss)
+                    ),
+                    &[],
+                    &[],
+                );
+                annal.variety = Some(variety);
+                annal
+            }
             WorldEvent::Temper {
                 community,
                 axis,
@@ -1206,6 +1257,7 @@ fn state_annal(world: &World, generation: u32, state: usize, kind: &'static str)
             match classical.how {
                 Fixing::Age => FIXED_AGE,
                 Fixing::Fall => FIXED_FALL,
+                Fixing::Purism => &["The keepers fixed {l} for writing."],
             }
         }
         _ => {

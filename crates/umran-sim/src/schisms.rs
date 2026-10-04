@@ -374,6 +374,15 @@ impl World {
                 cause,
             },
         ));
+        if cause == SchismCause::Reform && self.religions[id].scripture {
+            self.purist_pressure(
+                community,
+                crate::Cause {
+                    event: self.events.len() - 1,
+                    mechanism: crate::Mechanism::ReligiousRevival,
+                },
+            );
+        }
         for (c, cause) in joins {
             let mut conversion = stream(
                 self.seed,

@@ -277,6 +277,8 @@ pub struct Params {
     /// Fraction of the gap to a city's migrant makeup filled per generation.
     /// Zero disables cities, including in an authored state.
     pub city_rate: f32,
+    /// Chance per generation that a recorded purist movement reforms a high form.
+    pub purism_rate: f32,
     /// False pins founding ethos to zero and disables all shifts, for baseline replay.
     pub ethos_enabled: bool,
     /// False freezes ethos, including authored nudges and inheritance drift.
@@ -355,6 +357,7 @@ impl Default for Params {
             pilgrimage_reach: 1200.0,
             name_turnover: 0.1,
             city_rate: 0.25,
+            purism_rate: 0.08,
             ethos_enabled: true,
             ethos_shifts: true,
             climate_enabled: true,
@@ -397,6 +400,7 @@ impl Params {
             pilgrimage_rate: 0.0,
             name_turnover: 0.0,
             city_rate: 0.0,
+            purism_rate: 0.0,
             ethos_shifts: false,
             climate_enabled: false,
             tense_aspect: false,
@@ -833,6 +837,14 @@ pub enum WorldEvent {
     /// Speakers of `variety` began to write their own speech in place of
     /// a classical form.
     Vernacular { variety: usize, by: Vernacular },
+    /// Keepers reformed a written high form; its episode stores the words.
+    PuristReform { variety: usize, episode: usize },
+    /// One prescribed native replacement in a high form's reform.
+    PuristReplacement {
+        variety: usize,
+        episode: usize,
+        replacement: usize,
+    },
     /// An axis entered or left a notable pole, with its cause.
     Temper {
         community: usize,
@@ -903,6 +915,7 @@ pub struct World {
     /// Optional causes by response event index, within this telling.
     pub causes: std::collections::BTreeMap<usize, crate::Cause>,
     pub(crate) triggers: crate::causes::Triggers,
+    pub(crate) purist_pressures: Vec<crate::purism::Pressure>,
     /// What each region is called, by every language that has held it,
     /// oldest first; the last is its name now. Empty for land no one has
     /// held, and for the sea.
@@ -981,6 +994,7 @@ impl World {
             authored_laws: BTreeMap::new(),
             causes: Default::default(),
             triggers: Default::default(),
+            purist_pressures: Vec::new(),
             states: Vec::new(),
             cities: Vec::new(),
             religions: Vec::new(),
@@ -2099,6 +2113,7 @@ impl World {
         self.learn_words();
         self.reform_spelling();
         self.fix_classics();
+        self.purify_high_forms();
         self.hold_places();
         self.hear_places();
         self.name_continents();
@@ -4760,7 +4775,7 @@ impl World {
 
     /// Words no longer used for any concept become obsolete. They keep
     /// their history but stop undergoing sound change.
-    fn retire(&mut self, v: usize) {
+    pub(crate) fn retire(&mut self, v: usize) {
         let generation = self.generation;
         let lexicon = &mut self.varieties[v].lexicon;
         let used: HashSet<LexemeId> = lexicon

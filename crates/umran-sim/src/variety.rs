@@ -74,6 +74,8 @@ pub struct Variety {
     /// When its speakers began to write their own speech in place of
     /// `high`, if they have.
     pub vernacular: Option<u32>,
+    /// Recorded reforms of this written high form, not its everyday speech.
+    pub purism: Vec<crate::purism::Purism>,
 }
 
 /// A variety's descent from another.
@@ -152,6 +154,7 @@ impl Variety {
             river_exonyms: Vec::new(),
             high: None,
             vernacular: None,
+            purism: Vec::new(),
         };
         let mut prosody_rng = stream(seed, &[key("founding prosody")]);
         variety.profile.stress = Some(
