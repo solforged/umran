@@ -1,5 +1,4 @@
 import {
-  geoArea,
   geoDistance,
   geoEquirectangular,
   geoGraticule10,
@@ -26,7 +25,6 @@ export interface Cartography {
   region(region: Region): string;
   /** Point arrays and their coordinates are immutable cache keys. */
   line(points: readonly MapPoint[]): string;
-  polygon(points: readonly MapPoint[]): string;
   /** Longest uninterrupted visible line segment, oriented left to right. */
   labelLine(points: readonly MapPoint[]): string;
   /** Final visible segment in source order; empty if the destination is hidden. */
@@ -49,7 +47,6 @@ interface MapGeometry {
   vectors: WeakMap<Region, Vector[]>;
   lines: WeakMap<readonly MapPoint[], LineString>;
   points: WeakMap<MapPoint, { location: MapPoint; normal: Vector }>;
-  polygons: WeakMap<readonly MapPoint[], Polygon>;
   borders: Map<number, Map<number, MapPoint[]>>;
   rivers: WeakMap<River, MapPoint[]>;
 }
@@ -63,7 +60,6 @@ function geometryFor(map: WorldMap): MapGeometry {
       vectors: new WeakMap(),
       lines: new WeakMap(),
       points: new WeakMap(),
-      polygons: new WeakMap(),
       borders: new Map(),
       rivers: new WeakMap(),
     };
@@ -265,19 +261,6 @@ export function createCartography(
     },
     line(points) {
       return points.length < 2 ? "" : project(lineGeometry(map, points));
-    },
-    polygon(points) {
-      if (points.length < 3) return "";
-      const cache = geometry.polygons;
-      let polygon = cache.get(points);
-      if (!polygon) {
-        polygon = polygonGeometry(points.map((point) => geographicPoint(map, point)));
-        // Overlay callers supply chart rings, not canonical mesh winding.
-        // Their interior is the small spherical polygon in either winding.
-        if (geoArea(polygon) > 2 * Math.PI) polygon.coordinates[0].reverse();
-        cache.set(points, polygon);
-      }
-      return project(polygon);
     },
     labelLine(points) {
       return points.length < 2 ? "" : continuous(lineGeometry(map, points)).label;

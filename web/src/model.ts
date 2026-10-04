@@ -899,6 +899,8 @@ export interface ReadEngine {
   decisions(): DecisionView[];
 }
 export interface Engine extends ReadEngine {
+  /// Copy an untouched year-zero base, sharing its generated geography.
+  foundingDraft(): Engine;
   foundingPreview(): FoundingPreview;
   /// Up to 12 nearby unoccupied year-zero lands, in land-travel order.
   /// An unoccupied anchor comes first; an occupied anchor is only the origin.

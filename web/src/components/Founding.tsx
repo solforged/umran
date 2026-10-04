@@ -91,6 +91,7 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
   const [built, setBuilt] = useState<Built | null>(null);
   const [error, setError] = useState<string | null>(null);
   const engine = useRef<Engine | null>(null);
+  const base = useRef<{ seed: number; size: MapSize; engine: Engine } | null>(null);
   const published = useRef<Built | null>(null);
   const handedOver = useRef(false);
   const grammarDraws = useRef(new Map<number, { order: WordOrder; object: GrammarChoice; possessor: PossessorOrder }>());
@@ -109,8 +110,15 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
     const previous = published.current;
     if (previous?.founders === founders && previous.seed === worldSeed && previous.size === size) return;
     let live = true;
-    createEngine(worldSeed, size).then((next) => {
-      if (!live) return next.dispose();
+    const build = async () => {
+      if (base.current?.seed !== worldSeed || base.current.size !== size) {
+        const fresh = await createEngine(worldSeed, size);
+        if (!live) { fresh.dispose(); return; }
+        base.current?.engine.dispose();
+        base.current = { seed: worldSeed, size, engine: fresh };
+      }
+      if (!live) return;
+      const next = base.current.engine.foundingDraft();
       try {
         const indices = new Map<number, number>();
         for (const [index, founder] of founders.entries()) {
@@ -161,11 +169,16 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
         next.dispose();
         setError(message(failure));
       }
-    }, (failure) => { if (live) setError(message(failure)); });
+    };
+    void build().catch((failure) => { if (live) setError(message(failure)); });
     return () => { live = false; };
   }, [worldSeed, size, founders]);
 
-  useEffect(() => () => { if (!handedOver.current) engine.current?.dispose(); }, []);
+  useEffect(() => () => {
+    base.current?.engine.dispose();
+    base.current = null;
+    if (!handedOver.current) engine.current?.dispose();
+  }, []);
 
   const overview = built?.overview;
   const map = built?.map;

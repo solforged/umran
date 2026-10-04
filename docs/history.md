@@ -143,7 +143,9 @@ river channels. V1–V3 keep their earlier lake-free maps, drainage, rivers,
 and climate. Missing geography still means `spherical-v1`, never the
 current default. For later revision mismatches, replay still works with a
 warning that the history may differ.
-Shelf miniatures are drawn only when the save matches the running revision.
+Shelf miniatures use the saved geography version for compatible spherical
+recipes (revision 33 through the running revision). Earlier revisions and
+unrecognized geography are not guessed onto a new map.
 Resolved-state saves remain possible later work if exact preservation
 across versions matters.
 

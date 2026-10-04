@@ -1104,7 +1104,7 @@ budgets no longer apply.
 
 The facade exposes `radiusKm`, geographic `center` and `boundary`
 coordinates, `Region.areaKm2`, and authoritative `River.lengthKm`.
-`site` and `outline` are derived chart coordinates only. River length
+`site` is a derived chart coordinate only. River length
 follows great-circle course segments through the actual confluence or
 shared coastal midpoint. The browser's `cartography.ts` projects this one
 geography as an equirectangular chart or an orthographic globe; d3-geo clips

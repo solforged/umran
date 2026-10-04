@@ -107,6 +107,7 @@ function wrap(bench: Workbench): Engine {
   };
   return {
     ...root.engine,
+    foundingDraft: () => wrap(bench.foundingDraft()),
     foundingPreview: () => JSON.parse(bench.foundingPreview()) as FoundingPreview,
     foundingSites: (region, count) => JSON.parse(bench.foundingSites(region, count)) as number[],
     notebook: () => JSON.parse(bench.notebook()) as NotebookNote[],

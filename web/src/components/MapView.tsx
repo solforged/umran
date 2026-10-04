@@ -352,6 +352,8 @@ export function MapView({
   onCraft?: (craft: Craft) => void;
   onRiver?: (id: number) => void;
 }) {
+  const climateZones = useMemo(() => new Map(climate?.zones.map((zone) => [zone.id, zone])), [climate]);
+  const climateRivers = useMemo(() => new Map(climate?.rivers.map((river) => [river.id, river])), [climate]);
   const reader = lens ? overview.communities.find((c) => c.id === lens.people) : undefined;
   const readerVariety = reader ? overview.varieties[reader.variety] : undefined;
   selectedVariety = readerVariety?.id ?? selectedVariety;
@@ -380,10 +382,20 @@ export function MapView({
   const labelLayers = useRef<SVGElement[]>([]);
   const labelAnchors = useRef<SVGElement[]>([]);
   const lettering = useRef<SVGTextElement[]>([]);
-  const paths = useRef(new Map<SVGPathElement, { draw: PathDrawer; d: string; hide: HTMLElement | SVGElement | null }>());
-  const drawnPaths = useRef(new WeakMap<PathDrawer, { revision: number; d: string }>());
+  const paths = useRef(new Map<SVGPathElement, { draw: PathDrawer; d: string; hide: HTMLElement | SVGElement | null; revision: number }>());
+  const drawnPaths = useMemo(() => new WeakMap<PathDrawer, { revision: number; d: string }>(), [cartography]);
   const drawRevision = useRef(0);
-  const projectedAnchors = useRef(new Map<SVGElement, { site: MapPoint; scale?: number; visible: boolean }>());
+  const projectedAnchors = useRef(new Map<SVGElement, { site: MapPoint; scale?: number; visible: boolean; revision: number }>());
+  // The same semantic zoom policy as workbench.css, classified once per
+  // render rather than asking the DOM for visibility on every globe turn.
+  const projectionLayers = useRef<{ mask: number; paths: typeof paths.current; anchors: typeof projectedAnchors.current; labels: SVGElement[] }[]>([]);
+  const layerMask = (node: SVGElement): number => {
+    if (node.closest(".place-names, .river-names") ||
+      node.closest(".chart-marks") && node.querySelector(".mark-tree, .mark-grass, .mark-field, .mark-sand")) return 4;
+    if (node.closest(".chart-river:not(.river-tier-3), .routes, .dealings, .pilgrim-roads, .founding-markers")) return 6;
+    if (node.closest(".continent-names")) return 3;
+    return 7;
+  };
   const pendingTurn = useRef(false);
   const moving = useRef(false);
   const settleTimer = useRef(0);
@@ -391,10 +403,10 @@ export function MapView({
   const callbacks = useRef({ onRotation, onCamera });
   callbacks.current = { onRotation, onCamera };
   const bindPath: PathBinder = (draw, hide) => {
-    let drawn = drawnPaths.current.get(draw);
+    let drawn = drawnPaths.get(draw);
     if (!drawn || drawn.revision !== drawRevision.current) {
       drawn = { revision: drawRevision.current, d: draw(cartography) };
-      drawnPaths.current.set(draw, drawn);
+      drawnPaths.set(draw, drawn);
     }
     const d = drawn.d;
     let attached: SVGPathElement | null = null;
@@ -404,7 +416,7 @@ export function MapView({
       if (node) {
         const hidden = hide === "parent" ? node.parentElement : hide === "grandparent" ? node.parentElement?.parentElement ?? null : null;
         if (hidden) hidden.style.display = d ? "" : "none";
-        paths.current.set(node, { draw, d, hide: hidden });
+        paths.current.set(node, { draw, d, hide: hidden, revision: drawRevision.current });
       }
     } };
   };
@@ -413,7 +425,7 @@ export function MapView({
     return (node: SVGElement | null) => {
       if (attached) projectedAnchors.current.delete(attached);
       attached = node;
-      if (node) projectedAnchors.current.set(node, { site, scale, visible: node.style.display !== "none" });
+      if (node) projectedAnchors.current.set(node, { site, scale, visible: node.style.display !== "none", revision: -1 });
     };
   };
   // Hidden hemisphere anchors still have DOM and handlers, so they can appear
@@ -437,14 +449,25 @@ export function MapView({
     // Read the scale before moving paths; measuring afterward forces layout
     // of the whole changed globe on every turn.
     const pixelsPerUnit = element.getScreenCTM()?.a ?? 1;
+    const visibleMask = ratio > 0.6 ? 1 : ratio < 0.25 ? 4 : 2;
     if (pendingTurn.current) {
       cartography.rotate(turning.current);
-      const revision = ++drawRevision.current;
-      paths.current.forEach((binding, node) => {
-        let drawn = drawnPaths.current.get(binding.draw);
+      ++drawRevision.current;
+      chart.dataset.longitude = String(turning.current[0]);
+      chart.dataset.latitude = String(turning.current[1]);
+      pendingTurn.current = false;
+    }
+    const revision = drawRevision.current;
+    for (const layer of projectionLayers.current) {
+      if (!(layer.mask & visibleMask)) continue;
+      // Hidden layers retain their old revision and catch up exactly once
+      // when zoom reveals them, even if the rotation has since stopped.
+      layer.paths.forEach((binding, node) => {
+        if (binding.revision === revision) return;
+        let drawn = drawnPaths.get(binding.draw);
         if (!drawn) {
           drawn = { revision, d: binding.draw(cartography) };
-          drawnPaths.current.set(binding.draw, drawn);
+          drawnPaths.set(binding.draw, drawn);
         } else if (drawn.revision !== revision) {
           drawn.d = binding.draw(cartography);
           drawn.revision = revision;
@@ -454,10 +477,11 @@ export function MapView({
           if (binding.hide) binding.hide.style.display = drawn.d ? "" : "none";
           binding.d = drawn.d;
         }
+        binding.revision = revision;
       });
-      chart.dataset.longitude = String(turning.current[0]);
-      chart.dataset.latitude = String(turning.current[1]);
-      projectedAnchors.current.forEach((binding, node) => {
+      layer.anchors.forEach((binding, node) => {
+        if (binding.revision === revision) return;
+        binding.revision = revision;
         const point = cartography.point(binding.site);
         const visible = point !== null;
         if (visible !== binding.visible) { node.style.display = visible ? "" : "none"; binding.visible = visible; }
@@ -469,7 +493,6 @@ export function MapView({
           node.dataset.labelY = String(point[1]);
         }
       });
-      pendingTurn.current = false;
     }
     const label = Math.max(Math.sqrt(ratio), 14 / (pixelsPerUnit * 0.24));
     element.style.setProperty("--label", String(label));
@@ -478,14 +501,17 @@ export function MapView({
       if (layer.classList.contains("peoples")) layer.style.setProperty("--people-label-min", `${14 / pixelsPerUnit}px`);
     }
     // Camera frames need only relayout lettering, not rerender mesh geometry.
-    for (const anchor of labelAnchors.current) {
-      const x = Number(anchor.dataset.labelX) + Number(anchor.dataset.labelDx ?? 0) * label;
-      const y = Number(anchor.dataset.labelY) + Number(anchor.dataset.labelDy ?? 0) * label;
-      if (anchor.tagName === "g" || anchor.dataset.labelScale !== undefined) {
-        anchor.setAttribute("transform", `translate(${x} ${y})${anchor.dataset.labelScale === undefined ? "" : ` scale(${label})`}`);
-      } else {
-        anchor.setAttribute("x", String(x));
-        anchor.setAttribute("y", String(y));
+    for (const layer of projectionLayers.current) {
+      if (!(layer.mask & visibleMask)) continue;
+      for (const anchor of layer.labels) {
+        const x = Number(anchor.dataset.labelX) + Number(anchor.dataset.labelDx ?? 0) * label;
+        const y = Number(anchor.dataset.labelY) + Number(anchor.dataset.labelDy ?? 0) * label;
+        if (anchor.tagName === "g" || anchor.dataset.labelScale !== undefined) {
+          anchor.setAttribute("transform", `translate(${x} ${y})${anchor.dataset.labelScale === undefined ? "" : ` scale(${label})`}`);
+        } else {
+          anchor.setAttribute("x", String(x));
+          anchor.setAttribute("y", String(y));
+        }
       }
     }
     const level = ratio > 0.6 ? "zoom-far" : ratio < 0.25 ? "zoom-close" : "zoom-mid";
@@ -604,7 +630,17 @@ export function MapView({
     labelAnchors.current = [...(root.current?.querySelectorAll<SVGElement>("[data-label-x]") ?? [])];
     lettering.current = [...(root.current?.querySelectorAll<SVGTextElement>("[data-label-kind]") ?? [])]
       .sort((a, b) => Number(b.dataset.labelPriority) - Number(a.dataset.labelPriority));
-    pendingTurn.current = true;
+    const layers = new Map<number, typeof projectionLayers.current[number]>();
+    const layerFor = (node: SVGElement) => {
+      const mask = layerMask(node);
+      let layer = layers.get(mask);
+      if (!layer) { layer = { mask, paths: new Map(), anchors: new Map(), labels: [] }; layers.set(mask, layer); }
+      return layer;
+    };
+    paths.current.forEach((binding, node) => layerFor(node).paths.set(node, binding));
+    projectedAnchors.current.forEach((binding, node) => layerFor(node).anchors.set(node, binding));
+    for (const node of labelAnchors.current) layerFor(node).labels.push(node);
+    projectionLayers.current = [...layers.values()];
     drawCamera();
   });
   useEffect(() => {
@@ -934,7 +970,7 @@ export function MapView({
   };
   const colourOf = (region: number): string | null => {
     if (tint.kind === "weather") {
-      const zone = climate?.zones.find((z) => z.id === map.regions[region].climateZone);
+      const zone = climateZones.get(map.regions[region].climateZone!);
       if (!zone) return null;
       const strength = Math.max(Math.abs(zone.wetness), Math.abs(zone.warmth));
       if (strength < 0.04) return null;
@@ -1068,7 +1104,9 @@ export function MapView({
         ghost.setAttribute("d", ground.getAttribute("d")!);
         ghost.setAttribute("class", "claim map-holding-lost");
         ghost.style.fill = old.fill;
-        paths.current.set(ghost, { draw: (view) => view.region(map.regions[region]), d: ground.getAttribute("d")!, hide: null });
+        const binding = { draw: (view: Cartography) => view.region(map.regions[region]), d: ground.getAttribute("d")!, hide: null, revision: drawRevision.current };
+        paths.current.set(ghost, binding);
+        projectionLayers.current.find((layer) => layer.mask === 7)?.paths.set(ghost, binding);
         layer.append(ghost); ghosts.push(ghost);
       }
     }
@@ -1080,7 +1118,11 @@ export function MapView({
     });
     const clear = () => {
       changed.forEach((element) => element.classList.remove("map-holding-gained", "map-border-new"));
-      ghosts.forEach((element) => { paths.current.delete(element as SVGPathElement); element.remove(); });
+      ghosts.forEach((element) => {
+        paths.current.delete(element as SVGPathElement);
+        for (const layer of projectionLayers.current) layer.paths.delete(element as SVGPathElement);
+        element.remove();
+      });
     };
     const timer = window.setTimeout(clear, 400);
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -1151,7 +1193,7 @@ export function MapView({
           {riverPaths.map(({ river, points, tier }) => {
             if (river.course.every(hidden)) return null;
             const name = namedRiver(river);
-            const failed = climate?.rivers.find((flow) => flow.id === river.id)?.flowing === false;
+            const failed = climateRivers.get(river.id)?.flowing === false;
             return <g key={river.id} className={`chart-river river-tier-${tier}${failed ? " failed" : ""}`}
               role={onRiver ? "button" : undefined} tabIndex={onRiver ? 0 : undefined}
               aria-label={name?.spelled ?? "Unnamed river"}

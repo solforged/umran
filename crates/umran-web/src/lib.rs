@@ -60,6 +60,13 @@ impl Workbench {
         })
     }
 
+    #[wasm_bindgen(js_name = foundingDraft)]
+    pub fn founding_draft(&self) -> Result<Workbench, JsValue> {
+        Ok(Workbench {
+            bench: self.bench.founding_draft().map_err(fail)?,
+        })
+    }
+
     pub fn load(json: &str) -> Result<Workbench, JsValue> {
         Ok(Workbench {
             bench: Bench::load(json).map_err(fail)?,
@@ -451,6 +458,24 @@ impl Bench {
             mutation: 0,
             cached: None,
             saved_revision: None,
+            fixed: None,
+            readings: RefCell::default(),
+        })
+    }
+
+    /// Copy an unpeopled founding base, sharing its immutable generated map.
+    pub fn founding_draft(&self) -> Result<Bench, String> {
+        if self.chronicle.tellings().len() != 1 || !self.chronicle.actions().is_empty() {
+            return Err("A founding draft needs an untouched world.".into());
+        }
+        Ok(Bench {
+            chronicle: self.chronicle.clone(),
+            notebook: Vec::new(),
+            title: None,
+            author: None,
+            mutation: 0,
+            cached: None,
+            saved_revision: self.saved_revision,
             fixed: None,
             readings: RefCell::default(),
         })
@@ -6202,6 +6227,40 @@ mod tests {
         assert_eq!(damaged.tellings().len(), 2);
         assert!(damaged.read(original, "").is_err());
         assert!(damaged.save().unwrap().contains("99"));
+    }
+
+    #[test]
+    fn founding_drafts_share_geography_and_replay_edited_founders() {
+        use std::sync::Arc;
+
+        let base = Bench::new(7, "small").unwrap();
+        let mut draft = base.founding_draft().unwrap();
+        let map = &base.chronicle.latest().map;
+        assert!(Arc::ptr_eq(map, &draft.chronicle.latest().map));
+        draft.act(&found("First", "familiar")).unwrap();
+        assert!(draft.founding_draft().is_err());
+        assert!(base.chronicle.actions().is_empty());
+
+        let mut edited = base.founding_draft().unwrap();
+        let mut action: serde_json::Value =
+            serde_json::from_str(&found("First", "familiar")).unwrap();
+        action["design"]["grammar"]["order"] = "SOV".into();
+        edited.act(&action.to_string()).unwrap();
+        assert!(Arc::ptr_eq(map, &edited.chronicle.latest().map));
+        let mut replayed = Bench::load(&edited.save().unwrap()).unwrap();
+        let view = |bench: &mut Bench| {
+            let mut view: serde_json::Value =
+                serde_json::from_str(&bench.overview(0).unwrap()).unwrap();
+            // Preview tokens belong to this open session, not the saved world.
+            view.as_object_mut().unwrap().remove("mutation");
+            view
+        };
+        assert_eq!(view(&mut edited), view(&mut replayed));
+        assert_eq!(edited.map().unwrap(), replayed.map().unwrap());
+
+        let redrawn = Bench::new(8, "small").unwrap();
+        assert!(!Arc::ptr_eq(map, &redrawn.chronicle.latest().map));
+        assert_ne!(base.map().unwrap(), redrawn.map().unwrap());
     }
 
     #[test]

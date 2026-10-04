@@ -124,20 +124,6 @@ describe("spherical chart geometry", () => {
     expect(bounds(segments(cartography.labelLine(route)))[1]).toBeCloseTo(90 - midpointLatitude, 5);
   });
 
-  test("overlay winding selects the same small seam polygon without mutating the source ring", () => {
-    const map = world();
-    const points: MapPoint[] = [[350, 100], [350, 80], [10, 80], [10, 100]];
-    const reversed = points.toReversed();
-    for (const ring of [points, reversed]) {
-      for (const point of ring) Object.freeze(point);
-      Object.freeze(ring);
-      const rings = segments(createCartography(map, "chart").polygon(ring));
-      expect(contains(rings, [355, 90])).toBe(true);
-      expect(contains(rings, [5, 90])).toBe(true);
-      expect(contains(rings, [180, 90])).toBe(false);
-    }
-  });
-
   test("source-coordinate caches stay local to their world's drawing scale", () => {
     const map = world();
     const larger = { ...world(), width: 720, height: 360, radiusKm: map.radiusKm * 2 };
