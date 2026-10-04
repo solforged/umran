@@ -303,6 +303,13 @@ fn word_events(world: &World, variety: usize, concept: &str) -> Result<HashSet<S
             }
         }
     }
+    for (position, (_, event)) in world.events.iter().enumerate() {
+        if matches!(event, WorldEvent::TabooReplaced { variety: v, concept: c, .. }
+            if *v == variety && c.id == concept.id)
+        {
+            ids.insert(world_event_id(position));
+        }
+    }
     Ok(ids)
 }
 

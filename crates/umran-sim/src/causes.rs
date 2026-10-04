@@ -21,6 +21,7 @@ pub enum Mechanism {
     ForeignPrestige,
     ReligiousRevival,
     PuristNorm,
+    Doctrine,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

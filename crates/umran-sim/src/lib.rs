@@ -17,6 +17,7 @@ pub mod concepts;
 mod continental;
 pub mod design;
 pub mod diglossia;
+pub mod doctrine;
 pub mod ethos;
 pub mod flavor;
 pub mod form;

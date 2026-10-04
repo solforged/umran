@@ -268,6 +268,8 @@ pub struct Params {
     pub conversion_rate: f32,
     /// Chance per generation that an eligible faith divides.
     pub schism_rate: f32,
+    /// Doctrine drift, sacred registers, and concept-level avoidance.
+    pub doctrine_enabled: bool,
     /// Chance per faithful people to open a shrine contact each generation.
     pub pilgrimage_rate: f32,
     /// Maximum directed journey to the shrine, in effort-km.
@@ -353,6 +355,7 @@ impl Default for Params {
             religion_rate: 0.02,
             conversion_rate: 0.05,
             schism_rate: 0.035,
+            doctrine_enabled: true,
             pilgrimage_rate: 0.02,
             pilgrimage_reach: 1200.0,
             name_turnover: 0.1,
@@ -397,6 +400,7 @@ impl Params {
             religion_rate: 0.0,
             conversion_rate: 0.0,
             schism_rate: 0.0,
+            doctrine_enabled: false,
             pilgrimage_rate: 0.0,
             name_turnover: 0.0,
             city_rate: 0.0,
@@ -795,6 +799,28 @@ pub enum WorldEvent {
         parent: usize,
         community: usize,
         cause: SchismCause,
+        doctrine: Option<crate::doctrine::Dispute>,
+    },
+    TenetAdopted {
+        religion: usize,
+        tenet: crate::doctrine::Tenet,
+        previous: Option<f32>,
+        stance: f32,
+    },
+    TenetDisputed {
+        religion: usize,
+        parent: usize,
+        tenet: crate::doctrine::Tenet,
+        previous: f32,
+        stance: f32,
+    },
+    TabooReplaced {
+        religion: usize,
+        community: usize,
+        variety: usize,
+        concept: &'static Concept,
+        old: LexemeId,
+        word: LexemeId,
     },
     /// First pilgrims of this faith from `landmass`, once per landmass.
     Pilgrimage {
@@ -2108,6 +2134,7 @@ impl World {
         self.found_religions();
         self.spread_faiths();
         self.divide_faiths();
+        self.change_doctrine();
         self.send_pilgrims();
         self.observe_holy_lands();
         self.learn_words();

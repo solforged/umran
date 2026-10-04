@@ -2292,6 +2292,9 @@ impl Bench {
                 | WorldEvent::Tone { .. }
                 | WorldEvent::PuristReform { .. }
                 | WorldEvent::PuristReplacement { .. }
+                | WorldEvent::TenetAdopted { .. }
+                | WorldEvent::TenetDisputed { .. }
+                | WorldEvent::TabooReplaced { .. }
                 | WorldEvent::Vernacular { .. } => continue,
             };
             out.push(Marker {
@@ -3657,6 +3660,8 @@ struct ReligionView {
     sacred: usize,
     converts: bool,
     translates: bool,
+    doctrine: Vec<umran_sim::doctrine::Position>,
+    disputed: Option<umran_sim::doctrine::Tenet>,
     scripture: bool,
     /// The living peoples that hold it.
     followers: Vec<usize>,
@@ -4433,6 +4438,8 @@ fn religion_views(world: &World) -> Vec<ReligionView> {
                 sacred: r.sacred,
                 converts: r.converts,
                 translates: r.translates,
+                doctrine: r.doctrine.positions().collect(),
+                disputed: r.disputed,
                 scripture: r.scripture,
                 followers,
                 words: renderings(world, Need::Faith, &varieties),

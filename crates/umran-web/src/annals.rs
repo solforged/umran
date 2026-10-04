@@ -71,6 +71,10 @@ pub(crate) struct Annal {
     /// Structured grammatical change; absent for all other annal kinds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grammar: Option<GrammarAnnal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub doctrine: Option<DoctrineAnnal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub taboo: Option<TabooAnnal>,
     /// Climate zones and rivers it tells of, independently of land ids.
     pub zones: Vec<usize>,
     pub rivers: Vec<usize>,
@@ -95,6 +99,20 @@ pub(crate) struct Temper {
     pub pole: Pole,
     pub entered: bool,
     pub cause: TemperCause,
+}
+
+#[derive(Clone, PartialEq, Serialize)]
+pub(crate) struct DoctrineAnnal {
+    tenet: umran_sim::doctrine::Tenet,
+    previous: Option<f32>,
+    stance: f32,
+}
+
+#[derive(Clone, PartialEq, Serialize)]
+pub(crate) struct TabooAnnal {
+    concept: &'static str,
+    old: u32,
+    word: u32,
 }
 
 #[derive(Clone, PartialEq, Serialize)]
@@ -332,6 +350,8 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
         religions: Vec::new(),
         crafts: Vec::new(),
         temper: None,
+        doctrine: None,
+        taboo: None,
         grammar: None,
         zones: Vec::new(),
         rivers: Vec::new(),
@@ -790,6 +810,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 parent,
                 community,
                 cause,
+                doctrine,
             } => {
                 let r = &world.religions[religion];
                 let (people, branch, elder) = (
@@ -815,6 +836,97 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 let mut annal = entry(generation, "schism", text, &[community], &[r.land]);
                 annal.religions = vec![religion, parent];
                 annal.notes = vec![format!("{branch} means “{}”.", r.name.meaning)];
+                annal.doctrine = doctrine.map(|d| DoctrineAnnal {
+                    tenet: d.tenet,
+                    previous: Some(d.previous),
+                    stance: d.stance,
+                });
+                annal
+            }
+            WorldEvent::TenetAdopted {
+                religion,
+                tenet,
+                previous,
+                stance,
+            } => {
+                let faith = world.faith_name(religion);
+                let held = tenet_held(tenet, stance);
+                let mut annal = entry(
+                    generation,
+                    "tenet-adopted",
+                    match previous {
+                        None => format!("From its beginning, {faith} {held}."),
+                        Some(_) => format!("By this time, {faith} {held}."),
+                    },
+                    &[],
+                    &[],
+                );
+                annal.religions = vec![religion];
+                annal.doctrine = Some(DoctrineAnnal {
+                    tenet,
+                    previous,
+                    stance,
+                });
+                annal
+            }
+            WorldEvent::TenetDisputed {
+                religion,
+                parent,
+                tenet,
+                previous,
+                stance,
+            } => {
+                let mut annal = entry(
+                    generation,
+                    "tenet-disputed",
+                    format!(
+                        "{} parted from {} over {}: it {}.",
+                        world.faith_name(religion),
+                        world.faith_name(parent),
+                        tenet_noun(tenet),
+                        tenet_held(tenet, stance)
+                    ),
+                    &[],
+                    &[],
+                );
+                annal.religions = vec![religion, parent];
+                annal.doctrine = Some(DoctrineAnnal {
+                    tenet,
+                    previous: Some(previous),
+                    stance,
+                });
+                annal
+            }
+            WorldEvent::TabooReplaced {
+                religion,
+                community,
+                variety,
+                concept,
+                old,
+                word,
+            } => {
+                let v = &world.varieties[variety];
+                let mut annal = entry(
+                    generation,
+                    "taboo-replacement",
+                    format!(
+                        "Among the {}, {} forbade the old word for '{}', *{}*, and they said *{}* instead.",
+                        name(community),
+                        world.faith_name(religion),
+                        concept.gloss,
+                        v.spell(v.lexicon.get(old).form_at(generation)),
+                        v.spell(v.lexicon.get(word).form_at(generation))
+                    ),
+                    &[community],
+                    &[],
+                );
+                annal.religions = vec![religion];
+                annal.variety = Some(variety);
+                annal.taboo = Some(TabooAnnal {
+                    concept: concept.id,
+                    old: old.0,
+                    word: word.0,
+                });
                 annal
             }
             WorldEvent::Pilgrimage {
@@ -923,14 +1035,14 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     if from.is_some() { "calque" } else { "coinage" },
                     match from {
                         Some(donor) => format!(
-                            "The *{}* made *{}* for '{}', translating the word of {} part by part.",
+                            "The {} made *{}* for '{}', translating the word of {} part by part.",
                             name(community),
                             v.spell(word.form_at(generation)),
                             word.first_sense.gloss,
                             world.language_title_at(donor, generation)
                         ),
                         None => format!(
-                            "The *{}* made a word of their own for '{}': *{}*.",
+                            "The {} made a word of their own for '{}': *{}*.",
                             name(community),
                             word.first_sense.gloss,
                             v.spell(word.form_at(generation))
@@ -1306,6 +1418,8 @@ fn state_annal(world: &World, generation: u32, state: usize, kind: &'static str)
         religions: Vec::new(),
         crafts: Vec::new(),
         temper: None,
+        doctrine: None,
+        taboo: None,
         grammar: None,
         zones: Vec::new(),
         rivers: Vec::new(),
@@ -1404,6 +1518,8 @@ fn vernacular_annal(world: &World, generation: u32, variety: usize, by: Vernacul
         religions,
         crafts: Vec::new(),
         temper: None,
+        doctrine: None,
+        taboo: None,
         grammar: None,
         zones: Vec::new(),
         rivers: Vec::new(),
@@ -1529,6 +1645,8 @@ fn faith_annal(world: &World, generation: u32, religion: usize) -> Annal {
         religions: vec![religion],
         crafts: Vec::new(),
         temper: None,
+        doctrine: None,
+        taboo: None,
         grammar: None,
         zones: Vec::new(),
         rivers: Vec::new(),
@@ -1726,6 +1844,8 @@ fn spread_annal(world: &World, generation: u32, spreads: &[(usize, usize)]) -> A
         religions: Vec::new(),
         crafts: Vec::new(),
         temper: None,
+        doctrine: None,
+        taboo: None,
         grammar: None,
         zones: Vec::new(),
         rivers: Vec::new(),
@@ -1839,6 +1959,8 @@ fn neighbours_annal(world: &World, generation: u32, n: &Neighbours) -> Annal {
         religions: Vec::new(),
         crafts: Vec::new(),
         temper: None,
+        doctrine: None,
+        taboo: None,
         grammar: None,
         zones: Vec::new(),
         rivers: Vec::new(),
@@ -1980,6 +2102,8 @@ fn sound_changes(world: &World) -> Vec<Annal> {
                 religions: Vec::new(),
                 crafts: Vec::new(),
                 temper: None,
+                doctrine: None,
+                taboo: None,
                 grammar: None,
                 zones: Vec::new(),
                 rivers: Vec::new(),
@@ -2206,6 +2330,8 @@ fn grammar_changes(world: &World) -> Vec<Annal> {
                 religions: Vec::new(),
                 crafts: Vec::new(),
                 temper: None,
+                doctrine: None,
+                taboo: None,
                 grammar: Some(GrammarAnnal {
                     category: category_id,
                     event,
@@ -2304,6 +2430,8 @@ fn pronoun_changes(world: &World) -> Vec<Annal> {
                 religions: Vec::new(),
                 crafts: Vec::new(),
                 temper: None,
+                doctrine: None,
+                taboo: None,
                 grammar: None,
                 zones: Vec::new(),
                 rivers: Vec::new(),
@@ -2402,6 +2530,8 @@ fn harmony_changes(world: &World) -> Vec<Annal> {
                 religions: Vec::new(),
                 crafts: Vec::new(),
                 temper: None,
+                doctrine: None,
+                taboo: None,
                 grammar: None,
                 zones: Vec::new(),
                 rivers: Vec::new(),
@@ -2503,6 +2633,8 @@ fn class_changes(world: &World) -> Vec<Annal> {
                 religions: Vec::new(),
                 crafts: Vec::new(),
                 temper: None,
+                doctrine: None,
+                taboo: None,
                 grammar: None,
                 zones: Vec::new(),
                 rivers: Vec::new(),
@@ -2521,6 +2653,49 @@ fn class_changes(world: &World) -> Vec<Annal> {
     }
     out
 }
+
+/// What a faith held on a tenet, in the annalist's past tense. Stances
+/// within 0.15 of neutral read as undecided.
+fn tenet_held(tenet: umran_sim::doctrine::Tenet, stance: f32) -> String {
+    use umran_sim::doctrine::Tenet;
+    if stance.abs() < 0.15 {
+        return format!("was of two minds about {}", tenet_noun(tenet));
+    }
+    let (yes, no) = match tenet {
+        Tenet::SacredLanguage => (
+            "held that scripture must be read in its sacred tongue",
+            "taught scripture in the speech of its faithful",
+        ),
+        Tenet::Images => ("venerated images", "forbade images"),
+        Tenet::Hierarchy => ("kept an order of priests", "kept no order of priests"),
+        Tenet::Purity => (
+            "kept strict rules of purity",
+            "set little store by rules of purity",
+        ),
+        Tenet::Pilgrimage => (
+            "sent its faithful on pilgrimage",
+            "held pilgrimage needless",
+        ),
+        Tenet::Monasticism => (
+            "honoured those who withdrew from the world",
+            "frowned on withdrawal from the world",
+        ),
+    };
+    (if stance > 0.0 { yes } else { no }).to_owned()
+}
+
+fn tenet_noun(tenet: umran_sim::doctrine::Tenet) -> &'static str {
+    use umran_sim::doctrine::Tenet;
+    match tenet {
+        Tenet::SacredLanguage => "the sacred tongue",
+        Tenet::Images => "images",
+        Tenet::Hierarchy => "the priesthood",
+        Tenet::Purity => "purity",
+        Tenet::Pilgrimage => "pilgrimage",
+        Tenet::Monasticism => "withdrawal from the world",
+    }
+}
+
 fn grammatical_marker(variety: &Variety, marker: &Marker, generation: u32) -> String {
     let form = grammar_form_at(&marker.form, &marker.history, generation);
     let spelled = variety.spell(form);

@@ -285,6 +285,9 @@ pub struct Religion {
     /// Whether converts render its words in their own speech, rather than
     /// taking them from its sacred language.
     pub translates: bool,
+    pub doctrine: crate::doctrine::Doctrine,
+    /// The tenet disputed at a branch's founding, not its present stance.
+    pub disputed: Option<crate::doctrine::Tenet>,
     /// Whether its founder's people wrote, so that its teaching is written.
     pub scripture: bool,
 }
@@ -652,7 +655,7 @@ impl World {
     /// sounds; the same loanword again if `v` already took that word for
     /// another meaning. `None` if `from` has no word for it. The caller
     /// gives it its place among `concept`'s words.
-    fn loan(
+    pub(crate) fn loan(
         &mut self,
         v: usize,
         from: usize,
@@ -800,6 +803,18 @@ impl World {
         let converts = rng.r#gen::<f32>() < CONVERTING;
         let translates = rng.r#gen::<f32>() < TRANSLATING;
         let reform = rng.r#gen::<f32>() < REFORM;
+        let doctrine = crate::doctrine::Doctrine::found(
+            self.seed,
+            index,
+            self.communities[community].ethos,
+            self.params.doctrine_enabled,
+            translates,
+        );
+        let translates = if self.params.doctrine_enabled {
+            doctrine.stance(crate::doctrine::Tenet::SacredLanguage) < 0.0
+        } else {
+            translates
+        };
         let v = self.communities[community].variety;
         let founder = self
             .coin_given(community, &mut rng)
@@ -830,10 +845,19 @@ impl World {
             holy_land: Vec::new(),
             converts,
             translates,
+            doctrine,
+            disputed: None,
             scripture: self.holds(community, Need::Craft(Craft::Writing)),
         });
         self.communities[community].faith = Some(index);
-        self.record_event(WorldEvent::Revealed { religion: index });
+        let event = self.record_event(WorldEvent::Revealed { religion: index });
+        self.adopt_doctrine(
+            index,
+            Some(crate::Cause {
+                event,
+                mechanism: crate::Mechanism::Doctrine,
+            }),
+        );
         self.give_name(
             v,
             GivenName {
@@ -870,6 +894,7 @@ impl World {
         if self.religions[index].scripture {
             self.write_vernacular(v, Vernacular::Scripture { religion: index });
         }
+        self.doctrine_register(community, index);
         self.religions[index].holy_land = self.holy_lands(index);
         index
     }
@@ -1163,6 +1188,7 @@ impl World {
         if scripture && translates {
             self.write_vernacular(v, Vernacular::Scripture { religion });
         }
+        self.doctrine_register(community, religion);
         let r = &self.religions[religion];
         for shrine in r.shrines() {
             if self.known_place(v, shrine.region).is_none() {

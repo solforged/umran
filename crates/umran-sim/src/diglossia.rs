@@ -88,6 +88,18 @@ impl World {
         }
     }
 
+    /// Written teaching in a required sacred register uses the existing
+    /// high/vernacular distinction. It never mutates the frozen sacred form.
+    pub(crate) fn write_sacred(&mut self, variety: usize, sacred: usize) {
+        if variety == sacred {
+            return;
+        }
+        let speech = &mut self.varieties[variety];
+        speech.high = Some(sacred);
+        speech.vernacular = None;
+        speech.written = None;
+    }
+
     /// Grammarians may fix a standing state's standard once it has been
     /// written for `CLASSICAL_AGE` generations.
     pub(crate) fn fix_classics(&mut self) {

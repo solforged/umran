@@ -854,6 +854,26 @@ This bookkeeping makes no random draws and does not itself change replay.
   per-faith hazard by a divisor of `1 + 0.4 × descendants`. Related
   branches remain rivals, but conversion is twice as likely between
   them as between unrelated founded faiths.
+  Each faith holds a position on six tenets (`doctrine.rs`): scripture
+  in the sacred tongue or in its people's speech, images, an order of
+  priests, rules of purity, pilgrimage, and withdrawal from the world.
+  Positions in [-1, 1] are drawn at revelation from the founders'
+  worldview plus noise; a pious, insular people leans toward sacred
+  speech and purity, a hierarchical one toward priests. They drift
+  slowly toward the followers' population-weighted leanings and are
+  recorded only when one moves by 0.25. A schism disputes the tenet
+  where the reformers differ most, moving it by at least 0.6; a reform
+  schism always rejects the sacred tongue, as Wycliffe and Luther did.
+  The sacred-language position decides whether followers translate or
+  borrow the faith's words and, for literate followers of a scriptural
+  faith, whether they write the sacred language or their own. A faith
+  with strong purity rules can forbid one concept's word (blood, the
+  divine, or cattle), and its followers renew it, as speakers avoided the
+  old Indo-European word for the bear; other senses of the word survive.
+  `static_society` turns doctrine off. Over 40 six-people worlds of 4,000
+  years (`tests/doctrine_band.rs`), 19 faiths held their founding
+  positions without any recorded drift; 2 schisms disputed a tenet, and
+  4 words were forbidden.
   Pilgrim roads begin with probability `pilgrimage_rate` (0.02) per
   generation for every follower and shrine within 1,200 effort-km.
   They follow the cheapest permitted directed journey from a held land
@@ -1236,5 +1256,6 @@ inflection beyond count noun plural and object marking, the genitive, and verb
 past, future, and progressive, agreement beyond the determiner, combined
 tense–aspect forms, modal readings and clitic stages, pronoun case forms,
 tone beyond the word (sandhi), vowel harmony beyond the word, prenasalized stops, syntax beyond fixed word
-and possessor order, alignment beyond this object contrast, and doctrinal
-detail beyond the causes of a schism.
+and possessor order, alignment beyond this object contrast, and doctrine
+beyond six tenets, with images, pilgrimage, and monasticism recorded but not
+yet acting on the world.

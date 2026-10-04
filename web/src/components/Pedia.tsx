@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import type { Annal, Catalog, CityView, Community, Craft, CraftView, ReadEngine, Ethos, HistoryPoint, HolyLand, NotebookNote, Overview, PlaceExonym, ReligionView, RenderingRow, ShrineKind, StateView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, FAITH_HOW, FALL_NAME, howCame, howNamed, hue, LIVELIHOOD_NAME, MECHANISM_NAME, RISE_NAME, SCHISM_CAUSE, STRONG, temperament, TERMS, TERRAIN_NAME, weatherDeparture, type Term } from "../lore";
+import { CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, FAITH_HOW, FALL_NAME, howCame, howNamed, hue, LIVELIHOOD_NAME, MECHANISM_NAME, RISE_NAME, SCHISM_CAUSE, STRONG, temperament, TENET_NOUN, TENET_TEACHING, TERMS, TERRAIN_NAME, weatherDeparture, type Term } from "../lore";
 import { filterHistory, findAnnal, individualAnnals, relatedMoments, subjectHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
 import { eras, quietLine, QUIET_KINDS, type Era } from "../eras";
 import { bond } from "../words";
@@ -1585,6 +1585,10 @@ function ReligionCard({ religion, context }: { religion: ReligionView; context: 
         ["Converts", religion.converts ? "seeks converts" : "keeps to its own"],
         ["Words", religion.translates ? "followers translate its words" : "followers borrow its words"],
         ["Scripture", religion.scripture ? "written teaching; brings writing" : "unwritten teaching"],
+        ["Teaching", religion.doctrine.some((p) => Math.abs(p.stance) >= 0.15) ? religion.doctrine
+          .filter((p) => Math.abs(p.stance) >= 0.15)
+          .map((p) => TENET_TEACHING[p.tenet][p.stance > 0 ? 0 : 1]).join("; ") : null],
+        ["Parted over", religion.disputed === null ? null : TENET_NOUN[religion.disputed]],
       ]} />
       <p className="muted small">Its <Explained term="sacred language">sacred language</Explained> keeps the founder’s words and sounds.</p>
       <h3>Followers</h3>

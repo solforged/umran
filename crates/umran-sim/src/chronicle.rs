@@ -29,7 +29,8 @@ use std::collections::BTreeMap;
 /// Revision 41 adds lexical tone and four tone laws.
 /// Revision 42 adds native coinage and calques after founding.
 /// Revision 43 adds purist reform of a written high form.
-pub const ENGINE_REVISION: u32 = 43;
+/// Revision 44 adds doctrine: six tenets, disputes at schism, and taboo.
+pub const ENGINE_REVISION: u32 = 44;
 /// Revision 33 replaces flat geography and its region identities with a sphere.
 /// Earlier region-targeted actions cannot be replayed on the spherical mesh.
 pub const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;

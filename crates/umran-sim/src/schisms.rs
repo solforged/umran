@@ -308,6 +308,12 @@ impl World {
             ],
         );
         let (name, named) = self.branch_name(community, parent, cause, &mut rng);
+        let (doctrine, tenet) = self.disputed_doctrine(parent, community, cause);
+        let translates = if self.params.doctrine_enabled {
+            doctrine.stance(crate::doctrine::Tenet::SacredLanguage) < 0.0
+        } else {
+            self.religions[parent].translates || cause == SchismCause::Reform
+        };
         let old = &self.religions[parent];
         let mut branch = Religion {
             name,
@@ -325,7 +331,9 @@ impl World {
             cause: Some(cause),
             named: Some(named),
             converts: old.converts,
-            translates: old.translates || cause == SchismCause::Reform,
+            translates,
+            doctrine,
+            disputed: tenet,
             scripture: old.scripture,
             pilgrims: Vec::new(),
             pilgrim_landmasses: Vec::new(),
@@ -365,24 +373,27 @@ impl World {
                 (joining.r#gen::<f32>() < chance).then(|| (c, self.contact_cause(c, community)))
             })
             .collect();
-        self.events.push((
-            self.generation,
-            WorldEvent::Schism {
-                religion: id,
-                parent,
-                community,
-                cause,
-            },
-        ));
+        let schism = self.record_event(WorldEvent::Schism {
+            religion: id,
+            parent,
+            community,
+            cause,
+            doctrine: tenet.map(|tenet| crate::doctrine::Dispute {
+                tenet,
+                previous: self.religions[parent].doctrine.stance(tenet),
+                stance: self.religions[id].doctrine.stance(tenet),
+            }),
+        });
         if cause == SchismCause::Reform && self.religions[id].scripture {
             self.purist_pressure(
                 community,
                 crate::Cause {
-                    event: self.events.len() - 1,
+                    event: schism,
                     mechanism: crate::Mechanism::ReligiousRevival,
                 },
             );
         }
+        self.record_doctrine_dispute(id, parent, tenet, schism);
         for (c, cause) in joins {
             let mut conversion = stream(
                 self.seed,

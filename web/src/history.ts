@@ -27,6 +27,7 @@ const GROUP: Record<Annal["kind"], HistoryGroup> = {
   "tone-gained": "Languages & words", "tone-lost": "Languages & words",
   coinage: "Languages & words", calque: "Languages & words",
   "purist-reform": "Languages & words", "purist-replacement": "Languages & words",
+  "tenet-adopted": "Faith & ideas", "tenet-disputed": "Faith & ideas", "taboo-replacement": "Faith & ideas",
 };
 export function searchText(text: string): string {
   return text.normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase();

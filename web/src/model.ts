@@ -254,6 +254,8 @@ export interface ReligionView {
   sacred: number;
   converts: boolean;
   translates: boolean;
+  doctrine: { tenet: Tenet; stance: number }[];
+  disputed: Tenet | null;
   scripture: boolean;
   followers: number[];
   words: RenderingRow[];
@@ -632,7 +634,7 @@ export interface Annal {
   /// The index of the decision that produced this entry, if one did.
   decision?: number;
   generation: number;
-  kind: "found" | "split" | "settlement" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "climate" | "river-flow" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper" | "grammar" | "pronoun-renewed" | "pronoun-polite" | "pronoun-borrowed" | "class-emerged" | "class-merged" | "class-lost" | "harmony-gained" | "harmony-lost" | "tone-gained" | "tone-lost" | "coinage" | "calque" | "purist-reform" | "purist-replacement";
+  kind: "found" | "split" | "settlement" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "climate" | "river-flow" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper" | "grammar" | "pronoun-renewed" | "pronoun-polite" | "pronoun-borrowed" | "class-emerged" | "class-merged" | "class-lost" | "harmony-gained" | "harmony-lost" | "tone-gained" | "tone-lost" | "coinage" | "calque" | "purist-reform" | "purist-replacement" | "tenet-adopted" | "tenet-disputed" | "taboo-replacement";
   /// The annalist's words; words of the language are marked *thus*.
   text: string;
   /// The apparatus: what a linguist would note, such as sound laws.
@@ -655,6 +657,8 @@ export interface Annal {
   /// people came to lean that way or ceased to, and the engine's id for
   /// what caused it.
   temper: { axis: EthosAxis; pole: "high" | "low"; entered: boolean; cause: string } | null;
+  doctrine?: { tenet: Tenet; previous: number | null; stance: number };
+  taboo?: { concept: string; old: number; word: number };
   /// Climate zones and rivers it tells of.
   zones: number[];
   rivers: number[];
@@ -975,7 +979,10 @@ export type Mechanism =
   | "unfaithful-holder"
   | "foreign-prestige"
   | "religious-revival"
-  | "purist-norm";
+  | "purist-norm"
+  | "doctrine";
+
+export type Tenet = "sacred-language" | "images" | "hierarchy" | "purity" | "pilgrimage" | "monasticism";
 
 export interface Cause {
   /// The annal that triggered this one.

@@ -260,6 +260,29 @@ fn main() {
                 world.faith_name(*religion),
                 world.faith_name(*parent),
             ),
+            WorldEvent::TenetAdopted {
+                religion,
+                tenet,
+                stance,
+                ..
+            }
+            | WorldEvent::TenetDisputed {
+                religion,
+                tenet,
+                stance,
+                ..
+            } => println!(
+                "  gen {generation:>3}  {}: {} {stance:+.2}",
+                world.faith_name(*religion),
+                tenet.id(),
+            ),
+            WorldEvent::TabooReplaced {
+                community, concept, ..
+            } => println!(
+                "  gen {generation:>3}  {} replace taboo {}",
+                name(*community),
+                concept.id,
+            ),
             WorldEvent::Pilgrimage {
                 religion, from, to, ..
             } => println!(

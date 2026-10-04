@@ -36,7 +36,7 @@ import {
   WholeWord,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, ClimateView, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Mechanism, Overview, PlaceName, ReligionView, Rendering, SchismCause, StateView, StressRule, Terrain } from "./model";
+import type { Annal, ClimateView, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Mechanism, Overview, PlaceName, ReligionView, Rendering, SchismCause, StateView, StressRule, Tenet, Terrain } from "./model";
 import { YEARS } from "./model";
 
 export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string }> = {
@@ -88,6 +88,9 @@ export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string 
   calque: { icon: Languages, name: "A word is translated" },
   "purist-reform": { icon: Languages, name: "Borrowed words are struck out" },
   "purist-replacement": { icon: Languages, name: "A native word is written" },
+  "tenet-adopted": { icon: Sparkles, name: "A faith holds a teaching" },
+  "tenet-disputed": { icon: Split, name: "A faith parts over a teaching" },
+  "taboo-replacement": { icon: Sparkles, name: "A word is forbidden" },
 };
 
 export const TERRAIN_NAME: Record<Terrain, string> = {
@@ -329,6 +332,26 @@ export const MECHANISM_NAME: Record<Mechanism, string> = {
   "foreign-prestige": "against a prouder neighbour's tongue",
   "religious-revival": "in a revival of the faith",
   "purist-norm": "by the purists' rule",
+  doctrine: "by its teaching",
+};
+
+/// A faith's teaching on each tenet, as [held, rejected].
+export const TENET_TEACHING: Record<Tenet, [string, string]> = {
+  "sacred-language": ["scripture read in the sacred tongue", "scripture taught in the people's speech"],
+  images: ["images venerated", "images forbidden"],
+  hierarchy: ["an order of priests", "no order of priests"],
+  purity: ["strict rules of purity", "little care for purity"],
+  pilgrimage: ["pilgrimage", "no pilgrimage"],
+  monasticism: ["withdrawal from the world honoured", "withdrawal from the world frowned on"],
+};
+
+export const TENET_NOUN: Record<Tenet, string> = {
+  "sacred-language": "the sacred tongue",
+  images: "images",
+  hierarchy: "the priesthood",
+  purity: "purity",
+  pilgrimage: "pilgrimage",
+  monasticism: "withdrawal from the world",
 };
 
 export const WORD_ORDER_PHRASE = {
