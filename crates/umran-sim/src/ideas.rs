@@ -98,7 +98,7 @@ impl Craft {
 }
 
 /// What a people must hold for its language to have a word for a meaning.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Need {
     Craft(Craft),
     Livelihood(Livelihood),
@@ -163,7 +163,7 @@ pub fn living_related(
 }
 
 /// Words a language may build for an idea's meanings from words it has.
-static BUILDS: &[(&str, &str, Relation)] = &[
+pub(crate) static BUILDS: &[(&str, &str, Relation)] = &[
     ("iron", "smith", Relation::Agent),
     ("ride", "saddle", Relation::Instrument),
     ("write", "letter", Relation::Result),
@@ -465,14 +465,11 @@ impl World {
         if craft == Craft::Writing {
             self.begin_writing(v);
         }
-        self.events.push((
-            self.generation,
-            WorldEvent::Learnt {
-                community,
-                craft,
-                from,
-            },
-        ));
+        self.record_event(WorldEvent::Learnt {
+            community,
+            craft,
+            from,
+        });
         if craft == Craft::Seafaring {
             self.nudge_ethos(community, Axis::Seaward, 0.12, TemperCause::Seafaring);
         }
@@ -489,8 +486,7 @@ impl World {
                 self.begin_writing(v);
             }
             for concept in CONCEPTS {
-                let Some(need) = need(concept) else { continue };
-                if self.holds(c, need)
+                if need(concept).map_or(self.params.coinage_rate > 0.0, |need| self.holds(c, need))
                     && self.varieties[v].lexicon.slot(concept).variants.is_empty()
                 {
                     self.find_word(c, concept);
@@ -507,7 +503,12 @@ impl World {
     fn find_word(&mut self, community: usize, concept: &'static Concept) {
         let k = &self.communities[community];
         let v = k.variety;
-        let mut rng = self.at(v).rng(&[key("learn"), key(concept.id)]);
+        let purpose = if self.params.coinage_rate > 0.0 {
+            "coinage-need"
+        } else {
+            "learn"
+        };
+        let mut rng = self.at(v).rng(&[key(purpose), key(concept.id)]);
         let purism = self.purism(v);
         let faith = match need(concept) {
             Some(Need::Faith) => k.faith.map(|r| &self.religions[r]),
@@ -524,34 +525,33 @@ impl World {
                     recipient: community,
                 },
             )),
-            None => need(concept).and_then(|need| {
-                self.partners(community)
-                    .filter(|&(o, _, _)| {
-                        let ov = self.communities[o].variety;
-                        ov != v
-                            && self.holds(o, need)
-                            && self.varieties[ov]
-                                .lexicon
-                                .slot(concept)
-                                .dominant()
-                                .is_some()
-                    })
-                    .max_by(|a, b| {
-                        let weight = |&(o, i, _): &(usize, f32, ContactKind)| {
-                            i * (0.1 + self.communities[o].prestige)
-                        };
-                        weight(a).total_cmp(&weight(b)).then(b.0.cmp(&a.0))
-                    })
-                    .map(|(o, _, _)| {
-                        (
-                            self.communities[o].variety,
-                            LoanCause::Coinage {
-                                donor: o,
-                                recipient: community,
-                            },
-                        )
-                    })
-            }),
+            None => self
+                .partners(community)
+                .filter(|&(o, _, _)| {
+                    let ov = self.communities[o].variety;
+                    ov != v
+                        && need(concept).is_none_or(|need| self.holds(o, need))
+                        && self.varieties[ov]
+                            .lexicon
+                            .slot(concept)
+                            .dominant()
+                            .is_some()
+                })
+                .max_by(|a, b| {
+                    let weight = |&(o, i, _): &(usize, f32, ContactKind)| {
+                        i * (0.1 + self.communities[o].prestige)
+                    };
+                    weight(a).total_cmp(&weight(b)).then(b.0.cmp(&a.0))
+                })
+                .map(|(o, _, _)| {
+                    (
+                        self.communities[o].variety,
+                        LoanCause::Coinage {
+                            donor: o,
+                            recipient: community,
+                        },
+                    )
+                }),
         };
         let mut donors: Vec<LexemeId> = related(concept)
             .chain(living_related(concept, k.livelihood))
@@ -559,19 +559,25 @@ impl World {
             .collect();
         donors.sort();
         donors.dedup();
-        let morphology = &self.varieties[v].morphology;
-        let build = BUILDS
-            .iter()
-            .filter(|(_, word, _)| *word == concept.id)
-            .find_map(|&(base, _, relation)| {
-                let base = lexicon.slot(by_id(base)?).dominant()?;
-                let form = morphology.derive(&lexicon.get(base).form, None, relation)?;
-                let free = !lexicon.living().any(|l| l.form == form);
-                free.then_some((form, base, relation))
-            });
+        let build = self.plan_coinage(v, concept, teacher.map(|(v, _)| v));
+        let prestige = if self.params.coinage_rate > 0.0 {
+            teacher
+                .and_then(|(v, _)| self.speakers(v))
+                .map_or(1.0, |c| {
+                    crate::math::exp(
+                        self.params.prestige_pull * (self.communities[c].prestige - k.prestige),
+                    )
+                })
+        } else {
+            1.0
+        };
         let borrow = k.openness
             * (1.0 - purism)
-            * if sacred.is_some() { SACRED_BORROW } else { 1.0 }
+            * if sacred.is_some() {
+                SACRED_BORROW
+            } else {
+                prestige
+            }
             * k.ethos.factor(Effect::Borrowing);
         let translating = faith.is_some_and(|r| r.translates);
         let weights = [
@@ -603,15 +609,11 @@ impl World {
                 });
                 id
             }
-            2 => {
-                let (form, base, relation) = build.expect("weighted only with a build");
-                self.varieties[v].lexicon.coin(
-                    form,
-                    Origin::Derived { base, relation },
-                    concept,
-                    generation,
-                )
-            }
+            2 => self.install_coinage(
+                community,
+                concept,
+                build.expect("weighted only with a build"),
+            ),
             _ => {
                 let variety = &self.varieties[v];
                 let lexicon = &variety.lexicon;
@@ -643,6 +645,7 @@ impl World {
             .slot_mut(concept)
             .introduce(id, 1.0);
         self.varieties[v].sync_grammar(generation);
+        crate::coinage::observe_opacity(&mut self.varieties[v].lexicon, generation);
     }
 
     /// `from`'s word for `concept`, taken into variety `v` and fitted to its
@@ -830,6 +833,7 @@ impl World {
             scripture: self.holds(community, Need::Craft(Craft::Writing)),
         });
         self.communities[community].faith = Some(index);
+        self.record_event(WorldEvent::Revealed { religion: index });
         self.give_name(
             v,
             GivenName {
@@ -860,8 +864,6 @@ impl World {
         self.religions[index].name_variety = self.religions[index].sacred;
         self.religions[index].shrine.variety = self.religions[index].sacred;
         self.religions[index].name = self.coin_faith_name(community, &founder, &mut rng);
-        self.events
-            .push((generation, WorldEvent::Revealed { religion: index }));
         self.nudge_ethos(community, Axis::Pious, 0.12, TemperCause::Faith);
         // He teaches in his own speech, as the Buddha did in a vernacular
         // rather than Sanskrit; written down, it is written in its own right.
@@ -1109,14 +1111,11 @@ impl World {
             return;
         }
         self.communities[community].faith = Some(religion);
-        self.events.push((
-            self.generation,
-            WorldEvent::Converted {
-                community,
-                religion,
-                from,
-            },
-        ));
+        self.record_event(WorldEvent::Converted {
+            community,
+            religion,
+            from,
+        });
         self.nudge_ethos(community, Axis::Pious, 0.08, TemperCause::Faith);
         let r = &self.religions[religion];
         let (sacred, translates, scripture) = (r.sacred, r.translates, r.scripture);

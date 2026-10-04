@@ -11,6 +11,7 @@ pub mod change;
 pub mod chronicle;
 pub mod cities;
 pub mod climate;
+pub mod coinage;
 pub mod compare;
 pub mod concepts;
 mod continental;

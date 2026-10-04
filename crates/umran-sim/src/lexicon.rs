@@ -23,6 +23,8 @@ pub enum Origin {
     },
     /// Built from another word of the same language: fish > fishing.
     Derived { base: LexemeId, relation: Relation },
+    /// A lexicalized compound, with local modifier and head.
+    Compound { modifier: LexemeId, head: LexemeId },
     /// Rebuilt from a word that had worn too short or come to sound like
     /// another: with the renewing affix (Latin auris > auricula, "ear"),
     /// or compounded `with` a related word (Mandarin ěr > ěrduo).
@@ -55,6 +57,8 @@ pub struct Lexeme {
     pub log: Vec<Entry>,
     /// Stored grammatical forms, separate from words competing for meanings.
     pub paradigms: Vec<Paradigm>,
+    /// Post-founding native construction and its historical transparency.
+    pub coined: Option<crate::coinage::Coinage>,
 }
 
 impl Lexeme {
@@ -202,6 +206,7 @@ impl Lexicon {
             obsolete: None,
             log: Vec::new(),
             paradigms: Vec::new(),
+            coined: None,
         });
         id
     }

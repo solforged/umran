@@ -41,7 +41,7 @@ const CULTURAL_RANK: f32 = 100.0;
 /// as one common law that neither pleases nor offends the culture.
 const NO_CHANGE_WEIGHT: f32 = 1.0;
 /// Most words competing for one concept at once.
-const MAX_VARIANTS: usize = 3;
+pub(crate) const MAX_VARIANTS: usize = 3;
 /// Usage share a word stretched to a meaning its speakers' way of life
 /// links it with takes at once: twice an ordinary newcomer's.
 const APT_SHARE: f32 = 0.5;
@@ -127,6 +127,9 @@ pub struct Params {
     pub tone_rate: f32,
     /// Chance that a mid-ranked core concept gains a new competing word.
     pub innovation_rate: f32,
+    /// Chance per concept of a new compound or derivative each generation.
+    /// Also enables productive building and calques for newly needed meanings.
+    pub coinage_rate: f32,
     /// How many times more often the least stable core concept (rank 100)
     /// gains competitors than the most stable (rank 1).
     pub stability_spread: f32,
@@ -300,6 +303,7 @@ impl Default for Params {
             sound_change_rate: 0.3,
             tone_rate: 0.005,
             innovation_rate: 0.0055,
+            coinage_rate: 0.001,
             stability_spread: 10.0,
             newcomer_share: 0.25,
             speakers: 12,
@@ -384,6 +388,7 @@ impl Params {
             collapse_rate: 0.0,
             migration_rate: 0.0,
             wave_rate: 0.0,
+            coinage_rate: 0.0,
             craft_rate: 0.0,
             idea_rate: 0.0,
             religion_rate: 0.0,
@@ -835,6 +840,13 @@ pub enum WorldEvent {
         pole: Pole,
         entered: bool,
         cause: TemperCause,
+    },
+    /// A native construction; `from` identifies a translated donor compound.
+    Coined {
+        community: usize,
+        variety: usize,
+        word: LexemeId,
+        from: Option<usize>,
     },
 }
 
@@ -2025,6 +2037,7 @@ impl World {
         for v in (0..self.varieties.len()).filter(|&v| spoken[v]) {
             let clashes = self.varieties[v].lexicon.clashing();
             self.innovate(v, &clashes);
+            self.coin_words(v);
             self.drift(v, &clashes, &prestige);
             self.retire(v);
             let variety = &mut self.varieties[v];
@@ -2090,8 +2103,12 @@ impl World {
         self.hear_places();
         self.name_continents();
         self.temper_generation();
-        for variety in &mut self.varieties {
+        let spoken = self.spoken();
+        for (v, variety) in self.varieties.iter_mut().enumerate() {
             variety.sync_grammar(self.generation);
+            if spoken[v] {
+                crate::coinage::observe_opacity(&mut variety.lexicon, self.generation);
+            }
         }
         let spoken = self.spoken();
         for (v, spoken) in spoken.into_iter().enumerate() {
@@ -3931,6 +3948,7 @@ impl World {
         variety
             .gender
             .apply_law(law, minimal, stress, generation, &variety.lexicon);
+        crate::coinage::observe_opacity(&mut variety.lexicon, generation);
         variety.laws.push((generation, law.id));
         if let Some(next) = law.stress {
             variety.stress_history.push((generation, stress));

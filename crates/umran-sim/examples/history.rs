@@ -323,6 +323,21 @@ fn main() {
                 pole.id(),
                 cause.id()
             ),
+            WorldEvent::Coined {
+                variety,
+                word,
+                from,
+                ..
+            } => {
+                let v = &world.varieties[*variety];
+                let word = v.lexicon.get(*word);
+                println!(
+                    "  gen {generation:>3}  {}: {} for {} (calque donor {from:?})",
+                    world.language_title(*variety),
+                    v.spell(word.form_at(*generation)),
+                    word.first_sense.gloss
+                );
+            }
         }
     }
 

@@ -730,6 +730,50 @@ This bookkeeping makes no random draws and does not itself change replay.
   "scratch", "book" from "tree", as English and Latin did), builds one
   from its own parts, or coins one. Open peoples borrow; purist
   standards build.
+- Native coinage continues after founding (`coinage.rs`). New crafts and
+  faiths invite compounds or derivatives beside loans, fresh roots, and
+  stretched meanings. The choice uses openness, purism, the teacher's
+  prestige, and a faith's practice of translation. Existing meanings may
+  also gain a native competitor (`coinage_rate`, 0.001 per meaning per
+  generation, multiplied by `1 + purism`); ordinary competition decides
+  whether it survives. `static_society` disables this new process while
+  retaining the older ways of finding a word for an idea.
+  The semantic recipes are curated: fire-stone for iron, pray-house for
+  temple, and write-word for letter, not arbitrary pairings. Compounds use
+  the language's established head order and junction rules. Derivatives
+  use its existing affixes or root patterns, following derivational bases
+  rather than reading a pattern prefix as part of the root. A missing
+  concept gets no word before its people holds the requisite idea.
+- Under contact a transparent foreign compound can supply a recipe:
+  speakers translate each part into their own current words and put them
+  in their own compound order. This is a calque, not a loan of foreign
+  sounds; absent native parts or an opaque donor prevent it. These
+  choices follow the distinctions and social pressures in Haspelmath,
+  [“Lexical borrowing: Concepts and issues” (2009), §§3, 7](https://elearn.univ-tlemcen.dz/pluginfile.php/124991/mod_resource/content/1/lexis.pdf).
+  Rates and individual semantic recipes are modelling choices, not
+  measured cross-language frequencies.
+- Each coinage keeps its parts as they were said when it was made, its
+  generation, and, for a calque, its donor language. Thereafter it changes
+  as one word, never reconstructed from the parts. After sound laws and
+  word competition the engine records the first generation in which its
+  form no longer contains every part's current dominant form. The record
+  remains even if later mergers restore a match. This is literal segment
+  transparency, not a judgement about what speakers understand: junction
+  coalescence and root patterns can be opaque by this measure at creation.
+  Obsolete words and unspoken languages keep their records unchanged.
+  This separation of construction from a word's later independent life
+  follows Brinton and Traugott, *Lexicalization and Language Change*
+  (2005). Coinage and calque annals point to the recorded craft, conversion,
+  revelation, or change of livelihood when that need is known; otherwise
+  a calque may point to its recorded contact.
+  `examples/coinage.rs` reports three profiles in trade contact over
+  4,000 years and the workbench sample. The ignored `coinage_band` test
+  runs forty seeds per profile and the unchanged sample recipe.
+  In that forty-seed band, the two-peoples worlds produced 21.7–21.8
+  native compounds and derivatives on average, with 0.8 calques. Across
+  the three profiles, 1,927 of 2,706 coinages became opaque by the literal
+  measure; the workbench sample produced 18 coinages. The band took
+  59 seconds of execution (79 seconds including the build).
 - Crafts pass along contacts (`idea_rate`), most readily with traders
   and rulers, and writing with priests. A people may also come upon one
   itself (`craft_rate`, scaled per craft), but only where it could begin:
@@ -1169,7 +1213,6 @@ can refuse this fixed recipe; the report counts those refusals separately.
 Fleets, rented ports, mixed inland-and-sea itineraries, exact river channels
 and lakes, seasonal weather, resolved travel times, globe wrapping,
 purism within a classical form,
-compounding and derivation after founding beyond renewal and new meanings,
 inflection beyond count noun plural and object marking, the genitive, and verb
 past, future, and progressive, agreement beyond the determiner, combined
 tense–aspect forms, modal readings and clitic stages, pronoun case forms,

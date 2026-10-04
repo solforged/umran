@@ -7,7 +7,9 @@
 use crate::geography::Terrain;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum Livelihood {
     /// Hunting, fishing, and gathering: few people, small groups.

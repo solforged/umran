@@ -631,7 +631,7 @@ export interface Annal {
   /// The index of the decision that produced this entry, if one did.
   decision?: number;
   generation: number;
-  kind: "found" | "split" | "settlement" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "climate" | "river-flow" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper" | "grammar" | "pronoun-renewed" | "pronoun-polite" | "pronoun-borrowed" | "class-emerged" | "class-merged" | "class-lost" | "harmony-gained" | "harmony-lost" | "tone-gained" | "tone-lost";
+  kind: "found" | "split" | "settlement" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "climate" | "river-flow" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper" | "grammar" | "pronoun-renewed" | "pronoun-polite" | "pronoun-borrowed" | "class-emerged" | "class-merged" | "class-lost" | "harmony-gained" | "harmony-lost" | "tone-gained" | "tone-lost" | "coinage" | "calque";
   /// The annalist's words; words of the language are marked *thus*.
   text: string;
   /// The apparatus: what a linguist would note, such as sound laws.
@@ -684,6 +684,14 @@ export interface Origin {
   cause: LoanCause | null;
 }
 
+export interface Coined {
+  parts: { concept: string; spelled: string }[];
+  kind: "compound" | "derived" | "calque";
+  generation: number;
+  from?: number;
+  opaqueSince: number | null;
+}
+
 export interface LexiconRow {
   concept: string;
   gloss: string;
@@ -694,6 +702,7 @@ export interface LexiconRow {
   said: string | null;
   ipa: string;
   origin: Origin;
+  coined?: Coined;
   changes: number;
   competitors: number;
 }
@@ -711,6 +720,7 @@ export interface Variant {
   share: number;
   class?: number;
   origin: Origin;
+  coined?: Coined;
   senses: string[];
   history: HistoryLine[];
 }
@@ -953,6 +963,7 @@ export type Mechanism =
   | "hardship"
   | "crowding"
   | "stronger-neighbour"
+  | "word-need"
   | "climate"
   | "craft"
   | "conquest"

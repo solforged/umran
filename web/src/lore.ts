@@ -84,6 +84,8 @@ export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string 
   "harmony-lost": { icon: Languages, name: "Vowel harmony fades" },
   "tone-gained": { icon: Languages, name: "Words take on tone" },
   "tone-lost": { icon: Languages, name: "Tone is lost" },
+  coinage: { icon: Languages, name: "A word is made" },
+  calque: { icon: Languages, name: "A word is translated" },
 };
 
 export const TERRAIN_NAME: Record<Terrain, string> = {
@@ -318,6 +320,7 @@ export const MECHANISM_NAME: Record<Mechanism, string> = {
   conquest: "after a conquest",
   city: "as the city grew",
   court: "at court",
+  "word-need": "for want of a word",
   contact: "after a meeting",
   pilgrimage: "along a pilgrim road",
   "unfaithful-holder": "against an unfaithful holder",

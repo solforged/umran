@@ -1811,6 +1811,7 @@ impl Bench {
                     said,
                     ipa: word.form.ipa_stressed(v.stress()),
                     origin: origin_view(world, variety, word),
+                    coined: coined_view(v, word),
                     changes: word
                         .log
                         .iter()
@@ -1851,6 +1852,7 @@ impl Bench {
                     share: var.weight,
                     class: v.gender.class_of(word.id),
                     origin: origin_view(world, variety, word),
+                    coined: coined_view(v, word),
                     senses: v.lexicon.senses(word.id).map(|c| c.gloss).collect(),
                     history: history(world, variety, word),
                     paradigms: paradigm_views(world, variety, word),
@@ -2265,6 +2267,7 @@ impl Bench {
                 | WorldEvent::Learnt { .. }
                 | WorldEvent::Converted { .. }
                 | WorldEvent::Pejorated { .. }
+                | WorldEvent::Coined { .. }
                 | WorldEvent::Respelled { .. }
                 | WorldEvent::Pilgrimage { .. }
                 | WorldEvent::HolyLand { .. }
@@ -2606,6 +2609,41 @@ fn kept_through_shift(word: &Lexeme) -> bool {
     )
 }
 
+#[derive(Serialize)]
+struct CoinedPartView {
+    concept: &'static str,
+    spelled: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CoinedView {
+    parts: Vec<CoinedPartView>,
+    kind: umran_sim::coinage::CoinageKind,
+    generation: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    from: Option<usize>,
+    opaque_since: Option<u32>,
+}
+
+fn coined_view(variety: &Variety, word: &Lexeme) -> Option<CoinedView> {
+    let coined = word.coined.as_ref()?;
+    Some(CoinedView {
+        parts: coined
+            .parts
+            .iter()
+            .map(|part| CoinedPartView {
+                concept: part.concept.id,
+                spelled: variety.spell(&part.form),
+            })
+            .collect(),
+        kind: coined.kind,
+        generation: coined.generation,
+        from: coined.from,
+        opaque_since: coined.opaque_since,
+    })
+}
+
 fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
     if kept_through_shift(word) {
         let Origin::Borrowed { from, .. } = word.origin else {
@@ -2632,6 +2670,13 @@ fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
             from: None,
             generation: word.born,
             from_variety: None,
+            cause: None,
+        },
+        Origin::Compound { .. } => OriginView {
+            kind: "coined",
+            from: None,
+            generation: word.born,
+            from_variety: word.coined.as_ref().and_then(|c| c.from),
             cause: None,
         },
         Origin::Derived { base, relation } => OriginView {
@@ -2690,6 +2735,15 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
                 word.first_sense.gloss
             ),
             Origin::Expressive => format!("Coined for '{}'", word.first_sense.gloss),
+            Origin::Compound { modifier, head } => {
+                let v = &world.varieties[variety];
+                format!(
+                    "From {} + {}, for '{}'",
+                    v.spell(v.lexicon.get(modifier).form_at(word.born)),
+                    v.spell(v.lexicon.get(head).form_at(word.born)),
+                    word.first_sense.gloss
+                )
+            }
             Origin::Derived { base, relation } => {
                 let v = &world.varieties[variety];
                 let base = v.lexicon.get(base);
@@ -2754,6 +2808,13 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
             ),
         },
     }];
+    if let Some(generation) = word.coined.as_ref().and_then(|c| c.opaque_since) {
+        out.push(HistoryLine {
+            generation,
+            text: "The parts were no longer recognizable.".into(),
+            cause: None,
+        });
+    }
     let kept = kept_through_shift(word);
     let (passing, folded) = passing_senses(word);
     for (i, entry) in word.log.iter().enumerate() {
@@ -2809,6 +2870,13 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
                 _ => None,
             },
         });
+    }
+    if word
+        .coined
+        .as_ref()
+        .is_some_and(|c| c.opaque_since.is_some())
+    {
+        out.sort_by_key(|line| line.generation);
     }
     out
 }
@@ -4464,6 +4532,8 @@ struct LexiconRow {
     said: Option<String>,
     ipa: String,
     origin: OriginView,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    coined: Option<CoinedView>,
     changes: usize,
     competitors: usize,
 }
@@ -4621,6 +4691,8 @@ struct VariantView {
     #[serde(skip_serializing_if = "Option::is_none")]
     class: Option<u32>,
     origin: OriginView,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    coined: Option<CoinedView>,
     senses: Vec<&'static str>,
     history: Vec<HistoryLine>,
     paradigms: Vec<ParadigmView>,

@@ -17,6 +17,7 @@ pub enum Mechanism {
     Pilgrimage,
     UnfaithfulHolder,
     Court,
+    WordNeed,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -37,6 +38,7 @@ pub(crate) struct Triggers {
     pub cities: BTreeMap<usize, usize>,
     pub holy_lands: BTreeMap<(usize, usize), usize>,
     pub pilgrimages: BTreeMap<(usize, usize, usize, usize), usize>,
+    pub word_needs: BTreeMap<(usize, crate::Need), usize>,
 }
 
 impl World {
@@ -84,6 +86,32 @@ impl World {
                     .pilgrimages
                     .insert((*religion, *community, *from, *to), id);
             }
+            WorldEvent::Learnt {
+                community, craft, ..
+            } => {
+                self.triggers
+                    .word_needs
+                    .insert((*community, crate::Need::Craft(*craft)), id);
+            }
+            WorldEvent::Adopted {
+                community,
+                livelihood,
+                ..
+            } => {
+                self.triggers
+                    .word_needs
+                    .insert((*community, crate::Need::Livelihood(*livelihood)), id);
+            }
+            WorldEvent::Revealed { religion } => {
+                self.triggers
+                    .word_needs
+                    .insert((self.religions[*religion].people, crate::Need::Faith), id);
+            }
+            WorldEvent::Converted { community, .. } => {
+                self.triggers
+                    .word_needs
+                    .insert((*community, crate::Need::Faith), id);
+            }
             _ => {}
         }
         self.events.push((self.generation, event));
@@ -98,6 +126,15 @@ impl World {
             self.causes.insert(id, cause);
         }
         id
+    }
+    pub(crate) fn word_need_cause(&self, community: usize, need: crate::Need) -> Option<Cause> {
+        self.triggers
+            .word_needs
+            .get(&(community, need))
+            .map(|&event| Cause {
+                event,
+                mechanism: Mechanism::WordNeed,
+            })
     }
 
     pub(crate) fn contact_cause(&self, a: usize, b: usize) -> Option<Cause> {

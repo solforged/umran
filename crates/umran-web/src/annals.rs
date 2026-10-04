@@ -909,6 +909,50 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 annal.religions = vec![religion];
                 annal
             }
+            WorldEvent::Coined {
+                community,
+                variety,
+                word,
+                from,
+            } => {
+                let v = &world.varieties[variety];
+                let word = v.lexicon.get(word);
+                let mut annal = entry(
+                    generation,
+                    if from.is_some() { "calque" } else { "coinage" },
+                    match from {
+                        Some(donor) => format!(
+                            "The *{}* made *{}* for '{}', translating the word of {} part by part.",
+                            name(community),
+                            v.spell(word.form_at(generation)),
+                            word.first_sense.gloss,
+                            world.language_title_at(donor, generation)
+                        ),
+                        None => format!(
+                            "The *{}* made a word of their own for '{}': *{}*.",
+                            name(community),
+                            word.first_sense.gloss,
+                            v.spell(word.form_at(generation))
+                        ),
+                    },
+                    &[community],
+                    &[],
+                );
+                annal.variety = Some(variety);
+                annal.languages.extend(from);
+                if let Some(coined) = &word.coined {
+                    annal.notes.push(format!(
+                        "Built from {}.",
+                        coined
+                            .parts
+                            .iter()
+                            .map(|p| format!("*{}* '{}'", v.spell(&p.form), p.concept.gloss))
+                            .collect::<Vec<_>>()
+                            .join(" and ")
+                    ));
+                }
+                annal
+            }
             WorldEvent::Pejorated {
                 community,
                 variety,
