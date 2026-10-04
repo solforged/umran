@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, type CSSProperties, type PointerEvent, type RefObject, type SetStateAction } from "react";
 import { LocateFixed, Maximize, Minus, Plus } from "lucide-react";
-import type { ClimateView, Community, Craft, EthosAxis, FoundingPreview, Overview, River, RiverNamesView, SettlementPreview, WordMap, WorldMap } from "../model";
+import { geoInterpolate } from "d3-geo";
+import type { ClimateView, Community, Craft, EthosAxis, FoundingPreview, Lake, LakeNamesView, Overview, River, RiverNamesView, SettlementPreview, WordMap, WorldMap } from "../model";
 import type { ShelfPeople } from "../shelf";
 import { reducedMotion } from "../motion";
 import { YEARS } from "../model";
@@ -29,6 +30,8 @@ const DRAG_START = 4;
 /// Physical scale keeps the policy steady across maps of different sizes.
 const LAND_KM_PER_PIXEL = 6;
 const TONGUE_KM_PER_PIXEL = 1.5;
+/// Lake extent is not modelled; a fixed inset marks water within each region.
+const LAKE_INSET = 0.6;
 /// Breathing room between the measured, screen-space lettering boxes.
 const LABEL_GAP = 2;
 
@@ -56,7 +59,7 @@ export type MapCamera = [number, number, number, number];
 type Box = MapCamera;
 
 /// Use a real attested form in the selected speech, then the mouth's speech.
-export function riverName(view: RiverNamesView, variety: number | undefined) {
+export function riverName(view: Pick<RiverNamesView, "names" | "exonyms">, variety: number | undefined) {
   if (variety === undefined) return null;
   return [...view.names].reverse().find((name) => name.variety === variety)
     ?? view.exonyms.find((name) => name.variety === variety) ?? null;
@@ -282,6 +285,7 @@ export function MapView({
   tint,
   climate,
   riverNames = [],
+  lakeNames = [],
   selectedVariety,
   names = true,
   routes = true,
@@ -310,6 +314,7 @@ export function MapView({
   onReligion,
   onCraft,
   onRiver,
+  onLake,
 }: {
   map: WorldMap;
   overview: Overview;
@@ -317,6 +322,7 @@ export function MapView({
   tint: Tint;
   climate?: ClimateView;
   riverNames?: RiverNamesView[];
+  lakeNames?: LakeNamesView[];
   selectedVariety?: number;
   names?: boolean;
   routes?: boolean;
@@ -350,6 +356,7 @@ export function MapView({
   onState?: (state: number) => void;
   onReligion?: (religion: number) => void;
   onCraft?: (craft: Craft) => void;
+  onLake?: (lake: number) => void;
   onRiver?: (id: number) => void;
 }) {
   const climateZones = useMemo(() => new Map(climate?.zones.map((zone) => [zone.id, zone])), [climate]);
@@ -390,7 +397,7 @@ export function MapView({
   // render rather than asking the DOM for visibility on every globe turn.
   const projectionLayers = useRef<{ mask: number; paths: typeof paths.current; anchors: typeof projectedAnchors.current; labels: SVGElement[] }[]>([]);
   const layerMask = (node: SVGElement): number => {
-    if (node.closest(".place-names, .river-names") ||
+    if (node.closest(".place-names, .river-names, .lake-names") ||
       node.closest(".chart-marks") && node.querySelector(".mark-tree, .mark-grass, .mark-field, .mark-sand")) return 4;
     if (node.closest(".chart-river:not(.river-tier-3), .routes, .dealings, .pilgrim-roads, .founding-markers")) return 6;
     if (node.closest(".continent-names")) return 3;
@@ -563,7 +570,7 @@ export function MapView({
       const people = text.dataset.people;
       const allowed = kind === "tongue"
         ? tint.kind === "peoples" && kmPerPixel < TONGUE_KM_PER_PIXEL && named.has(people!)
-        : kind === "land" || kind === "river" ? kmPerPixel < LAND_KM_PER_PIXEL : true;
+        : kind === "land" || kind === "river" || kind === "lake" ? kmPerPixel < LAND_KM_PER_PIXEL : true;
       const inView = rect.right > chartBounds.left && rect.left < chartBounds.right &&
         rect.bottom > chartBounds.top && rect.top < chartBounds.bottom;
       const collides = occupied.some((other) => other.left < rect.right + LABEL_GAP && rect.left < other.right + LABEL_GAP &&
@@ -626,7 +633,7 @@ export function MapView({
     culled.current = [...(root.current?.querySelectorAll<SVGElement>("[data-chart-region]") ?? [])].map((node) => ({
       node, bounds: bounds[Number(node.dataset.chartRegion)], hidden: node.style.display === "none",
     }));
-    labelLayers.current = [...(root.current?.querySelectorAll<SVGElement>(".peoples, .place-names, .river-names, .continent-names, .state-capitals, .founding-markers") ?? [])];
+    labelLayers.current = [...(root.current?.querySelectorAll<SVGElement>(".peoples, .place-names, .river-names, .lake-names, .continent-names, .state-capitals, .founding-markers") ?? [])];
     labelAnchors.current = [...(root.current?.querySelectorAll<SVGElement>("[data-label-x]") ?? [])];
     lettering.current = [...(root.current?.querySelectorAll<SVGTextElement>("[data-label-kind]") ?? [])]
       .sort((a, b) => Number(b.dataset.labelPriority) - Number(a.dataset.labelPriority));
@@ -907,6 +914,21 @@ export function MapView({
     const atMouth = byRegion.get(main.course.at(-1)!);
     const mouthVariety = atMouth?.reduce((a, b) => a.size >= b.size ? a : b).variety;
     return riverName(view, selectedVariety) ?? riverName(view, mouthVariety);
+  };
+  const lakePaths = useMemo(() => map.lakes.map((lake) => ({
+    lake,
+    regions: lake.regions.map((id) => {
+      const region = map.regions[id];
+      return { ...region, boundary: region.boundary.map((point) => geoInterpolate(region.center, point)(LAKE_INSET) as MapPoint) };
+    }),
+  })), [map]);
+  const namesByLake = useMemo(() => new Map(lakeNames.map((view) => [view.lake, view])), [lakeNames]);
+  const namedLake = (lake: Lake) => {
+    const view = namesByLake.get(lake.id);
+    if (!view) return null;
+    const shores = lake.regions.flatMap((id) => byRegion.get(id) ?? []);
+    const shoreVariety = shores.length ? shores.reduce((a, b) => a.size >= b.size ? a : b).variety : undefined;
+    return riverName(view, selectedVariety) ?? riverName(view, shoreVariety);
   };
   const grounds = useMemo(() => map.regions.filter((r) => r.terrain !== "sea"), [map]);
   const hearts = useMemo(
@@ -1205,6 +1227,21 @@ export function MapView({
             </g>;
           })}
         </g>
+        <g className="chart-lakes">
+          {lakePaths.map(({ lake, regions }) => {
+            if (lake.regions.every(hidden)) return null;
+            const name = namedLake(lake);
+            return <g key={lake.id} className="chart-lake" data-lake={lake.id}
+              role={onLake ? "button" : undefined} tabIndex={onLake ? 0 : undefined}
+              aria-label={name?.spelled ?? "Unnamed lake"}
+              onClick={() => dragged() || onLake?.(lake.id)}
+              onKeyDown={(e) => { if (onLake && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onLake(lake.id); } }}>
+              <title>{name?.spelled ?? "Unnamed lake"}</title>
+              {regions.filter((region) => !hidden(region.id)).map((region) =>
+                <path key={region.id} {...bindPath((view) => view.region(region))} />)}
+            </g>;
+          })}
+        </g>
         {tint.kind === "weather" ? <g className="zone-borders" aria-hidden="true">
           {borders.filter(({ a, b }) => map.regions[a].climateZone !== map.regions[b].climateZone).map(({ a, b, ends }) =>
             <path key={`${a}-${b}`} {...bindPath((view) => view.line(ends))} />)}
@@ -1308,6 +1345,19 @@ export function MapView({
                 <textPath href={`#${id}`} startOffset="50%" textAnchor="middle">{name.spelled}</textPath>
               </text>
             </g>;
+          })}
+        </g> : null}
+        {names ? <g className="lake-names">
+          {map.lakes.map((lake) => {
+            const name = namedLake(lake);
+            const region = lake.regions.find((id) => !hidden(id));
+            if (!name || region === undefined) return null;
+            const site = map.regions[region].site;
+            const [x, y] = pointFor(site);
+            return <text key={lake.id} ref={bindAnchor(site)} x={x} y={y + 0.4 * label}
+              data-label-x={x} data-label-y={y} data-label-dy={0.4} data-label-kind="lake" data-label-priority={1}
+              className={`hand-${overview.varieties[name.variety].family % 5}`}
+              onClick={() => dragged() || onLake?.(lake.id)}>{name.spelled}</text>;
           })}
         </g> : null}
         {routes ? (

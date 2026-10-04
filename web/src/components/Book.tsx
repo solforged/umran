@@ -70,6 +70,7 @@ function subjectId(subject: Subject, overview: Overview): string {
     case "religion": return `religion-${subject.id}`;
     case "craft": return `craft-${subject.id}`;
     case "event": return `event-${subject.id}`;
+    case "lake": return `lake-${subject.id}`;
     case "law": {
       const annal = individualAnnals(overview.annals).find((a) => a.laws.includes(subject.id));
       return annal ? `event-${annal.id}` : "book-languages";
@@ -268,6 +269,17 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
           const seasons = commonestSeasons(climate, zone.id);
           return <p key={zone.id}>Weather zone {zone.id + 1}: {weatherDeparture(zone)}{seasons ? `; usual seasons: ${seasons}` : ""}.</p>;
         })}
+        <h3>Lakes</h3>
+        <ul className="roster">{map.lakes.map((lake) => {
+          const name = engine.lake(generation, lake.id).names.at(-1);
+          return <li key={lake.id} id={`lake-${lake.id}`}>
+            {ctx.link({ kind: "lake", id: lake.id }, name?.spelled ?? lore.unnamedName("lake"))} ·{" "}
+            {lake.outlet === null ? "no outlet; a closed basin" : <>drains to {ctx.link(
+              { kind: "river", id: lake.outlet },
+              engine.river(generation, lake.outlet).names.at(-1)?.spelled ?? lore.unnamedName("river"),
+            )}</>}.
+          </li>;
+        })}</ul>
       </section>
       <section className="book-chapter" id="book-peoples" data-book-chapter="peoples">
         {head(2, peopleLines(overview))}<h2>The peoples</h2>

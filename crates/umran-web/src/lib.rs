@@ -289,6 +289,13 @@ impl Workbench {
             .map_err(fail)
     }
 
+    /// A lake's names and local forms at `generation`.
+    pub fn lake(&mut self, generation: u32, id: f64) -> Result<String, JsValue> {
+        self.bench
+            .lake(generation, entity_id(id).map_err(fail)?)
+            .map_err(fail)
+    }
+
     /// Every living people's word for `concept`, grouped by common root.
     #[wasm_bindgen(js_name = wordMap)]
     pub fn word_map(&mut self, generation: u32, concept: &str) -> Result<String, JsValue> {
@@ -379,6 +386,12 @@ impl ReadView {
         self.bench
             .borrow_mut()
             .river(generation, entity_id(id).map_err(fail)?)
+            .map_err(fail)
+    }
+    pub fn lake(&mut self, generation: u32, id: f64) -> Result<String, JsValue> {
+        self.bench
+            .borrow_mut()
+            .lake(generation, entity_id(id).map_err(fail)?)
             .map_err(fail)
     }
     pub fn map(&self) -> Result<String, JsValue> {
@@ -800,6 +813,7 @@ impl Bench {
             Subject::Land { region } => world.map.regions.get(*region).is_some(),
             Subject::Continent { landmass } => world.map.landmasses.get(*landmass).is_some(),
             Subject::River { id } => world.map.rivers.get(*id).is_some(),
+            Subject::Lake { id } => world.map.lakes.get(*id).is_some(),
             Subject::Zone { id } => world.map.climate_zones.get(*id).is_some(),
             Subject::Law { id } => world
                 .varieties
@@ -2102,6 +2116,34 @@ impl Bench {
         })
     }
 
+    /// All names and living local forms of a static lake identity as
+    /// they stood at `generation`.
+    pub fn lake(&mut self, generation: u32, id: usize) -> Result<String, String> {
+        let world = self.world(generation);
+        if id >= world.map.lakes.len() {
+            return Err("No such lake.".into());
+        }
+        let names = &world.lake_names[id];
+        let spoken = world.spoken();
+        to_json(&LakeNamesView {
+            lake: id,
+            names: names
+                .iter()
+                .map(|name| place_name_view(world, name))
+                .collect(),
+            exonyms: world
+                .varieties
+                .iter()
+                .enumerate()
+                .filter(|(v, _)| spoken[*v] && names.last().is_some_and(|p| p.variety != *v))
+                .filter_map(|(v, speech)| {
+                    let (_, name) = speech.lake_exonyms.iter().find(|(lake, _)| *lake == id)?;
+                    Some(place_exonym_view(world, v, name))
+                })
+                .collect(),
+        })
+    }
+
     /// What each living people says for `concept` at `generation`, as a
     /// dialect atlas shows it: words descended from one root share a
     /// group, numbered in order of first appearance.
@@ -3357,6 +3399,13 @@ struct PlaceView {
 #[derive(Serialize)]
 struct RiverNamesView {
     river: usize,
+    names: Vec<PlaceNameView>,
+    exonyms: Vec<PlaceExonymView>,
+}
+
+#[derive(Serialize)]
+struct LakeNamesView {
+    lake: usize,
     names: Vec<PlaceNameView>,
     exonyms: Vec<PlaceExonymView>,
 }
@@ -5567,6 +5616,55 @@ mod tests {
         let past: serde_json::Value = serde_json::from_str(&w.river(0, 0).unwrap()).unwrap();
         assert_eq!(past, initial);
         assert!(w.river(0, usize::MAX).is_err());
+    }
+
+    #[test]
+    fn lake_names_scrub_and_notes_keep_the_exact_reading() {
+        use notebook::{Destination, NoteKind};
+        let mut w = (0..40)
+            .map(|seed| Bench::new(seed, "medium").unwrap())
+            .find(|bench| !bench.chronicle.latest().map.lakes.is_empty())
+            .expect("medium V4 worlds have lakes");
+        let home = w.chronicle.latest().map.lakes[0].regions[0];
+        let initial: serde_json::Value = serde_json::from_str(&w.lake(0, 0).unwrap()).unwrap();
+        assert!(initial["names"].as_array().unwrap().is_empty());
+        w.act(r#"{"kind":"run","generations":1}"#).unwrap();
+        w.act(&found_at("Lake", "familiar", home)).unwrap();
+        let present: serde_json::Value = serde_json::from_str(&w.lake(1, 0).unwrap()).unwrap();
+        assert_eq!(present["names"][0]["since"], 1);
+        assert_eq!(present["names"][0]["by"], 0);
+        let past: serde_json::Value = serde_json::from_str(&w.lake(0, 0).unwrap()).unwrap();
+        assert_eq!(past, initial);
+        assert!(w.lake(0, usize::MAX).is_err());
+        let scope = w.scope(0, "").unwrap();
+        let scoped: serde_json::Value =
+            serde_json::from_str(&scope.borrow_mut().lake(1, 0).unwrap()).unwrap();
+        assert_eq!(scoped, present);
+        let note = Note {
+            id: "lake-name".into(),
+            title: "A shore name".into(),
+            body: "Named after the arrival.".into(),
+            kind: NoteKind::Observation,
+            target: Some(Destination {
+                reading: ReadingRef {
+                    telling: 0,
+                    point: w.chronicle.end(),
+                },
+                subject: Subject::Lake { id: 0 },
+            }),
+            label: "The lake".into(),
+            generation: 1,
+            revision: ENGINE_REVISION,
+            archived: false,
+        };
+        w.save_note(&to_json(&note).unwrap()).unwrap();
+        let mut restored = Bench::load(&w.save().unwrap()).unwrap();
+        let resolved: Option<Destination> =
+            serde_json::from_str(&restored.resolve_note(&note.id).unwrap()).unwrap();
+        assert_eq!(resolved, note.target);
+        let restored_names: serde_json::Value =
+            serde_json::from_str(&restored.lake(1, 0).unwrap()).unwrap();
+        assert_eq!(restored_names, present);
     }
 
     #[test]

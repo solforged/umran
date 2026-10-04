@@ -10,6 +10,7 @@ import type {
   Comparison,
   ClimateView,
   RiverNamesView,
+  LakeNamesView,
   ReadingRef,
   NotebookNote,
   Destination,
@@ -45,7 +46,9 @@ function reader(bench: Workbench | ReadView, save: () => string) {
   let weather: ClimateView | undefined;
   let riverYear = -1;
   const rivers = new Map<number, RiverNamesView>();
-  const clear = () => { cached = undefined; weather = undefined; riverYear = -1; rivers.clear(); };
+  let lakeYear = -1;
+  const lakes = new Map<number, LakeNamesView>();
+  const clear = () => { cached = undefined; weather = undefined; riverYear = -1; rivers.clear(); lakeYear = -1; lakes.clear(); };
   const engine: ReadEngine = {
     decisions: () => JSON.parse(bench.decisions()) as DecisionView[],
     overviewAt: (point) => JSON.parse(bench.overviewAt(JSON.stringify(point))) as Overview,
@@ -70,6 +73,12 @@ function reader(bench: Workbench | ReadView, save: () => string) {
       if (riverYear !== generation) { rivers.clear(); riverYear = generation; }
       let view = rivers.get(id);
       if (!view) { view = JSON.parse(bench.river(generation, id)) as RiverNamesView; rivers.set(id, view); }
+      return view;
+    },
+    lake: (generation, id) => {
+      if (lakeYear !== generation) { lakes.clear(); lakeYear = generation; }
+      let view = lakes.get(id);
+      if (!view) { view = JSON.parse(bench.lake(generation, id)) as LakeNamesView; lakes.set(id, view); }
       return view;
     },
     map: () => JSON.parse(bench.map()) as WorldMap,
@@ -129,6 +138,7 @@ function wrap(bench: Workbench): Engine {
         lexicon: (g, v) => get().lexicon(g, v), kin: (g, v) => get().kin(g, v), word: (g, v, c) => get().word(g, v, c),
         story: (g, subject) => get().story(g, subject),
         climate: (g) => get().climate(g), river: (g, id) => get().river(g, id),
+        lake: (g, id) => get().lake(g, id),
         wordMap: (g, c) => get().wordMap(g, c), map: () => get().map(), save: () => bench.save(),
       };
     },

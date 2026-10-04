@@ -62,9 +62,9 @@ the engine, not a second source. Blank where the engine has nothing yet.
    `Hūhupam`, never a people, so it does not drift when a people's name
    erodes), the author, the seed and engine revision, the chart, and the
    year the book is read at. Which telling, if there are several.
-2. **The lands.** The chart as drawn, its coasts, terrain, rivers, and
-   climate; every named land with the chronology of its names and who
-   calls it what (`Place`, `PlaceName`, `climate`, `river`).
+2. **The lands.** The chart as drawn, its coasts, terrain, rivers, lakes,
+   and climate; every named land with the chronology of its names and who
+   calls it what (`Place`, `PlaceName`, `climate`, `river`, `lake`).
 3. **The peoples.** One section per people, living or ended, ordered by
    founding. Each opens the way the engine derives it: *where they live*
    and what the land is like; *how they live* (livelihood); *what they

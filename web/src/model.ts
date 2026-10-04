@@ -594,7 +594,7 @@ export type Subject =
   | { kind: "language"; variety: number }
   | { kind: "word"; variety: number; concept: string }
   | { kind: "law"; id: string } | { kind: "land"; region: number }
-  | { kind: "river"; id: number } | { kind: "zone"; id: number }
+  | { kind: "river"; id: number } | { kind: "lake"; id: number } | { kind: "zone"; id: number }
   | { kind: "continent"; landmass: number } | { kind: "event"; id: string };
 export interface Destination { reading: ReadingRef; subject: Subject }
 export interface NotebookNote {
@@ -786,6 +786,13 @@ export interface Landmass {
   anchor: number;
 }
 
+export interface Lake {
+  id: number;
+  regions: number[];
+  /// River carrying overflow; null for a closed basin.
+  outlet: number | null;
+}
+
 /// The land a book's history plays out on; it never changes.
 export interface WorldMap {
   size: MapSize;
@@ -798,7 +805,7 @@ export interface WorldMap {
   regions: Region[];
   landmasses: Landmass[];
   rivers: River[];
-  lakes: { id: number; regions: number[]; outlet: number | null }[];
+  lakes: Lake[];
   climateZones: { id: number; regions: number[] }[];
 }
 
@@ -848,6 +855,12 @@ export interface RiverNamesView {
   exonyms: PlaceExonym[];
 }
 
+export interface LakeNamesView {
+  lake: number;
+  names: PlaceName[];
+  exonyms: PlaceExonym[];
+}
+
 /// Every people's word for one meaning, as a dialect atlas shows it.
 export interface WordMap {
   concept: string;
@@ -892,6 +905,7 @@ export interface ReadEngine {
   story(generation: number, subject: Subject): Story;
   climate(generation: number): ClimateView;
   river(generation: number, id: number): RiverNamesView;
+  lake(generation: number, id: number): LakeNamesView;
   map(): WorldMap;
   wordMap(generation: number, concept: string): WordMap;
   save(): string;

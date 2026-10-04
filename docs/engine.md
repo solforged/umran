@@ -1215,7 +1215,8 @@ from rivers even when a river carries their overflow. Dedicated lake-name,
 succession, exonym, and memory-shift streams leave earlier draws untouched.
 The facade exposes static lakes, river topology, V4 channels, and zone ids in `map()`,
 historical conditions and literal feeding capacities in `climate(generation)`,
-and name histories with local alternatives in `river(generation, id)`.
+and name histories with local alternatives in `river(generation, id)` and
+`lake(generation, id)`.
 
 The workbench reads those views within the active telling and year. Rivers
 are inked above terrain, with three catchment-width tiers and dashed failed
@@ -1227,6 +1228,14 @@ people's speech, falling back to the mouth's speakers. River cards retain
 name records, exonyms, and flow annals. Weather colouring uses zone departures,
 and climate annals lead to zone cards. Far, middle, and close chart views
 disclose progressively finer detail; a kilometre scale follows the camera.
+Lakes appear on both chart and globe as sea-filled, coast-outlined insets
+within their regions. Their area is not modelled: every outline is drawn
+at a fixed 0.6 scale toward its region centre, not from water elevation.
+Close zoom adds lake names in the selected speech, falling back to shore
+speakers. Lake cards preserve naming dates and coiners, other peoples'
+names, shore lands, and the overflow river or closed basin. Their chronicle
+collects events in those shore lands. Find, notes, and the lands chapter
+include lakes alongside rivers.
 
 ### Seasonal weather
 

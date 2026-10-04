@@ -312,8 +312,14 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .chart-river.failed .river-ink { stroke-dasharray: 3 4; opacity: .4; }
 .chart-river:focus { outline: none; }
 .chart-river:is(:hover, :focus-visible) .river-ink { stroke: var(--accent); }
+.chart-lake { cursor: pointer; }
+.chart-lake path { fill: var(--sea); stroke: var(--ink); stroke-width: 1.2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.chart-lake:focus { outline: none; }
+.chart-lake:is(:hover, :focus-visible) path { stroke: var(--accent); }
+.lake-names { cursor: pointer; }
+.lake-names text { text-anchor: middle; }
 .river-names { pointer-events: none; }
-.river-names text { fill: var(--ink); font-size: calc(.2px * var(--label, 1)); font-style: italic; paint-order: stroke; stroke: var(--paper); stroke-width: .04; }
+:is(.river-names, .lake-names) text { fill: var(--ink); font-size: calc(.2px * var(--label, 1)); font-style: italic; paint-order: stroke; stroke: var(--paper); stroke-width: .04; }
 .zone-borders { pointer-events: none; }
 .zone-borders path { fill: none; stroke: var(--ink-soft); stroke-width: 1; stroke-dasharray: 1 4; opacity: .4; vector-effect: non-scaling-stroke; }
 .weather-wash { fill-opacity: .55; pointer-events: none; }
@@ -323,7 +329,7 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .weather-usual { background: var(--paper); }
 .zoom-far :is(.chart-river:not(.river-tier-3), .routes, .dealings, .pilgrim-roads, .founding-markers) { display: none; }
 .zoom-far .land.open { stroke: none; }
-:is(.zoom-far, .zoom-mid) :is(.place-names, .river-names) { display: none; }
+:is(.zoom-far, .zoom-mid) :is(.place-names, .river-names, .lake-names) { display: none; }
 :is(.zoom-far, .zoom-mid) .chart-marks :is(.mark-tree, .mark-grass, .mark-field, .mark-sand) { display: none; }
 .zoom-close .continent-names { display: none; }
 .chart-scale { position: absolute; bottom: .4rem; left: .7rem; display: flex; align-items: end; gap: .8rem; color: var(--ink-soft); background: color-mix(in srgb, var(--paper) 88%, transparent); padding: .3rem .45rem; font-size: .75rem; pointer-events: none; }

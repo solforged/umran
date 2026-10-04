@@ -162,10 +162,12 @@ On a small screen, turn between **Chart** and **Reading** for a full page of eac
 the [atlas index](docs/images/atlas-mobile.jpg) stays within reach in either view.
 
 The **chart** shows rivers in the ink of the coast. Failed flows fade to a
-dashed line. Close in to read local land and river names, or open a river's
-card for its length, peoples, and names across languages. **Weather** colours
-lands by their zone's departure from usual conditions. Climate annals lead
-to the zone's card and history. A kilometre scale follows the zoom.
+dashed line. Lakes are sea-filled insets on the chart and globe; their
+extent is not modelled. Close in to read local land, river, and lake names,
+or open their cards for names across languages, shore lands, and outlets.
+**Weather** colours lands by their zone's departure from usual conditions.
+Climate annals lead to the zone's card and history. A kilometre scale
+follows the zoom.
 
 Sheets settle onto the desk and lift away without delaying the next click.
 Only one is open at a time: closing a dialog returns to the folio and reading

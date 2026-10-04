@@ -345,6 +345,8 @@ function focusLabel(focus: Focus, context: Context): string {
       return continentName(focus.landmass, context);
     case "river":
       return context.engine.river(context.generation, focus.id).names.at(-1)?.spelled ?? unnamedName("river");
+    case "lake":
+      return context.engine.lake(context.generation, focus.id).names.at(-1)?.spelled ?? unnamedName("lake");
     case "zone":
       return zoneName(focus.id, context);
     case "event":
@@ -398,6 +400,8 @@ function Card({ focus, context }: { focus: Focus; context: Context }) {
       return <ContinentCard landmass={focus.landmass} context={context} />;
     case "river":
       return <RiverCard id={focus.id} context={context} />;
+    case "lake":
+      return <LakeCard id={focus.id} context={context} />;
     case "zone":
       return <ZoneCard id={focus.id} context={context} />;
     case "event": {
@@ -729,6 +733,13 @@ function RiverLink({ id, context }: { id: number; context: Context }) {
   </button>;
 }
 
+function LakeLink({ id, context }: { id: number; context: Context }) {
+  const view = context.engine.lake(context.generation, id);
+  return <button type="button" className="link word" onClick={() => context.go({ kind: "lake", id })}>
+    {view.names.at(-1)?.spelled ?? unnamedName("lake")}
+  </button>;
+}
+
 function ZoneLink({ id, context }: { id: number; context: Context }) {
   return <button type="button" className="link" onClick={() => context.go({ kind: "zone", id })}>{zoneName(id, context)}</button>;
 }
@@ -807,6 +818,42 @@ function RiverCard({ id, context }: { id: number; context: Context }) {
       </> : null}
     </Leaf> : <p className="muted">No name has been recorded for this river yet.</p>}
     <StoryLeaf title="The river's chronicle" annals={subjectHistory({ kind: "river", id }, overview, map)} context={context} />
+  </>;
+}
+
+function LakeCard({ id, context }: { id: number; context: Context }) {
+  const { engine, generation, version, map, overview } = context;
+  const view = useMemo(() => engine.lake(generation, id), [engine, generation, version, id]);
+  const lake = map.lakes[id];
+  const now = view.names.at(-1);
+  return <>
+    <CardHead icon={Waves} kind="A lake" title={now?.spelled ?? unnamedName("lake")}
+      sub={now ? <span className="ipa">/{now.ipa}/</span> : null} />
+    <Facts rows={[
+      ["Lies in", <Joined items={lake.regions} link={(region) => <LandLink region={region} context={context} />} />],
+      ["Drains to", lake.outlet === null ? "No outlet; a closed basin" : <RiverLink id={lake.outlet} context={context} />],
+    ]} />
+    {view.names.length || view.exonyms.length ? <Leaf id="names" title="Names"
+      summary={<p>{view.names.length ? <>First recorded in year <Year generation={view.names[0].since} context={context} />.</> : "Known in other languages."}</p>}>
+      <ol className="history">
+        {view.names.map((name, i) => <li key={i}>
+          <Year generation={name.since} context={context} />
+          <span><span className="word">{name.spelled}</span> <span className="ipa">/{name.ipa}/</span>{" "}
+            in <LanguageLink variety={name.variety} context={context} />.
+            <span className="muted"> {howNamed(name, view.names[i - 1], overview)}{name.once ? `; once ${name.once}` : ""}.</span>
+          </span>
+        </li>)}
+      </ol>
+      {view.exonyms.length ? <>
+        <h3>What others call it</h3>
+        <ul className="roster">{view.exonyms.map((name, i) => <li key={i}>
+          <span className="word">{name.spelled}</span> <span className="ipa">/{name.ipa}/</span>{" "}
+          in <LanguageLink variety={name.variety} context={context} />, heard in year <Year generation={name.heard} context={context} />
+          {name.once ? `; once ${name.once}` : ""}.
+        </li>)}</ul>
+      </> : null}
+    </Leaf> : <p className="muted">No name has been recorded for this lake yet.</p>}
+    <StoryLeaf title="The lake's chronicle" annals={subjectHistory({ kind: "lake", id }, overview, map)} context={context} />
   </>;
 }
 
@@ -1897,6 +1944,9 @@ function LandCard({ region, context }: { region: number; context: Context }) {
           ["Rivers", context.map.rivers.filter((river) => river.course.includes(region)).length ? <Joined
             items={context.map.rivers.filter((river) => river.course.includes(region))}
             link={(river) => <RiverLink id={river.id} context={context} />} /> : null],
+          ["Lakes", context.map.lakes.filter((lake) => lake.regions.includes(region)).length ? <Joined
+            items={context.map.lakes.filter((lake) => lake.regions.includes(region))}
+            link={(lake) => <LakeLink id={lake.id} context={context} />} /> : null],
           ["Weather", context.map.regions[region].climateZone === null ? null : <ZoneLink id={context.map.regions[region].climateZone!} context={context} />],
           ["Seasons", seasons ? seasonalPhrase(seasons) : null],
           ["On", <LandmassOf region={region} context={context} />],

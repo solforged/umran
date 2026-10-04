@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { ArrowUpRight, Earth, Hammer, Landmark, Languages, MapPin, Search, Sparkles, Users, type LucideIcon } from "lucide-react";
-import type { Overview, WorldMap } from "../model";
+import { ArrowUpRight, Earth, Hammer, Landmark, Languages, MapPin, Search, Sparkles, Users, Waves, type LucideIcon } from "lucide-react";
+import type { LakeNamesView, Overview, RiverNamesView, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { hue, TERRAIN_NAME, unnamedName } from "../lore";
 import type { Focus } from "./Pedia";
@@ -22,10 +22,12 @@ interface Entry {
   past?: boolean;
 }
 
-export function AtlasIndex({ open, overview, map, onClose, go }: {
+export function AtlasIndex({ open, overview, map, riverNames, lakeNames, onClose, go }: {
   open: boolean;
   overview: Overview;
   map: WorldMap;
+  riverNames: RiverNamesView[];
+  lakeNames: LakeNamesView[];
   onClose: () => void;
   go: (focus: Focus) => void;
 }) {
@@ -74,7 +76,19 @@ export function AtlasIndex({ open, overview, map, onClose, go }: {
         icon: MapPin, focus: { kind: "land", region: p.region },
       }] : [];
     }),
-  ], [overview, map]);
+    ...riverNames.map((view): Entry => ({
+      key: `river-${view.river}`, kind: "Lands", name: view.names.at(-1)?.spelled ?? unnamedName("river"),
+      detail: `River · ${map.rivers[view.river].course.length} lands`,
+      aliases: [...view.names.map((n) => `${n.spelled} ${n.meaning}`), ...view.exonyms.map((n) => n.spelled)].join(" "),
+      icon: Waves, focus: { kind: "river", id: view.river },
+    })),
+    ...lakeNames.map((view): Entry => ({
+      key: `lake-${view.lake}`, kind: "Lands", name: view.names.at(-1)?.spelled ?? unnamedName("lake"),
+      detail: `Lake · ${map.lakes[view.lake].regions.length} lands`,
+      aliases: [...view.names.map((n) => `${n.spelled} ${n.meaning}`), ...view.exonyms.map((n) => n.spelled)].join(" "),
+      icon: Waves, focus: { kind: "lake", id: view.lake },
+    })),
+  ], [overview, map, riverNames, lakeNames]);
   const terms = searchText(query.trim()).split(/\s+/).filter(Boolean);
   const matches = entries.filter((entry) =>
     (kind === "All" || entry.kind === kind) && (past || !entry.past) &&

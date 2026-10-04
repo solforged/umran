@@ -59,6 +59,7 @@ export function concerns(annal: Annal, subject: Subject, overview: Overview, map
     case "land": return annal.lands.includes(subject.region);
     case "continent": return annal.lands.some((r) => map.regions[r]?.landmass === subject.landmass);
     case "river": return annal.rivers.includes(subject.id);
+    case "lake": return annal.lands.some((land) => map.lakes[subject.id]?.regions.includes(land));
     case "zone": return annal.zones.includes(subject.id);
     case "law": return annal.laws.includes(subject.id);
     case "event": return annal.id === subject.id;

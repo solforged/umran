@@ -60,6 +60,7 @@ function exists(subject: Focus, overview: Overview, map: WorldMap): boolean {
     case "land": return !!map.regions[subject.region];
     case "continent": return !!map.landmasses[subject.landmass];
     case "river": return !!map.rivers[subject.id];
+    case "lake": return !!map.lakes[subject.id];
     case "zone": return !!map.climateZones[subject.id];
     default: return true;
   }
@@ -465,6 +466,7 @@ export function Stage({
   const chartGeneration = settlement ? settlementReading.generation : generation;
   const climate = useMemo(() => engine.climate(chartGeneration), [engine, chartGeneration, version]);
   const riverNames = useMemo(() => map.rivers.map((river) => engine.river(chartGeneration, river.id)), [engine, map, chartGeneration, version]);
+  const lakeNames = useMemo(() => map.lakes.map((lake) => engine.lake(chartGeneration, lake.id)), [engine, map, chartGeneration, version]);
   const tint: Tint = useMemo(() => {
     if (words) return { kind: "words", words };
     if (law) {
@@ -514,6 +516,11 @@ export function Stage({
         const lands = map.rivers[focus.id]?.course ?? [];
         const chosen = overview.communities.filter((c) => c.ended === null && c.lands.some((id) => lands.includes(id))).map((c) => c.id);
         return { chosen, lands, point: site(lands.at(-1)) };
+      }
+      case "lake": {
+        const lands = map.lakes[focus.id]?.regions ?? [];
+        const chosen = overview.communities.filter((c) => c.ended === null && c.lands.some((id) => lands.includes(id))).map((c) => c.id);
+        return { chosen, lands, point: site(lands[0]) };
       }
       case "zone": {
         const lands = map.climateZones[focus.id]?.regions ?? [];
@@ -570,6 +577,7 @@ export function Stage({
           motionMemory={mapMotion}
           climate={climate}
           riverNames={riverNames}
+          lakeNames={lakeNames}
           selectedVariety={overview.communities[selected]?.variety}
           names={layers.names}
           routes={!settlement && layers.routes}
@@ -589,6 +597,7 @@ export function Stage({
           onReligion={(id) => go({ kind: "religion", id })}
           onCraft={(id) => go({ kind: "craft", id })}
           onRiver={settlement ? undefined : (id) => go({ kind: "river", id })}
+          onLake={settlement ? undefined : (id) => go({ kind: "lake", id })}
         />
         <div className="cartouche world-cartouche">
           <Popover label="This world" role="menu" side="bottom" align="start"
@@ -825,7 +834,7 @@ export function Stage({
           <button type="button" aria-pressed={pane === "reading"} onClick={() => setPane("reading")}><BookOpen size={16} aria-hidden="true" /> Card</button>
         </nav>
       </footer>
-      <AtlasIndex open={indexOpen} overview={overview} map={map} go={go} onClose={() => setIndexOpen(false)} />
+      <AtlasIndex open={indexOpen} overview={overview} map={map} riverNames={riverNames} lakeNames={lakeNames} go={go} onClose={() => setIndexOpen(false)} />
     </div>
   );
 }

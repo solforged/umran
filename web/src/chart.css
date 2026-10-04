@@ -461,10 +461,10 @@
 
 /* Chart lettering is chosen in screen space by MapView, not by the
    relative zoom classes: a fitted small continent can still name lands. */
-:root .mapview :is(.place-names, .river-names) {
+:root .mapview :is(.place-names, .river-names, .lake-names) {
   display: block;
 }
-:root .mapview :is(.place-names, .river-names) text {
+:root .mapview :is(.place-names, .river-names, .lake-names) text {
   font-size: max(calc(.17px * var(--label, 1)), var(--small-label-min, 0px));
 }
 :root .mapview .people text.tongue-name {
