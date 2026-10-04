@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import type { Annal, Catalog, CityView, Community, Craft, CraftView, ReadEngine, Ethos, HistoryPoint, HolyLand, NotebookNote, Overview, PlaceExonym, ReligionView, RenderingRow, ShrineKind, StateView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { causePhrase, CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, FAITH_HOW, FAITH_NAME, FALL_NAME, howCame, howNamed, hue, landLabel, LIVELIHOOD_NAME, peoplePhrases, RISE_NAME, SCHISM_CAUSE, STRONG, temperament, TENET_NOUN, TENET_TEACHING, TERRAIN_NAME, unnamedName, weatherDeparture } from "../lore";
+import { causePhrase, CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, faithTeaching, FAITH_HOW, FAITH_NAME, FALL_NAME, howCame, howNamed, hue, landLabel, LIVELIHOOD_NAME, peoplePhrases, RISE_NAME, SCHISM_CAUSE, seasonalPhrase, STRONG, temperament, TENET_NOUN, TERRAIN_NAME, unnamedName, weatherDeparture } from "../lore";
 import { filterHistory, findAnnal, individualAnnals, relatedMoments, subjectHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
 import { eras, quietLine, QUIET_KINDS, type Era } from "../eras";
 import { bond } from "../words";
@@ -1536,9 +1536,7 @@ function ReligionCard({ religion, context }: { religion: ReligionView; context: 
         ["Converts", religion.converts ? "seeks converts" : "keeps to its own"],
         ["Words", religion.translates ? "followers translate its words" : "followers borrow its words"],
         ["Scripture", religion.scripture ? "written teaching; brings writing" : "unwritten teaching"],
-        ["Teaching", religion.doctrine.some((p) => Math.abs(p.stance) >= 0.15) ? religion.doctrine
-          .filter((p) => Math.abs(p.stance) >= 0.15)
-          .map((p) => TENET_TEACHING[p.tenet][p.stance > 0 ? 0 : 1]).join("; ") : null],
+        ["Teaching", faithTeaching(religion)],
         ["Parted over", religion.disputed === null ? null : TENET_NOUN[religion.disputed]],
       ]} />
       <p className="muted small">Its <Explained term="sacred language">sacred language</Explained> keeps the founder’s words and sounds.</p>
@@ -1765,7 +1763,7 @@ function WordCard({ variety, concept, context }: { variety: number; concept: str
         }}
         onOpenVariety={(other) => context.go({ kind: "word", variety: other, concept })}
         renderCause={(cause) => <LoanCauseText cause={cause} ctx={languageChapterContext(context, variety)} />}
-        renderOrigin={(origin) => <WordOrigin origin={origin} ctx={languageChapterContext(context, variety)} />}
+        renderOrigin={(word) => <WordOrigin word={word} ctx={languageChapterContext(context, variety)} />}
       />
       {groups.length > 1 ? (
         <>
@@ -1869,7 +1867,9 @@ function LawCard({ id, context }: { id: string; context: Context }) {
 }
 
 function LandCard({ region, context }: { region: number; context: Context }) {
-  const { map, overview } = context;
+  const { engine, generation, version, map, overview } = context;
+  const climate = useMemo(() => engine.climate(generation), [engine, generation, version]);
+  const seasons = climate.regions.find((r) => r.id === region)?.seasons;
   const place = overview.places.find((p) => p.region === region);
   const names = place?.names ?? [];
   const exonyms = place?.exonyms ?? [];
@@ -1898,6 +1898,7 @@ function LandCard({ region, context }: { region: number; context: Context }) {
             items={context.map.rivers.filter((river) => river.course.includes(region))}
             link={(river) => <RiverLink id={river.id} context={context} />} /> : null],
           ["Weather", context.map.regions[region].climateZone === null ? null : <ZoneLink id={context.map.regions[region].climateZone!} context={context} />],
+          ["Seasons", seasons ? seasonalPhrase(seasons) : null],
           ["On", <LandmassOf region={region} context={context} />],
           ["Neighbours", neighbours.length > 0 ? (
             <Joined items={neighbours} link={(id) => <LandLink region={id} context={context} />} />

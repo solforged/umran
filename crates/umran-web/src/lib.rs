@@ -2688,6 +2688,7 @@ fn kept_through_shift(word: &Lexeme) -> bool {
 #[derive(Serialize)]
 struct CoinedPartView {
     concept: &'static str,
+    gloss: &'static str,
     spelled: String,
 }
 
@@ -2710,6 +2711,7 @@ fn coined_view(variety: &Variety, word: &Lexeme) -> Option<CoinedView> {
             .iter()
             .map(|part| CoinedPartView {
                 concept: part.concept.id,
+                gloss: part.concept.gloss,
                 spelled: variety.spell(&part.form),
             })
             .collect(),

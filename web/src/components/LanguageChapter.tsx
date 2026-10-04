@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Feather } from "lucide-react";
-import type { Annal, HistoryLine, Law, LexiconRow, LoanCause, Origin, Overview, ReadEngine, Subject, Variety, WorldMap } from "../model";
+import type { Annal, HistoryLine, Law, LexiconRow, LoanCause, Overview, ReadEngine, Subject, Variant, Variety, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { CONTACT_NAME, MARKING_PHRASE, POSSESSOR_PHRASE, STRESS_RULE, WORD_ORDER_PHRASE } from "../lore";
 import { individualAnnals, findAnnal } from "../history";
@@ -166,9 +166,13 @@ export function LoanCauseText({ cause, ctx }: { cause: LoanCause; ctx: ChapterCo
   return <span className="loan-cause"> Through {text}.{event ? <> After {ctx.link({ kind: "event", id: event.id }, <>{event.kind} in {year(event.generation)}</>)}.</> : null}</span>;
 }
 
-export function WordOrigin({ origin, ctx }: { origin: Origin; ctx: ChapterContext }) {
+export function WordOrigin({ word: { origin, coined }, ctx }: { word: Pick<Variant, "origin" | "coined">; ctx: ChapterContext }) {
   return <span className={`origin origin-${origin.kind}`}>
-    {origin.kind === "borrowed" ? <>Borrowed from {origin.fromVariety !== null ? language(origin.fromVariety, ctx) : origin.from ?? "an unrecorded source"}</> : origin.kind === "kept" ? <>Kept from {origin.fromVariety !== null ? language(origin.fromVariety, ctx) : origin.from ?? "an earlier tongue"}</> : origin.kind === "derived" ? <>Built from “{origin.from}”</> : origin.kind === "coined" ? "Coined" : "Inherited"}, {year(origin.generation)}.
+    {coined ? coined.kind === "calque"
+      ? <>Translated part by part from {language(coined.from!, ctx)} in {year(coined.generation)}.</>
+      : <>{coined.kind === "compound" ? "Made" : "Derived"} in {year(coined.generation)} from {coined.parts.map((part, i) => <span key={i}>{i ? " and " : ""}<span className="word">{part.spelled}</span> ‘{part.gloss}’</span>)}.</>
+      : <>{origin.kind === "borrowed" ? <>Borrowed from {origin.fromVariety !== null ? language(origin.fromVariety, ctx) : origin.from ?? "an unrecorded source"}</> : origin.kind === "kept" ? <>Kept from {origin.fromVariety !== null ? language(origin.fromVariety, ctx) : origin.from ?? "an earlier tongue"}</> : origin.kind === "derived" ? <>Built from “{origin.from}”</> : origin.kind === "coined" ? "Coined" : "Inherited"}, {year(origin.generation)}.</>}
+    {coined?.opaqueSince !== null && coined?.opaqueSince !== undefined ? <> Its parts were no longer heard in it after {year(coined.opaqueSince)}.</> : null}
     {origin.cause ? <LoanCauseText cause={origin.cause} ctx={ctx} /> : null}
   </span>;
 }
@@ -181,7 +185,7 @@ function LexicalEvidence({ row, variety, ctx }: SectionProps & { row: LexiconRow
       variety={variety.id} concept={row.concept} onScrub={ctx.onYear}
       onOpenVariety={(id) => ctx.open({ kind: "word", variety: id, concept: row.concept })}
       renderCause={(cause) => <LoanCauseText cause={cause} ctx={ctx} />}
-      renderOrigin={(origin) => <WordOrigin origin={origin} ctx={ctx} />}
+      renderOrigin={(word) => <WordOrigin word={word} ctx={ctx} />}
       family={variety.family} overview={ctx.overview} /> : null}
   </details>;
 }
@@ -193,7 +197,7 @@ export function Lexicon({ variety, ctx }: SectionProps) {
     <Dictionary engine={ctx.engine} version={ctx.version} generation={ctx.generation} variety={variety.id}
       view={ctx.dictionaryView ?? view} onView={ctx.onDictionaryView ?? setView}
       onConcept={(concept) => ctx.open({ kind: "word", variety: variety.id, concept })}
-      renderOrigin={(row) => <WordOrigin origin={row.origin} ctx={ctx} />}
+      renderOrigin={(word) => <WordOrigin word={word} ctx={ctx} />}
       renderEvidence={(row) => <LexicalEvidence row={row} variety={variety} ctx={ctx} />}
       rowId={ctx.wordAnchor ? (row) => ctx.wordAnchor!(variety.id, row.concept) : undefined} />
   </div>;

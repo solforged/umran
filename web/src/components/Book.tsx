@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Annal, Catalog, Community, DecisionView, NotebookNote, Overview, ReadEngine, Subject, WorldMap } from "../model";
+import type { Annal, Catalog, ClimateView, Community, DecisionView, NotebookNote, Overview, ReadEngine, Subject, WorldMap } from "../model";
 import { YEARS } from "../model";
 import * as lore from "../lore";
-import { CONTACT_NAME, LIVELIHOOD_NAME, TERRAIN_NAME, temperament, weatherDeparture } from "../lore";
+import { CONTACT_NAME, faithTeaching, LIVELIHOOD_NAME, seasonalPhrase, TENET_NOUN, TERRAIN_NAME, temperament, weatherDeparture } from "../lore";
 import { findAnnal, individualAnnals } from "../history";
 import { eras, quietLine } from "../eras";
 import { bookMarkdown, craftLines, download, fileName, givenNameLines, peopleLines, religionLines, renderingLines, stateLines } from "../takeout";
@@ -37,6 +37,23 @@ function Folded({ summary, children }: { summary: ReactNode; children: () => Rea
     <summary>{summary}</summary>
     {open ? children() : null}
   </details>;
+}
+
+function commonestSeasons(climate: ClimateView, zone: number): string | null {
+  const counts = new Map<string, number>();
+  let commonest: string | null = null;
+  let most = 0;
+  for (const region of climate.regions) {
+    if (region.zone !== zone) continue;
+    const phrase = seasonalPhrase(region.seasons);
+    const count = (counts.get(phrase) ?? 0) + 1;
+    counts.set(phrase, count);
+    if (count > most) {
+      commonest = phrase;
+      most = count;
+    }
+  }
+  return commonest;
 }
 
 
@@ -243,11 +260,14 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
           </article>;
         })}
         <h3>Climate and rivers</h3>
-        {climate.zones.map((zone) => <p key={zone.id}>Weather zone {zone.id + 1}: {weatherDeparture(zone)}.</p>)}
         <ul className="roster">{map.rivers.map((river) => {
           const name = engine.river(generation, river.id).names.at(-1);
           return <li key={river.id}>{name?.spelled ?? lore.unnamedName("river")} · {climate.rivers.find((flow) => flow.id === river.id)?.flowing ? "flowing" : "flow has failed"}.</li>;
         })}</ul>
+        {climate.zones.map((zone) => {
+          const seasons = commonestSeasons(climate, zone.id);
+          return <p key={zone.id}>Weather zone {zone.id + 1}: {weatherDeparture(zone)}{seasons ? `; usual seasons: ${seasons}` : ""}.</p>;
+        })}
       </section>
       <section className="book-chapter" id="book-peoples" data-book-chapter="peoples">
         {head(2, peopleLines(overview))}<h2>The peoples</h2>
@@ -292,15 +312,19 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
           </article>
         ); }) : <p className="muted">No states yet.</p>}
         <h3>Faiths</h3>
-        {overview.religions.length ? overview.religions.map((faith) => (
+        {overview.religions.length ? overview.religions.map((faith) => {
+          const teaching = faithTeaching(faith);
+          return (
           <article className="book-subject" id={`religion-${faith.id}`} key={faith.id}>
             <h4>{faith.name}</h4><p>{religions[faith.id]}.</p>
             <p>Sacred speech: {ctx.link({ kind: "language", variety: faith.sacred }, overview.varieties[faith.sacred]?.name)};
               {" "}{faith.translates ? "its words are translated" : "its words are borrowed"}{faith.scripture ? "; scripture brings writing" : ""}.
             </p>
+            {teaching ? <p>Teaching: {teaching}.</p> : null}
+            {faith.disputed !== null ? <p>Parted over: {TENET_NOUN[faith.disputed]}.</p> : null}
             <Renderings rows={faith.words} overview={overview} sacred={faith.sacred} />
           </article>
-        )) : <p className="muted">No faiths founded yet.</p>}
+        ); }) : <p className="muted">No faiths founded yet.</p>}
         <h3>Crafts</h3>
         {overview.crafts.map((craft, i) => (
           <article className="book-subject" id={`craft-${craft.id}`} key={craft.id}>

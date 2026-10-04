@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import type { LoanCause, Origin, Overview, ReadEngine, Variant } from "../model";
+import type { LoanCause, Overview, ReadEngine, Variant } from "../model";
 import { YEARS } from "../model";
 import type { ParadigmView } from "./LanguageChapter";
 
@@ -27,7 +27,7 @@ export function WordGloss({
   onOpenVariety: (variety: number) => void;
   /// How the loan on this line came, drawn by the card that knows the world.
   renderCause?: (cause: LoanCause, generation: number) => ReactNode;
-  renderOrigin?: (origin: Origin) => ReactNode;
+  renderOrigin?: (variant: Variant) => ReactNode;
   family?: number;
   overview?: Overview;
 }) {
@@ -60,7 +60,7 @@ export function WordGloss({
               <meter min={0} max={1} value={v.share} title={`${Math.round(v.share * 100)}% of uses`} />
             ) : null}
           </div>
-          {renderOrigin ? <p>{renderOrigin(v.origin)}</p> : null}
+          {renderOrigin ? <p>{renderOrigin(v)}</p> : null}
           {extension ? <p className="word-extension">
             Stretched to “{detail.gloss}” in year {extension.generation * YEARS}. The word’s root origin is recorded above.
           </p> : null}

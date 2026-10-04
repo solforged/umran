@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { causePhrase } from "../web/src/lore";
-import type { Annal, Overview } from "../web/src/model";
+import { causePhrase, faithTeaching, seasonalPhrase } from "../web/src/lore";
+import type { Annal, Overview, ReligionView, Seasons } from "../web/src/model";
 
 const entry = (id: string, kind: Annal["kind"], generation: number, fields: Partial<Annal> = {}) => ({
   id, kind, generation, members: [], languages: [], variety: null,
@@ -35,5 +35,38 @@ describe("recorded causes", () => {
     expect(causePhrase(entry("world:1", "found", 0), empty)).toBeNull();
     expect(causePhrase(entry("world:2", "temper", 1, { temper: { cause: "hardship" } as Annal["temper"] }), empty)).toBeNull();
     expect(causePhrase(entry("world:3", "faith", 1, { cause: { event: 999, mechanism: "hardship" } }), empty)).toBeNull();
+  });
+});
+
+describe("seasonal profiles", () => {
+  test("choose the cold-season phrase at both amplitude boundaries", () => {
+    const profile: Seasons = { amplitude: 0, wet: "none", floods: false };
+    expect(seasonalPhrase({ ...profile, amplitude: 0.249 })).toContain("mild");
+    expect(seasonalPhrase({ ...profile, amplitude: 0.25 })).toContain("marked");
+    expect(seasonalPhrase({ ...profile, amplitude: 0.499 })).toContain("marked");
+    expect(seasonalPhrase({ ...profile, amplitude: 0.5 })).toContain("winter");
+  });
+
+  test("choose each rain regime and include floods only when recorded", () => {
+    const profile: Seasons = { amplitude: 0, wet: "none", floods: false };
+    expect(seasonalPhrase(profile)).toContain("any time");
+    expect(seasonalPhrase({ ...profile, wet: "summer" })).toContain("summer");
+    expect(seasonalPhrase({ ...profile, wet: "winter" })).toContain("winter");
+    expect(seasonalPhrase({ ...profile, wet: "monsoon" })).toContain("monsoon");
+    expect(seasonalPhrase(profile)).not.toContain("floods");
+    expect(seasonalPhrase({ ...profile, floods: true })).toContain("floods");
+  });
+});
+
+describe("faith teaching", () => {
+  const faith = (doctrine: ReligionView["doctrine"]) => ({ doctrine }) as ReligionView;
+
+  test("omit neutral tenets and include held and rejected stances at the threshold", () => {
+    expect(faithTeaching(faith([]))).toBeNull();
+    expect(faithTeaching(faith([{ tenet: "images", stance: 0.149 }, { tenet: "hierarchy", stance: -0.149 }]))).toBeNull();
+    const teaching = faithTeaching(faith([{ tenet: "images", stance: 0.15 }, { tenet: "hierarchy", stance: -0.15 }]));
+    expect(teaching).toContain("venerated");
+    expect(teaching).toContain("no order");
+    expect(teaching).toContain("; ");
   });
 });

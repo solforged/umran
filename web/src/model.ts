@@ -697,7 +697,7 @@ export interface Origin {
 }
 
 export interface Coined {
-  parts: { concept: string; spelled: string }[];
+  parts: { concept: string; spelled: string; gloss: string }[];
   kind: "compound" | "derived" | "calque";
   generation: number;
   from?: number;

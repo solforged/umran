@@ -36,7 +36,7 @@ import {
   WholeWord,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, ClimateView, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Mechanism, Overview, PlaceName, ReligionView, Rendering, SchismCause, StateView, StressRule, Tenet, Terrain, WorldMap } from "./model";
+import type { Annal, ClimateView, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Mechanism, Overview, PlaceName, ReligionView, Rendering, SchismCause, Seasons, StateView, StressRule, Tenet, Terrain, WorldMap } from "./model";
 import { YEARS } from "./model";
 import { findAnnal } from "./history";
 
@@ -244,6 +244,19 @@ export function howNamed(name: PlaceName, before: PlaceName | undefined, overvie
   }
 }
 
+const SEASON_COLD = ["mild all year", "a marked cold season", "a long hard winter"] as const;
+const SEASON_RAIN: Record<Seasons["wet"], string> = {
+  none: "rain at any time",
+  summer: "rain in summer",
+  winter: "rain in winter",
+  monsoon: "a monsoon",
+};
+
+export function seasonalPhrase(seasons: Seasons): string {
+  const cold = SEASON_COLD[seasons.amplitude < 0.25 ? 0 : seasons.amplitude < 0.5 ? 1 : 2];
+  return [cold, SEASON_RAIN[seasons.wet], ...(seasons.floods ? ["its river floods its fields"] : [])].join("; ");
+}
+
 /// The engine's departure from usual weather, without implying casualties.
 export function weatherDeparture(zone: ClimateView["zones"][number]): string {
   const changes = [
@@ -360,6 +373,13 @@ export const TENET_TEACHING: Record<Tenet, [string, string]> = {
   pilgrimage: ["pilgrimage", "no pilgrimage"],
   monasticism: ["withdrawal from the world honoured", "withdrawal from the world frowned on"],
 };
+
+export function faithTeaching(religion: ReligionView): string | null {
+  const teaching = religion.doctrine
+    .filter((p) => Math.abs(p.stance) >= 0.15)
+    .map((p) => TENET_TEACHING[p.tenet][p.stance > 0 ? 0 : 1]).join("; ");
+  return teaching || null;
+}
 
 export const TENET_NOUN: Record<Tenet, string> = {
   "sacred-language": "the sacred tongue",
