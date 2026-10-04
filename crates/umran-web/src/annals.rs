@@ -39,7 +39,7 @@ pub(crate) struct Annal {
     /// "respelling", "schism", "pilgrimage", "holy-land", "temper", "grammar",
     /// "pronoun-renewed", "pronoun-polite", "pronoun-borrowed", "class-emerged",
     /// "class-merged", "class-lost", "harmony-gained", "harmony-lost",
-    /// "climate", "river-flow", or "law".
+    /// "tone-gained", "tone-lost", "climate", "river-flow", or "law".
     pub kind: &'static str,
     /// The annalist's words. Words of the language are marked `*thus*`.
     pub text: String,
@@ -356,6 +356,42 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
         let tongue = |c: usize| world.language_title_at(world.communities[c].variety, generation);
         let g = u64::from(generation);
         let mut annal = match *event {
+            WorldEvent::Tone {
+                variety,
+                gained,
+                law,
+            } => {
+                let language = world.language_title_at(variety, generation);
+                let (text, note) = match (gained, law) {
+                    (true, Some("coda-tonogenesis")) => (
+                        format!(
+                            "In {language}, sounds at the ends of words fell silent and left their mark as pitch: words came to be told apart by tone."
+                        ),
+                        "Tonogenesis from lost final laryngeals, as Haudricourt (1954) showed for Vietnamese.",
+                    ),
+                    (true, _) => (
+                        format!(
+                            "In {language}, voiced and voiceless sounds before a vowel fell together and left high and low pitch behind: words came to be told apart by tone."
+                        ),
+                        "A register split, as in Thai and the Chinese languages (Matisoff, 1973).",
+                    ),
+                    (false, _) => (
+                        format!("In {language}, pitch no longer told words apart."),
+                        "Tone can be lost as its contrasts merge, as Swahili lost the tones of its Bantu ancestors.",
+                    ),
+                };
+                let mut annal = entry(
+                    generation,
+                    if gained { "tone-gained" } else { "tone-lost" },
+                    text,
+                    &[],
+                    &[],
+                );
+                annal.notes = vec![note.into()];
+                annal.variety = Some(variety);
+                annal.laws.extend(law);
+                annal
+            }
             WorldEvent::Settlement(ref record) => {
                 use umran_sim::settlement::SettlementIntent;
                 let plan = &record.plan;

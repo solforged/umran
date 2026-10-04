@@ -1665,6 +1665,8 @@ impl Bench {
                         builders: builders(v),
                         minimal_word: v.minimal.label(),
                         stress: v.stress().id(),
+                        tones: v.tones(),
+                        tonal: v.tonal,
                         geminates: v.lexicon.living().any(|w| {
                             w.form
                                 .segs
@@ -2267,6 +2269,7 @@ impl Bench {
                 | WorldEvent::Pilgrimage { .. }
                 | WorldEvent::HolyLand { .. }
                 | WorldEvent::Temper { .. }
+                | WorldEvent::Tone { .. }
                 | WorldEvent::Vernacular { .. } => continue,
             };
             out.push(Marker {
@@ -3332,6 +3335,8 @@ struct VarietyView {
     minimal_word: &'static str,
     stress: &'static str,
     geminates: bool,
+    tones: usize,
+    tonal: Option<umran_sim::tone::Tonal>,
     /// A few basic words, to know the language by.
     specimen: Vec<SpecimenWord>,
     /// Grammar expressed within one audible word, across eligible uses.

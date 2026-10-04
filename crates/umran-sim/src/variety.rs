@@ -45,6 +45,7 @@ pub struct Variety {
     pub laws: Vec<(u32, &'static str)>,
     /// The rule before each stress shift, including inherited shifts.
     pub stress_history: Vec<(u32, StressRule)>,
+    pub tonal: Option<crate::tone::Tonal>,
     /// Laws among `laws` that reached it from a neighbour rather than
     /// arising in it, by generation, with the variety each came from.
     pub waves: Vec<(u32, &'static str, usize)>,
@@ -139,6 +140,7 @@ impl Variety {
             founding_inventory: inventory,
             laws: Vec::new(),
             stress_history: Vec::new(),
+            tonal: None,
             waves: Vec::new(),
             parent: None,
             koine_of: Vec::new(),

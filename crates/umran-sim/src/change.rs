@@ -59,6 +59,8 @@ pub enum Rewrite {
     GeminateNext,
     /// Delete this consonant and lengthen the preceding vowel.
     Compensate,
+    /// Pitch changes and the consonant loss that conditions them.
+    Tone(crate::tone::Change),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -290,12 +292,20 @@ impl SoundChange {
             }
             let out = match self.result {
                 Rewrite::Length(long) => Some(Seg { long, ..seg }),
-                _ => self
-                    .result
-                    .apply(seg.phone)
-                    .map(|phone| Seg { phone, ..seg }),
+                Rewrite::Tone(change) => change.segment(form, i),
+                _ => self.result.apply(seg.phone).map(|phone| Seg {
+                    phone,
+                    tone: seg.tone.filter(|_| CATALOG.get(phone).is_vowel()),
+                    ..seg
+                }),
             };
-            (out != Some(seg)).then_some((i, out))
+            let pitch = match self.result {
+                Rewrite::Tone(change) => change
+                    .neighbor(form, i)
+                    .is_some_and(|(j, tone)| form.segs[j].tone != Some(tone)),
+                _ => false,
+            };
+            (out != Some(seg) || pitch).then_some((i, out))
         })
     }
 
@@ -354,6 +364,12 @@ impl SoundChange {
                 && let Some(seg) = &mut outcome[j]
             {
                 seg.long = true;
+            }
+            if let Rewrite::Tone(change) = self.result
+                && let Some((j, tone)) = change.neighbor(form, i)
+                && let Some(seg) = &mut outcome[j]
+            {
+                seg.tone = Some(tone);
             }
         }
         let vowel_survives = outcome

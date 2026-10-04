@@ -869,12 +869,12 @@ impl Grammar {
             if marker.kind != MarkerKind::Bound {
                 continue;
             }
+            // Ties break on the whole segment, tone included: candidates come
+            // from a hash map, whose order differs between native and WASM.
             if let Some((segs, _)) = edges.into_iter().max_by(|(a, wa), (b, wb)| {
-                wa.total_cmp(wb).then_with(|| {
-                    b.iter()
-                        .map(|s| (s.phone.0, s.long))
-                        .cmp(a.iter().map(|s| (s.phone.0, s.long)))
-                })
+                let key = |s: &Seg| (s.phone.0, s.long, s.tone.map(|t| t as u8));
+                wa.total_cmp(wb)
+                    .then_with(|| b.iter().map(key).cmp(a.iter().map(key)))
             }) {
                 let after = Form {
                     segs,

@@ -64,6 +64,7 @@ pub struct Adapter {
     open: bool,
     has_length: bool,
     has_geminates: bool,
+    tones: u8,
     epenthetic: Option<PhonemeId>,
 }
 
@@ -79,6 +80,7 @@ impl Adapter {
         let mut vowels: BTreeMap<u16, u32> = BTreeMap::new();
         let (mut words, mut closed, mut has_length) = (0u32, 0u32, false);
         let mut has_geminates = false;
+        let mut tones = 0;
         for form in forms {
             let syllables = form.syllables();
             let Some(last) = syllables.last() else {
@@ -94,6 +96,7 @@ impl Adapter {
                 }
                 if CATALOG.get(seg.phone).is_vowel() {
                     has_length |= seg.long;
+                    tones |= seg.tone.map_or(0, |tone| 1 << tone as u8);
                 } else {
                     has_geminates |= seg.long;
                 }
@@ -134,6 +137,7 @@ impl Adapter {
             open: words > 0 && (closed as f32 / words as f32) < OPEN_SYLLABLE_THRESHOLD,
             has_length,
             has_geminates,
+            tones,
             epenthetic,
         }
     }
@@ -164,7 +168,17 @@ impl Adapter {
                     } else {
                         self.has_geminates
                     };
-                Seg { phone, long }
+                let tone = seg.tone.and_then(|tone| {
+                    if self.tones & (1 << tone as u8) != 0 {
+                        Some(tone)
+                    } else {
+                        // A foreign contour maps to an attested level tone
+                        // when possible; a toneless ear discards pitch.
+                        let merged = tone.merged();
+                        (self.tones & (1 << merged as u8) != 0).then_some(merged)
+                    }
+                });
+                Seg { phone, long, tone }
             })
             .collect();
         let mut form = Form {
@@ -191,6 +205,7 @@ impl Adapter {
                 Seg {
                     phone: vowel,
                     long: false,
+                    tone: None,
                 },
             );
         }

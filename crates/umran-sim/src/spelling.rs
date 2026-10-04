@@ -41,6 +41,9 @@ impl Spelling {
                 i += 2;
             } else {
                 out.push_str(&self.letters(form.segs[i]));
+                if let Some(tone) = form.segs[i].tone {
+                    out.push_str(tone.ipa());
+                }
                 i += 1;
             }
         }

@@ -301,6 +301,7 @@ impl Morphology {
                 segs.push(Seg {
                     phone: glide,
                     long: false,
+                    tone: None,
                 });
             }
         } else if !left_vowel
@@ -311,6 +312,7 @@ impl Morphology {
             segs.push(Seg {
                 phone: link,
                 long: false,
+                tone: None,
             });
         }
         // The leftmost lexical accent wins; otherwise carry the right

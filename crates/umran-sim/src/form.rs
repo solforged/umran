@@ -8,6 +8,9 @@ pub struct Seg {
     pub phone: PhonemeId,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub long: bool,
+    /// Lexical pitch on a vowel nucleus; consonants never carry tone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tone: Option<crate::tone::Tone>,
 }
 
 /// A word's sounds as a flat segment string.
@@ -39,26 +42,49 @@ impl Form {
         Self {
             segs: phones
                 .into_iter()
-                .map(|phone| Seg { phone, long: false })
+                .map(|phone| Seg {
+                    phone,
+                    long: false,
+                    tone: None,
+                })
                 .collect(),
             boundaries: Vec::new(),
             stress: None,
         }
     }
 
-    /// Parses IPA such as `kaːs`; `ː` lengthens the preceding segment.
+    /// Parses IPA with length and Chao tone letters after vowel nuclei.
     pub fn from_ipa(raw: &str) -> Option<Self> {
         let mut segs: Vec<Seg> = Vec::new();
-        for part in raw.split('ː') {
-            if !segs.is_empty() {
-                segs.last_mut()?.long = true;
-            }
+        let mut rest = raw;
+        while !rest.is_empty() {
+            let end = rest.find(['ː', '˥', '˧', '˩']).unwrap_or(rest.len());
             segs.extend(
                 CATALOG
-                    .parse_ipa(part)?
+                    .parse_ipa(&rest[..end])?
                     .into_iter()
-                    .map(|phone| Seg { phone, long: false }),
+                    .map(|phone| Seg {
+                        phone,
+                        long: false,
+                        tone: None,
+                    }),
             );
+            rest = &rest[end..];
+            if rest.starts_with('ː') {
+                segs.last_mut()?.long = true;
+                rest = &rest['ː'.len_utf8()..];
+            }
+            let end = rest
+                .find(|c| !matches!(c, '˥' | '˧' | '˩'))
+                .unwrap_or(rest.len());
+            if end > 0 {
+                let seg = segs.last_mut()?;
+                if !CATALOG.get(seg.phone).is_vowel() || seg.tone.is_some() {
+                    return None;
+                }
+                seg.tone = Some(crate::tone::Tone::parse(&rest[..end])?);
+                rest = &rest[end..];
+            }
         }
         Some(Self {
             segs,
@@ -73,6 +99,9 @@ impl Form {
             out.push_str(CATALOG.get(seg.phone).ipa());
             if seg.long {
                 out.push('ː');
+            }
+            if let Some(tone) = seg.tone {
+                out.push_str(tone.ipa());
             }
         }
         out
@@ -130,6 +159,9 @@ impl Form {
             out.push_str(CATALOG.get(seg.phone).ipa());
             if seg.long {
                 out.push('ː');
+            }
+            if let Some(tone) = seg.tone {
+                out.push_str(tone.ipa());
             }
         }
         out

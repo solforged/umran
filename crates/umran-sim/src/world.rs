@@ -123,6 +123,8 @@ const MERGE_SHARE: f32 = 0.15;
 pub struct Params {
     /// Chance that a new sound law takes hold.
     pub sound_change_rate: f32,
+    /// Independent chance of a tone-law choice, before competition with quiet.
+    pub tone_rate: f32,
     /// Chance that a mid-ranked core concept gains a new competing word.
     pub innovation_rate: f32,
     /// How many times more often the least stable core concept (rank 100)
@@ -296,6 +298,7 @@ impl Default for Params {
     fn default() -> Self {
         Self {
             sound_change_rate: 0.3,
+            tone_rate: 0.005,
             innovation_rate: 0.0055,
             stability_spread: 10.0,
             newcomer_share: 0.25,
@@ -365,6 +368,7 @@ impl Params {
     /// one mechanism in a fixed society.
     pub fn static_society() -> Self {
         Self {
+            tone_rate: 0.0,
             growth_rate: 0.0,
             fission_rate: 0.0,
             spread_rate: 0.0,
@@ -659,6 +663,12 @@ impl ContactKind {
 pub enum WorldEvent {
     /// The complete census and route evidence for an authored choice.
     Settlement(Box<crate::settlement::SettlementRecord>),
+    /// Tonality gained or lost; the causal law is recorded when known.
+    Tone {
+        variety: usize,
+        gained: bool,
+        law: Option<&'static str>,
+    },
     /// `community` was founded with a new language.
     Found { community: usize },
     /// `daughter` split off from `community`, speaking a new variety, and
@@ -2003,6 +2013,7 @@ impl World {
         for (v, targets) in areal.iter().enumerate() {
             if spoken[v] {
                 self.sound_change(v, targets);
+                self.tone_change(v);
             }
         }
         self.spread_waves(&spoken);
@@ -2087,6 +2098,9 @@ impl World {
             if spoken {
                 self.harmonize_names(v);
             }
+        }
+        for v in 0..self.varieties.len() {
+            self.observe_tone(v, None);
         }
     }
 
@@ -3855,6 +3869,7 @@ impl World {
             .laws
             .iter()
             .filter(|law| !recent.contains(law.id))
+            .filter(|law| !crate::tone::is_tone_law(law))
             .filter_map(|law| {
                 let a = law.assess_weighted(
                     variety.spoken_forms(),
@@ -3926,6 +3941,7 @@ impl World {
         variety.harmonize_words(generation);
         self.change_names(v, |name| name.change(law, minimal, stress, generation));
         self.harmonize_names(v);
+        self.observe_tone(v, Some(law.id));
     }
 
     /// One traversal for every living name; historical attestations stay frozen.
@@ -4034,6 +4050,9 @@ impl World {
                 .into_iter()
                 .filter_map(|(id, (h, from, _))| {
                     let law = self.laws.iter().find(|l| l.id == id)?;
+                    if !crate::tone::applies(law, variety) {
+                        return None;
+                    }
                     let a = law.assess_weighted(
                         variety.spoken_forms(),
                         &variety.profile.inventory,
@@ -4057,7 +4076,9 @@ impl World {
             }
         }
         for (v, law, from) in arrivals {
+            let start = self.events.len();
             self.apply_law(v, &law);
+            self.tone_wave_cause(v, from, start);
             self.varieties[v].waves.push((generation, law.id, from));
         }
     }

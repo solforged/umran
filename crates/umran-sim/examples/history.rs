@@ -61,6 +61,16 @@ fn main() {
     let place = |r: usize, g: u32| world.place_at(r, g).unwrap_or_else(|| format!("land {r}"));
     for (generation, event) in &world.events {
         match event {
+            WorldEvent::Tone {
+                variety,
+                gained,
+                law,
+            } => println!(
+                "  gen {generation:>3}  {} {} tone ({})",
+                world.language_title(*variety),
+                if *gained { "gained" } else { "lost" },
+                law.unwrap_or("lexical turnover")
+            ),
             WorldEvent::Settlement(record) => println!(
                 "  gen {generation:>3}  {}: {:?} in {} ({} people)",
                 name(record.plan.choice.community),

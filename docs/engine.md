@@ -360,6 +360,25 @@ This bookkeeping makes no random draws and does not itself change replay.
   and `static_society()` sets `harmony_rate` to zero. Over 40 seeds and
   4,000 years, 68 of 290 varieties have harmony, mostly inherited along a
   family, as in Uralic and Turkic (`tests/harmony_band.rs`).
+- Tone (`tone.rs`) is pitch that tells words apart, carried on each vowel
+  (`Seg::tone`) and written with Chao tone letters after it, as ˥ high,
+  ˩ low, ˧˥ rising, ˥˩ falling. It arises through regular sound laws by
+  the two best-attested routes. Final glottal stops and h or s falling
+  silent leave rising or falling tone, as Haudricourt (1954) showed for
+  Vietnamese (`coda-tonogenesis`). Voiced and voiceless onsets merging
+  leave a low and a high register on the next vowel, as in Thai and the
+  Chinese languages (Matisoff, 1973; `register-tonogenesis`). Later laws
+  merge contours into level tones or lose tone altogether, as Swahili lost
+  the tones of its Bantu ancestors. Tone laws are drawn on their own
+  purpose-keyed stream (`tone_rate`), compete with no change, and spread
+  as waves like other laws. A language is tonal while any living word or
+  grammatical form carries a tone, and gaining or losing tonality is
+  recorded with the law that caused it. Loanwords take or drop tone by the
+  borrower's adaptation, and the comparative method compares tones with
+  vowels. `static_society()` sets `tone_rate` to zero. Over 40 seeds and
+  4,000 years, 22 founding languages are tonal at the end, against about
+  two fifths of languages worldwide (WALS 13A); the register split needs
+  voiced obstruents to merge, so a language without them cannot take it.
 - Each language has a minimal word (`prosody.rs`), drawn at founding: any
   syllable, a heavy one (two moras), or two syllables, likelier the more
   disyllabic its roots. A rule that would wear a word below it passes that
@@ -1126,6 +1145,7 @@ cargo run --release -p umran-sim --example tense -- [seeds] [years]
 cargo run --release -p umran-sim --example pronouns -- [seeds]
 cargo run --release -p umran-sim --example harmony -- [seeds] [generations]
 cargo run --release -p umran-sim --example pattern -- [seeds] [generations]
+cargo run --release -p umran-sim --example tone -- [seeds]
 cargo run --release -p umran-web --example provenance
 ```
 
@@ -1153,6 +1173,6 @@ compounding and derivation after founding beyond renewal and new meanings,
 inflection beyond count noun plural and object marking, the genitive, and verb
 past, future, and progressive, agreement beyond the determiner, combined
 tense–aspect forms, modal readings and clitic stages, pronoun case forms,
-tone, vowel harmony beyond the word, prenasalized stops, syntax beyond fixed word
+tone beyond the word (sandhi), vowel harmony beyond the word, prenasalized stops, syntax beyond fixed word
 and possessor order, alignment beyond this object contrast, and doctrinal
 detail beyond the causes of a schism.

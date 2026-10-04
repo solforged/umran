@@ -171,6 +171,25 @@ impl Law {
                 shifts.truncate(before_shifts);
             }
         }
+        // Register must replace an actual voiced onset. Voiceless-only
+        // words take high pitch as part of that change, not as its cause.
+        if self
+            .rules
+            .iter()
+            .any(|rule| matches!(rule.result, Rewrite::Tone(crate::tone::Change::Register)))
+            && !shifts.iter().any(|&(old, new, _)| {
+                old != new.unwrap_or(old)
+                    && crate::CATALOG
+                        .get(old)
+                        .consonant()
+                        .is_some_and(|c| c.voiced)
+                    && new.is_some_and(|p| {
+                        crate::CATALOG.get(p).consonant().is_some_and(|c| !c.voiced)
+                    })
+            })
+        {
+            return None;
+        }
         (words > 0).then(|| Assessment {
             words,
             word_weight,
@@ -999,6 +1018,64 @@ pub fn catalog() -> Vec<Law> {
                     Env::FollowingSyllableVowel(vowel(None, Some(Front), None)),
                 ),
             ],
+        ),
+        law(
+            "coda-tonogenesis",
+            "Final laryngeals leave lexical tone",
+            1.0,
+            vec![
+                rule(
+                    phone("ʔ"),
+                    Rewrite::Tone(crate::tone::Change::Coda(crate::tone::Tone::Rising)),
+                    v(),
+                    EDGE,
+                ),
+                rule(
+                    phone("h"),
+                    Rewrite::Tone(crate::tone::Change::Coda(crate::tone::Tone::Falling)),
+                    v(),
+                    EDGE,
+                ),
+                rule(
+                    phone("s"),
+                    Rewrite::Tone(crate::tone::Change::Coda(crate::tone::Tone::Falling)),
+                    v(),
+                    EDGE,
+                ),
+            ],
+        ),
+        law(
+            "register-tonogenesis",
+            "Onset voicing becomes a pitch register",
+            0.65,
+            vec![rule(
+                Matcher::AnyConsonant,
+                Rewrite::Tone(crate::tone::Change::Register),
+                ANY,
+                v(),
+            )],
+        ),
+        law(
+            "tone-merger",
+            "Contour tones merge into level tones",
+            0.25,
+            vec![rule(
+                Matcher::AnyVowel,
+                Rewrite::Tone(crate::tone::Change::Merge),
+                ANY,
+                ANY,
+            )],
+        ),
+        law(
+            "tone-loss",
+            "Lexical tone is lost",
+            0.4,
+            vec![rule(
+                Matcher::AnyVowel,
+                Rewrite::Tone(crate::tone::Change::Loss),
+                ANY,
+                ANY,
+            )],
         ),
     ];
     laws.extend(crate::harmony::catalog_laws());

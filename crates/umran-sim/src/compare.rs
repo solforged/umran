@@ -96,10 +96,10 @@ fn align_with_cost(a: &Form, b: &Form) -> (Vec<Pair>, f32) {
 
 fn align_segments(xa: &[Seg], xb: &[Seg]) -> (Vec<Pair>, f32) {
     let (n, m) = (xa.len(), xb.len());
-    let sub = |x: PhonemeId, y: PhonemeId| {
-        let d = distance(x, y);
+    let sub = |x: Seg, y: Seg| {
+        let d = distance(x.phone, y.phone);
         if d.is_finite() {
-            0.6 * d.min(5.0)
+            0.6 * d.min(5.0) + if x.tone == y.tone { 0.0 } else { 0.6 }
         } else {
             MISMATCH
         }
@@ -113,7 +113,7 @@ fn align_segments(xa: &[Seg], xb: &[Seg]) -> (Vec<Pair>, f32) {
     }
     for i in 1..=n {
         for j in 1..=m {
-            cost[i][j] = (cost[i - 1][j - 1] + sub(xa[i - 1].phone, xb[j - 1].phone))
+            cost[i][j] = (cost[i - 1][j - 1] + sub(xa[i - 1], xb[j - 1]))
                 .min(cost[i - 1][j] + GAP)
                 .min(cost[i][j - 1] + GAP);
         }
@@ -121,10 +121,7 @@ fn align_segments(xa: &[Seg], xb: &[Seg]) -> (Vec<Pair>, f32) {
     let mut out = Vec::with_capacity(n.max(m));
     let (mut i, mut j) = (n, m);
     while i > 0 || j > 0 {
-        if i > 0
-            && j > 0
-            && cost[i][j] == cost[i - 1][j - 1] + sub(xa[i - 1].phone, xb[j - 1].phone)
-        {
+        if i > 0 && j > 0 && cost[i][j] == cost[i - 1][j - 1] + sub(xa[i - 1], xb[j - 1]) {
             out.push((Some(xa[i - 1].phone), Some(xb[j - 1].phone)));
             (i, j) = (i - 1, j - 1);
         } else if i > 0 && cost[i][j] == cost[i - 1][j] + GAP {

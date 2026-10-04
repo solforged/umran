@@ -212,9 +212,11 @@ impl Grammar {
                         let phone = tactics.nuclei
                             [weighted_index(&mut rng, tactics.nuclei.iter().map(|(_, w)| *w))]
                         .0;
-                        template
-                            .slots
-                            .push(TemplateSlot::Vowel(Seg { phone, long: false }));
+                        template.slots.push(TemplateSlot::Vowel(Seg {
+                            phone,
+                            long: false,
+                            tone: None,
+                        }));
                     }
                 }
                 let duplicates = morphology.basic.iter().any(|(_, p)| {

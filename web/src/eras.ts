@@ -18,7 +18,7 @@ export type EraYear = {
   quiet: Annal[];
 };
 export const ERA_OPENERS: ReadonlySet<Annal["kind"]> = new Set(["rose", "fell", "conquest", "faith", "classical"]);
-export const QUIET_KINDS: ReadonlySet<Annal["kind"]> = new Set(["neighbours", "spread", "displaced", "parted", "contact", "climate", "river-flow", "meaning", "respelling", "temper", "law", "grammar", "pronoun-renewed", "pronoun-borrowed", "class-merged", "harmony-gained", "harmony-lost"]);
+export const QUIET_KINDS: ReadonlySet<Annal["kind"]> = new Set(["neighbours", "spread", "displaced", "parted", "contact", "climate", "river-flow", "meaning", "respelling", "temper", "law", "grammar", "pronoun-renewed", "pronoun-borrowed", "class-merged", "harmony-gained", "harmony-lost", "tone-gained", "tone-lost"]);
 /// An opener within this many generations of an era's start stays a
 /// headline inside it; two hundred years is the shortest era.
 export const MIN_ERA = 8;

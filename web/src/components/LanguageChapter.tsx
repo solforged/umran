@@ -57,6 +57,7 @@ export function Sounds({ variety: v }: SectionProps) {
     <h4>Consonants · {v.consonants.length}</h4><p className="segments">{v.consonants.join(" ")}</p>
     <h4>Vowels · {v.vowels.length}</h4><p className="segments">{v.vowels.join(" ")}</p>
     {v.harmony ? <p>{v.harmony.lost === null ? <>Vowel harmony: within a word, vowels agree {HARMONY[v.harmony.feature]}, since {year(v.harmony.since)}.</> : <>Vowel harmony, {HARMONY[v.harmony.feature]}, from {year(v.harmony.since)} until {year(v.harmony.lost)}.</>}</p> : null}
+    {v.tonal ? <p>{v.tonal.lost === null ? <>Tone: {v.tones} pitch {v.tones === 1 ? "pattern tells" : "patterns tell"} words apart, since {year(v.tonal.since)}. Tones are written with Chao tone letters after the vowel.</> : <>Tonal from {year(v.tonal.since)} until {year(v.tonal.lost)}.</>}</p> : null}
     <dl className="chapter-facts"><div><dt>Minimal word</dt><dd>{v.minimalWord}; sound change does not wear a word below it.</dd></div><div><dt>Stress</dt><dd>{STRESS_RULE[v.stress]}.</dd></div><div><dt>Geminates</dt><dd>{v.geminates ? "Long consonants occur in living words." : "No long consonants in living words."}</dd></div></dl>
   </div>;
 }

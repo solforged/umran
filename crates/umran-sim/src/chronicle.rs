@@ -26,7 +26,8 @@ use std::collections::BTreeMap;
 /// Revision 38 adds noun classes with determiner agreement.
 /// Revision 39 adds vowel harmony and two assimilation laws.
 /// Revision 40 adds internal vowel-pattern inflection.
-pub const ENGINE_REVISION: u32 = 40;
+/// Revision 41 adds lexical tone and four tone laws.
+pub const ENGINE_REVISION: u32 = 41;
 /// Revision 33 replaces flat geography and its region identities with a sphere.
 /// Earlier region-targeted actions cannot be replayed on the spherical mesh.
 pub const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;
