@@ -33,7 +33,7 @@ export default defineConfig({
       },
       workbox: {
         // The engine must be available even when a world first opens offline.
-        globPatterns: ["**/*.{js,css,html,wasm,png,svg}"],
+        globPatterns: ["**/*.{js,css,html,wasm,woff2,png,svg}"],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         navigateFallback: "index.html",
         cleanupOutdatedCaches: true,

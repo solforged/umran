@@ -2,6 +2,44 @@
    would draw them from travellers' reports. By day: chart paper,
    iron-gall ink, a vermilion rubric, and the dark wood of the desk the
    setup lies on. chart.css dresses the page and the map. */
+/* One Latin/IPA face must own a whole marked vowel: Google's separate
+   latin-ext/vietnamese files split the base from its tone. These Gentium
+   Book Plus subsets keep mark/mkmk together, under an OFL-safe new name.
+   Rebuild (pinned upstream and licence in the script):
+   uv run --no-project --with 'fonttools[woff]==4.66.1' python scripts/subset-fonts.py */
+@font-face {
+  font-family: "Umran Latin";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/umran-latin-regular.woff2") format("woff2");
+  unicode-range: U+0020-036F, U+1E00-1EFF;
+}
+@font-face {
+  font-family: "Umran Latin";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/umran-latin-italic.woff2") format("woff2");
+  unicode-range: U+0020-036F, U+1E00-1EFF;
+}
+@font-face {
+  font-family: "Umran Latin";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/umran-latin-bold.woff2") format("woff2");
+  unicode-range: U+0020-036F, U+1E00-1EFF;
+}
+@font-face {
+  font-family: "Umran Latin";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/umran-latin-bolditalic.woff2") format("woff2");
+  unicode-range: U+0020-036F, U+1E00-1EFF;
+}
+
 :root {
   --paper: #ece0c2;
   --paper-raised: #f4ead2;
@@ -17,12 +55,12 @@
   --coined: #8a5a0f;
   --event: #9b2c1c;
   --faith: #7a4fa8;
-  --serif: "EB Garamond", "Iowan Old Style", Palatino, Georgia, serif;
-  --sans: "EB Garamond", "Iowan Old Style", Palatino, Georgia, serif;
-  --mono: "Gentium Book Plus", "EB Garamond", Georgia, serif;
-  --display: "IM Fell English", "EB Garamond", Georgia, serif;
-  --caps: "IM Fell English SC", "EB Garamond", Georgia, serif;
-  --initial: "IM Fell English", "EB Garamond", serif;
+  --serif: "EB Garamond", "Umran Latin", "Iowan Old Style", Palatino, Georgia, serif;
+  --sans: "EB Garamond", "Umran Latin", "Iowan Old Style", Palatino, Georgia, serif;
+  --mono: "Umran Latin", "EB Garamond", Georgia, serif;
+  --display: "IM Fell English", "EB Garamond", "Umran Latin", Georgia, serif;
+  --caps: "IM Fell English SC", "EB Garamond", "Umran Latin", Georgia, serif;
+  --initial: "IM Fell English", "EB Garamond", "Umran Latin", serif;
   --dense-size: 0.9rem;
   --dense-row: 0.1rem;
   --dense-pad: 0.35rem 0.55rem;
