@@ -66,6 +66,11 @@ const CONQUEST_INTENSITY: f32 = 0.6;
 /// How much likelier a people is to leave land it shares with a stronger
 /// people.
 const PUSHED: f32 = 2.0;
+/// Extra provisioning effort for a whole people's voyage, not a colony's
+/// expedition radius. V5's 40-seed × 4,000-year cohort at +100 effort-km
+/// gives 420 land / 66 sea migrations (13.58%); +0 gives Medium no sea
+/// migrations, while +200 raises the overall sea share to 21.41%.
+const SEA_MIGRATION_PROVISION_KM: f32 = 100.0;
 /// Share of a weaker people's land a stronger newcomer counts as free:
 /// the locals make room, or are made to.
 const YIELD: f32 = 0.5;
@@ -193,7 +198,7 @@ pub struct Params {
     /// Chance per generation, per unit of strain beyond holding together,
     /// that a people splits.
     pub fission_rate: f32,
-    /// Maximum sea migration or colony journey, in effort-km.
+    /// Maximum colony journey and upper bound on sea migration, in effort-km.
     pub colony_reach: f32,
     /// Chance per generation that a people with no room left takes land
     /// beside its own, scaled by how mobile its way of life makes it.
@@ -248,6 +253,7 @@ pub struct Params {
     /// makes it, and whether a stronger people shares it.
     pub migration_rate: f32,
     /// Maximum whole-people walking journey, in effort-km.
+    /// V5 sea migrants add a small provisioning allowance, capped by colony reach.
     pub migration_reach: f32,
     /// Scales the chance per generation that a sound change spreads from a
     /// variety to one it is in contact with, by the contact's kind and
@@ -377,6 +383,17 @@ impl Default for Params {
 }
 
 impl Params {
+    /// Whole peoples cannot provision a colony-length expedition on V5.
+    /// Older geographies retain their recorded sea-migration radius.
+    pub(crate) fn sea_migration_reach(&self, geography: GeographyVersion) -> f32 {
+        if geography == GeographyVersion::ContinentalV5 {
+            self.colony_reach
+                .min(self.migration_reach + SEA_MIGRATION_PROVISION_KM)
+        } else {
+            self.colony_reach
+        }
+    }
+
     /// Defaults with no growth, splitting, or language shift, for studying
     /// one mechanism in a fixed society.
     pub fn static_society() -> Self {
@@ -2628,6 +2645,7 @@ impl World {
         let mut contacts = self.contact_index();
         let mut journeys = JourneyScratch::new(self.map.regions.len());
         let mut before = Vec::new();
+        let sea_reach = self.params.sea_migration_reach(self.map.geography);
         for c in self.living().collect::<Vec<_>>() {
             if self.communities[c].lands.len() != 1 {
                 continue;
@@ -2671,7 +2689,7 @@ impl World {
                 self,
                 c,
                 &[home],
-                self.params.migration_reach.max(self.params.colony_reach),
+                self.params.migration_reach.max(sea_reach),
                 size,
                 None,
                 true,
@@ -2681,7 +2699,7 @@ impl World {
                 .filter(|&(r, _)| r != home)
                 .filter_map(|(r, journey)| {
                     let reach = if journey.by_sea {
-                        self.params.colony_reach
+                        sea_reach
                     } else {
                         self.params.migration_reach
                     };
@@ -5029,6 +5047,38 @@ fn renewal(
 mod tests {
     use super::*;
 
+    #[test]
+    fn sea_migration_reach_preserves_legacy_geographies_and_respects_both_caps() {
+        let mut params = Params::default();
+        assert_eq!(
+            params.sea_migration_reach(GeographyVersion::ContinentalV5),
+            700.0
+        );
+        params.migration_reach = 400.0;
+        assert_eq!(
+            params.sea_migration_reach(GeographyVersion::ContinentalV5),
+            500.0
+        );
+        for geography in [
+            GeographyVersion::SphericalV1,
+            GeographyVersion::ContinentalV2,
+            GeographyVersion::ContinentalV3,
+            GeographyVersion::ContinentalV4,
+        ] {
+            assert_eq!(params.sea_migration_reach(geography), params.colony_reach);
+        }
+        params.colony_reach = 450.0;
+        assert_eq!(
+            params.sea_migration_reach(GeographyVersion::ContinentalV5),
+            450.0
+        );
+        params.colony_reach = 0.0;
+        assert_eq!(
+            params.sea_migration_reach(GeographyVersion::ContinentalV5),
+            0.0
+        );
+    }
+
     fn water_pair() -> (World, usize, usize) {
         // This mechanism fixture relies on V3 seed geography.
         let mut world = World::with_geography(
@@ -6772,7 +6822,7 @@ mod tests {
                         assert!(from != to && world.map.regions[to].terrain.is_land());
                         let effort: f32 = itinerary.legs.iter().map(|l| l.km).sum();
                         let reach = if by_sea {
-                            world.params.colony_reach
+                            world.params.sea_migration_reach(world.map.geography)
                         } else {
                             world.params.migration_reach
                         };

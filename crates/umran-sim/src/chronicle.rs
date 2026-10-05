@@ -41,7 +41,8 @@ use std::collections::BTreeMap;
 /// Revision 51 makes syncope rhythmic and bounds the clusters it leaves.
 /// Revision 52 adds fleets, rented berths, and migration by sea.
 /// Revision 53 extends plural address to polite only while it differs.
-pub const ENGINE_REVISION: u32 = 53;
+/// Revision 54 separates V5 whole-people sea reach from colony expeditions.
+pub const ENGINE_REVISION: u32 = 54;
 /// Revision 33 replaces flat geography and its region identities with a sphere.
 /// Earlier region-targeted actions cannot be replayed on the spherical mesh.
 pub const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;

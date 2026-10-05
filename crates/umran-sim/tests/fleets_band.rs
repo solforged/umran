@@ -33,15 +33,22 @@ fn fleets_band_40_seeds_4000_years() {
     println!("fleet band elapsed {:.2}s", start.elapsed().as_secs_f64());
 
     // e12e917: 389 land migrations and no sea movement (fecd8e0: 363).
-    // Calibrated on continental-v4 at 368 land, 53 sea (12.6%). On
-    // continental-v5's broken coasts, revision 52 measures 330 land and
-    // 175 sea (34.7%), 143 sea settlements, 152 rented, 62 mixed. Sea
-    // movement must stay a minority and add to land migration, not replace it.
+    // Continental-v4: 368 land, 53 sea (12.6%). Continental-v5 at revision
+    // 53: 330 land, 175 sea (34.7%); revision 54: 420 land, 66 sea (13.58%),
+    // 220 sea settlements, 149 rented, 40 mixed; by size 13%, 3% (1 of 38),
+    // 17%, 12%. Sea movement is a minority overall and never the main way
+    // any size of world migrates; one Medium voyage is too few to pin.
     let land = counts.migrations - counts.sea_migrations;
     let sea_share = counts.sea_migrations as f64 / counts.migrations.max(1) as f64;
-    assert!((292..=453).contains(&land), "{counts:?}");
-    assert!((0.05..=0.45).contains(&sea_share), "{counts:?}");
-    assert!((5..=200).contains(&counts.sea_settlements), "{counts:?}");
+    // V5 measures 420 land migrations (450 at a 600-km sea cap); leave
+    // headroom above the old 453 ceiling without accepting lost land movement.
+    assert!((292..=500).contains(&land), "{counts:?}");
+    assert!((0.08..=0.20).contains(&sea_share), "{counts:?}");
+    for (size, counts) in fleets::SIZES.iter().zip(&sizes) {
+        let share = counts.sea_migrations as f64 / counts.migrations.max(1) as f64;
+        assert!(share <= 0.30, "{size:?}: {counts:?}");
+    }
+    assert!((5..=300).contains(&counts.sea_settlements), "{counts:?}");
     assert!((1..=200).contains(&counts.rented), "{counts:?}");
     assert!((1..=100).contains(&counts.mixed), "{counts:?}");
     assert!(

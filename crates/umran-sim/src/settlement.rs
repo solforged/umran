@@ -118,70 +118,98 @@ mod tests {
             world.plan_settlement(&choice).unwrap_err(),
             format!(
                 "Every inhabited land needs a route within {:.0} effort-km on foot or {:.0} by sea, and enough fleet capacity.",
-                world.params.migration_reach, world.params.colony_reach
+                world.params.migration_reach,
+                world.params.sea_migration_reach(world.map.geography)
             )
         );
     }
 
     #[test]
-    fn sea_migration_uses_colony_reach_without_extending_walks() {
-        let mut world = World::with_map(7, Params::static_society(), MapSize::Medium);
-        let (home, destination) = (0..world.map.regions.len())
-            .find_map(|home| {
-                if !world.map.regions[home]
-                    .neighbours
-                    .iter()
-                    .any(|&r| world.map.regions[r].terrain.is_land())
-                {
-                    return None;
-                }
-                world
-                    .map
-                    .voyage_row(home, 1200.0)
-                    .iter()
-                    .find(|&&(to, _)| world.map.overseas(home, to as usize))
-                    .map(|&(to, _)| (home, to as usize))
-            })
-            .expect("separate shores within colony reach");
-        let c = world.found_seeded(
-            &Naming::People,
-            &SoundProfile::base(),
-            7,
-            0.5,
-            0.5,
-            Some(home),
-            Some(crate::Livelihood::Farming),
-            None,
-        );
-        world.communities[c].size = MIN_PEOPLE;
-        world.learn(c, crate::Craft::Seafaring, None);
-        world.communities[c].fleet.as_mut().unwrap().strength = 0.5;
-        let journey = world.journey_to(c, destination).unwrap();
-        assert!(journey.by_sea);
-        world.params.migration_reach = journey.effort - 1.0;
-        world.params.colony_reach = journey.effort;
-        let mut choice = SettlementChoice {
-            community: c,
-            intent: SettlementIntent::Migration,
-            destination,
-            share: 1.0,
-            naming: None,
-            intensity: 0.5,
-        };
-        let plan = world.plan_settlement(&choice).unwrap();
-        assert!(plan.routes[0].by_sea);
-        assert!(plan.routes[0].effort > world.params.migration_reach);
-        world.params.colony_reach = journey.effort - 1.0;
-        assert!(world.plan_settlement(&choice).is_err());
-        choice.destination = world.map.regions[home]
-            .neighbours
-            .iter()
-            .copied()
-            .find(|&r| world.journey_to(c, r).is_some_and(|j| !j.by_sea))
-            .expect("a neighbouring walk");
-        world.params.migration_reach = 0.0;
-        world.params.colony_reach = 1200.0;
-        assert!(world.plan_settlement(&choice).is_err());
+    fn sea_migration_and_settlers_use_their_versioned_reaches_without_extending_walks() {
+        for geography in [
+            crate::GeographyVersion::ContinentalV4,
+            crate::GeographyVersion::ContinentalV5,
+        ] {
+            let mut world =
+                World::with_geography(7, Params::static_society(), MapSize::Medium, geography);
+            let (home, destination) = (0..world.map.regions.len())
+                .find_map(|home| {
+                    if !world.map.regions[home]
+                        .neighbours
+                        .iter()
+                        .any(|&r| world.map.regions[r].terrain.is_land())
+                    {
+                        return None;
+                    }
+                    world
+                        .map
+                        .voyage_row(home, 1200.0)
+                        .iter()
+                        .find(|&&(to, _)| {
+                            world.map.overseas(home, to as usize)
+                                && world.feeds(to as usize, crate::Livelihood::Farming)
+                                    >= MIN_PEOPLE
+                        })
+                        .map(|&(to, _)| (home, to as usize))
+                })
+                .expect("separate habitable shores within colony reach");
+            let c = world.found_seeded(
+                &Naming::People,
+                &SoundProfile::base(),
+                7,
+                0.5,
+                0.5,
+                Some(home),
+                Some(crate::Livelihood::Farming),
+                None,
+            );
+            world.communities[c].size = 2.0 * MIN_PEOPLE;
+            world.learn(c, crate::Craft::Seafaring, None);
+            world.communities[c].fleet.as_mut().unwrap().strength = 0.5;
+            let journey = world.journey_to(c, destination).unwrap();
+            assert!(journey.by_sea);
+            world.params.migration_reach = journey.effort - 101.0;
+            world.params.colony_reach = journey.effort;
+            let mut choice = SettlementChoice {
+                community: c,
+                intent: SettlementIntent::Migration,
+                destination,
+                share: 1.0,
+                naming: None,
+                intensity: 0.5,
+            };
+            if geography == crate::GeographyVersion::ContinentalV5 {
+                assert!(world.plan_settlement(&choice).is_err());
+                assert!(world.settle(&choice).is_err());
+                assert_eq!(world.communities[c].home(), home);
+                world.params.migration_reach += 2.0;
+            }
+            let plan = world.plan_settlement(&choice).unwrap();
+            assert!(plan.routes[0].by_sea);
+            assert!(plan.routes[0].effort > world.params.migration_reach);
+            world.params.colony_reach = journey.effort - 1.0;
+            assert!(world.plan_settlement(&choice).is_err());
+            choice.destination = world.map.regions[home]
+                .neighbours
+                .iter()
+                .copied()
+                .find(|&r| world.journey_to(c, r).is_some_and(|j| !j.by_sea))
+                .expect("a neighbouring walk");
+            world.params.migration_reach = 0.0;
+            world.params.colony_reach = 1200.0;
+            assert!(world.plan_settlement(&choice).is_err());
+
+            // Settlers still get the whole colony radius, not the migration cap.
+            choice.destination = destination;
+            choice.intent = SettlementIntent::Settlers;
+            choice.share = 0.5;
+            assert!(world.plan_settlement(&choice).is_ok());
+            choice.intent = SettlementIntent::Migration;
+            choice.share = 1.0;
+            world.params.migration_reach = journey.effort;
+            world.settle(&choice).unwrap();
+            assert_eq!(world.communities[c].home(), destination);
+        }
     }
 }
 
@@ -489,6 +517,7 @@ struct Planner<'a> {
     spatial: Spatial,
     sources: Vec<SourceRoutes>,
     walking_reach: f32,
+    sea_reach: f32,
 }
 
 impl<'a> Planner<'a> {
@@ -513,7 +542,12 @@ impl<'a> Planner<'a> {
         } else {
             world.params.colony_reach
         };
-        let reach = walking_reach.max(world.params.colony_reach);
+        let sea_reach = if intent == SettlementIntent::Migration {
+            world.params.sea_migration_reach(world.map.geography)
+        } else {
+            world.params.colony_reach
+        };
+        let reach = walking_reach.max(sea_reach);
         let sources = world
             .presence_iter(community)
             .filter(|(_, n)| *n > 0.0)
@@ -545,6 +579,7 @@ impl<'a> Planner<'a> {
             spatial: world.spatial(),
             sources,
             walking_reach,
+            sea_reach,
         })
     }
 
@@ -618,13 +653,13 @@ impl<'a> Planner<'a> {
             for source in &self.sources {
                 let journey = source.routes.journey(destination)
                     .filter(|j| j.effort <= if j.by_sea {
-                        world.params.colony_reach
+                        self.sea_reach
                     } else {
                         self.walking_reach
                     })
                     .ok_or_else(|| format!(
                         "Every inhabited land needs a route within {:.0} effort-km on foot or {:.0} by sea, and enough fleet capacity.",
-                        self.walking_reach, world.params.colony_reach))?;
+                        self.walking_reach, self.sea_reach))?;
                 let (effort, by_sea) = (journey.effort, journey.by_sea);
                 let itinerary = if paths {
                     source.routes.itinerary(world, destination)

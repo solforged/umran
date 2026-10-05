@@ -642,7 +642,9 @@ This bookkeeping makes no random draws and does not itself change replay.
   on one land may also migrate whole (`migration_rate`): likelier the
   more crowded home is, the more mobile its land and way of life make it,
   and when a stronger people shares it. Migrants go to better land within
-  `migration_reach` on foot and `colony_reach` by sea. They count half of
+  `migration_reach` on foot. V5 sea migration adds a 100-effort-km
+  provisioning allowance, capped by `colony_reach`; earlier geographies
+  use `colony_reach` for sea migration. They count half of
   a weaker people's land as free, so strong peoples push into good land
   others hold. A stronger people that outnumbers another on one of its
   several lands crowds it off. Peoples learn a way of life that feeds them half
@@ -1214,9 +1216,10 @@ absolute veto over every overseas destination. Automatic pressure-driven
 colonies now reach the selector; land and sea destinations compete by
 room per journey effort, with the existing seaward preference. Sea effort
 is 0.5 rather than 3. The migration hazard, walking costs, 600-effort-km
-walking radius, and squared walking distance penalty are unchanged. Ships
-use the existing 1,200-effort-km colony radius, linear distance penalty,
-and seaward preference: provisioning a voyage follows the colony model.
+walking radius, and squared walking distance penalty are unchanged.
+The original fleet calibration gave ships the existing 1,200-effort-km
+colony radius, linear distance penalty, and seaward preference; V5's
+whole-people sea radius is now separated from colony expeditions below.
 The shortest transport route determines its mode before the applicable
 radius is checked; a pointless boat detour cannot turn a distant walk
 into a sea migration. Climate still supplies pressure through the same
@@ -1242,15 +1245,96 @@ capacity. The full sample recipe has 11 fleets built, two land migrations,
 and no sea movements; it is included without inventing a per-world floor.
 
 Those figures were measured on continental-v4 maps. On continental-v5,
-with its broken coasts and more islands, the same cohort at revision 52
-records 330 land and 175 sea migrations (34.65% by sea), 143 travelling
+with its broken coasts and more islands, the same cohort at revision 53
+recorded 330 land and 175 sea migrations (34.65% by sea), 143 travelling
 sea settlements, 152 rented journeys, 62 mixed itineraries, 1,694 fleets
 built and 257 lost, and 448 sea corridors. Land migration stays within
 its earlier band; sea movement adds to it rather than replacing it. Small
 worlds go by sea most often (54% of migrations), medium ones least (17%).
 The full sample recipe builds 27 fleets and makes one sea settlement.
 
-The band runs in 159.96 seconds in release. For the same three-founder
+The matched-map diagnostic (`sea_migration -- 40`, seeds 0–39 with the
+same size rotation) separates physical opportunity from fleet, contact,
+capacity, and demographic gates:
+
+| Size | Coastal land cells, V4 → V5 | Islands, V4 → V5 | Walk destinations per shore at 600, V4 → V5 | Boat-shortest destinations per shore at 1,200, V4 → V5 |
+| --- | ---: | ---: | ---: | ---: |
+| Small | 40.3% → 76.2% | 39 → 54 | 23.09 → 13.95 | 32.55 → 53.42 |
+| Medium | 27.2% → 45.3% | 72 → 87 | 25.94 → 20.96 | 31.61 → 37.43 |
+| Large | 26.6% → 46.8% | 56 → 141 | 8.45 → 7.70 | 6.00 → 7.67 |
+| Vast | 14.8% → 27.5% | 34 → 489 | 9.94 → 7.79 | 4.64 → 8.67 |
+
+These are coast-to-coast routes, not predictions of complete mixed
+itineraries. On V5, respectively 77.8%, 64.7%, 51.9%, and 62.2% of those
+boat-shortest destinations cross between landmasses; on V4 the shares
+were 53.0%, 39.8%, 27.2%, and 12.0%. Neither the 100-effort-km charge at
+each shore nor sea effort of 0.5 changed with V5. Minimum boat-shortest
+costs barely changed: 334/340/472/484 became 334/339/468/470 effort-km.
+The new geometry provides more ports and overseas targets while taking
+away walkable alternatives.
+
+Small is also physically small: its 800-km radius makes the old
+1,200-effort-km sea-migration reach 1.5 radii, versus 0.75, 0.375, and
+0.188 on the other sizes. All 1,463 sampled Small shores can reach a
+boat-shortest destination at 1,200; they average 53.42 such destinations
+against only 13.95 walking destinations at 600. At 600, sea destinations
+fall to 3.85 per shore. Linear sea weighting against squared walking
+weighting further favours those numerous destinations, even though
+boats already spend less effort per physical kilometre.
+
+Rented berths amplify access rather than bypassing the capacity gate:
+only a quarter of a contacted carrier's transport is offered. V5 builds
+1,694 fleets against V4's 1,319, and 152 of its 318 sea migrations and
+settlements use rented transport (47.8%, versus V4's 30 of 66, 45.5%).
+Small's 18 rented journeys among 21 sea movements make shared access
+especially important there. These event counts describe realised use,
+not an additive causal attribution: geography also changes settlement,
+population, and subsequent contact histories.
+
+Revision 54 distinguishes provisioning a whole-people move from sending
+settlers. On V5, automatic migration and authored settlement planning
+share `min(colony_reach, migration_reach + SEA_MIGRATION_PROVISION_KM)`
+for sea migration: 700 effort-km by default, against 600 on foot and
+1,200 for settlers. The named 100-effort-km provisioning allowance is
+calibrated, not a new physical speed or a historical estimate. Sea
+effort, embarkation costs, linear sea weighting, migration hazards,
+fleet capacities, rented-berth shares, and colony journeys are unchanged.
+All earlier geography versions retain their original reach and replay
+behaviour; no random stream changes.
+
+The reach experiments explain why the allowance is nonzero. A 600 sea
+cap gave 450 land / 41 sea migrations (8.35%) but no Medium sea migration.
+That is not an absence of Medium sea routes: 70.8% of its V5 shores have
+a boat-shortest destination at 600, rising to 90.1% at 700 and 97.3% at
+800; candidate destinations per shore rise from 3.13 to 6.24 to 10.37.
+The cohort's realised Medium sea migrations are respectively 0, 1, and
+2. At 800, however, the overall sea share rises to 21.41% and Small to
+33.33%. At 700, every size has sea migration and the overall share is
+13.58%. Changing only sea weighting from linear to squared left 26.24%
+by sea, so the existing weighting was retained.
+
+| Size | Revision 53 land | Revision 53 sea | Sea share | Revision 54 land | Revision 54 sea | Sea share |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Small | 13 | 15 | 53.57% | 20 | 3 | 13.04% |
+| Medium | 35 | 7 | 16.67% | 37 | 1 | 2.63% |
+| Large | 116 | 62 | 34.83% | 170 | 35 | 17.07% |
+| Vast | 166 | 91 | 35.41% | 193 | 27 | 12.27% |
+| Total | 330 | 175 | 34.65% | 420 | 66 | 13.58% |
+
+Revision 54 also records 220 travelling sea settlements, 149 rented
+journeys, 40 mixed itineraries, 1,753 fleets built and 314 lost, and 384
+sea corridors. Travelling settlements increase rather than disappearing
+as whole-people sea moves fall. The
+authored controls remain 160 sea settlements, 40 rented journeys,
+80 corridors, and 40 capacity refusals. The sample remains two land
+migrations, one rented mixed sea settlement, and 27 fleets built.
+The band requires 8–20% sea migration overall, positive sea migration
+and at most 30% at each size, 292–500 land migrations, and positive sea
+settlements, rented journeys, and mixed itineraries. The land ceiling
+has headroom over V5's 420 (and the 600-cap experiment's 450); the
+sea-settlement ceiling is 300 rather than the earlier 200.
+
+The original V4 band ran in 159.96 seconds in release. For the same three-founder
 Vast timing recipe (`calibrate -- geography 1 160 vast 3`), pre-change
 median/p95 step times were 34.71/73.78 ms at 632.76 years/s; with fleets
 and sea movement they are 30.69/66.89 ms at 706.45 years/s. Startup changes
