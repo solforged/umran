@@ -1765,18 +1765,39 @@ impl World {
             name = match free {
                 Some(free) => free,
                 None => {
-                    let mut whole = wholes.into_iter().next().unwrap_or(name);
+                    let mut candidates = wholes.into_iter();
+                    let mut whole = candidates.next().unwrap_or(name);
+                    let mut first = None;
                     let new = Naming::Epithet {
                         epithet: "new".into(),
                     };
-                    while taken(&whole) {
-                        let spelled = daughter.title(&whole.form);
-                        match new.coin_whole(&daughter, Some((&whole, &spelled)), self.generation) {
-                            Ok(longer) => whole = longer,
-                            Err(_) => break,
+                    'choose: loop {
+                        while taken(&whole) {
+                            let spelled = daughter.title(&whole.form);
+                            match new.coin_whole(
+                                &daughter,
+                                Some((&whole, &spelled)),
+                                self.generation,
+                            ) {
+                                Ok(longer) if longer.form.segs == whole.form.segs => break,
+                                Ok(longer) => whole = longer,
+                                Err(_) => break 'choose whole,
+                            }
+                        }
+                        if !taken(&whole) {
+                            break whole;
+                        }
+                        // Hiatus fusion can consume the entire prefix, making
+                        // qualification a fixed point. Only then try the next
+                        // whole name; terminating first choices stay unchanged.
+                        if first.is_none() {
+                            first = Some(whole);
+                        }
+                        match candidates.next() {
+                            Some(next) => whole = next,
+                            None => break first.unwrap(),
                         }
                     }
-                    whole
                 }
             };
         }
@@ -6315,6 +6336,78 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn fixed_point_epithets_try_other_whole_names_without_hanging() {
+        // V6 seed 0, generation 188, community 31 exposed a one-vowel
+        // "new" consumed by hiatus fusion before an identical vowel.
+        // Short whole candidates bypass the usual three-syllable search.
+        let (send, receive) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            for (epithet, all_taken, expected) in [
+                ("aː", false, "aːtaːt"),
+                ("aː", true, "aːt"),
+                ("ka", false, "kat"),
+            ] {
+                let mut world = World::new(0, Params::static_society());
+                let parent = world.found(&SoundProfile::base(), 0.5, 0.5);
+                let other = world.found(&SoundProfile::base(), 0.5, 0.5);
+                let short = Form::from_ipa("aːt").unwrap();
+                world.communities[parent].name.form = short.clone();
+                world.communities[other].name.form =
+                    Form::from_ipa(if all_taken { "aːtaːt" } else { "u" }).unwrap();
+                let variety = &mut world.varieties[world.communities[parent].variety];
+                variety.morphology.names.head_first = false;
+                for word in &mut variety.lexicon.lexemes {
+                    word.form = short.clone();
+                }
+                let new = variety
+                    .lexicon
+                    .word_for(crate::concepts::by_id("new").unwrap())
+                    .unwrap()
+                    .id;
+                variety.lexicon.get_mut(new).form = Form::from_ipa(epithet).unwrap();
+                // An unnamed destination excludes Naming::Land, whose
+                // inherited name is deliberately not part of this fixture.
+                let region = world
+                    .map
+                    .regions
+                    .iter()
+                    .enumerate()
+                    .find(|(r, region)| {
+                        region.terrain.is_land()
+                            && world.communities.iter().all(|c| !c.lands.contains(r))
+                    })
+                    .unwrap()
+                    .0;
+                assert!(world.places[region].is_empty());
+                let daughter = world.divide(
+                    parent,
+                    Some(&Naming::People),
+                    0.0,
+                    crate::settlement::Division {
+                        region,
+                        lands: vec![region],
+                        share: Some(0.5),
+                        by_sea: false,
+                        record: false,
+                        cause: None,
+                    },
+                    None,
+                );
+                assert_eq!(
+                    world.communities[daughter].name.form.segs,
+                    Form::from_ipa(expected).unwrap().segs,
+                    "epithet {epithet}, all_taken {all_taken}"
+                );
+            }
+            send.send(()).unwrap();
+        });
+        receive
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("a fixed-point epithet must not hang name selection");
+        worker.join().unwrap();
     }
 
     #[test]
