@@ -40,10 +40,12 @@ Read further when the task touches it:
   screens of `docs/book.md`: the chart room (`ChartRoom`: the author's
   worlds, the last opened leading, each a miniature of its map drawn
   from its seed with the peoples saved in the shelf index); founding
-  (`Founding`: the chart with its title box and the book of accounts,
-  one line per people when closed, six stages when open, each choice a
-  `Phrase` that opens a menu; `ReachOverlay` draws who can meet whom);
-  the workshop (`Stage`: `MapView` with its layers, label policy by
+  (`Founding`: inspect a homeland on the chart or globe, then explicitly
+  found or move peoples; a persistent roster beside a compact portrait,
+  with grammar and names in disclosures and shared ancestral speech for
+  related groups; each choice a `Phrase` that opens a menu);
+  the workshop (`Stage`: `MapView` with chart and globe projections,
+  imperative globe rotation outside React rendering, reach, layers,
   zoom, and the `lens` that draws the chart as one people knew it; the
   world's cartouche and menu top-left, Find and the layers top-right,
   the gazetteer (`gazetteer.ts` arranges the facade's native names and

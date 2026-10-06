@@ -123,9 +123,9 @@ the engine, not a second source. Blank where the engine has nothing yet.
 ## A spherical world, two views
 
 The chart remains the first view, with a rotatable inked globe beside it
-as a choice in the cartouche. Founding, lands, journeys, names, and cards
-refer to the same world in both views. A projection is a way of reading,
-not a decision in the world's history.
+as a choice next to the map's navigation controls. Founding, lands,
+journeys, names, and cards refer to the same world in both views.
+A projection is a way of reading, not a decision in the world's history.
 
 The world is spherical from its founding. A people's known-world lens can
 show how its geographic knowledge grows on either view; it does not change
@@ -148,17 +148,27 @@ its chronicle, never a comma list of language names.
 
 ### Founding
 
-The chart, with the title box, and the book of accounts beside it. The
-accounts are the navigation: each people is one inked line when closed
-("Hū · the people · farmers of Nūhupam · soft-spoken, rich in f, th,
-kh") and opens into its six stages when chosen (homeland, livelihood,
-temper, speech, grammar, identity). This scales to twelve
-peoples without a tab strip. Reach is drawn on the chart when an account
-is open (a ring, neighbours it can meet shaded), with effort on hover,
-not listed as lines of effort-km. The sound chart and naming pattern are
-one click from the account, since that is where this author spends their
-time. The world is named here, defaulting to the landmass. The footer
-verb is *Begin*; nothing else is in the footer.
+Begin with an unpopulated world. Selecting a land inspects its terrain,
+area, rivers, and inhabitants; it never moves a people silently.
+*Found a people here* places one people. *A group…* places two to six
+neighbours in distinct, reachable homelands, either with independent
+languages or with speech inherited from a common founding people.
+Related speech has real ancestry in the engine; matching sound presets
+alone do not make a family. Moving an existing people is a separate action.
+
+A compact roster stays visible while a separate portrait scrolls beneath
+it. The portrait brings homeland, livelihood, temper, and a word specimen
+together. Grammar and names open as disclosures; the full sound chart
+opens separately. Related peoples share their ancestral sound and grammar
+choices while the world is being drafted. Reach is drawn on the chart
+for the selected people, with effort on hover.
+
+The framed world title and size dropdown sit over the map. *Details*
+holds author, seed, physical dimensions, and *Redraw the coasts*.
+Changing size or redrawing after founding requires an explicit choice to
+relocate the peoples; their speech and kinship survive. The footer's
+verb is *Begin*. One starting region is enough; there is no requirement
+to populate the globe.
 
 ### The workshop (the stage)
 
