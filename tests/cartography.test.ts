@@ -4,6 +4,7 @@ import {
   chartPoint,
   createCartography,
   geographicPoint,
+  lakeOutline,
   riverPoints,
   sharedBorder,
   type MapPoint,
@@ -440,4 +441,43 @@ describe("canonical coastal borders and river courses", () => {
     expect(bounds(segments(globe.line(points)))[0]).toBeCloseTo(90, 5);
     expect(bounds(segments(globe.line(points)))[2]).toBeCloseTo(90, 5);
   });
+});
+
+describe("region-following lake shores", () => {
+  test("a bent lake retains its dry bay and has no ink on internal cell borders", () => {
+    const cell = (x: number, y: number, neighbours: number[]) => ({
+      center: [x + 5, y + 5] as MapPoint, neighbours,
+      boundary: [[x, y], [x, y + 10], [x + 10, y + 10], [x + 10, y]] as MapPoint[],
+    });
+    const map = world([cell(0, 0, [1]), cell(10, 0, [0, 2]), cell(10, 10, [1])]);
+    const lake = { id: 7, regions: [0, 1, 2], outlet: null };
+    const outline = lakeOutline(map, lake), chart = createCartography(map);
+    expect(outline.fills).toHaveLength(3);
+    expect(outline.shores).toHaveLength(8);
+    const water = outline.fills.map((fill) => segments(chart.area(fill)));
+    for (const region of map.regions) expect(water.some((rings) => contains(rings, region.site))).toBe(true);
+    expect(water.some((rings) => contains(rings, chartPoint(map, [5, 15])))).toBe(false);
+    expect(lakeOutline(map, lake)).toEqual(outline);
+    expect(lakeOutline(map, { ...lake, id: 8 }).fills).not.toEqual(outline.fills);
+    expect(lake.regions).toEqual([0, 1, 2]);
+  });
+
+  test.each([[179, 30], [30, 81], [-50, -86]] as MapPoint[])(
+    "seam and polar lakes keep their spherical footprint at %j", (longitude, latitude) => {
+      const center: MapPoint = [longitude, latitude];
+      const boundary = geoCircle().center(center).radius(6).precision(24)().coordinates[0].slice(0, -1) as MapPoint[];
+      const map = world([{ center, boundary }]);
+      const outline = lakeOutline(map, { id: 1, regions: [0], outlet: null });
+      const globe = createCartography(map, "globe", center);
+      const rings = segments(globe.area(outline.fills[0]));
+      const [left, top, right, bottom] = bounds(rings);
+      expect(contains(rings, [90, 90])).toBe(true);
+      expect((right - left) / (bottom - top)).toBeGreaterThan(0.85);
+      expect((right - left) / (bottom - top)).toBeLessThan(1.15);
+      expect(right - left).toBeGreaterThan(17);
+      const chart = createCartography(map);
+      expect(contains(segments(chart.area(outline.fills[0])), map.regions[0].site)).toBe(true);
+      for (const shore of outline.shores) segments(chart.line(shore));
+    },
+  );
 });

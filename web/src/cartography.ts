@@ -191,52 +191,67 @@ function lineGeometry(map: WorldMap, points: readonly MapPoint[]): LineString {
   return line;
 }
 
-/** A lake's inferred shore is one rounded hull, not separate inset land tiles.
- * Unwrap around its first land before taking the hull so seam lakes stay local.
- * Sample a closed cubic B-spline once in the source plane; both projections
- * then draw and horizon-clip the very same smooth geographic shoreline. */
-export function lakeOutline(map: WorldMap, lake: Lake): { shore: MapPoint[]; ripple: MapPoint[]; center: MapPoint } {
-  const origin = map.regions[lake.regions[0]].site[0];
-  const vertices = lake.regions.flatMap((id) => {
-    const region = map.regions[id];
-    return region.boundary.map((point): MapPoint => {
-      const [x, y] = chartPoint(map, geoInterpolate(region.center, point)(0.75) as MapPoint);
-      return [origin + ((x - origin + map.width * 1.5) % map.width) - map.width / 2, y];
-    });
-  }).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  const cross = (a: MapPoint, b: MapPoint, c: MapPoint) =>
-    (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-  const half = (points: MapPoint[]) => {
-    const out: MapPoint[] = [];
-    for (const point of points) {
-      while (out.length > 1 && cross(out[out.length - 2], out[out.length - 1], point) <= 0) out.pop();
-      out.push(point);
-    }
-    out.pop();
-    return out;
+/** Follow the water's cells, including bays and islands, rather than their hull.
+ * Only exposed edges retreat into their own cell. Shared edges stay identical
+ * and disappear under the fill. All sampling is spherical: longitude is not a
+ * distance near a pole, and a chart-space spline can flatten a polar shore.
+ * The small ID-keyed variation is ink geometry, not engine randomness. */
+export function lakeOutline(map: WorldMap, lake: Lake): { fills: MapPoint[][]; shores: MapPoint[][]; center: MapPoint } {
+  const members = new Set(lake.regions);
+  const fills: MapPoint[][] = [], shores: MapPoint[][] = [];
+  const variation = (region: number, edge: number, step: number) => {
+    let hash = Math.imul(lake.id + 1, 0x45d9f3b) ^ Math.imul(region + 1, 0x27d4eb2d)
+      ^ Math.imul(edge + 1, 0x165667b1) ^ Math.imul(step + 1, 0x85ebca6b);
+    hash = Math.imul(hash ^ (hash >>> 16), 0x45d9f3b);
+    return ((hash ^ (hash >>> 16)) >>> 0) / 4294967296;
   };
-  const hull = [...half(vertices), ...half([...vertices].reverse())];
-  const shore: MapPoint[] = [];
-  for (let i = 0; i < hull.length; i++) {
-    const a = hull[(i + hull.length - 1) % hull.length], b = hull[i];
-    const c = hull[(i + 1) % hull.length], d = hull[(i + 2) % hull.length];
-    for (let step = 0; step < 8; step++) {
-      const t = step / 8, t2 = t * t, t3 = t2 * t;
-      const weights = [(1 - 3 * t + 3 * t2 - t3) / 6, (4 - 6 * t2 + 3 * t3) / 6,
-        (1 + 3 * t + 3 * t2 - 3 * t3) / 6, t3 / 6];
-      shore.push([a[0] * weights[0] + b[0] * weights[1] + c[0] * weights[2] + d[0] * weights[3],
-        a[1] * weights[0] + b[1] * weights[1] + c[1] * weights[2] + d[1] * weights[3]]);
+  for (const id of lake.regions) {
+    const region = map.regions[id], vertices = vectorsFor(map, region);
+    const neighbours = region.neighbours.filter((other) => members.has(other))
+      .map((other) => vectorsFor(map, map.regions[other]));
+    const shared = vertices.map((vertex, edge) => neighbours.some((boundary) => boundary.some((point, i) =>
+      sameVertex(vertex, point) && (
+        sameVertex(vertices[(edge + 1) % vertices.length], boundary[(i + 1) % boundary.length])
+        || sameVertex(vertices[(edge + 1) % vertices.length], boundary[(i + boundary.length - 1) % boundary.length])
+      ))));
+    const inset = vertices.map((_, edge) => shared[edge] || shared[(edge + vertices.length - 1) % vertices.length]
+      ? 0 : 0.14 + variation(id, edge, 0) * 0.14);
+    const fill: MapPoint[] = [];
+    for (let edge = 0; edge < vertices.length; edge++) {
+      const next = (edge + 1) % vertices.length;
+      const a = region.boundary[edge], b = region.boundary[next];
+      if (shared[edge]) {
+        fill.push(chartPoint(map, a));
+        continue;
+      }
+      const along = geoInterpolate(a, b), shore: MapPoint[] = [];
+      // Limit the retreat by edge length as well as distance to the cell
+      // centre, so finely refined boundaries acquire coves, not long teeth.
+      const edgeLength = geoDistance(a, b);
+      for (let step = 0; step <= 6; step++) {
+        const t = step / 6, point = along(inset[edge] + t * (1 - inset[edge] - inset[next])) as MapPoint;
+        const inward = geoDistance(point, region.center);
+        const depth = Math.min(0.065, edgeLength / Math.max(inward, 1e-12) * 0.1)
+          * Math.sin(Math.PI * t) * (0.45 + 0.55 * variation(id, edge, step));
+        shore.push(chartPoint(map, geoInterpolate(point, region.center)(depth) as MapPoint));
+      }
+      if (inset[next]) {
+        const start = along(1 - inset[next]);
+        const end = geoInterpolate(b, region.boundary[(next + 1) % vertices.length])(inset[next]);
+        for (let step = 1; step <= 4; step++) {
+          const t = step / 4;
+          shore.push(chartPoint(map, geoInterpolate(geoInterpolate(start, b)(t), geoInterpolate(b, end)(t))(t) as MapPoint));
+        }
+      }
+      fill.push(...shore.slice(0, -1));
+      shores.push(shore);
     }
+    fills.push(fill);
   }
-  let area = 0, x = 0, y = 0;
-  for (let i = 0; i < shore.length; i++) {
-    const a = shore[i], b = shore[(i + 1) % shore.length], weight = a[0] * b[1] - b[0] * a[1];
-    area += weight; x += (a[0] + b[0]) * weight; y += (a[1] + b[1]) * weight;
-  }
-  const center: MapPoint = area ? [x / (3 * area), y / (3 * area)] : map.regions[lake.regions[0]].site;
-  const ripple = shore.map(([x, y]): MapPoint => [center[0] + (x - center[0]) * 0.84, center[1] + (y - center[1]) * 0.84]);
-  ripple.push(ripple[0]);
-  return { shore, ripple, center };
+  // Keep the lettering anchored in an actual member cell, even for a
+  // crescent-shaped lake whose arithmetic centroid would lie on dry land.
+  const center = map.regions[lake.regions[0]].site;
+  return { fills, shores, center };
 }
 
 /** Map geometry and supplied point arrays must not be mutated after use. */

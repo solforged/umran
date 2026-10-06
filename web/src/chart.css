@@ -257,11 +257,34 @@
   vector-effect: non-scaling-stroke;
 }
 
-/* Inland water uses one rounded shore and the chart's faint coastal ink. */
-.chart-lake .lake-ripple {
+/* The lake's fill joins its member cells. Ink only the exposed shore, so
+   neither tile seams nor an invented convex hull cross the water. */
+.chart-lake .lake-water {
+  stroke: none;
+}
+.chart-lake .lake-shore {
   fill: none;
+  stroke-width: 0.9;
+  stroke-opacity: 0.8;
+}
+/* A ruled latitude frame marks the paper's edge, not a polar coastline.
+   The pale outer stroke gives both themes the same narrow chart margin. */
+.chart-neatline path {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+.chart-neatline .chart-edge-paper {
+  stroke: var(--paper);
+  stroke-width: 9;
+}
+.chart-neatline .chart-edge-rule {
+  stroke: var(--ink-soft);
+  stroke-width: 1;
+}
+.chart-neatline .chart-edge-ticks {
+  stroke: var(--ink-soft);
   stroke-width: 0.7;
-  stroke-opacity: 0.22;
+  stroke-opacity: 0.7;
 }
 .chart-marks path {
   stroke: var(--ink);
@@ -519,6 +542,7 @@
 .inspector-sayings { list-style: none; padding: 0; margin: 0.3rem 0; max-height: min(18rem, 40vh); overflow-y: auto; }
 .inspector-sayings li { padding: var(--dense-row) 0; border-bottom: 1px dotted var(--line); }
 .inspector-sayings li:last-child { border: 0; }
+.map-inspector .inspector-more { color: var(--ink-soft); font-size: 0.9em; }
 .inspector-language { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.3em; font-variant: small-caps; color: var(--accent); }
 .inspector-language small { color: var(--ink-soft); font-size: 0.8em; }
 .inspector-spelled { font-style: italic; overflow-wrap: anywhere; }
@@ -599,6 +623,7 @@
     bottom: 1.6rem;
     right: 4.8rem;
   }
+  :root .setup .mapview .chart-scale { bottom: 5rem; }
   :root .setup .map-zoom { top: auto; bottom: 1.6rem; }
   .setup .mapview svg.chart-rose {
     left: 1.6rem;

@@ -125,6 +125,17 @@ export function MapInspector({ container, inspection, map, overview, generation,
 
   const reading = shown ? gazette(shown.feature, map, overview, generation, { selectedVariety, riverNames, lakeNames, climate, known }) : null;
   if (reading && !onOpen) reading.open = null;
+  // The people's card already holds the complete "Called by others" section.
+  const exonyms = reading?.feature.kind === "people" && reading.open
+    ? reading.sayings.filter((saying) => saying.relation === "exonym") : [];
+  const hiddenExonyms = new Set(exonyms.slice(2));
+  const sayings = reading?.sayings.filter((saying) => !hiddenExonyms.has(saying)) ?? [];
+  const openCard = () => {
+    if (!reading?.open) return;
+    onOpen?.(reading.open.subject);
+    pinnedRef.current = false; shownRef.current = null;
+    setPinned(false); setShown(null);
+  };
   useLayoutEffect(() => {
     if (!host || !shown || !panel.current) return;
     const measure = () => {
@@ -133,7 +144,7 @@ export function MapInspector({ container, inspection, map, overview, generation,
       const x = shown.at[0] - bounds.left, y = shown.at[1] - bounds.top;
       const left = x + 14 + card.width <= bounds.width - 8 ? x + 14 : x - card.width - 14;
       const top = y + 14 + card.height <= bounds.height - 8 ? y + 14 : y - card.height - 14;
-      setPosition({ left: Math.max(8, Math.min(left, bounds.width - card.width - 8)), top: Math.max(8, Math.min(top, bounds.height - card.height - 8)), maxHeight: Math.max(0, bounds.height - 16) });
+      setPosition({ left: Math.max(8, Math.min(left, bounds.width - card.width - 8)), top: Math.max(8, Math.min(top, bounds.height - card.height - 8)), maxHeight: Math.max(0, Math.min(320, bounds.height - 16)) });
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -152,13 +163,15 @@ export function MapInspector({ container, inspection, map, overview, generation,
     <header><h3 id={id}>{reading.title}</h3><button type="button" className="link inspector-close" aria-label="Close place inspector"
       onClick={() => { pinnedRef.current = false; shownRef.current = null; setPinned(false); setShown(null); }}>×</button></header>
     {reading.subtitle ? <p className="inspector-subtitle">{reading.subtitle}</p> : null}
-    {reading.sayings.length ? <ul className="inspector-sayings">{reading.sayings.map((saying, index) => <li key={`${saying.variety}:${saying.relation}:${index}`} data-relation={saying.relation}>
+    {sayings.length ? <ul className="inspector-sayings">{sayings.map((saying, index) => <li key={`${saying.variety}:${saying.relation}:${index}`} data-relation={saying.relation}>
       <div className="inspector-language">{saying.language}<small>{RELATION[saying.relation]}{saying.relation === "former" && saying.since !== undefined ? ` · ${saying.since * YEARS}` : ""}</small></div>
       <span className="inspector-spelled">{saying.spelled}</span>{saying.ipa ? <> <span className="ipa">/{saying.ipa}/</span></> : null}
       {saying.meaning ? <span className="inspector-meaning">“{saying.meaning}”</span> : null}
     </li>)}</ul> : null}
+    {hiddenExonyms.size ? <button type="button" className="link inspector-more" onClick={openCard}
+      aria-label={`Open people's card for ${hiddenExonyms.size} more names`}>and {hiddenExonyms.size} more →</button> : null}
     {reading.facts.length ? <dl className="inspector-facts">{reading.facts.map((fact) => <div key={fact.label}><dt>{fact.label}</dt><dd>{fact.value}</dd></div>)}</dl> : null}
-    <footer>{reading.open ? <button type="button" className="link" onClick={() => { onOpen?.(reading.open!.subject); pinnedRef.current = false; shownRef.current = null; setPinned(false); setShown(null); }}>{reading.open.label} →</button> : null}
+    <footer>{reading.open ? <button type="button" className="link" onClick={openCard}>{reading.open.label} →</button> : null}
       {!pinned && pinnable ? <small>Click the place to keep it open</small> : null}</footer>
   </div>, host);
 }

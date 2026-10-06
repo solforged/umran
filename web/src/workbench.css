@@ -316,7 +316,7 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .chart-lake { cursor: pointer; }
 .chart-lake path { fill: var(--sea); stroke: var(--ink); stroke-width: 1.2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .chart-lake:focus { outline: none; }
-.chart-lake:is(:hover, :focus-visible) path { stroke: var(--accent); }
+.chart-lake:is(:hover, :focus-visible) .lake-shore { stroke: var(--accent); }
 .lake-names { cursor: pointer; }
 .lake-names text { text-anchor: middle; }
 .river-names { pointer-events: none; }
@@ -342,11 +342,8 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
   .chart-scale { gap: .5rem; left: .4rem; font-size: .66rem; max-width: calc(100% - 1rem); }
 }
 .chart-ripples path { stroke-linecap: round; }
-.zoom-close .people-dot { display: none; }
 .mapview .people text { font-size: max(calc(.24px * var(--label, 1)), var(--people-label-min, 0px)); }
 .mapview .people.chosen text { font-size: max(calc(.3px * var(--label, 1)), var(--people-label-min, 0px)); }
-.people-leader { stroke: var(--ink-soft); stroke-width: .7; vector-effect: non-scaling-stroke; }
-.mapview .people text.people-label-mark { font-family: var(--serif); font-variant-numeric: tabular-nums; }
 .route.route-sea { stroke-dasharray: 4 4; stroke-linecap: round; }
 .route.route-river { stroke-linecap: round; stroke-linejoin: round; }
 .mapview .land-cursor { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: 4 2; vector-effect: non-scaling-stroke; }

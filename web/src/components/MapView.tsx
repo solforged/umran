@@ -551,23 +551,13 @@ export function MapView({
     }
     const kmPerPixel = (projection === "globe" ? 2 * map.radiusKm / height : map.kmPerUnit) / pixelsPerUnit;
     stateBorders.current?.style.setProperty("--state-weight", String(1 + 2 * Math.min(1, (1 - ratio) / 0.6)));
-    if (!moving.current) {
     const occupied: DOMRect[] = [];
     const named = new Set<string>();
-    // Measure the actual font, not character-count estimates. Visibility
-    // preserves geometry, so a suppressed label can return on the next frame.
+    // Keep names at their geographic anchors. Priority decides which fit;
+    // zoom reveals the rest without sending leaders across the chart.
     for (const text of lettering.current) {
       text.style.visibility = "";
       if (text.dataset.labelKind === "river") text.setAttribute("dy", String(-0.06 * label));
-      if (text.dataset.labelKind === "people") {
-        if (text.textContent !== text.dataset.labelFull) text.textContent = text.dataset.labelFull!;
-        text.setAttribute("x", "0");
-        text.setAttribute("y", "0");
-        text.classList.remove("people-label-mark");
-        text.parentElement?.querySelector(".tongue-name")?.removeAttribute("transform");
-        const leader = text.parentElement?.querySelector<SVGLineElement>(".people-leader");
-        if (leader) leader.style.visibility = "hidden";
-      }
     }
     const measured = lettering.current.map((text) => ({ text, rect: text.getBoundingClientRect() }));
     // Family hands have different ascenders. Place the land's name above
@@ -607,7 +597,7 @@ export function MapView({
     };
     for (const item of measured) {
       const { text } = item;
-      let { rect } = item;
+      const { rect } = item;
       const kind = text.dataset.labelKind;
       const people = text.dataset.people;
       const allowed = kind === "tongue"
@@ -615,77 +605,16 @@ export function MapView({
         : kind === "land" || kind === "river" || kind === "lake" ? kmPerPixel < LAND_KM_PER_PIXEL : true;
       const inView = rect.right > chartBounds.left && rect.left < chartBounds.right &&
         rect.bottom > chartBounds.top && rect.top < chartBounds.bottom;
-      let displaced = false;
-      if (kind === "people" && inView && rect.width > 0) {
-        // Search in screen pixels using measured lettering. Keep the homeland
-        // dot fixed, and lead to the closest free label instead of losing a people.
-        const place = (original: DOMRect): DOMRect | null => {
-          if (fits(original)) return original;
-          const step = Math.max(10, original.height + LABEL_GAP);
-          const limit = Math.hypot(chartBounds.width, chartBounds.height);
-          for (let radius = step; radius < limit; radius += step) {
-            const count = Math.ceil(2 * Math.PI * radius / step);
-            for (let i = 0; i < count; i++) {
-              const angle = -Math.PI / 2 + i * 2 * Math.PI / count;
-              const candidate = new DOMRect(original.x + Math.cos(angle) * radius,
-                original.y + Math.sin(angle) * radius, original.width, original.height);
-              if (fits(candidate)) return candidate;
-            }
-          }
-          return null;
-        };
-        let placed = place(rect);
-        if (!placed) {
-          // A compact, stable mark still exposes the full name on focus/hover.
-          text.textContent = String(Number(people) + 1);
-          text.classList.add("people-label-mark");
-          rect = text.getBoundingClientRect();
-          placed = place(rect);
-        }
-        if (placed) {
-          const dx = (placed.x - rect.x) / pixelsPerUnit, dy = (placed.y - rect.y) / pixelsPerUnit;
-          displaced = Math.abs(dx) + Math.abs(dy) > 0.001;
-          text.setAttribute("x", String(dx));
-          text.setAttribute("y", String(dy));
-          const tongue = text.parentElement?.querySelector<SVGTextElement>(".tongue-name");
-          if (tongue) {
-            tongue.setAttribute("transform", `translate(${dx} ${dy})`);
-            const measuredTongue = measured.find((item) => item.text === tongue);
-            if (measuredTongue) measuredTongue.rect = tongue.getBoundingClientRect();
-          }
-          const leader = text.parentElement?.querySelector<SVGLineElement>(".people-leader");
-          if (leader) {
-            leader.setAttribute("x2", String(dx));
-            leader.setAttribute("y2", String(dy));
-            leader.style.visibility = displaced ? "" : "hidden";
-          }
-          rect = placed;
-        }
-      }
-      // Water names sit below their centroid. If the land's lettering reaches
-      // there, move below its measured ink instead of hiding the lake's name.
-      if (kind === "lake" && allowed && rect.width > 0) {
-        for (let attempt = 0; attempt < occupied.length; attempt++) {
-          const overlap = occupied.filter((other) => other.left < rect.right + LABEL_GAP && rect.left < other.right + LABEL_GAP &&
-            other.top < rect.bottom + LABEL_GAP && rect.top < other.bottom + LABEL_GAP);
-          if (!overlap.length) break;
-          const y = Number(text.getAttribute("y")) + (Math.max(...overlap.map((other) => other.bottom)) + LABEL_GAP * 2 - rect.top) / pixelsPerUnit;
-          text.setAttribute("y", String(y));
-          rect = text.getBoundingClientRect();
-        }
-      }
-      const collides = overlaps(rect);
-      const visible = allowed && inView && rect.width > 0 && !collides;
+      const visible = allowed && inView && rect.width > 0 && fits(rect);
       text.style.visibility = visible ? "" : "hidden";
       if (visible) { occupied.push(rect); if (kind === "people") named.add(people!); }
       if (kind === "people") {
         const dot = text.parentElement?.querySelector<SVGCircleElement>(".people-dot");
         if (dot) {
-          dot.style.visibility = visible && !displaced ? "hidden" : "";
+          dot.style.visibility = visible ? "hidden" : "";
           dot.setAttribute("r", String(Math.max(0.06 * Math.sqrt(ratio), 2.5 / pixelsPerUnit)));
         }
       }
-    }
     }
     const km = [50, 100, 200, 500, 1000].filter((length) => length <= value[2] * map.kmPerUnit * 0.15).at(-1) ?? 50;
     if (projection === "chart") scaleRule.current?.style.setProperty("--scale-width", `${km / map.kmPerUnit * pixelsPerUnit}px`);
@@ -1435,7 +1364,7 @@ export function MapView({
           })}
         </g>
         <g className="chart-lakes">
-          {lakePaths.map(({ lake, shore, ripple }) => {
+          {lakePaths.map(({ lake, fills, shores }) => {
             if (lake.regions.every(hidden)) return null;
             const name = namedLake(lake);
             return <g key={lake.id} className="chart-lake" data-lake={lake.id}
@@ -1444,8 +1373,8 @@ export function MapView({
               {...inspectEvents({ kind: "lake", lake: lake.id, region: lake.regions.find((region) => !hidden(region))! })}
               onClick={() => dragged() || onLake?.(lake.id)}
               onKeyDown={(e) => { if (onLake && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onLake(lake.id); } }}>
-              <path className="lake-shore" {...bindPath((view) => view.area(shore), "parent")} />
-              <path className="lake-ripple" {...bindPath((view) => view.line(ripple))} pointerEvents="none" />
+              <path className="lake-water" {...bindPath((view) => fills.map((fill) => view.area(fill)).join(""), "parent")} />
+              <path className="lake-shore" {...bindPath((view) => shores.map((shore) => view.line(shore)).join(""))} pointerEvents="none" />
             </g>;
           })}
         </g>
@@ -1663,12 +1592,11 @@ export function MapView({
                 }}
               >
                 <title>{localName}</title>
-                <line className="people-leader" x1={0} y1={0} x2={0} y2={0} pointerEvents="none" />
                 <circle className="people-dot" cx={0} cy={0} r={0.06 * label}
                   style={{ fill: tint.kind === "words" && word ? hue(word.group) : hue(family(c)) }} />
                 <text x={0} y={0}
-                  data-label-kind="people" data-people={c.id} data-label-priority={100 + c.size}
-                  data-label-full={text}
+                  data-label-kind="people" data-people={c.id}
+                  data-label-priority={100 + c.size * (overview.states.some((state) => state.fell === null && state.rulers === c.id) ? 2 : 1)}
                   style={{ fill: tint.kind === "words" && word ? hue(word.group) : hue(family(c)) }}>
                   {text}
                 </text>
@@ -1710,7 +1638,7 @@ export function MapView({
               >
                 <path className="city-marker" d="M-.14,.04V-.08H-.08V-.16H.02V-.04H.08V-.11H.14V.04Z" />
                 <text y={0.27}
-                  data-label-kind="state" data-label-priority={3}>{state.name}</text>
+                  data-label-kind="state" data-label-priority={1e12 + state.city}>{state.name}</text>
               </g>
             );
           })}
@@ -1830,15 +1758,25 @@ export function MapView({
           {...bindPath((view) => view.region(map.regions[landCursor]))} pointerEvents="none" /> : null}
         </g>
         {projection === "globe" ? <path className="globe-limb" d={cartography.sphere} aria-hidden="true" /> : null}
+        {projection === "chart" ? <g className="chart-neatline" aria-hidden="true" pointerEvents="none">
+          <path className="chart-edge-paper" d={`M0,0H${width}M0,${height}H${width}`} />
+          <path className="chart-edge-rule" d={`M0,0H${width}M0,${height}H${width}`} />
+          <path className="chart-edge-ticks" d={Array.from({ length: 37 }, (_, i) => {
+            const x = width * i / 36, tick = height * (i % 3 === 0 ? 0.012 : 0.006);
+            return `M${x},0v${tick}M${x},${height}v${-tick}`;
+          }).join("")} />
+        </g> : null}
       </svg>
       {onClearLand ? <span className="sr-only" role="status">{cursorName}</span> : null}
       {zoomable ? (
         <div className="map-zoom" role="group" aria-label={projection === "globe" ? "Globe controls" : "Chart controls"}>
           {selectedRegions.length > 0 ? <button type="button" title="Fit the selected lands (F)" aria-label="Fit the selected lands" onClick={fitSelection}><LocateFixed size={16} /></button> : null}
-          <button ref={zoomIn} type="button" title="Closer (+)" aria-label="Zoom in" disabled={box[2] <= width * closest + 0.001} onClick={() => zoom(0.7, [view.current[0] + view.current[2] / 2, view.current[1] + view.current[3] / 2])}>
+          {/* drawCamera owns disabled state alongside the imperative camera.
+              Stale React disabled props would suppress a re-enabled button. */}
+          <button ref={zoomIn} type="button" title="Closer (+)" aria-label="Zoom in" onClick={() => zoom(0.7, [view.current[0] + view.current[2] / 2, view.current[1] + view.current[3] / 2])}>
             <Plus size={16} />
           </button>
-          <button ref={zoomOut} type="button" title="Farther (−)" aria-label="Zoom out" disabled={box[2] >= width - 0.001} onClick={() => zoom(1 / 0.7, [view.current[0] + view.current[2] / 2, view.current[1] + view.current[3] / 2])}>
+          <button ref={zoomOut} type="button" title="Farther (−)" aria-label="Zoom out" onClick={() => zoom(1 / 0.7, [view.current[0] + view.current[2] / 2, view.current[1] + view.current[3] / 2])}>
             <Minus size={16} />
           </button>
           <button type="button" title={projection === "globe" ? "The whole globe (Home)" : "The whole chart (Home)"}

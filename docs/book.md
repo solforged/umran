@@ -198,14 +198,20 @@ The chart, the cards, the chronicle, and the time bar. What changes:
 - A decision is taken from a card (*Decide…*), dated, and marked in the
   chronicle as the author's. It opens another telling if it is not at
   the tip.
-- Labels on the chart follow a policy by zoom and layer: people names
-  always; tongue names only when they differ from the people's and the
-  layer is families; land names when zoomed in; state outlines only on
-  that layer or when a state card is open. Eight peoples is where
-  cartography starts to matter.
+- Labels on the chart follow a policy by zoom and layer. Names sit at
+  their places, never pushed aside on leader lines; where two would
+  collide, states and the larger ruling peoples win, and the rest keep
+  their dot until a closer zoom makes room. Tongue names show only when
+  they differ from the people's and the layer is families; land names
+  when zoomed in; state outlines only on that layer or when a state card
+  is open. Eight peoples is where cartography starts to matter.
 - Hover or focus a place on either map to read its gazetteer: native names,
-  other languages' names, pronunciations, and the land beneath a city.
-  Click to keep the place card open, then Open to read its full card.
+  a few of other languages' names with the rest on the full card,
+  pronunciations, and the land beneath a city. Click to keep the place
+  card open, then Open to read its full card.
+- Lakes are drawn over the lands they cover, with a shore only where
+  water meets land. The chart's top and bottom are a ruled frame, the
+  edge of the drawing rather than a coast.
 - Reading as a people: *as the Kakimi knew it* is a lens on the chart
   (their known lands, their names for them, their neighbours as they
   called them), chosen from a people's card. That is the explorer frame,
