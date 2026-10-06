@@ -19,13 +19,13 @@ description: "Use when smoke-testing the Umran browser workbench or refreshing R
      - It also has `.account` items and an "Another people" button (click it repeatedly to reach eight). Click `.account-name` to open one. The open `.account.chosen` has inline selects (NamingSelect, `aria-label="Way of life"`, `aria-label="Sounds"`) and the links "Hear other words" and "Adjust their sounds…".
      - Click a land to move the chosen people there.
      - The footer button `.begin` reads "Begin the chronicle".
-   - Stage: `.cartouche` button opens the world menu (Other tellings, Field notebook, Export…, theme, Back to the shelf); `.map-tools` has Find and the layers Popover; `.pedia` cards with World/Chronicle buttons; map labels are `svg text.hand-N`, click them with a dispatched MouseEvent; `.timebar` holds play, play-more, step-year, "Until something happens", marks, strike-out (undo).
+  - Stage: `.cartouche` button opens the world menu (Other tellings, Field notebook, Export…, theme, Back to the shelf); `.map-tools` has Find and the layers Popover; `.pedia` cards with World/Chronicle buttons; map labels are `svg text[data-label-kind]`, click them with a dispatched MouseEvent; `.timebar` holds play, play-more, step-year, "Until something happens", marks, strike-out (undo).
    - Export sheet: `.appendix`, opened from the cartouche menu.
 7. Verify:
    - `(await tab.errors()).entries` shows nothing beyond requestFailed.
    - Cards open from the map and the feed.
    - Playback speed is unchanged. Count years played in 6 s; it was 600 at "steadily".
-8. Never use the `.word` class inside SVG map labels, because rem font sizes explode in map units. Use `hand-N` only. Extra SVGs inside `.mapview` must override `.mapview svg {width/height:100%}` with a more specific selector.
+8. Never use the `.word` class inside SVG map labels, because rem font sizes explode in map units; size lettering with `--label` in map units. Extra SVGs inside `.mapview` must override `.mapview svg {width/height:100%}` with a more specific selector. Harness `page.mouse.wheel` does not reach the map; dispatch a `WheelEvent` on the svg to test wheel zoom.
 9. To test the Pages build or take README screenshots:
    - Use the app path `~/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing` with args `["--headless=new", "--user-data-dir=/tmp/<profile>"]`, then `emulate({ viewport: { width: 1440, height: 900 } })`.
    - Save PNGs with `tab.run(async ({ page }, p) => page.screenshot({ path: p, type: 'png' }), { args: [path] })` into `docs/images/`. Close any open modal first and check `!document.querySelector('.modal')`.

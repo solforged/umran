@@ -320,7 +320,8 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .lake-names { cursor: pointer; }
 .lake-names text { text-anchor: middle; }
 .river-names { pointer-events: none; }
-:is(.river-names, .lake-names) text { fill: var(--ink); font-size: calc(.2px * var(--label, 1)); font-style: italic; paint-order: stroke; stroke: var(--paper); stroke-width: .04; }
+/* The halo scales with the lettering; a fixed width swallowed small names. */
+:is(.river-names, .lake-names) text { fill: var(--ink); font-size: calc(.2px * var(--label, 1)); font-style: italic; paint-order: stroke; stroke: var(--paper); stroke-width: calc(.035px * var(--label, 1)); stroke-linejoin: round; }
 .zone-borders { pointer-events: none; }
 .zone-borders path { fill: none; stroke: var(--ink-soft); stroke-width: 1; stroke-dasharray: 1 4; opacity: .4; vector-effect: non-scaling-stroke; }
 .weather-wash { fill-opacity: .55; pointer-events: none; }

@@ -132,29 +132,6 @@
   color: var(--accent);
 }
 
-/* Each language family writes in its own hand, as Pentiment marks a
-   speaker's station by script. */
-:root .hand-0 {
-  font-family: "Grenze Gotisch", var(--serif);
-}
-:root .hand-1 {
-  font-family: "Uncial Antiqua", var(--serif);
-}
-:root .hand-2 {
-  font-family: "IM Fell English", var(--serif);
-  font-style: italic;
-}
-:root .hand-3 {
-  font-family: "UnifrakturCook", var(--serif);
-}
-:root .hand-4 {
-  font-family: "Almendra", var(--serif);
-}
-
-:root [class*="hand-"] {
-  font-variant: normal;
-  letter-spacing: 0.01em;
-}
 /* The ribbon bookmark marks the year being read. */
 :root .track input[type="range"] {
   appearance: none;
@@ -199,9 +176,8 @@
   color: var(--accent);
   font-style: normal;
 }
-/* The stage is a working surface rather than a page: one face throughout,
-   no boxed initials, and family hands kept for titles and setup names,
-   not scanned lists. The chart room keeps its titled cartouche but its
+/* The stage is a working surface rather than a page: one face throughout
+   and no boxed initials. The chart room keeps its titled cartouche but its
    world tiles and actions read as prose. */
 :root :is(.stage, .chart-room) :is(button, select, label) {
   font-variant: normal;
@@ -223,9 +199,6 @@
 :root .stage h3 {
   font-variant: normal;
   color: var(--ink-soft);
-}
-:root .stage:not(.setup) :not(h2)[class*="hand-"] {
-  font-family: var(--serif);
 }
 :root .stage .word:not(.big) {
   font-size: 1em;

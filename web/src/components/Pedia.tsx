@@ -422,21 +422,19 @@ function CardHead({
   title,
   sub,
   tone,
-  hand,
 }: {
   icon: LucideIcon;
   kind: string;
   title: ReactNode;
   sub?: ReactNode;
   tone?: string;
-  hand?: number;
 }) {
   return (
     <header className="card-head" style={tone ? ({ "--tone": tone } as CSSProperties) : undefined}>
       <p className="card-kind">
         <Icon size={14} aria-hidden="true" /> {kind}
       </p>
-      <h2 tabIndex={-1} className={hand === undefined ? undefined : `hand-${hand % 5}`}>{title}</h2>
+      <h2 tabIndex={-1}>{title}</h2>
       {sub ? <p className="card-sub">{sub}</p> : null}
     </header>
   );
@@ -1360,7 +1358,6 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
         kind="A people"
         title={c.name}
         tone={hue(v.family)}
-        hand={v.family}
         sub={
           <>
             “{c.meaning}” <span className="ipa">/{c.ipa}/</span>
@@ -1499,7 +1496,6 @@ function StateCard({ state, context }: { state: StateView; context: Context }) {
         kind={state.fell === null ? "A standing state" : "A fallen state"}
         title={state.name}
         tone={hue(state.id)}
-        hand={overview.varieties[rulers.variety].family}
         sub={<>“{state.meaning}” <span className="ipa">/{state.ipa}/</span>{state.once ? `, once ${state.once}` : ""}</>}
       />
       {state.fell === null && rulers.ended === null ? <Decisions community={rulers.id} context={context} choices={[["religion", FAITH_NAME.action], ["craft", "Teach a craft"], ["temper", "Their temper turns"]]} /> : null}
@@ -1750,7 +1746,7 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
   const fortunes = individualAnnals(context.overview.annals).filter((annal) => annal.peoples.some((id) => speakerIds.has(id)));
   const ctx = languageChapterContext(context, variety);
   return <div className="language-card">
-    <CardHead icon={Languages} kind="A language" title={v.name} tone={hue(v.family)} hand={v.family} sub={v.meaning ? `“${v.meaning}”` : null} />
+    <CardHead icon={Languages} kind="A language" title={v.name} tone={hue(v.family)} sub={v.meaning ? `“${v.meaning}”` : null} />
     <Decisions community={speakers[0]?.id ?? -1} context={context} choices={[["law", "A sound change"]]} disabled={!speakers.length} label="Decide for this language" />
     <div className="language-opening">
       {openingSpeakers.map((c) => {

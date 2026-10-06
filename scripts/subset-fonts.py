@@ -13,7 +13,14 @@ SOURCE = (
     "c92f92dac919ca89a14d75655e89cf3f525310ca/ofl/gentiumbookplus/"
 )
 DEST = Path(__file__).resolve().parents[1] / "web/public/fonts"
-UNICODES = list(range(0x20, 0x370)) + list(range(0x1E00, 0x1F00))
+# Latin, IPA and combining marks, Latin Extended Additional, then the
+# punctuation and arrows of prose, so one face sets a whole sentence.
+UNICODES = (
+    list(range(0x20, 0x370))
+    + list(range(0x1E00, 0x1F00))
+    + list(range(0x2000, 0x2070))
+    + list(range(0x2190, 0x2200))
+)
 
 DEST.mkdir(parents=True, exist_ok=True)
 for style in ("Regular", "Italic", "Bold", "BoldItalic"):

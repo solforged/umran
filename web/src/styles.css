@@ -2,10 +2,11 @@
    would draw them from travellers' reports. By day: chart paper,
    iron-gall ink, a vermilion rubric, and the dark wood of the desk the
    setup lies on. chart.css dresses the page and the map. */
-/* One Latin/IPA face must own a whole marked vowel: Google's separate
-   latin-ext/vietnamese files split the base from its tone. These Gentium
-   Book Plus subsets keep mark/mkmk together, under an OFL-safe new name.
-   Rebuild (pinned upstream and licence in the script):
+/* One face sets every sentence and every name in a world's languages:
+   Google's EB Garamond drew ī with its dot and dropped stacked marks, and
+   its separate latin-ext/vietnamese files split a base from its tone.
+   These Gentium Book Plus subsets keep mark/mkmk together, under an
+   OFL-safe new name. Rebuild (pinned upstream and licence in the script):
    uv run --no-project --with 'fonttools[woff]==4.66.1' python scripts/subset-fonts.py */
 @font-face {
   font-family: "Umran Latin";
@@ -13,7 +14,7 @@
   font-weight: 400;
   font-display: swap;
   src: url("/fonts/umran-latin-regular.woff2") format("woff2");
-  unicode-range: U+0020-036F, U+1E00-1EFF;
+  unicode-range: U+0020-036F, U+1E00-1EFF, U+2000-206F, U+2190-21FF;
 }
 @font-face {
   font-family: "Umran Latin";
@@ -21,7 +22,7 @@
   font-weight: 400;
   font-display: swap;
   src: url("/fonts/umran-latin-italic.woff2") format("woff2");
-  unicode-range: U+0020-036F, U+1E00-1EFF;
+  unicode-range: U+0020-036F, U+1E00-1EFF, U+2000-206F, U+2190-21FF;
 }
 @font-face {
   font-family: "Umran Latin";
@@ -29,7 +30,7 @@
   font-weight: 700;
   font-display: swap;
   src: url("/fonts/umran-latin-bold.woff2") format("woff2");
-  unicode-range: U+0020-036F, U+1E00-1EFF;
+  unicode-range: U+0020-036F, U+1E00-1EFF, U+2000-206F, U+2190-21FF;
 }
 @font-face {
   font-family: "Umran Latin";
@@ -37,7 +38,7 @@
   font-weight: 700;
   font-display: swap;
   src: url("/fonts/umran-latin-bolditalic.woff2") format("woff2");
-  unicode-range: U+0020-036F, U+1E00-1EFF;
+  unicode-range: U+0020-036F, U+1E00-1EFF, U+2000-206F, U+2190-21FF;
 }
 
 :root {
@@ -55,12 +56,12 @@
   --coined: #8a5a0f;
   --event: #9b2c1c;
   --faith: #7a4fa8;
-  --serif: "EB Garamond", "Umran Latin", "Iowan Old Style", Palatino, Georgia, serif;
-  --sans: "EB Garamond", "Umran Latin", "Iowan Old Style", Palatino, Georgia, serif;
-  --mono: "Umran Latin", "EB Garamond", Georgia, serif;
-  --display: "IM Fell English", "EB Garamond", "Umran Latin", Georgia, serif;
-  --caps: "IM Fell English SC", "EB Garamond", "Umran Latin", Georgia, serif;
-  --initial: "IM Fell English", "EB Garamond", "Umran Latin", serif;
+  --serif: "Umran Latin", "Iowan Old Style", Palatino, Georgia, serif;
+  --sans: "Umran Latin", "Iowan Old Style", Palatino, Georgia, serif;
+  --mono: "Umran Latin", Georgia, serif;
+  --display: "IM Fell English", "Umran Latin", Georgia, serif;
+  --caps: "IM Fell English SC", "Umran Latin", Georgia, serif;
+  --initial: "IM Fell English", "Umran Latin", serif;
   --dense-size: 0.9rem;
   --dense-row: 0.1rem;
   --dense-pad: 0.35rem 0.55rem;
@@ -1024,22 +1025,25 @@ table.preview tr {
   outline: none;
 }
 
-/* Names of lands, as an old map letters them: small, spaced, italic. */
+/* Names of lands, as an old map letters them: small and italic, in the
+   text face so every mark of their spelling reads. The ink is mixed
+   opaque: a see-through fill shows its own halo through the letters. */
 .place-names text {
-  font-family: var(--display);
+  font-family: var(--serif);
   font-size: calc(0.17px * var(--label, 1));
   font-style: italic;
   letter-spacing: 0.01px;
   text-anchor: middle;
   dominant-baseline: auto;
-  fill: color-mix(in srgb, var(--ink) 70%, transparent);
+  fill: color-mix(in srgb, var(--ink) 78%, var(--paper));
   paint-order: stroke;
   stroke: color-mix(in srgb, var(--paper) 70%, transparent);
-  stroke-width: calc(0.04px * var(--label, 1));
+  stroke-width: calc(0.035px * var(--label, 1));
+  stroke-linejoin: round;
   pointer-events: none;
 }
 .place-names text.left {
-  fill: color-mix(in srgb, var(--ink) 40%, transparent);
+  fill: color-mix(in srgb, var(--ink) 50%, var(--paper));
 }
 
 .route {

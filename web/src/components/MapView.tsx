@@ -259,7 +259,7 @@ export function Miniature({ map, peoples = [] }: { map: WorldMap; peoples?: read
             const above = named.slice(0, i).filter((q) => q.region === p.region).length;
             return (
               <g key={i} className="people">
-                <text x={x} y={y + above * LINE * label} className={`hand-${p.family % 5}`} style={{ fill: hue(p.family) }}>
+                <text x={x} y={y + above * LINE * label} style={{ fill: hue(p.family) }}>
                   {p.name}
                 </text>
               </g>
@@ -1548,7 +1548,7 @@ export function MapView({
             const id = `${routeHead}-river-${river.id}`;
             return <g key={river.id}>
               <defs><path id={id} {...bindPath((view) => view.labelLine(points), "grandparent")} /></defs>
-              <text className={`hand-${overview.varieties[name.variety].family % 5}`} dy={-0.06 * label}
+              <text dy={-0.06 * label}
                 data-label-kind="river" data-label-priority={1}>
                 <textPath href={`#${id}`} startOffset="50%" textAnchor="middle">{name.spelled}</textPath>
               </text>
@@ -1563,7 +1563,6 @@ export function MapView({
             return <text key={lake.id} ref={bindAnchor(center)} x={x} y={y + 0.3 * label}
               data-lake={lake.id}
               data-label-x={x} data-label-y={y} data-label-dy={0.3} data-label-kind="lake" data-label-priority={1}
-              className={`hand-${overview.varieties[name.variety].family % 5}`}
               {...inspectEvents({ kind: "lake", lake: lake.id, region: lake.regions.find((region) => !hidden(region))! })}
               onClick={() => dragged() || onLake?.(lake.id)}>{name.spelled}</text>;
           })}
@@ -1667,7 +1666,7 @@ export function MapView({
                 <line className="people-leader" x1={0} y1={0} x2={0} y2={0} pointerEvents="none" />
                 <circle className="people-dot" cx={0} cy={0} r={0.06 * label}
                   style={{ fill: tint.kind === "words" && word ? hue(word.group) : hue(family(c)) }} />
-                <text x={0} y={0} className={`hand-${family(c) % 5}`}
+                <text x={0} y={0}
                   data-label-kind="people" data-people={c.id} data-label-priority={100 + c.size}
                   data-label-full={text}
                   style={{ fill: tint.kind === "words" && word ? hue(word.group) : hue(family(c)) }}>
@@ -1710,7 +1709,7 @@ export function MapView({
                 }}
               >
                 <path className="city-marker" d="M-.14,.04V-.08H-.08V-.16H.02V-.04H.08V-.11H.14V.04Z" />
-                <text y={0.27} className={`hand-${family(overview.communities[state.rulers]) % 5}`}
+                <text y={0.27}
                   data-label-kind="state" data-label-priority={3}>{state.name}</text>
               </g>
             );
