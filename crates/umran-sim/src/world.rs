@@ -253,7 +253,7 @@ pub struct Params {
     /// makes it, and whether a stronger people shares it.
     pub migration_rate: f32,
     /// Maximum whole-people walking journey, in effort-km.
-    /// V5 sea migrants add a small provisioning allowance, capped by colony reach.
+    /// V5 and later sea migrants add a provisioning allowance, capped by colony reach.
     pub migration_reach: f32,
     /// Scales the chance per generation that a sound change spreads from a
     /// variety to one it is in contact with, by the contact's kind and
@@ -386,7 +386,7 @@ impl Params {
     /// Whole peoples cannot provision a colony-length expedition on V5.
     /// Older geographies retain their recorded sea-migration radius.
     pub(crate) fn sea_migration_reach(&self, geography: GeographyVersion) -> f32 {
-        if geography == GeographyVersion::ContinentalV5 {
+        if geography.has_modern_continents() {
             self.colony_reach
                 .min(self.migration_reach + SEA_MIGRATION_PROVISION_KM)
         } else {
@@ -5070,34 +5070,27 @@ mod tests {
 
     #[test]
     fn sea_migration_reach_preserves_legacy_geographies_and_respects_both_caps() {
-        let mut params = Params::default();
-        assert_eq!(
-            params.sea_migration_reach(GeographyVersion::ContinentalV5),
-            700.0
-        );
-        params.migration_reach = 400.0;
-        assert_eq!(
-            params.sea_migration_reach(GeographyVersion::ContinentalV5),
-            500.0
-        );
         for geography in [
-            GeographyVersion::SphericalV1,
-            GeographyVersion::ContinentalV2,
-            GeographyVersion::ContinentalV3,
-            GeographyVersion::ContinentalV4,
+            GeographyVersion::ContinentalV5,
+            GeographyVersion::ContinentalV6,
         ] {
-            assert_eq!(params.sea_migration_reach(geography), params.colony_reach);
+            let mut params = Params::default();
+            assert_eq!(params.sea_migration_reach(geography), 700.0);
+            params.migration_reach = 400.0;
+            assert_eq!(params.sea_migration_reach(geography), 500.0);
+            for legacy in [
+                GeographyVersion::SphericalV1,
+                GeographyVersion::ContinentalV2,
+                GeographyVersion::ContinentalV3,
+                GeographyVersion::ContinentalV4,
+            ] {
+                assert_eq!(params.sea_migration_reach(legacy), params.colony_reach);
+            }
+            params.colony_reach = 450.0;
+            assert_eq!(params.sea_migration_reach(geography), 450.0);
+            params.colony_reach = 0.0;
+            assert_eq!(params.sea_migration_reach(geography), 0.0);
         }
-        params.colony_reach = 450.0;
-        assert_eq!(
-            params.sea_migration_reach(GeographyVersion::ContinentalV5),
-            450.0
-        );
-        params.colony_reach = 0.0;
-        assert_eq!(
-            params.sea_migration_reach(GeographyVersion::ContinentalV5),
-            0.0
-        );
     }
 
     fn water_pair() -> (World, usize, usize) {

@@ -27,19 +27,19 @@ This bookkeeping makes no random draws and does not itself change replay.
   chart seam and around both poles. Canonical unit-vector centres and
   boundaries determine spherical area, drainage, landmass anchors, and
   great-circle travel. Terrain is sea, plains, forest, steppe, hills,
-  mountains, or desert. `ContinentalV5` seeds three to six unequal continental
-  cratons, usually four or five, with elongated bodies, broad gulfs and
-  peninsulas, and finer steep-spectrum detail. Convergent plate domains raise
-  coastal and interior belts.
+  mountains, or desert. `ContinentalV6` starts with one supercontinent and
+  moves its crust through ten rigid-plate drift steps on a fixed 10,242-point
+  icosphere. Rifting, subduction, continental collision and mantle hotspots
+  leave the coasts, ranges, shelves and islands.
   Latitude and elevation affect warmth; moisture varies with latitude,
   relief, and proximity to sea, with rain shadows downwind of high ground
-  under easterlies below 30° and westerlies above. These are static
-  tectonic and climate analogues, not moving plates.
+  under easterlies below 30° and westerlies above. Climate remains a static
+  analogue, while the new surface records a short moving-plate history.
   Each connected land body has one `landmass`; sea has none. Bodies of at
-  least 500,000 km² are continents. V5 small worlds use 125,000 km² because
-  their sphere has one quarter the area of medium worlds. Founders prefer
-  continents to islands. Earlier geography versions retain their original
-  surfaces, wind fields, and 500,000 km² classification at every size.
+  least 500,000 km² are continents. V5 and later small worlds use 125,000 km²
+  because their sphere has one quarter the area of medium worlds. Founders
+  prefer continents to islands. V1–V5 retain their original surfaces,
+  streams, wind fields, and physical-area classifications.
   Shared-border great-circle midpoints give centre-to-centre routes.
   Terrain multiplies their physical length to give effort-km, equivalent
   plain kilometres: a 100 km mountain crossing costs 400 effort-km.
@@ -566,13 +566,16 @@ This bookkeeping makes no random draws and does not itself change replay.
   names said every day are, and epithets go only on short names, so they
   do not stack over many splits. A split-off people avoids meanings other
   peoples have; when all are had, it is named for its land, or failing
-  that for a place another people is also named for. It never takes a
-  name in use: when its clipped name is another's, its land, a place, or
-  an epithet on the old name said short ("the far Goths") tells it apart,
-  or else whichever of those needs the fewest syllables more. A new
-  language whose usual name is taken is named the other way ("the X
-  tongue" for "of the X"), then either way a syllable longer, and only
-  then in full. Names then undergo the same sound
+  that for a place another people is also named for. When its clipped
+  name is another's, its land, a place, or an epithet on the old name said
+  short ("the far Goths") tells it apart, or else whichever of those needs
+  the fewest syllables more. If every whole name is taken, it qualifies
+  the first with "new". Where vowel fusion swallows the "new" and leaves
+  the name unchanged, it tries the other whole names in order, and keeps
+  the first if none can grow. A new language whose
+  usual name is taken is named the other way ("the X tongue" for "of the
+  X"), then either way a syllable longer, and only then in full. Names
+  then undergo the same sound
   laws as their variety's words, so two may still come to sound alike
   over time. Split-off peoples name themselves; a people that shifts
   keeps its name and names its new speech after itself. Exonyms are the
@@ -642,7 +645,7 @@ This bookkeeping makes no random draws and does not itself change replay.
   on one land may also migrate whole (`migration_rate`): likelier the
   more crowded home is, the more mobile its land and way of life make it,
   and when a stronger people shares it. Migrants go to better land within
-  `migration_reach` on foot. V5 sea migration adds a 100-effort-km
+  `migration_reach` on foot. V5 and later sea migration adds a 100-effort-km
   provisioning allowance, capped by `colony_reach`; earlier geographies
   use `colony_reach` for sea migration. They count half of
   a weaker people's land as free, so strong peoples push into good land
@@ -998,10 +1001,12 @@ This bookkeeping makes no random draws and does not itself change replay.
   with strong purity rules can forbid one concept's word (blood, the
   divine, or cattle), and its followers renew it, as speakers avoided the
   old Indo-European word for the bear; other senses of the word survive.
-  `static_society` turns doctrine off. Over 40 six-people worlds of 4,000
-  years (`tests/doctrine_band.rs`), 19 faiths held their founding
-  positions without any recorded drift; 2 schisms disputed a tenet, and
-  4 words were forbidden.
+  `static_society` turns doctrine off. Disputes come only from schisms,
+  which are rare: V5 seeds 0–39, six peoples over 4,000 years each, gave
+  26 faiths and 3 disputes, too few to test reliably. Over V6 seeds 0–159
+  (`tests/doctrine_band.rs`), 179 faiths held their founding positions
+  without recorded drift, 13 schisms disputed a tenet, and 99 words were
+  forbidden. The band asks for 1–20 disputes and 80–240 faiths.
   Pilgrim roads begin with probability `pilgrimage_rate` (0.02) per
   generation for every follower and shrine within 1,200 effort-km.
   They follow the cheapest permitted directed journey from a held land
@@ -1326,13 +1331,25 @@ journeys, 40 mixed itineraries, 1,753 fleets built and 314 lost, and 384
 sea corridors. Travelling settlements increase rather than disappearing
 as whole-people sea moves fall. The
 authored controls remain 160 sea settlements, 40 rented journeys,
-80 corridors, and 40 capacity refusals. The sample remains two land
+80 corridors, and 40 capacity refusals. That V5 sample records two land
 migrations, one rented mixed sea settlement, and 27 fleets built.
-The band requires 8–20% sea migration overall, positive sea migration
-and at most 30% at each size, 292–500 land migrations, and positive sea
-settlements, rented journeys, and mixed itineraries. The land ceiling
-has headroom over V5's 420 (and the 600-cap experiment's 450); the
-sea-settlement ceiling is 300 rather than the earlier 200.
+
+V6 keeps those reach caps and movement rules. Its compact continents
+produce 485 land and 21 sea migrations, a 4.15% sea share. The Small,
+Medium, Large, and Vast shares are 10.00%, 13.79%, 3.72%, and 2.44%,
+with 3, 4, 9, and 5 sea migrations. None is zero. The cohort also has
+34 sea settlements, 17 rented journeys, 9 mixed itineraries, and 207
+sea corridors. Including settlements, 10.19% of movement is by sea.
+Before one-region inland seas were filled, V6 gave 5.60% and 75 sea
+settlements: those pockets made the land around them coastal, so peoples
+launched fleets from water with no way out. The V6 sample has four land
+migrations, no sea migration or settlement, and 16 fleets built. The
+migration-share floor changes from V5's 8% to 3%, below the measured
+4.15%, rather than changing geography or travel reach to force more
+voyages. The band retains the 20% overall and 30% per-size ceilings,
+292–500 land migrations, and positive sea settlements, rented journeys,
+and mixed itineraries. The land ceiling has headroom over V5's 420
+(and the 600-cap experiment's 450); the sea-settlement ceiling stays 300.
 
 The original V4 band ran in 159.96 seconds in release. For the same three-founder
 Vast timing recipe (`calibrate -- geography 1 160 vast 3`), pre-change
@@ -1411,7 +1428,93 @@ Physical radius and regional resolution are separate:
 | vast | 10,242 | 6,371 km | 40,030 km |
 
 Wide and vast use coarser regions, rather than letting planet size demand
-unbounded mesh and route storage. `ContinentalV5` draws three to six cratons,
+unbounded mesh and route storage.
+
+### ContinentalV6
+
+The new generator runs ten semi-Lagrangian drift steps on a fixed level-five
+icosphere with 10,242 points, at every world size. Each point carries its
+plate, continental or oceanic crust, thickness, oceanic age, accumulated
+uplift and last uplift step. An unequal warped spherical Voronoi partition
+has nine to twelve plates. Its additive size weights fall with the inverse
+square of plate rank. Continental loading slows a plate's Euler rotation.
+Each destination inverse-rotates into every plate's previous frame, then
+finds the nearest source by deterministic ascent through the icosphere's
+Delaunay graph. The regional meshes use exact subsets of these points. A
+sea one region wide with land all round is a basin below the map's
+resolution; it rises to its lowest neighbour, and rivers and lakes carry
+inland water at that scale. Seas of two or more regions remain.
+
+One connected, domain-warped supercontinent initially covers 38–42% of
+the sphere including shelves. Two inherited sutures mark eroded ranges;
+one guides the dominant rift. Radial spreading opens new ocean, and one
+marginal plate returns partway through the history. Divergence stretches
+and thins continental shelves. Oceanic overlap consistently subducts the
+older lithosphere, rather than allowing individual volcanic vents to
+change which entire plate overrides. Convergence raises a coastal range
+and lowers an offshore trench. Oceanic convergence builds separate
+volcanic vents. Continental overlap thickens crust and welds the plate
+groups, which share one Euler velocity thereafter. Three fixed mantle
+hotspots leave volcanic material behind as plates move over them.
+
+The analogues are Pangaea's breakup and Africa and South America's
+conjugate passive margins, young rift seas such as the Red Sea, Andean
+subduction ranges, Japanese island arcs, Himalayan collision plateaus,
+eroded Appalachian and Ural sutures, and Hawaiian hotspot chains. Thin
+rifted provinces can become microcontinents, as with Madagascar, while
+near-sea-level shelves can leave islands like the British Isles. These
+are consequences of the crust history, not separately drawn outlines.
+
+Isostasy turns crust thickness into height. Old ocean floor cools and
+deepens; zero-age gaps are shallow ridges. Uplift erodes with elapsed
+steps. Coast-scale noise has amplitude 0.012, far below the continental
+and oceanic contrast. A seeded spherical-area sea level selects land;
+the bounded signed elevation field also drives `sphere::refine_coasts`.
+The top 10% of land regions by height are mountains and the next 17% are
+hills. Moisture keeps V5's latitude, coastal distance, relief and
+geographic-wind law. Lakes, channels, rivers and climate use the existing
+downstream pipeline. All new random streams begin with `continental-v6`.
+No generated world is rejected or retried.
+
+Forty seeds per size measured the following physical bands after coast
+refinement. Mountains are near a margin when a simulated convergent
+contact or advected suture lies within two regional borders.
+
+| Size | Land share | Continents | Largest share of land | Islands | Mountains near a margin |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| small | 29.14–30.51% | 2–5 | 34.57–68.08% | 3–18 | 89.47–100% |
+| medium | 29.39–30.84% | 3–5 | 34.36–62.27% | 11–33 | 92–100% |
+| large | 29.39–30.84% | 4–7 | 34.36–62.27% | 9–29 | 92–100% |
+| vast | 29.50–30.66% | 4–13 | 34.37–78.57% | 18–59 | 93.79–99.37% |
+
+Spherical convexity measures the share of deterministic pairs of land
+regions whose minor great-circle arc stays on that same landmass.
+There are at most 512 evenly spaced pairs per body, sampled at less than
+one quarter of a regional spacing and tested against the refined cell
+polygons. This replaces centroid-gnomonic solidity, which is undefined
+for the largest V5 trefoils crossing their centroid's horizon. No body is
+excluded. Median V5/V6 convexity is 0.683/0.893 at small, 0.730/0.871 at
+medium, 0.730/0.833 at large, and 0.715/0.779 at vast. The median over all
+continents is 0.719/0.838. Compact Africa and Eurasia's more indented
+coasts are qualitative orientation, not measurements on this generator.
+
+A sea or gulf counts when it is a connected water patch inside one
+landmass's convex hull, has at least two regional centres, and at least
+70% of its rim borders that body. Its open mouth counts against the rim
+share. The survey finds one or more in 28 of 40 medium seeds, above the
+10-seed band. It records four to nine active or inherited sutures.
+Hotspot islands are identified by advected volcanic material, not by
+their present position beside a mantle source.
+
+`continents -- svg <seed> <size> <out.svg>` draws two orthographic
+hemispheres with terrain, final plate boundaries and the initial
+supercontinent coast. `continents -- timing` measures complete
+`Map::generate` calls, including hydrology and travel caches.
+
+
+### Legacy ContinentalV5
+
+`ContinentalV5` draws three to six cratons,
 usually four or five. Small worlds use three or four so that their coarse
 mesh resolves each body's gulfs. Continental area shares descend sharply:
 the largest two usually hold about half and one quarter of the land.
@@ -1444,28 +1547,29 @@ lake naming, and downstream climate buffering as V4 through the shared
 `GeographyVersion::has_lakes` capability. The new crust generator uses only
 `continental-v5` purpose streams; V4 remains the V3 surface with lakes.
 
-`cargo run --release -p umran-sim --example continents -- 40 all` prints V3
-and V5 side by side for every map size. It reports physical land share,
-continent counts, five largest shares, island area and count, compactness,
-mountain cell share, and continent pairs separated by one sea cell.
+`cargo run --release -p umran-sim --example continents -- 40 all` now prints
+V5 and V6 side by side for every map size.
+It reports physical land share, continent counts, five largest shares,
+island area and count, compactness, mountain placement, spherical
+convexity, enclosed seas and gulfs, sutures and hotspot-supported islands.
 Compactness is `4πA/P²` with both area and coastal perimeter measured on the
-pre-refinement cell polygons, not the decorative coast. Its bands are
+pre-refinement cell polygons, not the decorative coast. V5's legacy bands are
 0.07–0.38 per continent, 0.12–0.30 for each world's median, and at most
 0.25 for the largest continent. The island-support diagnostic checks one
 intervening sea cell to a continent or one cell to a convergent band;
 mountain diagnostics compare mean stress with other land and count coastal
-mountains. Surface-only band tests sample 12 medium, four vast, and four
+mountains. The legacy surface-only band tests sample 12 medium, four vast, and four
 each small and large worlds without building travel caches, including
 continent-count variation and continental straits.
-`continents -- dynamics 12 160` compares default-parameter medium worlds
+`continents -- dynamics 12 160` compares V5 and V6 default-parameter medium worlds
 with six independent founders, following `calibrate geography`'s profile
 and standing choices. Counts are final living peoples and contacts by kind,
 cumulative states founded and language shifts, and `Met` events by kind.
 Conquests have their own events, so `Met` is not a cumulative rule counter.
 The report does not force founders together or author any contact.
-The authored showcase remains seed 21, medium, now on V5: its river plain is
-region 22, the middle people begin in 1212, and the sea people in coastal
-plain 312. The lake-free plains path `22 → 1212 → 312` connects the three.
+The authored showcase remains seed 21, medium, now on V6: its river plain is
+region 448, the middle people begin in 1722, and the sea people in coastal
+plain 33. The lake-free plains path `448 → 1722 → 33` connects the three.
 Its native provenance test checks the first realm and writing, the land
 conquest at generation 100, and the subsequent faith and preserved sacred
 language through generation 160.
@@ -1508,8 +1612,8 @@ from the tributary supplies both. Short tributaries remain short, and great
 courses can continue for many regions where a landmass permits.
 
 `continental-v4` introduced lakes on V3's unchanged land and geographic
-wind. V5 uses its new crust with the same `lakes.rs` pipeline: connected
-depressions below a common spill surface.
+wind. V5 and V6 use their own crust with the same `lakes.rs` pipeline:
+connected depressions below a common spill surface.
 Their baseline catchment supply is compared with warmth-dependent evaporation.
 A wet basin overflows its lowest saddle. An endorheic basin has no outlet;
 its rivers end at its lowest land. Its lower water surface covers only part
@@ -1518,7 +1622,7 @@ region id, terrain, and landmass. Their extent and outlets do not vary with
 later climate. V1–V3 retain their original drainage order, runoff, rivers,
 and climate, with no lakes or channels.
 
-V4 and V5 river channels follow unit-vector arcs from each region centre through
+V4 and later river channels follow unit-vector arcs from each region centre through
 the shared border to the next centre. Tributaries end at their confluence,
 open rivers at the coast, and closed rivers in a lake. They do not depend
 on a chart projection. This is a regional channel model, not river meanders.

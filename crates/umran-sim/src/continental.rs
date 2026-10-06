@@ -11,6 +11,7 @@ use rand_chacha::ChaCha8Rng;
 use std::f64::consts::PI;
 
 pub(crate) mod v5;
+pub(crate) mod v6;
 
 /// Diagnostic-only sampling; never consumes a simulation stream.
 pub(crate) fn collision_field(seed: u64, cells: &[sphere::Cell], current: bool) -> Vec<f64> {

@@ -55,22 +55,35 @@ pub enum GeographyVersion {
     /// ContinentalV3 with lakes and river channels.
     ContinentalV4,
     /// Unequal area-balanced cratons with steep-spectrum coasts and lakes.
-    #[default]
     ContinentalV5,
+    /// Continental crust advected through a short rigid-plate history.
+    #[default]
+    ContinentalV6,
 }
 
 impl GeographyVersion {
     /// The geography new worlds are drawn with.
-    pub const CURRENT: Self = Self::ContinentalV5;
+    pub const CURRENT: Self = Self::ContinentalV6;
 
     /// Lake basins, channels, and their downstream climate and naming effects.
     pub const fn has_lakes(self) -> bool {
-        matches!(self, Self::ContinentalV4 | Self::ContinentalV5)
+        !matches!(
+            self,
+            Self::SphericalV1 | Self::ContinentalV2 | Self::ContinentalV3
+        )
+    }
+
+    /// Area-scaled small continents and provisioned whole-people sea moves.
+    pub const fn has_modern_continents(self) -> bool {
+        !matches!(
+            self,
+            Self::SphericalV1 | Self::ContinentalV2 | Self::ContinentalV3 | Self::ContinentalV4
+        )
     }
 }
 
 fn continent_cutoff(size: MapSize, geography: GeographyVersion) -> f64 {
-    if geography == GeographyVersion::ContinentalV5 && size == MapSize::Small {
+    if geography.has_modern_continents() && size == MapSize::Small {
         // Match medium's physical-area classification on a sphere with one
         // quarter its area. Legacy small-world classifications never change.
         CONTINENT_AREA_KM2 * 0.25
@@ -407,6 +420,7 @@ impl Map {
                 )
             }
             GeographyVersion::ContinentalV5 => continental::v5::surface(seed, &mut mesh, radius_km),
+            GeographyVersion::ContinentalV6 => continental::v6::surface(seed, &mut mesh, radius_km),
         };
         let landmass = landmasses(&terrain, &mesh.cells);
         let edges = travel_edges(&mesh.cells, &terrain, &mesh.borders, radius_km);
@@ -1261,7 +1275,17 @@ pub struct ContinentDiagnostics {
     pub mountain_collision: f64,
     pub lowland_collision: f64,
     pub coastal_mountain_share: f64,
+    /// Fraction of sampled minor great-circle arcs that stay on each continent.
+    pub convexity: Vec<f64>,
+    pub enclosed_seas: usize,
+    pub mountains_near_margin_pct: f64,
+    pub sutures: usize,
+    pub hotspot_islands: usize,
 }
+
+mod diagnostics;
+pub use diagnostics::continental_svg;
+use diagnostics::{continent_convexity, enclosed_seas};
 
 /// Uses the same surface and classification as `Map`, including coast
 /// refinement, but measures compactness on the original cell polygons.
@@ -1287,7 +1311,10 @@ pub fn continent_diagnostics(
             sphere::angle(shared.next().unwrap(), shared.next().unwrap()) * radius
         })
         .collect();
-    let collision = if geography == GeographyVersion::SphericalV1 {
+    let mut evidence = None;
+    let mut collision = if geography == GeographyVersion::SphericalV1
+        || geography == GeographyVersion::ContinentalV6
+    {
         vec![0.0; mesh.cells.len()]
     } else {
         continental::collision_field(
@@ -1312,6 +1339,13 @@ pub fn continent_diagnostics(
         ),
         GeographyVersion::ContinentalV5 => {
             continental::v5::surface(seed, &mut mesh, size.radius_km())
+        }
+        GeographyVersion::ContinentalV6 => {
+            let (surface, history) =
+                continental::v6::diagnosed_surface(seed, &mut mesh, size.radius_km());
+            collision = history.collision.clone();
+            evidence = Some(history);
+            surface
         }
     };
     let members = landmasses(&terrain, &mesh.cells);
@@ -1433,6 +1467,34 @@ pub fn continent_diagnostics(
         mountain_collision: mountain_collision / mountain_count.max(1) as f64,
         lowland_collision: lowland_collision / (land_count - mountain_count).max(1) as f64,
         coastal_mountain_share: coastal_mountains as f64 / mountain_count.max(1) as f64,
+        convexity: continent_convexity(&mesh, &members, &areas, cutoff),
+        enclosed_seas: enclosed_seas(&mesh, &members),
+        mountains_near_margin_pct: evidence.as_ref().map_or(0.0, |e| {
+            let near = (0..mesh.cells.len())
+                .filter(|&r| {
+                    terrain[r] == Terrain::Mountains
+                        && (e.margin[r]
+                            || mesh.cells[r].neighbours.iter().any(|&n| {
+                                e.margin[n]
+                                    || mesh.cells[n].neighbours.iter().any(|&next| e.margin[next])
+                            }))
+                })
+                .count();
+            100.0 * near as f64 / mountain_count.max(1) as f64
+        }),
+        sutures: evidence.as_ref().map_or(0, |e| e.sutures),
+        hotspot_islands: evidence.as_ref().map_or(0, |e| {
+            let mut islands = vec![false; areas.len()];
+            for (r, &hotspot) in e.hotspot.iter().enumerate() {
+                if hotspot
+                    && let Some(id) = members[r]
+                    && areas[id] < cutoff
+                {
+                    islands[id] = true;
+                }
+            }
+            islands.into_iter().filter(|&v| v).count()
+        }),
     }
 }
 

@@ -7,13 +7,13 @@ use umran_sim::{Contact, Field, HistoryPoint, Naming, Params, Revelation, SoundP
 mod sample;
 
 #[test]
-fn v5_sample_keeps_its_river_coast_conquest_and_sacred_language() {
+fn v6_sample_keeps_its_river_coast_conquest_and_sacred_language() {
     use umran_sim::{Action, Craft, GeographyVersion, Terrain};
 
     let mut history = sample::sample();
     let founding = history.world_at(0);
-    assert_eq!(founding.map.geography, GeographyVersion::ContinentalV5);
-    let sites = [22, 1212, 312];
+    assert_eq!(founding.map.geography, GeographyVersion::ContinentalV6);
+    let sites = [448, 1722, 33];
     for (people, site) in sites.into_iter().enumerate() {
         assert_eq!(founding.communities[people].home(), site);
         assert_eq!(founding.map.regions[site].terrain, Terrain::Plains);
@@ -84,8 +84,8 @@ fn v5_sample_keeps_its_river_coast_conquest_and_sacred_language() {
     );
     assert_eq!(history.latest().generation, 160);
     println!(
-        "V5 SAMPLE seed=21 sites={sites:?}; river={river}; coast=312; land path={sites:?}; conquest at generation100={} effort-km by_sea={}; realm+writing at0; faith+shift at100; sacred={} preserved at160",
-        journey.effort, journey.by_sea, religion.sacred
+        "V6 SAMPLE seed=21 sites={sites:?}; river={river}; coast={}; land path={sites:?}; conquest at generation100={} effort-km by_sea={}; realm+writing at0; faith+shift at100; sacred={} preserved at160",
+        sites[2], journey.effort, journey.by_sea, religion.sacred
     );
 }
 

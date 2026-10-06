@@ -38,12 +38,19 @@ fn fleets_band_40_seeds_4000_years() {
     // 220 sea settlements, 149 rented, 40 mixed; by size 13%, 3% (1 of 38),
     // 17%, 12%. Sea movement is a minority overall and never the main way
     // any size of world migrates; one Medium voyage is too few to pin.
+    // V6: 485 land and 21 sea migrations (4.15%); 34 sea settlements,
+    // 17 rented and 9 mixed journeys; 10.19% of all movement by sea. Per
+    // size: 10.00%, 13.79%, 3.72%, 2.44%, with 3, 4, 9 and 5 sea
+    // migrations (none zero). Before one-region inland seas were filled it
+    // was 5.60% and 75 settlements, launched from landlocked water. Compact
+    // continents lower whole-people sea migration, so the floor is 3%
+    // instead of V5's 8%; both ceilings and all carrier bounds remain.
     let land = counts.migrations - counts.sea_migrations;
     let sea_share = counts.sea_migrations as f64 / counts.migrations.max(1) as f64;
     // V5 measures 420 land migrations (450 at a 600-km sea cap); leave
     // headroom above the old 453 ceiling without accepting lost land movement.
     assert!((292..=500).contains(&land), "{counts:?}");
-    assert!((0.08..=0.20).contains(&sea_share), "{counts:?}");
+    assert!((0.03..=0.20).contains(&sea_share), "{counts:?}");
     for (size, counts) in fleets::SIZES.iter().zip(&sizes) {
         let share = counts.sea_migrations as f64 / counts.migrations.max(1) as f64;
         assert!(share <= 0.30, "{size:?}: {counts:?}");

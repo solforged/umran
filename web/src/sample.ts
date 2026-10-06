@@ -28,9 +28,9 @@ export async function sampleWorld(): Promise<Engine> {
   });
   // These plains are a few land borders apart on the same continent.
   const actions: Action[] = [
-    found("germanic", 31, { kind: "place", place: "river" }, 0.7, 22),
-    found("semitic", 52, { kind: "people" }, 0.5, 1212),
-    found("polynesian", 73, { kind: "place", place: "sea" }, 0.4, 312),
+    found("germanic", 31, { kind: "place", place: "river" }, 0.7, 448),
+    found("semitic", 52, { kind: "people" }, 0.5, 1722),
+    found("polynesian", 73, { kind: "place", place: "sea" }, 0.4, 33),
     { kind: "state", community: 2 },
     { kind: "craft", community: 2, craft: "writing" },
     { kind: "run", generations: 100 },

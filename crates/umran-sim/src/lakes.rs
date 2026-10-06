@@ -176,7 +176,7 @@ mod tests {
     #[test]
     fn v4_adds_lakes_without_redrawing_v3_land() {
         use crate::geography::GeographyVersion;
-        assert_eq!(GeographyVersion::default(), GeographyVersion::ContinentalV5);
+        assert_eq!(GeographyVersion::default(), GeographyVersion::ContinentalV6);
         for size in [
             MapSize::Small,
             MapSize::Medium,
@@ -217,6 +217,7 @@ mod tests {
         }
         assert!(GeographyVersion::ContinentalV4.has_lakes());
         assert!(GeographyVersion::ContinentalV5.has_lakes());
+        assert!(GeographyVersion::ContinentalV6.has_lakes());
         let v4 = crate::rivers::generate(7, &regions, GeographyVersion::ContinentalV4);
         let v5 = crate::rivers::generate(7, &regions, GeographyVersion::ContinentalV5);
         assert!(!v4.lakes.is_empty());
@@ -225,6 +226,12 @@ mod tests {
         assert_eq!(v4.drainage, v5.drainage);
         assert_eq!(v4.drainage_order, v5.drainage_order);
         assert_eq!(v4.runoff, v5.runoff);
+        let v6 = crate::rivers::generate(7, &regions, GeographyVersion::ContinentalV6);
+        assert_eq!(v4.lakes, v6.lakes);
+        assert_eq!(v4.lake_regions, v6.lake_regions);
+        assert_eq!(v4.drainage, v6.drainage);
+        assert_eq!(v4.drainage_order, v6.drainage_order);
+        assert_eq!(v4.runoff, v6.runoff);
     }
 
     fn depression(runoff_per_land: f32) -> (Vec<Region>, Vec<Option<usize>>, Vec<usize>, Vec<f32>) {
@@ -326,7 +333,7 @@ mod tests {
         ] {
             for seed in 0..4 {
                 let mut map = Map::generate(seed, size);
-                assert_eq!(map.geography, crate::GeographyVersion::ContinentalV5);
+                assert_eq!(map.geography, crate::GeographyVersion::ContinentalV6);
                 for river in &map.rivers {
                     for &p in &river.channel {
                         assert!((sphere::dot(p, p) - 1.0).abs() < 1e-12);

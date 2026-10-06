@@ -129,6 +129,7 @@ mod tests {
         for geography in [
             crate::GeographyVersion::ContinentalV4,
             crate::GeographyVersion::ContinentalV5,
+            crate::GeographyVersion::ContinentalV6,
         ] {
             let mut world =
                 World::with_geography(7, Params::static_society(), MapSize::Medium, geography);
@@ -178,7 +179,7 @@ mod tests {
                 naming: None,
                 intensity: 0.5,
             };
-            if geography == crate::GeographyVersion::ContinentalV5 {
+            if geography.has_modern_continents() {
                 assert!(world.plan_settlement(&choice).is_err());
                 assert!(world.settle(&choice).is_err());
                 assert_eq!(world.communities[c].home(), home);

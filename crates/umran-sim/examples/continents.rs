@@ -3,11 +3,31 @@
 //! cargo run --release -p umran-sim --example continents -- dynamics [seeds] [generations]
 //! cargo run --release -p umran-sim --example continents -- sites [seed]
 
-use umran_sim::geography::{GeographyVersion, MapSize, continent_diagnostics};
+use umran_sim::geography::{GeographyVersion, MapSize, continent_diagnostics, continental_svg};
 use umran_sim::{ContactKind, Map, Params, SoundProfile, Terrain, World, WorldEvent};
 
 fn main() {
     let args: Vec<_> = std::env::args().collect();
+    if args.get(1).is_some_and(|arg| arg == "svg") {
+        let seed = args[2].parse().expect("seed");
+        let size = parse_size(&args[3]);
+        std::fs::write(&args[4], continental_svg(seed, size)).expect("write SVG");
+        return;
+    }
+    if args.get(1).is_some_and(|arg| arg == "timing") {
+        for size in [MapSize::Medium, MapSize::Vast] {
+            for seed in 0..8 {
+                let start = std::time::Instant::now();
+                let map = Map::generate(seed, size);
+                println!(
+                    "{size:?} seed={seed} Map::generate={:.3} ms regions={}",
+                    start.elapsed().as_secs_f64() * 1000.0,
+                    map.regions.len()
+                );
+            }
+        }
+        return;
+    }
     if args.get(1).is_some_and(|arg| arg == "dynamics") {
         dynamics(
             args.get(2).map_or(12, |n| n.parse().expect("seed count")),
@@ -34,15 +54,15 @@ fn main() {
         _ => panic!("size must be small, medium, large, vast, or all"),
     };
     println!(
-        "size,seed,version,land_pct,continents,top1_pct,top2_pct,top3_pct,top4_pct,top5_pct,island_pct,compactness,mountain_pct,island_supported_pct,mountain_collision,lowland_collision,coastal_mountain_pct,islands,continental_straits"
+        "size,seed,version,land_pct,continents,top1_pct,top2_pct,top3_pct,top4_pct,top5_pct,island_pct,compactness,mountain_pct,island_supported_pct,mountain_collision,lowland_collision,coastal_mountain_pct,islands,continental_straits,convexity,enclosed_seas,mountains_near_margin_pct,sutures,hotspot_islands"
     );
     let mut failures = [0; 6];
     let mut worlds = 0;
     for size in sizes {
         for seed in 0..seeds {
             for (label, version) in [
-                ("v3", GeographyVersion::ContinentalV3),
                 ("v5", GeographyVersion::ContinentalV5),
+                ("v6", GeographyVersion::ContinentalV6),
             ] {
                 let d = continent_diagnostics(seed, size, version);
                 let compactness = d
@@ -51,8 +71,14 @@ fn main() {
                     .map(|c| format!("{:.3}", c.1))
                     .collect::<Vec<_>>()
                     .join(";");
+                let convexity = d
+                    .convexity
+                    .iter()
+                    .map(|s| format!("{s:.3}"))
+                    .collect::<Vec<_>>()
+                    .join(";");
                 println!(
-                    "{size:?},{seed},{label},{:.3},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{compactness},{:.3},{:.3},{:.4},{:.4},{:.3},{},{}",
+                    "{size:?},{seed},{label},{:.3},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{compactness},{:.3},{:.3},{:.4},{:.4},{:.3},{},{},{convexity},{},{:.3},{},{}",
                     d.land_share * 100.0,
                     d.continents.len(),
                     d.top_shares[0] * 100.0,
@@ -67,35 +93,33 @@ fn main() {
                     d.lowland_collision,
                     d.coastal_mountain_share * 100.0,
                     d.island_count,
-                    d.continental_straits
+                    d.continental_straits,
+                    d.enclosed_seas,
+                    d.mountains_near_margin_pct,
+                    d.sutures,
+                    d.hotspot_islands
                 );
-                if version == GeographyVersion::ContinentalV5 {
+                if version == GeographyVersion::ContinentalV6 {
                     worlds += 1;
-                    let count_band = if size == MapSize::Small { 2..=5 } else { 3..=6 };
+                    let count_band = match size {
+                        MapSize::Small => 2..=5,
+                        MapSize::Medium => 2..=8,
+                        _ => 1..=usize::MAX,
+                    };
                     let minimum_islands = match size {
                         MapSize::Small => 2,
                         MapSize::Medium | MapSize::Large => 6,
                         MapSize::Vast => 15,
                     };
-                    let mut compact: Vec<_> = d.continents.iter().map(|c| c.1).collect();
-                    compact.sort_by(f64::total_cmp);
+                    let mut convex = d.convexity.clone();
+                    convex.sort_by(f64::total_cmp);
                     let holds = [
-                        (0.26..=0.34).contains(&d.land_share),
+                        (0.285..=0.315).contains(&d.land_share),
                         count_band.contains(&d.continents.len()),
-                        (0.35..=0.60).contains(&d.top_shares[0])
-                            && (0.15..=0.35).contains(&d.top_shares[1])
-                            && d.top_shares[..3].windows(2).all(|p| p[0] - p[1] >= 0.10),
-                        (0.03..=0.08).contains(&d.island_share)
-                            && d.supported_island_share >= 0.5
-                            && d.island_count >= minimum_islands,
-                        !compact.is_empty()
-                            && compact.iter().all(|&c| (0.07..=0.38).contains(&c))
-                            && (0.12..=0.30).contains(
-                                &((compact[(compact.len() - 1) / 2] + compact[compact.len() / 2])
-                                    * 0.5),
-                            )
-                            && d.continents[0].1 <= 0.25,
-                        d.mountain_collision > 2.0 * d.lowland_collision,
+                        size != MapSize::Medium || (0.25..=0.65).contains(&d.top_shares[0]),
+                        d.island_count >= minimum_islands,
+                        !convex.is_empty() && convex[convex.len() / 2] >= 0.5,
+                        d.mountains_near_margin_pct >= 75.0,
                     ];
                     for (failed, hold) in failures.iter_mut().zip(holds) {
                         *failed += usize::from(!hold);
@@ -105,8 +129,18 @@ fn main() {
         }
     }
     eprintln!(
-        "V5 worlds={worlds}; target failures (land,count,shares,islands,compactness,stress)={failures:?}"
+        "V6 worlds={worlds}; target failures (land,count,shares,islands,convexity,margins)={failures:?}"
     );
+}
+
+fn parse_size(size: &str) -> MapSize {
+    match size {
+        "small" => MapSize::Small,
+        "medium" => MapSize::Medium,
+        "large" => MapSize::Large,
+        "vast" => MapSize::Vast,
+        _ => panic!("size must be small, medium, large, or vast"),
+    }
 }
 
 fn dynamics(seeds: u64, generations: u32) {
@@ -124,8 +158,8 @@ fn dynamics(seeds: u64, generations: u32) {
     let mut sums = [[0.0; 13]; 2];
     for seed in 0..seeds {
         for (version, geography) in [
-            GeographyVersion::ContinentalV3,
             GeographyVersion::ContinentalV5,
+            GeographyVersion::ContinentalV6,
         ]
         .into_iter()
         .enumerate()
@@ -156,7 +190,7 @@ fn dynamics(seeds: u64, generations: u32) {
                 .iter()
                 .filter(|(_, event)| matches!(event, WorldEvent::Shift { .. }))
                 .count();
-            print!("{seed},{}", ["v3", "v5"][version]);
+            print!("{seed},{}", ["v5", "v6"][version]);
             for (sum, value) in sums[version].iter_mut().zip(row) {
                 *sum += value as f64;
                 print!(",{value}");
@@ -165,7 +199,7 @@ fn dynamics(seeds: u64, generations: u32) {
         }
     }
     for (version, sum) in sums.into_iter().enumerate() {
-        print!("mean,{}", ["v3", "v5"][version]);
+        print!("mean,{}", ["v5", "v6"][version]);
         for value in sum {
             print!(",{:.3}", value / seeds as f64);
         }

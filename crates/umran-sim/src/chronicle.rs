@@ -42,7 +42,8 @@ use std::collections::BTreeMap;
 /// Revision 52 adds fleets, rented berths, and migration by sea.
 /// Revision 53 extends plural address to polite only while it differs.
 /// Revision 54 separates V5 whole-people sea reach from colony expeditions.
-pub const ENGINE_REVISION: u32 = 54;
+/// Revision 55 draws new worlds with ContinentalV6's plate-drift history.
+pub const ENGINE_REVISION: u32 = 55;
 /// Revision 33 replaces flat geography and its region identities with a sphere.
 /// Earlier region-targeted actions cannot be replayed on the spherical mesh.
 pub const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;
@@ -1757,6 +1758,7 @@ mod tests {
             GeographyVersion::ContinentalV3,
             GeographyVersion::ContinentalV4,
             GeographyVersion::ContinentalV5,
+            GeographyVersion::ContinentalV6,
         ] {
             let mut source = if geography == GeographyVersion::CURRENT {
                 Chronicle::new(7, MapSize::Small)

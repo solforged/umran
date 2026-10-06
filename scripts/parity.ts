@@ -340,7 +340,7 @@ async function relatedFamily(seed: number): Promise<void> {
   const bench = new Workbench(seed, size);
   try {
     const map = object(json(JSON.parse(bench.map())));
-    if (map.geography !== "continental-v5") throw new Error("New founding worlds must use continental-v5");
+    if (map.geography !== "continental-v6") throw new Error("New founding worlds must use continental-v6");
     const nativeBefore = await rpc({ kind: "save" });
     const wasmBefore = bench.save();
     let sites: number[] | undefined;
@@ -464,7 +464,7 @@ async function relatedFamily(seed: number): Promise<void> {
   } finally { bench.free(); }
 }
 
-async function legacyGeography(seed: number, geography: "spherical-v1" | "continental-v2" | "continental-v3" | "continental-v4"): Promise<void> {
+async function legacyGeography(seed: number, geography: "spherical-v1" | "continental-v2" | "continental-v3" | "continental-v4" | "continental-v5"): Promise<void> {
   const size = ["small", "medium", "large", "vast"][seed % 4];
   const label = `legacy/${geography}/${size}`;
   await rpc({ kind: "new", seed, map: size, geography });
@@ -473,7 +473,7 @@ async function legacyGeography(seed: number, geography: "spherical-v1" | "contin
     const map = json(JSON.parse(original.map()));
     const hydrology = array(object(map).lakes).length !== 0
       || array(object(map).rivers).some(r => array(object(r).channel).length !== 0);
-    if (geography !== "continental-v4" && hydrology) {
+    if (geography !== "continental-v4" && geography !== "continental-v5" && hydrology) {
       throw new Error("Legacy geography acquired lakes or river channels");
     }
     const anchor = number(object(array(object(map).landmasses)[0]).anchor);
@@ -655,7 +655,7 @@ try {
   for (const seed of onlySeed === undefined ? seeds : [onlySeed]) {
     await generated(seed);
     await relatedFamily(seed);
-    for (const geography of ["spherical-v1", "continental-v2", "continental-v3", "continental-v4"] as const) {
+    for (const geography of ["spherical-v1", "continental-v2", "continental-v3", "continental-v4", "continental-v5"] as const) {
       await legacyGeography(seed, geography);
     }
   }

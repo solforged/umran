@@ -6604,7 +6604,7 @@ mod tests {
         assert_eq!(decisions[1]["variety"], 1);
         let saved = bench.save().unwrap();
         let recipe: serde_json::Value = serde_json::from_str(&saved).unwrap();
-        assert_eq!(recipe["geography"], "continental-v5");
+        assert_eq!(recipe["geography"], "continental-v6");
         assert_eq!(recipe["tellings"][0]["actions"][1]["kind"], "found-related");
         let mut restored = Bench::load(&saved).unwrap();
         assert_eq!(restored.map().unwrap(), bench.map().unwrap());
@@ -6655,7 +6655,7 @@ mod tests {
         assert_eq!(loaded.lexicon(0, 0).unwrap(), first_speech);
         let fresh: serde_json::Value =
             serde_json::from_str(&Bench::new(5, "small").unwrap().map().unwrap()).unwrap();
-        assert_eq!(fresh["geography"], "continental-v5");
+        assert_eq!(fresh["geography"], "continental-v6");
         assert_ne!(
             fresh["regions"],
             serde_json::from_str::<serde_json::Value>(&old_map).unwrap()["regions"]
