@@ -1,6 +1,6 @@
 import type { Annal, Overview } from "./model";
 import { YEARS } from "./model";
-import { CHRONICLE, countWord, EVENT_KIND } from "./lore";
+import { CHRONICLE, countWord, EVENT_KIND, peopleLabel, stateLabel } from "./lore";
 
 export type Era = {
   opening: Annal | null;
@@ -31,10 +31,10 @@ export const MIN_ERA = 8;
 export function heading(annal: Annal, overview: Overview): string {
   const state = overview.states[annal.states[0] ?? -1];
   switch (annal.kind) {
-    case "rose": return state ? `${state.name} rises` : CHRONICLE.rose;
-    case "fell": return state ? `${state.name} falls` : CHRONICLE.fell;
+    case "rose": return state ? `${stateLabel(overview, state.id)} rises` : CHRONICLE.rose;
+    case "fell": return state ? `${stateLabel(overview, state.id)} falls` : CHRONICLE.fell;
     case "conquest": {
-      const [ruler, ruled] = annal.peoples.map((id) => overview.communities[id]?.name);
+      const [ruler, ruled] = annal.peoples.map((id) => overview.communities[id] ? peopleLabel(overview, id) : undefined);
       return ruler && ruled ? `The ${ruler} conquer the ${ruled}` : CHRONICLE.conquest;
     }
     case "faith": { const faith = overview.religions[annal.religions[0] ?? -1]; return faith ? `${faith.name} is founded` : CHRONICLE.faith; }
@@ -80,7 +80,7 @@ export function eras(annals: Annal[], latest: number, overview: Overview): Era[]
 /// The collapsed row stays brief; the full category account lives inside.
 export function quietSummary(year: EraYear): string {
   const count = year.quiet.reduce((sum, annal) => sum + (annal.members.length || 1), 0);
-  return `Also this year: ${count} quieter ${count === 1 ? "entry" : "entries"}.`;
+  return `${year.headlines.length ? "Also this year" : "This year"}: ${count} quieter ${count === 1 ? "entry" : "entries"}.`;
 }
 
 /// A folded year describes recorded activity; names remain the engine's.

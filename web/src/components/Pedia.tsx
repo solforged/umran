@@ -25,7 +25,8 @@ import {
 } from "lucide-react";
 import type { Annal, Catalog, CityView, Community, Craft, CraftView, ReadEngine, Ethos, HistoryPoint, HolyLand, NotebookNote, Overview, ReligionView, RenderingRow, ShrineKind, StateView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { causePhrase, CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, faithTeaching, FAITH_HOW, FAITH_NAME, FALL_NAME, howCame, howNamed, hue, landLabel, LEG_BY, LIVELIHOOD_NAME, otherNames, peoplePhrases, RISE_NAME, SCHISM_CAUSE, seasonalPhrase, STRONG, temperament, TENET_NOUN, TERRAIN_NAME, unnamedName, weatherDeparture } from "../lore";
+import { causePhrase, CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, faithTeaching, FAITH_HOW, FAITH_NAME, FALL_NAME, howCame, howNamed, hue, landCardLabel, LEG_BY, LIVELIHOOD_NAME, otherNames, peopleLabel, peoplePhrases, RISE_NAME, SCHISM_CAUSE, seasonalPhrase, stateLabel, STRONG, temperament, TENET_NOUN, TERRAIN_NAME, unnamedName, weatherDeparture } from "../lore";
+import { cityLabel, continentLabel, waterLabel } from "../lore";
 import { filterHistory, findAnnal, individualAnnals, relatedMoments, subjectHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
 import { eras, quietLine, quietSummary, QUIET_KINDS, type Era } from "../eras";
 import { bond } from "../words";
@@ -118,8 +119,8 @@ const TRAIL_SHOWN = 3;
 /// every name in it leading to that thing's own card. Each card opens the
 /// same way: what kind of thing it is, its name, a box of facts, and its
 /// specimen words where it has a language, then sections to read on. Long
-/// and wide sections show a line on the card and open in the folio over
-/// the map. The last few cards visited stay named above it, to step back to.
+/// and wide sections show a line on the card and open over the map.
+/// The trail is the path to this card; returning to a subject truncates it.
 export function Pedia({
   trail,
   onReturn,
@@ -254,7 +255,7 @@ export function Pedia({
         </button>
         <button type="button" className="icon pedia-search" onClick={onIndex} title="Search the chart" aria-label="Search the chart"><Search size={16} /></button>
       </nav>
-          <ol className="trail" aria-label="Cards visited">
+          <ol className="trail" aria-label="Card path">
             <li className="trail-year" aria-current="date">Year {context.generation * YEARS}</li>
             {first > 0 ? <li aria-hidden="true">…</li> : null}
             {trail.slice(first, -1).map((f, i) => (
@@ -324,11 +325,11 @@ function focusLabel(focus: Focus, context: Context): string {
   const { overview } = context;
   switch (focus.kind) {
     case "world":
-      return context.title ?? "The world";
+      return context.title?.trim() || "The world";
     case "people":
-      return overview.communities[focus.id]?.name ?? "A people";
+      return peopleLabel(overview, focus.id);
     case "state":
-      return overview.states[focus.id]?.name ?? "A state";
+      return stateLabel(overview, focus.id);
     case "religion":
       return overview.religions[focus.id]?.name ?? FAITH_NAME.kind;
     case "craft":
@@ -344,9 +345,9 @@ function focusLabel(focus: Focus, context: Context): string {
     case "continent":
       return continentName(focus.landmass, context);
     case "river":
-      return context.engine.river(context.generation, focus.id).names.at(-1)?.spelled ?? unnamedName("river");
+      return waterLabel(context.engine, context.generation, context.map, "river", focus.id);
     case "lake":
-      return context.engine.lake(context.generation, focus.id).names.at(-1)?.spelled ?? unnamedName("lake");
+      return waterLabel(context.engine, context.generation, context.map, "lake", focus.id);
     case "zone":
       return zoneName(focus.id, context);
     case "event":
@@ -467,7 +468,7 @@ function PeopleLink({ c, context }: { c: Community; context: Context }) {
       style={{ color: hue(family) }}
       onClick={() => context.go({ kind: "people", id: c.id })}
     >
-      {c.name}
+      {peopleLabel(context.overview, c.id)}
     </button>
   );
 }
@@ -480,7 +481,7 @@ function StateLink({ state, context }: { state: StateView; context: Context }) {
       style={{ color: hue(state.id) }}
       onClick={() => context.go({ kind: "state", id: state.id })}
     >
-      {state.name}
+      {stateLabel(context.overview, state.id)}
     </button>
   );
 }
@@ -524,7 +525,7 @@ function LanguageLink({ variety, context }: { variety: number; context: Context 
 }
 
 function landName(region: number, context: Context): string {
-  return landLabel(context.overview, context.map, region);
+  return landCardLabel(context.overview, context.map, region);
 }
 
 function LandLink({ region, context }: { region: number; context: Context }) {
@@ -538,7 +539,7 @@ function LandLink({ region, context }: { region: number; context: Context }) {
 /// A continent's name on the chart, or a plain description before anyone
 /// has named it.
 function continentName(landmass: number, context: Context): string {
-  return context.overview.continents.find((c) => c.landmass === landmass)?.name?.name ?? unnamedName(context.map.landmasses[landmass].kind);
+  return continentLabel(context.overview, context.map, landmass);
 }
 
 function ContinentLink({ landmass, context }: { landmass: number; context: Context }) {
@@ -617,7 +618,7 @@ function KnownWorldLeaf({ variety, context }: { variety: number; context: Contex
               items={lands}
               link={(land) => (
                 <button type="button" className="link word" title={`/${land.ipa}/`} onClick={() => context.go({ kind: "land", region: land.region })}>
-                  {land.spelled}
+                  {landCardLabel(overview, map, land.region, land.spelled, known.filter((other) => other.spelled === land.spelled).map((other) => other.region))}
                 </button>
               )}
             />
@@ -628,11 +629,15 @@ function KnownWorldLeaf({ variety, context }: { variety: number; context: Contex
   );
 }
 
-/// Cities by name, each once: a city that fell and rose again under
-/// another state keeps its name, and the chart names it once.
+/// A city's repeated fortunes stay one place, but namesakes elsewhere do not.
 function cityNames(cities: CityView[]): CityView[] {
   const seen = new Set<string>();
-  return cities.filter((city) => !seen.has(city.name.name) && seen.add(city.name.name));
+  return cities.filter((city) => {
+    const key = `${city.region}:${city.name.name}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function ContinentCard({ landmass, context }: { landmass: number; context: Context }) {
@@ -659,7 +664,7 @@ function ContinentCard({ landmass, context }: { landmass: number; context: Conte
       <CardHead
         icon={Earth}
         kind="A continent"
-        title={name?.name ?? unnamedName(map.landmasses[landmass].kind)}
+        title={continentName(landmass, context)}
         sub={name ? <>“{name.meaning}” <span className="ipa">/{name.ipa}/</span></> : null}
       />
       <Facts
@@ -682,7 +687,7 @@ function ContinentCard({ landmass, context }: { landmass: number; context: Conte
             <Joined items={states} link={(state) => <StateLink state={state} context={context} />} />
           ) : null],
           ["Cities", cities.length > 0 ? (
-            <Joined items={cities} link={(city) => <span className="word">{city.name.name}</span>} />
+            <Joined items={cities} link={(city) => <button type="button" className="link word" onClick={() => context.go({ kind: "land", region: city.region })}>{cityLabel(overview, map, city)}</button>} />
           ) : null],
           ["Shrines", view && view.religions.length > 0 ? (
             <Joined items={view.religions} link={(id) => <ReligionLink religion={overview.religions[id]} context={context} />} />
@@ -725,16 +730,14 @@ function ContinentCard({ landmass, context }: { landmass: number; context: Conte
 }
 
 function RiverLink({ id, context }: { id: number; context: Context }) {
-  const view = context.engine.river(context.generation, id);
   return <button type="button" className="link word" onClick={() => context.go({ kind: "river", id })}>
-    {view.names.at(-1)?.spelled ?? unnamedName("river")}
+    {waterLabel(context.engine, context.generation, context.map, "river", id)}
   </button>;
 }
 
 function LakeLink({ id, context }: { id: number; context: Context }) {
-  const view = context.engine.lake(context.generation, id);
   return <button type="button" className="link word" onClick={() => context.go({ kind: "lake", id })}>
-    {view.names.at(-1)?.spelled ?? unnamedName("lake")}
+    {waterLabel(context.engine, context.generation, context.map, "lake", id)}
   </button>;
 }
 
@@ -786,7 +789,7 @@ function RiverCard({ id, context }: { id: number; context: Context }) {
   const living = overview.communities.filter((c) => c.ended === null && c.lands.some((land) => river.course.includes(land)));
   const flow = climate.rivers.find((flow) => flow.id === id);
   return <>
-    <CardHead icon={Waves} kind="A river" title={now?.spelled ?? unnamedName("river")}
+    <CardHead icon={Waves} kind="A river" title={waterLabel(context.engine, context.generation, context.map, "river", id)}
       sub={now ? <span className="ipa">/{now.ipa}/</span> : null} />
     <Facts rows={[
       ["Length", `${Math.round(river.lengthKm).toLocaleString()} km`],
@@ -825,7 +828,7 @@ function LakeCard({ id, context }: { id: number; context: Context }) {
   const lake = map.lakes[id];
   const now = view.names.at(-1);
   return <>
-    <CardHead icon={Waves} kind="A lake" title={now?.spelled ?? unnamedName("lake")}
+    <CardHead icon={Waves} kind="A lake" title={waterLabel(context.engine, context.generation, context.map, "lake", id)}
       sub={now ? <span className="ipa">/{now.ipa}/</span> : null} />
     <Facts rows={[
       ["Lies in", <Joined items={lake.regions} link={(region) => <LandLink region={region} context={context} />} />],
@@ -1170,7 +1173,7 @@ function ChronicleEvents({ annals, context }: { annals: Annal[]; context: Contex
   })}</ol>;
 }
 
-function EraSubjects({ era, context }: { era: Era; context: Context }) {
+function EraSubjects({ era, context, onOpen }: { era: Era; context: Context; onOpen: () => void }) {
   const { overview } = context;
   const subjects = new Map<string, ReactNode>();
   for (const year of era.years) for (const annal of year.headlines) {
@@ -1178,7 +1181,9 @@ function EraSubjects({ era, context }: { era: Era; context: Context }) {
     for (const id of annal.states) if (overview.states[id]) subjects.set(`state-${id}`, <StateLink state={overview.states[id]} context={context} />);
     for (const id of annal.languages) if (overview.varieties[id]) subjects.set(`language-${id}`, <LanguageLink variety={id} context={context} />);
   }
-  return <span className="chronicle-era-subjects"><Joined items={[...subjects.values()].slice(0, 4)} link={(link) => link} />{subjects.size > 4 ? ` and ${subjects.size - 4} more` : null}</span>;
+  const links = [...subjects.values()];
+  if (links.length > 4) links.splice(4, links.length - 4, <button type="button" className="link" onClick={onOpen}>{subjects.size - 4} more</button>);
+  return <span className="chronicle-era-subjects"><Joined items={links} link={(link) => link} /></span>;
 }
 
 /// The card is the contents; the wide card reads the same eras in detail.
@@ -1189,7 +1194,10 @@ function HistoryCard({ context }: { context: Context }) {
   const update = (patch: Partial<HistoryView>) => onHistoryView({ ...view, limit: 100, ...patch });
   const contents = useMemo(() => eras(overview.annals, overview.generation, overview), [overview]);
   const lines = useMemo(() => filterHistory(overview.annals, overview.varieties, view), [overview, view]);
-  const shown = lines.slice(0, view.limit);
+  // Never split a year between pages: its quiet count and headlines belong together.
+  const boundary = lines[view.limit - 1]?.generation;
+  const nextYear = boundary === undefined ? -1 : lines.findIndex((annal, index) => index >= view.limit && annal.generation !== boundary);
+  const shown = lines.slice(0, nextYear < 0 ? lines.length : nextYear);
   const selected = new Set(shown.map((a) => a.id));
   const unfold = view.group !== "All events" || view.query.trim() !== "" || view.sounds !== "all";
   const ordered = view.order === "newest" ? [...contents].reverse() : contents;
@@ -1224,7 +1232,7 @@ function HistoryCard({ context }: { context: Context }) {
           <span className="chronicle-era-span">{era.start * YEARS}–{era.end * YEARS}</span>
           <span>{era.heading}</span>
         </button>
-        <EraSubjects era={era} context={context} />
+        <EraSubjects era={era} context={context} onOpen={() => openEra(era)} />
       </li>)}</ol>
       <Leaf id="history" title="Entries" summary={
         <p>{headlineCount.toLocaleString()} headline {headlineCount === 1 ? "entry" : "entries"} and {quietYears.toLocaleString()} quiet {quietYears === 1 ? "year" : "years"}.</p>
@@ -1356,7 +1364,7 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
       <CardHead
         icon={Users}
         kind="A people"
-        title={c.name}
+        title={peopleLabel(overview, c.id)}
         tone={hue(v.family)}
         sub={
           <>
@@ -1494,7 +1502,7 @@ function StateCard({ state, context }: { state: StateView; context: Context }) {
       <CardHead
         icon={Landmark}
         kind={state.fell === null ? "A standing state" : "A fallen state"}
-        title={state.name}
+        title={stateLabel(overview, state.id)}
         tone={hue(state.id)}
         sub={<>“{state.meaning}” <span className="ipa">/{state.ipa}/</span>{state.once ? `, once ${state.once}` : ""}</>}
       />
@@ -1551,7 +1559,7 @@ function GreatCity({ state, context }: { state: StateView; context: Context }) {
   const townsfolk = city.townsfolk === null ? null : overview.communities[city.townsfolk];
   return (
     <>
-      <span className="word">{city.name.name}</span>, “{city.name.meaning}”, {souls}, great since year{" "}
+      <span className="word">{cityLabel(context.overview, context.map, city)}</span>, “{city.name.meaning}”, {souls}, great since year{" "}
       <Year generation={city.since} context={context} />; its people speak{" "}
       <Joined items={city.makeup.slice(0, 3)}
         link={(m) => <><LanguageLink variety={m.variety} context={context} /> {Math.round(m.share * 100)}%</>} />
@@ -1957,7 +1965,7 @@ function LandCard({ region, context }: { region: number; context: Context }) {
       <CardHead
         icon={MapPin}
         kind="A land"
-        title={landLabel(overview, map, region)}
+        title={landCardLabel(overview, map, region)}
         sub={now ? <span className="ipa">/{now.ipa}/</span> : null}
       />
       <Facts
@@ -1993,7 +2001,7 @@ function LandCard({ region, context }: { region: number; context: Context }) {
             <Joined items={religions} link={(religion) => <ReligionLink religion={religion} context={context} />} />
           ) : null],
           ["City", cities.length > 0 ? (
-            <Joined items={cities} link={(city) => <span className="word">{city.name.name}</span>} />
+            <Joined items={cities} link={(city) => <button type="button" className="link word" onClick={() => context.go({ kind: "state", id: city.state })}>{cityLabel(overview, map, city)}</button>} />
           ) : null],
           ["Names", names.length > 1 ? `${names.length} so far` : null],
         ]}

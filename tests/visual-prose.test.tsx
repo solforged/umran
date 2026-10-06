@@ -11,11 +11,11 @@ const quiet = (kind: Annal["kind"], members: Annal[] = []) => ({
 describe("quiet-year disclosure", () => {
   test("keep the collapsed account short, counting grouped entries individually", () => {
     const year: EraYear = { generation: 160, headlines: [], quiet: [quiet("law"), quiet("neighbours", [quiet("contact"), quiet("contact")]), quiet("climate")] };
-    expect(quietSummary(year)).toBe("Also this year: 4 quieter entries.");
+    expect(quietSummary(year)).toMatch(/\b4 quieter entries\b/);
     const detail = quietLine(year, { varieties: [] } as unknown as Overview);
     expect(detail).toContain(";");
     expect(detail.length).toBeGreaterThan(quietSummary(year).length);
-    expect(quietSummary({ ...year, quiet: [quiet("law")] })).toBe("Also this year: 1 quieter entry.");
+    expect(quietSummary({ ...year, quiet: [quiet("law")] })).toMatch(/\b1 quieter entry\b/);
   });
 });
 

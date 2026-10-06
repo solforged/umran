@@ -75,7 +75,8 @@ function subjectId(subject: Subject, overview: Overview): string {
       const annal = individualAnnals(overview.annals).find((a) => a.laws.includes(subject.id));
       return annal ? `event-${annal.id}` : "book-languages";
     }
-    case "river": case "zone": return "book-lands";
+    case "river": return `river-${subject.id}`;
+    case "zone": return "book-lands";
   }
 }
 
@@ -105,10 +106,10 @@ export function PeopleChapter({ community: c, ctx }: { community: Community; ctx
   const kin = overview.communities.filter((other) => other.id !== c.id && (c.parents.includes(other.id) || other.parents.includes(c.id) || c.parents.some((parent) => other.parents.includes(parent))));
   const language = overview.varieties[c.variety];
   const phrases = lore.peoplePhrases(c.ended);
-  const landLink = (region: number) => ctx.link({ kind: "land", region }, lore.landLabel(overview, map, region));
-  const personLink = (id: number) => ctx.link({ kind: "people", id }, overview.communities[id]?.name ?? "An unrecorded people");
+  const landLink = (region: number) => ctx.link({ kind: "land", region }, lore.landCardLabel(overview, map, region));
+  const personLink = (id: number) => ctx.link({ kind: "people", id }, lore.peopleLabel(overview, id));
   return <article className="book-subject people-chapter" id={`people-${c.id}`}>
-    <h3>{c.name}</h3><p className="book-subtitle">“{c.meaning}” · <span className="ipa">/{c.ipa}/</span>{c.once ? ` · once ${c.once}` : ""}{c.ended !== null ? ` · ended in year ${c.ended * YEARS}` : ""}</p>
+    <h3>{lore.peopleLabel(overview, c.id)}</h3><p className="book-subtitle">“{c.meaning}” · <span className="ipa">/{c.ipa}/</span>{c.once ? ` · once ${c.once}` : ""}{c.ended !== null ? ` · ended in year ${c.ended * YEARS}` : ""}</p>
     <h4>{phrases.land}</h4><p>{phrases.homeland} {landLink(c.region)}, {map.regions[c.region].coastal ? "coastal " : ""}{TERRAIN_NAME[map.regions[c.region].terrain].toLowerCase()}{map.regions[c.region].island ? ", on an island" : ""}. {c.lands.length > 1 ? <>Their lands: {c.lands.map((region, i) => <span key={region}>{i ? ", " : ""}{landLink(region)}</span>)}.</> : null}</p>
     <h4>{phrases.livelihood}</h4><p>{LIVELIHOOD_NAME[c.livelihood]}; {Math.round(c.size).toLocaleString()} people{c.ended !== null ? " when they ended" : " now"}.</p>
     <h4>What they are like</h4><p>{temperament(c.ethos, 6).join(", ") || "No marked leaning"}.</p>
@@ -232,7 +233,7 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
           const continent = overview.continents.find((c) => c.landmass === mass.id);
           const places = overview.places.filter((p) => map.regions[p.region].landmass === mass.id);
           return <article className="book-subject" id={`continent-${mass.id}`} key={mass.id}>
-            <h3>{continent?.name?.name ?? lore.unnamedName(mass.kind)}</h3>
+            <h3>{lore.continentLabel(overview, map, mass.id)}</h3>
             {continent?.name ? <p>
               “{continent.name.meaning}” · <span className="ipa">/{continent.name.ipa}/</span>;
               entered on the chart in year {continent.name.since * YEARS}, from{" "}
@@ -240,7 +241,7 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
             </p> : null}
             <p>{mass.regions.length} lands; {Array.from(new Set(mass.regions.map((id) => TERRAIN_NAME[map.regions[id].terrain].toLowerCase()))).join(", ")}.</p>
             {places.map((place) => <section className="book-land" id={`land-${place.region}`} key={place.region}>
-              <h4>{lore.landLabel(overview, map, place.region)}</h4>
+              <h4>{lore.landCardLabel(overview, map, place.region)}</h4>
               <p>{map.regions[place.region].coastal ? "Coastal " : ""}{TERRAIN_NAME[map.regions[place.region].terrain].toLowerCase()}
                 {map.regions[place.region].island ? ", on an island" : ""}.
               </p>
@@ -248,7 +249,7 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
                 <span className="gen">{n.since * YEARS}</span>
                 <span><span className="word">{n.spelled}</span> <span className="ipa">/{n.ipa}/</span> “{n.meaning}” · {n.origin},
                   in {ctx.link({ kind: "language", variety: n.variety }, n.language)}
-                  {n.by !== null ? <>; coined by {ctx.link({ kind: "people", id: n.by }, overview.communities[n.by]?.name)}</> : null}
+                  {n.by !== null ? <>; coined by {ctx.link({ kind: "people", id: n.by }, lore.peopleLabel(overview, n.by))}</> : null}
                   {n.once ? `; once ${n.once}` : ""}.
                 </span>
               </li>)}</ol>
@@ -267,8 +268,7 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
         })}
         <h3>Climate and rivers</h3>
         <ul className="roster">{map.rivers.map((river) => {
-          const name = engine.river(generation, river.id).names.at(-1);
-          return <li key={river.id}>{name?.spelled ?? lore.unnamedName("river")} · {climate.rivers.find((flow) => flow.id === river.id)?.flowing ? "flowing" : "flow has failed"}.</li>;
+          return <li key={river.id} id={`river-${river.id}`}>{lore.waterLabel(engine, generation, map, "river", river.id)} · {climate.rivers.find((flow) => flow.id === river.id)?.flowing ? "flowing" : "flow has failed"}.</li>;
         })}</ul>
         {climate.zones.map((zone) => {
           const seasons = commonestSeasons(climate, zone.id);
@@ -276,12 +276,11 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
         })}
         <h3>Lakes</h3>
         <ul className="roster">{map.lakes.map((lake) => {
-          const name = engine.lake(generation, lake.id).names.at(-1);
           return <li key={lake.id} id={`lake-${lake.id}`}>
-            {ctx.link({ kind: "lake", id: lake.id }, name?.spelled ?? lore.unnamedName("lake"))} ·{" "}
+            {ctx.link({ kind: "lake", id: lake.id }, lore.waterLabel(engine, generation, map, "lake", lake.id))} ·{" "}
             {lake.outlet === null ? "no outlet; a closed basin" : <>drains to {ctx.link(
               { kind: "river", id: lake.outlet },
-              engine.river(generation, lake.outlet).names.at(-1)?.spelled ?? lore.unnamedName("river"),
+              lore.waterLabel(engine, generation, map, "river", lake.outlet),
             )}</>}.
           </li>;
         })}</ul>
@@ -322,7 +321,7 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
           const standard = overview.varieties.find((v) => v.standardOf === state.id);
           return (
           <article className="book-subject" id={`state-${state.id}`} key={state.id}>
-            <h4>{state.name}</h4><p>{states[i]}.</p>
+            <h4>{lore.stateLabel(overview, state.id)}</h4><p>{states[i]}.</p>
             <p>{state.standard !== null && standard ? <>Court speech: {ctx.link({ kind: "language", variety: standard.id }, standard.name)}; standard since year {state.standard * YEARS}.</> : "No court standard recorded."}
               {" "}{state.classical ? <>Classical form: {ctx.link({ kind: "language", variety: state.classical.variety }, overview.varieties[state.classical.variety]?.name)}, fixed in year {state.classical.fixed * YEARS}.</> : null}
             </p>
@@ -351,14 +350,14 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
         <h3>Cities</h3>
         {overview.cities.length ? overview.cities.map((city) => (
           <article className="book-subject" key={city.id}>
-            <h4>{city.name.name}</h4>
+            <h4>{ctx.link({ kind: "land", region: city.region }, lore.cityLabel(overview, map, city))}</h4>
             <p>“{city.name.meaning}”; a great city since year {city.since * YEARS},
-              in {ctx.link({ kind: "state", id: city.state }, overview.states[city.state]?.name)}.
+              in {ctx.link({ kind: "state", id: city.state }, lore.stateLabel(overview, city.state))}.
               {" "}Its speech: {city.makeup.map((share, i) => <span key={share.variety}>
                 {i ? ", " : ""}{ctx.link({ kind: "language", variety: share.variety }, overview.varieties[share.variety]?.name)} {Math.round(share.share * 100)}%
               </span>)}.
             </p>
-            {city.townsfolk !== null ? <p>Its townsfolk became {ctx.link({ kind: "people", id: city.townsfolk }, overview.communities[city.townsfolk]?.name)}.</p> : null}
+            {city.townsfolk !== null ? <p>Its townsfolk became {ctx.link({ kind: "people", id: city.townsfolk }, lore.peopleLabel(overview, city.townsfolk))}.</p> : null}
           </article>
         )) : <p className="muted">No great cities yet.</p>}
       </section>

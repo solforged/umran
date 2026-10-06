@@ -120,6 +120,17 @@ the engine, not a second source. Blank where the engine has nothing yet.
 8. **Other tellings.** Each draft's name, the year and decision it
    diverged on, and what it kept.
 
+Namesakes keep their recorded names. Place links add terrain when needed,
+then a compass direction among namesakes on like terrain. A local ordinal
+appears only on labels that remain identical. Compare names shown in the
+same reading, not unrelated historical spellings or exonyms. Cities use
+their land; rivers use their source; lakes use a shore region. Peoples use
+a number when needed.
+Successive realms of one people carry their founding year, including in
+era headings. The breadcrumb is a path: revisiting a card truncates the
+path to it. Chronicle pages keep each year together, and the contents'
+remaining-subject count opens that era.
+
 ## A spherical world, two views
 
 The chart remains the first view, with a rotatable inked globe beside it
@@ -167,6 +178,9 @@ together. Grammar and names open as disclosures; the full sound chart
 opens separately. Related peoples share their ancestral sound and grammar
 choices while the world is being drafted. Reach is drawn on the chart
 for the selected people, with effort on hover.
+
+The specimen uses three equal columns in the founding portrait. Each
+meaning stays above its word, and long words wrap inside their column.
 
 The framed world title and size dropdown sit over the map. *Details*
 holds author, seed, physical dimensions, and *Redraw the coasts*.

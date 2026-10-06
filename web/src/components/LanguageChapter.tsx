@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Feather } from "lucide-react";
 import type { Annal, HistoryLine, Law, LexiconRow, LoanCause, Overview, ReadEngine, Subject, Variant, Variety, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { CONTACT_NAME, MARKING_PHRASE, POSSESSOR_PHRASE, STRESS_RULE, WORD_ORDER_PHRASE } from "../lore";
+import { CONTACT_NAME, landCardLabel, MARKING_PHRASE, peopleLabel, POSSESSOR_PHRASE, stateLabel, STRESS_RULE, WORD_ORDER_PHRASE } from "../lore";
 import { individualAnnals, findAnnal } from "../history";
 import { Dictionary, INITIAL_DICTIONARY, type DictionaryView } from "./Dictionary";
 import { FamilyTree } from "./FamilyTree";
@@ -38,7 +38,7 @@ export interface ParadigmView {
 }
 
 const language = (id: number, ctx: ChapterContext) => ctx.link({ kind: "language", variety: id }, ctx.overview.varieties[id]?.name ?? "An unrecorded language");
-const people = (id: number, ctx: ChapterContext) => ctx.link({ kind: "people", id }, ctx.overview.communities[id]?.name ?? "An unrecorded people");
+const people = (id: number, ctx: ChapterContext) => ctx.link({ kind: "people", id }, peopleLabel(ctx.overview, id));
 const year = (at: number) => `year ${at * YEARS}`;
 
 export function Position({ variety: v, ctx }: SectionProps) {
@@ -220,7 +220,7 @@ export function Names({ variety: v, ctx }: SectionProps) {
     </li>)}</ul> : <p className="muted">No given names recorded.</p>}
     <h4>Lands named in this tongue</h4>
     {lands.length ? <ul className="roster">{lands.map(({ region, name: n }, i) => <li key={i}>
-      {ctx.link({ kind: "land", region }, <span className="word">{n.spelled}</span>)} <span className="ipa">/{n.ipa}/</span>
+      {ctx.link({ kind: "land", region }, <span className="word">{landCardLabel(ctx.overview, ctx.map, region, n.spelled, lands.filter((other) => other.name.spelled === n.spelled).map((other) => other.region))}</span>)} <span className="ipa">/{n.ipa}/</span>
       {" "}“{n.meaning}” · {n.origin}, since {year(n.since)}
       {n.by !== null ? <>; coined by {people(n.by, ctx)}</> : null}{n.once ? `; once ${n.once}` : ""}.
     </li>)}</ul> : <p className="muted">No land names recorded in this tongue.</p>}
@@ -250,9 +250,9 @@ export function Standing({ variety: v, ctx }: SectionProps) {
       <div><dt>Speech</dt><dd>{speakers.length ? speakers.map((c, i) => <span key={c.id}>
         {i ? ", " : ""}{people(c.id, ctx)}
       </span>) : "No living speakers"}.</dd></div>
-      {v.standardOf !== null ? <div><dt>Standard</dt><dd>Of {ctx.link({ kind: "state", id: v.standardOf }, ctx.overview.states[v.standardOf]?.name)}.</dd></div> : null}
+      {v.standardOf !== null ? <div><dt>Standard</dt><dd>Of {ctx.link({ kind: "state", id: v.standardOf }, stateLabel(ctx.overview, v.standardOf))}.</dd></div> : null}
       {v.classicalOf !== null ? <div><dt>Classical</dt><dd>
-        Kept by {ctx.link({ kind: "state", id: v.classicalOf }, ctx.overview.states[v.classicalOf]?.name)}
+        Kept by {ctx.link({ kind: "state", id: v.classicalOf }, stateLabel(ctx.overview, v.classicalOf))}
         {writers.length ? <>; written by speakers of {writers.map((w, i) => <span key={w.id}>{i ? ", " : ""}{language(w.id, ctx)}</span>)}</> : null}.
       </dd></div> : null}
       {v.sacredOf !== null ? <div><dt>Sacred</dt><dd>To {ctx.link({ kind: "religion", id: v.sacredOf }, ctx.overview.religions[v.sacredOf]?.name)}.</dd></div> : null}

@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { filterHistory, INITIAL_HISTORY, searchText, subjectHistory } from "../web/src/history";
 import type { Annal, Overview, Variety, WorldMap } from "../web/src/model";
+import { eras, heading } from "../web/src/eras";
+import { stateLabel } from "../web/src/lore";
 
 const annal = (generation: number, kind: Annal["kind"], variety: number | null, text = "A moment."): Annal => ({
   id: `${kind}:${variety}:${generation}`, members: [], languages: variety === null ? [] : [variety],
@@ -43,4 +45,23 @@ describe("chronicle readings", () => {
     const source = [annal(1, "law", 0), annal(2, "shift", 0), annal(3, "migration", 0), annal(4, "grammar", 0)];
     expect(filterHistory(source, family, { ...INITIAL_HISTORY, group: "Languages & words", sounds: "none" })).toEqual([source[3], source[1]]);
   });
+});
+
+test("era headings use state identity, not the historical spelling in each annal", () => {
+  const states = [
+    { id: 0, name: "Iff", rulers: 0, rose: 8 },
+    { id: 1, name: "Iffi", rulers: 0, rose: 24 },
+  ] as Overview["states"];
+  const events = [
+    { ...annal(8, "rose", null, "Iffi rose."), states: [0] },
+    { ...annal(16, "fell", null, "Iff fell."), states: [0] },
+    { ...annal(24, "rose", null, "Iffi rose again."), states: [1] },
+  ];
+  const world = { states } as Overview;
+  const sections = eras(events, 32, world);
+  expect(sections.slice(1).map((era) => era.opening?.states[0])).toEqual([0, 0, 1]);
+  expect(heading(events[0], world)).toContain(stateLabel(world, 0));
+  expect(heading(events[1], world)).toContain(stateLabel(world, 0));
+  expect(heading(events[2], world)).toContain(stateLabel(world, 1));
+  expect(stateLabel(world, 0)).not.toBe(stateLabel(world, 1));
 });

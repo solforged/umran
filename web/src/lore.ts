@@ -38,7 +38,7 @@ import {
   WholeWord,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, ClimateView, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Mechanism, Overview, PlaceExonym, PlaceName, ReligionView, Rendering, SchismCause, Seasons, StateView, StressRule, Tenet, Terrain, TravelLeg, WorldMap } from "./model";
+import type { Annal, ClimateView, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Mechanism, Overview, PlaceExonym, PlaceName, ReadEngine, ReligionView, Rendering, SchismCause, Seasons, StateView, StressRule, Tenet, Terrain, TravelLeg, WorldMap } from "./model";
 import { YEARS } from "./model";
 import { findAnnal } from "./history";
 
@@ -465,6 +465,87 @@ export function unnamedName(kind: string, prose = false): string {
 export function landLabel(overview: Overview, map: WorldMap, region: number, prose = false): string {
   return overview.places.find((p) => p.region === region)?.names.at(-1)?.spelled ??
     unnamedName(TERRAIN_NAME[map.regions[region].terrain], prose);
+}
+
+type NamedSite = { id: number; terrain: string; center: [number, number] };
+
+/// Distinguish namesakes by terrain, then position among those on like terrain.
+/// Longitude differences wrap at the date line. Ordinals resolve remaining ties,
+/// and count only the tied namesakes, never the map's internal identifiers.
+function geographicQualifier(sites: NamedSite[], id: number): string {
+  const site = sites.find((other) => other.id === id)!;
+  const alike = sites.filter((other) => other.terrain === site.terrain);
+  if (alike.length === 1) return site.terrain;
+  const directions = alike.map((other) => {
+    let east = 0;
+    let north = 0;
+    for (const peer of alike) {
+      east += ((other.center[0] - peer.center[0] + 540) % 360) - 180;
+      north += other.center[1] - peer.center[1];
+    }
+    const direction = Math.abs(east) < 1e-9 && Math.abs(north) < 1e-9 ? "central"
+      : Math.abs(north) >= Math.abs(east) ? (north > 0 ? "northern" : "southern")
+      : east > 0 ? "eastern" : "western";
+    return { id: other.id, direction };
+  });
+  const direction = directions.find((other) => other.id === id)!.direction;
+  const tied = directions.filter((other) => other.direction === direction).sort((a, b) => a.id - b.id);
+  return `${direction} ${site.terrain}${tied.length > 1 ? `, ${tied.findIndex((other) => other.id === id) + 1}` : ""}`;
+}
+
+/// Reading labels identify subjects without changing their recorded names.
+/// Compare the spellings this reading actually shows, not unrelated old names
+/// or exonyms. A language's own list supplies its namesakes explicitly.
+export function landCardLabel(overview: Overview, map: WorldMap, region: number, name = landLabel(overview, map, region), namesakes?: readonly number[]): string {
+  const regions = new Set(namesakes ?? overview.places.filter((place) => place.names.at(-1)?.spelled === name).map((place) => place.region));
+  regions.add(region);
+  if (!overview.places.find((place) => place.region === region)?.names.length) {
+    const named = new Set(overview.places.filter((place) => place.names.length).map((place) => place.region));
+    for (const other of map.regions) if (!named.has(other.id) && other.terrain === map.regions[region].terrain) regions.add(other.id);
+  }
+  if (regions.size === 1) return name;
+  const sites = [...regions].map((id) => ({ id, center: map.regions[id].center, terrain: TERRAIN_NAME[map.regions[id].terrain].toLowerCase() }));
+  return `${name} (${geographicQualifier(sites, region)})`;
+}
+
+export function peopleLabel(overview: Overview, id: number): string {
+  const people = overview.communities[id];
+  if (!people) return "An unrecorded people";
+  return overview.communities.some((other) => other.id !== id && other.name === people.name)
+    ? `${people.name} (people ${id + 1})` : people.name;
+}
+
+export function stateLabel(overview: Overview, id: number): string {
+  const state = overview.states[id];
+  if (!state) return "An unrecorded state";
+  const related = overview.states.filter((other) => other.id !== id && (other.name === state.name || other.rulers === state.rulers));
+  if (!related.length) return state.name;
+  const qualifier = related.some((other) => other.rose === state.rose) ? `state ${id + 1}, founded ${state.rose * YEARS}` : `founded ${state.rose * YEARS}`;
+  return `${state.name} (${qualifier})`;
+}
+
+export function continentLabel(overview: Overview, map: WorldMap, landmass: number): string {
+  const mass = map.landmasses[landmass];
+  const name = overview.continents.find((continent) => continent.landmass === landmass)?.name?.name ?? unnamedName(mass.kind);
+  const sites = map.landmasses.filter((other) =>
+    (overview.continents.find((continent) => continent.landmass === other.id)?.name?.name ?? unnamedName(other.kind)) === name)
+    .map((other) => ({ id: other.id, terrain: other.kind, center: map.regions[other.anchor].center }));
+  return sites.length > 1 ? `${name} (${geographicQualifier(sites, landmass)})` : name;
+}
+
+export function cityLabel(overview: Overview, map: WorldMap, city: Overview["cities"][number]): string {
+  const regions = [...new Set(overview.cities.filter((other) => other.name.name === city.name.name).map((other) => other.region))];
+  const sites = regions.map((id) => ({ id, center: map.regions[id].center, terrain: TERRAIN_NAME[map.regions[id].terrain].toLowerCase() }));
+  return sites.length > 1 ? `${city.name.name} (${geographicQualifier(sites, city.region)})` : city.name.name;
+}
+
+export function waterLabel(engine: ReadEngine, generation: number, map: WorldMap, kind: "river" | "lake", id: number): string {
+  const name = engine[kind](generation, id).names.at(-1)?.spelled ?? unnamedName(kind);
+  const waters = kind === "river" ? map.rivers.map((river) => ({ id: river.id, region: river.course[0] }))
+    : map.lakes.map((lake) => ({ id: lake.id, region: lake.regions[0] }));
+  const sites = waters.filter((other) => (engine[kind](generation, other.id).names.at(-1)?.spelled ?? unnamedName(kind)) === name)
+    .map((other) => ({ id: other.id, center: map.regions[other.region].center, terrain: TERRAIN_NAME[map.regions[other.region].terrain].toLowerCase() }));
+  return sites.length > 1 ? `${name} (${kind === "river" ? "from " : ""}${geographicQualifier(sites, id)})` : name;
 }
 
 /// Languages' names for a land, grouped by how they spell it, those that

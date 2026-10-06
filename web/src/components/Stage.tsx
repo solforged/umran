@@ -49,6 +49,12 @@ function stops(on: PauseOn, annal: Annal): boolean {
 /// Most cards the back button remembers.
 const TRAIL_LENGTH = 40;
 
+function cardPath(path: Destination[], next: Destination): Destination[] {
+  const key = JSON.stringify(next.subject);
+  const existing = path.findIndex((visit) => JSON.stringify(visit.subject) === key);
+  return [...(existing < 0 ? path.slice(-TRAIL_LENGTH) : path.slice(0, existing)), next];
+}
+
 function exists(subject: Focus, overview: Overview, map: WorldMap): boolean {
   switch (subject.kind) {
     case "event": return !!findAnnal(overview.annals, subject.id);
@@ -250,11 +256,8 @@ export function Stage({
     if (next.kind === "people") onSelect(next.id);
     // The history card is the whole history, so it opens in the folio.
     setLeaf(next.kind === "history" ? "history" : null);
-    // Opening the card already open adds nothing to the trail.
-    setTrail((t) => {
-      const current = [...t.slice(0, -1), destination(t.at(-1)!.subject)];
-      return JSON.stringify(t.at(-1)!.subject) === JSON.stringify(next) ? current : [...current.slice(-TRAIL_LENGTH), destination(next)];
-    });
+    // Revisiting a card returns to that point in the path, at this reading.
+    setTrail((t) => cardPath([...t.slice(0, -1), destination(t.at(-1)!.subject)], destination(next)));
   };
   const returnTo = (index: number) => {
     halt();
@@ -313,7 +316,7 @@ export function Stage({
     setTrail((visits) => {
       const current = visits.at(-1)!.subject;
       const subjects = visits.filter((visit) => visit.subject.kind !== "event");
-      return current.kind === "event" && subjects.at(-1)?.subject.kind !== "world" ? [...subjects, destination({ kind: "world" })] : subjects;
+      return current.kind === "event" ? cardPath(subjects, destination({ kind: "world" })) : subjects;
     });
     if (focus.kind === "event") setLeaf(null);
   };
@@ -370,7 +373,9 @@ export function Stage({
     const valid = trail.filter((visit, index) => exists(visit.subject, overview, map) && (visit.subject.kind !== "event" || index === trail.length - 1));
     if (!exists(focus, overview, map)) {
       setLeaf(null);
-      if (valid.at(-1)?.subject.kind !== "world") valid.push(destination({ kind: "world" }));
+      const home = valid.findIndex((visit) => visit.subject.kind === "world");
+      if (home >= 0) valid.splice(home + 1);
+      else valid.push(destination({ kind: "world" }));
     }
     setTrail(valid.map((visit) => destination(visit.subject)));
   }, [generation]);
@@ -379,7 +384,7 @@ export function Stage({
     const point = onScrub(g);
     if (point && (point.action !== overview.point.action || point.offset !== overview.point.offset || JSON.stringify(subject) !== JSON.stringify(focus))) {
       leavesByCard.current.set(JSON.stringify(focus), leaf);
-      setTrail((t) => [...t.slice(-TRAIL_LENGTH, -1), destination(focus), { subject, reading: { telling: overview.telling, point } }]);
+      setTrail((t) => cardPath([...t.slice(0, -1), destination(focus)], { subject, reading: { telling: overview.telling, point } }));
     }
   };
   const openDialog = (kind: InterventionKind, community = selected) => {

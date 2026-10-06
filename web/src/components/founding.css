@@ -238,9 +238,19 @@
 }
 
 .founding-speech .specimen {
+  display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.4rem 0.5rem;
   margin: 0.4rem 0 0.6rem;
+}
+
+.founding-speech .specimen > div {
+  min-width: 0;
+  align-content: start;
+}
+
+.founding-speech .specimen dd {
+  overflow-wrap: anywhere;
 }
 
 .founding-speech-actions,
