@@ -360,7 +360,9 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .trail .trail-year { color: var(--ink); white-space: nowrap; }
 .folio-head h2.folio-of { font: 1.6rem var(--serif); margin: .25rem 0 .6rem; }
 .chronicle-tools > .phrase { text-align: left; justify-self: start; border: 0; border-bottom: 1px dotted var(--ink-soft); padding: .3rem 0; background: transparent; color: var(--ink); }
-.annal-cause { font-style: italic; color: var(--ink-soft); font-size: .9em; }
+/* A cause reads as the line under the entry it explains, never as a
+   lowercase run-on after the entry's full stop. */
+.annal-cause { display: block; font-style: italic; color: var(--ink-soft); font-size: .9em; text-align: left; }
 .map-caption > .annal-cause { flex: none; max-width: 13rem; }
 .decide { margin: .5rem 0; color: var(--accent); border-color: var(--line); }
 .people-land { margin-top: .5rem; }
