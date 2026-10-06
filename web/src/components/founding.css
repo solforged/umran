@@ -158,15 +158,41 @@
 }
 
 .founding-land-actions button,
-.founding-move {
+.founding-move,
+.founding-move-start {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
 }
 
-:root .founding-move {
+:root .founding-move,
+:root .founding-move-start {
   font-size: var(--dense-size);
+}
+
+:root .founding-move {
   margin-top: 0.45rem;
+}
+
+.founding-move-start {
+  margin-left: auto;
+}
+
+.founding-move-start[aria-pressed="true"] {
+  color: var(--accent);
+  text-decoration-style: solid;
+}
+
+/* Moving a people: the next land clicked becomes their homeland. */
+.founding .stage-map:has(.founding-moving) .mapview svg {
+  cursor: crosshair;
+}
+
+:root .founding .map-hint.founding-moving {
+  display: block;
+  color: var(--ink);
+  font-style: normal;
+  border: 1px solid var(--accent);
 }
 
 .founding-portrait {

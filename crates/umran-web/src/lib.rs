@@ -1352,8 +1352,11 @@ impl Bench {
         to_json(&Preview { pairs, peoples })
     }
 
-    /// Nearby year-zero homelands, ordered by land-only walking effort.
-    /// The anchor may be occupied; all returned sites must be unoccupied and fed.
+    /// Nearby year-zero homelands, the chosen land first when it is free.
+    /// Sites are taken in order of land-only walking effort, preferring
+    /// lands with two lands between them and every chosen or settled
+    /// homeland, then one, then none, so a group's peoples start as
+    /// neighbours with room between them. All sites are unoccupied and fed.
     pub fn founding_sites(&self, region: usize, count: usize) -> Result<String, String> {
         let world = self.chronicle.latest();
         if world.generation != 0 {
@@ -1375,31 +1378,51 @@ impl Bench {
             .flat_map(|c| world.communities[c].lands.iter().copied())
             .collect();
         let feeds = |r| Livelihood::ALL.iter().any(|&way| world.feeds(r, way) > 0.0);
-        let mut nearby: Vec<(usize, f32)> = Vec::with_capacity(count);
-        for &(r, effort) in world
+        let mut nearby: Vec<(usize, f32)> = world
             .map
             .walking_row(region, world.params.settle_apart)
             .iter()
-        {
-            let r = r as usize;
-            if !effort.is_finite() || occupied.contains(&r) || !feeds(r) {
-                continue;
-            }
-            let at = nearby
-                .binary_search_by(|&(id, distance)| distance.total_cmp(&effort).then(id.cmp(&r)))
-                .unwrap_or_else(|at| at);
-            if at < count {
-                if nearby.len() == count {
-                    nearby.pop();
+            .map(|&(r, effort)| (r as usize, effort))
+            .filter(|&(r, effort)| effort.is_finite() && !occupied.contains(&r) && feeds(r))
+            .collect();
+        nearby.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
+        // Steps from each land to the nearest chosen or settled homeland,
+        // counted to SPREAD. A site is taken while two lands lie between it
+        // and every other homeland, then one, then none.
+        const SPREAD: u8 = 2;
+        let mut steps = vec![u8::MAX; world.map.regions.len()];
+        let mark = |steps: &mut [u8], from: usize| {
+            steps[from] = 0;
+            let mut frontier = vec![from];
+            for step in 1..=SPREAD {
+                let mut next = Vec::new();
+                for &r in &frontier {
+                    for &n in &world.map.regions[r].neighbours {
+                        if steps[n] > step {
+                            steps[n] = step;
+                            next.push(n);
+                        }
+                    }
                 }
-                nearby.insert(at, (r, effort));
+                frontier = next;
+            }
+        };
+        for &r in &occupied {
+            mark(&mut steps, r);
+        }
+        let mut sites: Vec<usize> = Vec::with_capacity(count);
+        for gap in (0..=SPREAD).rev() {
+            for &(r, _) in &nearby {
+                if sites.len() == count {
+                    break;
+                }
+                if steps[r] > gap || (r == region && sites.is_empty()) {
+                    sites.push(r);
+                    mark(&mut steps, r);
+                }
             }
         }
-        let mut sites = [0; 12];
-        for (site, &(r, _)) in sites.iter_mut().zip(&nearby) {
-            *site = r;
-        }
-        to_json(&sites[..nearby.len()])
+        to_json(&sites)
     }
 
     pub fn settlement(
@@ -6432,7 +6455,7 @@ mod tests {
     }
 
     #[test]
-    fn founding_sites_use_land_effort_skip_occupied_and_leave_history_untouched() {
+    fn founding_sites_keep_apart_skip_occupied_and_leave_history_untouched() {
         let mut bench = Bench::with_geography(5, "medium", "spherical-v1").unwrap();
         let map = &bench.chronicle.latest().map;
         let anchor = map
@@ -6446,27 +6469,39 @@ mod tests {
         let sites: Vec<usize> =
             serde_json::from_str(&bench.founding_sites(anchor, 12).unwrap()).unwrap();
         let world = bench.chronicle.latest();
-        let mut expected: Vec<_> = world
+        let effort: HashMap<usize, f32> = world
             .map
             .walking_row(anchor, world.params.settle_apart)
             .iter()
-            .copied()
+            .map(|&(r, e)| (r as usize, e))
             .collect();
-        expected.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
-        assert_eq!(
-            sites,
-            expected
-                .iter()
-                .take(12)
-                .map(|&(r, _)| r as usize)
-                .collect::<Vec<_>>()
-        );
+        let neighbours: Vec<Vec<usize>> = world
+            .map
+            .regions
+            .iter()
+            .map(|r| r.neighbours.clone())
+            .collect();
+        // No other homeland within two steps: two lands lie between them.
+        let apart = |sites: &[usize], settled: &[usize]| {
+            sites.iter().enumerate().all(|(i, &r)| {
+                let near = neighbours[r]
+                    .iter()
+                    .flat_map(|&n| std::iter::once(n).chain(neighbours[n].iter().copied()));
+                near.filter(|&n| n != r)
+                    .all(|n| !settled.contains(&n) && !sites[..i].contains(&n))
+            })
+        };
+        assert_eq!(sites.len(), 12);
         assert_eq!(sites[0], anchor);
-        assert!(sites.len() > 2);
         assert_eq!(
             sites.iter().copied().collect::<HashSet<_>>().len(),
             sites.len()
         );
+        // The best-connected land has room for twelve homelands with two
+        // lands between each pair, so none of them is a fallback, and they
+        // come nearest first.
+        assert!(apart(&sites, &[]));
+        assert!(sites.windows(2).all(|w| effort[&w[0]] <= effort[&w[1]]));
         assert!(sites.iter().all(|&r| {
             world.map.regions[r].terrain.is_land()
                 && world.map.regions[r].landmass == world.map.regions[anchor].landmass
@@ -6482,7 +6517,7 @@ mod tests {
             serde_json::from_str(&bench.founding_sites(anchor, 12).unwrap()).unwrap();
         assert!(!available.contains(&anchor));
         assert!(!available.contains(&sites[1]));
-        assert_eq!(available[0], sites[2]);
+        assert!(apart(&available, &[anchor, sites[1]]));
         assert_eq!(
             bench.founding_sites(anchor, 1).unwrap(),
             to_json(&available[..1]).unwrap()

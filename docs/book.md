@@ -151,10 +151,15 @@ its chronicle, never a comma list of language names.
 Begin with an unpopulated world. Selecting a land inspects its terrain,
 area, rivers, and inhabitants; it never moves a people silently.
 *Found a people here* places one people. *A group…* places two to six
-neighbours in distinct, reachable homelands, either with independent
-languages or with speech inherited from a common founding people.
-Related speech has real ancestry in the engine; matching sound presets
-alone do not make a family. Moving an existing people is a separate action.
+neighbours in distinct, reachable homelands, nearest first but with two
+lands between homelands where the land allows, so each people has room
+before it meets the next. They begin either with independent languages
+or with speech inherited from a common founding people. Related speech
+has real ancestry in the engine; matching sound presets alone do not make
+a family. Moving an existing people is a separate action: *Move* on its
+portrait, then a click on the new land, or *Move them here* (named for
+the people) after selecting a land. Escape or *Cancel* leaves them where
+they were.
 
 A compact roster stays visible while a separate portrait scrolls beneath
 it. The portrait brings homeland, livelihood, temper, and a word specimen

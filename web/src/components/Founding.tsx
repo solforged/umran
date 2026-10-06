@@ -89,6 +89,9 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
   const [projection, setProjection] = useMapProjection();
   const [adjusting, setAdjusting] = useState<number | null>(null);
   const [redraw, setRedraw] = useState<{ seed: number; size: MapSize } | null>(null);
+  /// The founder whose homeland the next land click sets.
+  const [moving, setMoving] = useState<number | null>(null);
+  const [moveNotice, setMoveNotice] = useState<string | null>(null);
   const [groupCount, setGroupCount] = useState(3);
   const [related, setRelated] = useState(true);
   const [built, setBuilt] = useState<Built | null>(null);
@@ -106,6 +109,13 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
     if (pages.current) pages.current.scrollTop = 0;
     roster.current?.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: "nearest" });
   }, [selected, inspected]);
+
+  useEffect(() => {
+    if (moving === null) return;
+    const cancel = (event: KeyboardEvent) => { if (event.key === "Escape") { setMoving(null); setMoveNotice(null); } };
+    document.addEventListener("keydown", cancel);
+    return () => document.removeEventListener("keydown", cancel);
+  }, [moving]);
 
   useEffect(() => {
     // Resolving new homelands publishes their draft in the same render. It
@@ -212,6 +222,21 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
   }, [built, currentBuild, inspected, count, occupied]);
 
   const update = (key: number, patch: Partial<Founder>) => setFounders((all) => all.map((founder) => founder.key === key ? { ...founder, ...patch } : founder));
+  const movingFounder = founders.find((founder) => founder.key === moving);
+  const movingName = movingFounder ? overview?.communities[founders.indexOf(movingFounder)]?.name : undefined;
+  const settle = (region: number) => {
+    if (!movingFounder || !map || !overview) return;
+    const index = founders.indexOf(movingFounder);
+    const others = overview.communities.filter((community, i) => i !== index && community.lands.includes(region));
+    if (others.length) {
+      setMoveNotice(`${landName(region)} is home to the ${others.map((community) => community.name).join(" and ")}. Choose another land.`);
+      return;
+    }
+    if (region !== movingFounder.region) update(movingFounder.key, { region });
+    setMoving(null);
+    setMoveNotice(null);
+    setInspected(region);
+  };
   const choose = (key: number) => {
     const founder = founders.find((candidate) => candidate.key === key);
     if (!founder) return;
@@ -289,10 +314,19 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
           lands={new Set(inspected === null ? [] : [inspected])}
           focus={focus === null ? null : map.regions[focus]?.site ?? null}
           zoomable
-          onPeople={(id) => { if (currentBuild && founders[id]) choose(founders[id].key); }}
+          onPeople={(id) => {
+            if (!currentBuild || !founders[id]) return;
+            const region = founders[id].region;
+            if (moving !== null && region !== null) settle(region);
+            else choose(founders[id].key);
+          }}
           onInspect={(feature, at) => setInspection(feature ? { feature, at } : null)}
           onClearLand={() => { setInspected(null); setInspection(null); }}
-          onLand={(region) => { if (currentBuild && map.regions[region].terrain !== "sea") setInspected(region); }} /> : null}
+          onLand={(region) => {
+            if (!currentBuild || map.regions[region].terrain === "sea") return;
+            if (moving !== null) settle(region);
+            else setInspected(region);
+          }} /> : null}
         {chartReady ? <MapInspector container={mapContainer} inspection={inspection} map={map} overview={overview} generation={0} selectedVariety={people?.variety} riverNames={riverNames} lakeNames={lakeNames} pinnable={false} /> : null}
         <div className="cartouche founding-cartouche">
           <input className="founding-title" aria-label="World name" value={title ?? defaultTitle ?? ""}
@@ -316,7 +350,9 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
             </Popover>
           </div>
         </div>
-        <p className="map-hint">{founders.length ? "Select a land to explore or settle; choose a name to read its people." : "Choose a homeland. The rest of the world can wait."}</p>
+        <p className={moving !== null ? "map-hint founding-moving" : "map-hint"}>{moving !== null
+          ? <>{moveNotice ?? `Choose a new homeland for the ${movingName ?? "people"}.`} <button type="button" className="link" onClick={() => { setMoving(null); setMoveNotice(null); }}>Cancel</button></>
+          : founders.length ? "Select a land to explore or settle; choose a name to read its people." : "Choose a homeland. The rest of the world can wait."}</p>
       </section>
 
       <aside className="pedia setup-panel" aria-label="Founding peoples" aria-busy={!currentBuild}>
@@ -332,7 +368,7 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
             return <button type="button" key={founder.key} aria-pressed={selected === founder.key} onClick={() => choose(founder.key)}
               style={{ "--tone": variety ? hue(variety.family) : undefined } as CSSProperties}>
               <span className="founding-roster-number">{String(index + 1).padStart(2, "0")}</span>
-              <span className={variety ? `founding-roster-name hand-${variety.family % 5}` : "founding-roster-name"}>{entry?.name ?? "Settling…"}</span>
+              <span className="founding-roster-name">{entry?.name ?? "Settling…"}</span>
               <span className="founding-roster-place">{entry ? landName(entry.region) : ""}</span>
             </button>;
           })}
@@ -373,7 +409,9 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
           </section>}
 
           {current && people && speech && speechOwner && map ? <article className="founding-portrait" key={current.key} aria-label={`The ${people.name}`}>
-            <header><h3 className={`hand-${speech.family % 5}`}>{people.name}</h3><span>{people.meaning}</span></header>
+            <header><h3>{people.name}</h3><span>{people.meaning}</span>
+              <button type="button" className="link founding-move-start" aria-pressed={moving === current.key} disabled={!currentBuild}
+                onClick={() => { setMoving(moving === current.key ? null : current.key); setMoveNotice(null); }}><LocateFixed size={13} aria-hidden="true" /> Move</button></header>
             <p>They live in <button type="button" className="link" onClick={() => { setInspected(people.region); setFocus(people.region); }}>{landName(people.region)}</button>,
               {" "}<Phrase label="Way of life" value={current.livelihood ?? ""}
                 choices={[{ key: "", text: `as the land suggests (${LIVELIHOOD_PHRASE[people.livelihood]})` },
