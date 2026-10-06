@@ -1511,6 +1511,207 @@ hemispheres with terrain, final plate boundaries and the initial
 supercontinent coast. `continents -- timing` measures complete
 `Map::generate` calls, including hydrology and travel caches.
 
+#### Settlement over four millennia
+
+The October 2026 expansion diagnostic used revision 55, continental-v6,
+Medium, default parameters, and seeds 0 to 39. Each world ran 160
+generations, with readings at years 0, 1000, 2000, and 4000. There were
+four cohorts: three or six independent founders, either freely placed by
+`World::found` or grouped around the first founder's chosen homeland.
+The grouped placement used `Bench::founding_sites`' walking-effort order,
+800-effort-km limit, and preference for two intervening lands. All groups
+received the requested number of sites. Profiles followed `calibrate`'s
+preset order, with power `0.25 + 0.12 * index`, openness 0.5, and the
+ordinary 1,000-person founding population. Nothing was authored afterward.
+Different founding sites also give different food and livelihoods, so
+the placement comparison is not an isolated causal experiment.
+
+Occupied means positive living population, including city residents,
+not a remembered name or an extinct people's last holding. Habitable
+means land with positive founding food for at least one livelihood.
+These maps had 757 to 791 habitable regions, averaging 773.45. The
+settled share below uses spherical area, not a count of cells. Entries
+are means across 40 worlds; the same seeds are shared across cohorts.
+
+| Founding | Year | Occupied regions | Habitable area settled | Living peoples |
+| --- | ---: | ---: | ---: | ---: |
+| Three, free | 0 | 3.00 | 0.40% | 3.00 |
+| Three, free | 1000 | 3.42 | 0.46% | 3.00 |
+| Three, free | 2000 | 7.90 | 1.05% | 3.08 |
+| Three, free | 4000 | 71.03 | 9.30% | 19.90 |
+| Three, grouped | 0 | 3.00 | 0.39% | 3.00 |
+| Three, grouped | 1000 | 3.58 | 0.47% | 3.00 |
+| Three, grouped | 2000 | 8.38 | 1.10% | 3.15 |
+| Three, grouped | 4000 | 55.42 | 7.20% | 18.68 |
+| Six, free | 0 | 6.00 | 0.80% | 6.00 |
+| Six, free | 1000 | 6.60 | 0.88% | 6.00 |
+| Six, free | 2000 | 16.43 | 2.19% | 6.15 |
+| Six, free | 4000 | 140.50 | 18.40% | 40.05 |
+| Six, grouped | 0 | 6.00 | 0.77% | 6.00 |
+| Six, grouped | 1000 | 8.18 | 1.06% | 6.03 |
+| Six, grouped | 2000 | 16.73 | 2.17% | 6.42 |
+| Six, grouped | 4000 | 83.10 | 10.79% | 34.58 |
+
+At year 4000 the grouped three-founder cohort occupied 30 to 93
+regions, or 3.83% to 12.10% of habitable area. Every world still occupied
+one landmass. The grouped six-founder cohort occupied 45 to 131 regions,
+or 5.87% to 17.03%; 39 of 40 worlds still occupied one landmass.
+Freely founded worlds began on an average of 2.25 or 3.10 landmasses,
+respectively, and ended on 2.25 or 3.12. The audit's exact recipe was
+not retained, so these are representative cohorts, not a replay of its
+13-peoples screenshot.
+
+Temporary counters at the actual spread, migration, and colony decision
+points recorded the following totals through year 4000. An attempt
+means the process passed its eligibility and random hazard, before
+choosing a destination. These counters made no random draws.
+
+| Process | Three, free | Three, grouped | Six, free | Six, grouped |
+| --- | ---: | ---: | ---: | ---: |
+| Adjacent spread attempts | 4,609 | 5,546 | 9,577 | 11,925 |
+| Adjacent spread successes | 4,583 | 5,479 | 9,530 | 11,460 |
+| Whole-people migration attempts | 66 | 69 | 128 | 145 |
+| Whole-people migration successes | 59 | 66 | 118 | 137 |
+| Of those, by sea | 0 | 0 | 0 | 2 |
+| Sea-colony attempts | 4 | 3 | 6 | 12 |
+| Sea-colony successes | 0 | 0 | 3 | 2 |
+| All splits, including sea colonies | 688 | 646 | 1,386 | 1,153 |
+
+Spread events are not distinct newly occupied regions. Peoples can
+share land, and a land can be left and settled again. Whole-people
+migration vacates the old holding rather than leaving settlers behind.
+Territorial splitting divides existing holdings; it does not itself
+occupy new land.
+
+The six-founder grouped cohort separates the gates:
+
+- Spread considered 64,488 people-generations. Food use was below the
+  0.6 threshold in 37,473, the hazard did not fire in 15,090, and only
+  465 drawn attempts found no adjacent land with 30% free food. In the
+  first millennium, 97.52% of considerations were below the food
+  threshold. The threshold does trigger on V6; adjacent spread succeeds
+  in 96.10% of drawn attempts.
+- Migration considered 65,641 people-generations. Holding several lands
+  excluded 51,175 by design. Of the remaining 14,466, only 145 drew the
+  migration hazard; 137 found a destination. Among 7,778 reached
+  candidate rows, 1,483 were beyond the walking cap, 4,050 offered no
+  more free food than home, and 77 could not feed half the arriving
+  population. The route search had already enforced fleet capacity.
+  At these attempts, a home could reach an average of 43.16 other lands
+  within 600 walking effort-km; 176.10 more were connected but farther
+  away, and 555.53 were disconnected on foot.
+- A sea colony requires one holding, transport, at least 200 people,
+  crowding above 0.6, and its own hazard. Of 14,230 single-holding
+  considerations, 12,152 had no owned or contacted fleet. Among the
+  remaining 2,078, 15 were too small, 1,622 were below the crowding
+  threshold, and 429 missed the hazard. Of twelve attempts, ten chose
+  nearby land or home instead of an attractive sea destination; two
+  made a colony. People on several lands partition those lands instead.
+  Of the transport refusals, 7,745 occurred before any living people
+  had a fleet; 4,407 occurred while fleets existed but none belonged to
+  this people or a positive-intensity contact. Owned fleets accounted
+  for 1,075 considerations and contacted carriers alone for 1,003.
+  Homes were inland in 10,120 of the 14,230 considerations. These
+  overlapping counts describe access, not a rule forbidding new
+  overland contact.
+- Repeating only the route query with zero passengers shows capacity
+  removing all sea options in five of the 145 migration attempts and
+  one of the twelve colony attempts. Current access provided any sea
+  option in only seventeen migration attempts before capacity, twelve
+  afterward. Positive contacts supplied 24 of the 39 boat-shortest
+  migration destination rows and 272 of 334 colony destination rows
+  available to the actual parties. These are destination-query counts,
+  not extra journeys or additive causes of failure.
+- Climate is not a separate destination veto. Current weather changes
+  food and river-route effort. Holding the actual candidate, population,
+  occupation, livelihood, and route fixed, substituting founding food
+  into the migration food test changed 747 otherwise-allowed candidate
+  rows to refusals and 737 otherwise-refused rows to allowances.
+  Another 1,431 passed both food tests and 3,380 failed both.
+  This isolates the immediate food comparison, not a no-climate replay
+  or an attribution of entire failed journeys.
+
+This is a demographic and geographic calibration issue, not a blocked
+V6 expansion rule. A small founding population first fills a large
+food capacity. Default farming growth is 0.07 per generation before
+crowding, herding 0.049, and foraging 0.028; noise, hardship, weather,
+and adoption alter the actual path. The six-founder grouped cohort's
+farmer homelands initially fed a median 62,998 people. In the
+continuous logistic approximation, a lone 1,000-person farmer group
+needs about 1,619 years to reach 60% of that food at 25 years per
+generation, before its next spread draw. Acquiring land then lowers
+food use again. This is consistent with a quiet first millennium and
+faster later growth, not a promise of worldwide occupation by year 4000.
+
+No rate, threshold, time unit, reach, revision, or statistical band was
+changed. The timescale session can choose among these separate options:
+
+1. Keep the demographic model and offer a longer horizon, such as
+   8,000 years, when the intended story starts with a few small groups.
+   Global settlement at that horizon has not been measured here.
+2. If the intended starting world is already widely inhabited, found
+   groups on several continents or use a larger founding census.
+   At the same median food, starting at 10,000 instead of 1,000 reduces
+   the logistic 60% crossing from about 1,619 to 740 years. This changes
+   the starting society, not travel speed.
+3. If one generation should contain more demographic change, jointly
+   calibrate growth, hardship, spread, adoption, and fission to that
+   duration. Doubling farming growth alone halves the idealized
+   threshold time, but is not a validated whole-model calibration.
+4. If sparse frontier settlement should precede crowding, reconsider
+   `SPREAD_FULL` separately. Changing 0.6 to 0.3 would move the same
+   idealized first crossing to about 1,171 years. Raising `spread_rate`
+   alone cannot bypass the food gate.
+5. If overseas expansion should routinely come from established
+   multi-land societies, reconsider that colony eligibility rule,
+   coastal access, craft acquisition, and provisioning together.
+   The current reaches remain 600 walking, 700 sea migration, and
+   1,200 colony effort-km. Extending them does not make inland founders
+   seafaring or turn a whole-people move into new settlement.
+
+#### Native run cost
+
+A separate throwaway `umran-web` example timed uninstrumented
+`Bench::act` and `Bench::overview` once per generation from 0 to 4000,
+on seed 7, Medium V6, in release mode on the audit machine. It used
+`LanguageDesign::preset` with language seeds equal to founder indices.
+The freely placed recipe had familiar, Polynesian, and Iranian founders,
+all at power and openness 0.5. The grouped recipe added Semitic, Bantu,
+and Finnic founders, used power `0.25 + 0.12 * index`, openness 0.5,
+and called the actual `Bench::founding_sites` around the homeland that
+the first `calibrate` profile would choose. Neither recipe is the lost
+browser audit recipe.
+
+| Native timing recipe | Repeats | Median startup | Median total `act` | Median total `overview` | Final overview bytes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Three, freely placed | 12 | 0.098 s | 1.069 s | 0.273 s | 1,186,014 |
+| Six, grouped | 8 | 0.093 s | 1.926 s | 0.532 s | 2,111,367 |
+
+The grouped recipe's first measured run averaged 7.91 ms per `act`
+in its first forty generations and 24.43 ms in its last forty.
+`overview` grew from 1.18 to 8.03 ms. Across repeated runs, total
+`act` ranged from 1.913 to 2.047 s and total overview from 0.526 to
+0.596 s. Startup excludes the extra world used only to choose the
+grouped anchor. Every repeat produced the same final byte count.
+
+Eight-second native samples attribute 1,331 of 4,131 grouped
+`World::step` samples, 32.2%, to sound-change candidate assessment;
+1,093, 26.5%, to `Map::set_valley_flows`, chiefly rebuilding affected
+walking-route rows; and 307, 7.4%, to directed `Routes::search`.
+The three-founder sample put 44.5% of step samples in river-route
+refresh and 26.8% in sound-change assessment. River refresh also works
+over unoccupied geography, so a sparse population does not make that
+cost disappear. In the grouped facade sample, constructing annals
+accounted for 650 of 1,233 overview samples, 52.7%.
+
+These samples locate native work; they do not apportion the reported
+24 browser seconds. Browser running additionally executes WASM,
+parses the growing overview, commits React and map updates, and waits
+for animation frames. `Stage` adapts chunks to a 5 or 10 ms engine
+budget and flushes each frame's state. An exact browser breakdown needs
+the same retained recipe and a browser trace. No optimization was made:
+the measured route and linguistic paths are not a trivial local
+outcome-identical change.
 
 ### Legacy ContinentalV5
 
