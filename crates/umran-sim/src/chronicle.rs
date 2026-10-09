@@ -43,7 +43,8 @@ use std::collections::BTreeMap;
 /// Revision 53 extends plural address to polite only while it differs.
 /// Revision 54 separates V5 whole-people sea reach from colony expeditions.
 /// Revision 55 draws new worlds with ContinentalV6's plate-drift history.
-pub const ENGINE_REVISION: u32 = 55;
+/// Revision 56 lets sparse peoples bud onto empty land and caps fission strain.
+pub const ENGINE_REVISION: u32 = 56;
 /// Revision 33 replaces flat geography and its region identities with a sphere.
 /// Earlier region-targeted actions cannot be replayed on the spherical mesh.
 pub const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;

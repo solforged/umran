@@ -103,11 +103,18 @@ const KIN_STRANGERS: f32 = 0.15;
 /// dies out, or merges into a people sharing its land.
 pub(crate) const MIN_PEOPLE: f32 = 100.0;
 /// Share of what its lands feed it a people must be using before it
-/// spreads into the land beside them.
+/// spreads onto occupied land or sends a sea colony.
 const SPREAD_FULL: f32 = 0.6;
 /// Share of what a land would feed them that must be free before a
 /// people settles it beside their own.
 const SPREAD_ROOM: f32 = 0.3;
+/// Sparse communities still bud into empty neighbouring land. Food use
+/// raises this fraction of the ordinary spread hazard to one at SPREAD_FULL.
+const FRONTIER_FLOOR: f32 = 0.65;
+/// Strain beyond which a people parts no faster: a sprawling or populous
+/// people splits at a steady pace rather than shattering, so daughter
+/// peoples and languages appear through a history, not all at its end.
+const STRAIN_CAP: f32 = 0.5;
 /// How many times a stronger people must outnumber one on a land before
 /// it crowds it off, and the chance per generation that it does.
 const CROWDED_OUT: f32 = 4.0;
@@ -195,13 +202,14 @@ pub struct Params {
     /// Effort-km from its heartland at which a farming people starts to
     /// come apart; more mobile peoples hold together further.
     pub cohesion_reach: f32,
-    /// Chance per generation, per unit of strain beyond holding together,
-    /// that a people splits.
+    /// Chance per generation, per unit of strain beyond holding together
+    /// (up to `STRAIN_CAP`), that a people splits.
     pub fission_rate: f32,
     /// Maximum colony journey and upper bound on sea migration, in effort-km.
     pub colony_reach: f32,
-    /// Chance per generation that a people with no room left takes land
-    /// beside its own, scaled by how mobile its way of life makes it.
+    /// Chance per generation of taking adjacent land, scaled by mobility
+    /// and ethos. Below SPREAD_FULL, growth and food use grade an empty-only
+    /// frontier hazard; occupied destinations still require crowding.
     pub spread_rate: f32,
     /// Chance per generation that famine or plague strikes a peopled land.
     pub hardship_rate: f32,
@@ -336,8 +344,8 @@ impl Default for Params {
             capacity: 40000.0,
             settle_apart: 800.0,
             cohesion_size: 100000.0,
-            cohesion_reach: 300.0,
-            fission_rate: 0.1,
+            cohesion_reach: 150.0,
+            fission_rate: 0.04,
             colony_reach: 1200.0,
             spread_rate: 0.3,
             hardship_rate: 0.004,
@@ -2407,28 +2415,39 @@ impl World {
         self.refresh_fleet(community, None);
     }
 
-    /// A people using most of what its lands feed it sometimes takes land
-    /// beside them where it would have more room, counting part of a
-    /// weaker people's land as free, as migrants do; likelier the more
-    /// mobile its way of life. It comes to deal with those already there
-    /// as neighbours.
+    /// Communities bud into empty neighbouring land before food runs short.
+    /// The hazard rises with food use and reproductive growth; crowded
+    /// peoples retain their ordinary chance to enter land others occupy.
+    /// Arrivals come to deal with those already there as neighbours.
     fn spread(&mut self) {
+        if self.params.spread_rate <= 0.0 {
+            return;
+        }
         let mut spatial = self.spatial();
         let mut contacts = self.contact_index();
         let mut marks = vec![0usize; self.map.regions.len()];
         let mut before = Vec::new();
         for c in self.living().collect::<Vec<_>>() {
             let (fed, crowd) = self.fed_and_crowd(c, &spatial.occupied);
-            if fed <= 0.0 || crowd / fed < SPREAD_FULL {
+            if fed <= 0.0 {
                 continue;
             }
             let k = &self.communities[c];
             let livelihood = k.livelihood;
+            let pressure = crowd / fed;
+            let frontier = pressure < SPREAD_FULL;
+            let readiness = if frontier {
+                livelihood.growth()
+                    * (FRONTIER_FLOOR + (1.0 - FRONTIER_FLOOR) * pressure / SPREAD_FULL)
+            } else {
+                1.0
+            };
             let mut rng = self.community_rng(c, "spread");
             if rng.r#gen::<f32>()
                 >= self.params.spread_rate
                     * self.mobility(c)
                     * self.communities[c].ethos.factor(Effect::Spread)
+                    * readiness
             {
                 continue;
             }
@@ -2456,6 +2475,7 @@ impl World {
             beside.sort_unstable();
             let options: Vec<(usize, f32)> = beside
                 .into_iter()
+                .filter(|&r| !frontier || spatial.occupied[r] <= 0.0)
                 .map(|r| (r, room(r)))
                 .filter(|&(r, f)| f > SPREAD_ROOM * self.feeds(r, livelihood))
                 .map(|(r, f)| {
@@ -2642,7 +2662,7 @@ impl World {
                     * self.mobility(c)
                     * k.ethos.factor(Effect::Cohesion))
                 - 1.0;
-            let strain = too_large.max(0.0) + too_far.max(0.0);
+            let strain = (too_large.max(0.0) + too_far.max(0.0)).min(STRAIN_CAP);
             if strain <= 0.0 {
                 continue;
             }
@@ -5526,6 +5546,91 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn sparse_frontier_spread_preserves_the_crowding_gate_for_occupied_land() {
+        let mut world = World::new(7, Params::static_society());
+        let home = world
+            .map
+            .regions
+            .iter()
+            .position(|region| {
+                region.terrain == Terrain::Plains
+                    && region
+                        .neighbours
+                        .iter()
+                        .any(|&n| world.map.regions[n].terrain.is_land())
+            })
+            .unwrap();
+        let founder = world.found_seeded(
+            &Naming::People,
+            &SoundProfile::base(),
+            7,
+            0.5,
+            0.5,
+            Some(home),
+            Some(Livelihood::Farming),
+            None,
+        );
+        world.communities[founder].size = world.feeds(home, Livelihood::Farming) * 0.01;
+        world.spread();
+        assert_eq!(world.communities[founder].lands, vec![home]);
+        assert!(
+            !world
+                .events
+                .iter()
+                .any(|(_, e)| matches!(e, WorldEvent::Spread { .. })),
+            "static society must not spread, even onto an empty frontier"
+        );
+
+        world.params.spread_rate = 1000.0;
+        let mut empty = world.clone();
+        let population = empty.communities[founder].size;
+        empty.spread();
+        assert_eq!(empty.communities[founder].lands.len(), 2);
+        assert_eq!(empty.communities[founder].size, population);
+        let to = empty.communities[founder].lands[1];
+        assert!(empty.map.regions[home].neighbours.contains(&to));
+        assert!(empty.map.regions[to].terrain.is_land());
+        assert!(empty.events.iter().any(|(_, e)| matches!(
+            e, WorldEvent::Spread { community, to: destination }
+            if *community == founder && *destination == to
+        )));
+
+        let neighbours: Vec<_> = world.map.regions[home]
+            .neighbours
+            .iter()
+            .copied()
+            .filter(|&r| world.map.regions[r].terrain.is_land())
+            .collect();
+        let holder = world.found_seeded(
+            &Naming::People,
+            &SoundProfile::base(),
+            8,
+            0.5,
+            0.5,
+            Some(neighbours[0]),
+            Some(Livelihood::Farming),
+            None,
+        );
+        world.communities[holder].lands = neighbours;
+        world.spread();
+        assert_eq!(
+            world.communities[founder].lands,
+            vec![home],
+            "sparse settlement must not bypass other peoples' holdings"
+        );
+        world.communities[founder].size = world.feeds(home, Livelihood::Farming) * 0.65;
+        world.spread();
+        assert_eq!(world.communities[founder].lands.len(), 2);
+        assert!(
+            world.contacts.iter().any(|contact| {
+                (contact.a == founder && contact.b == holder)
+                    || (contact.a == holder && contact.b == founder)
+            }),
+            "crowded arrivals still meet the locals"
+        );
+    }
+
     #[test]
     fn sequential_spread_redistributes_all_old_land_presence() {
         let mut world = World::new(7, Params::static_society());

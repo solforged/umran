@@ -6883,7 +6883,7 @@ mod tests {
         let mut w = bench();
         let latest: serde_json::Value = serde_json::from_str(&w.overview(22).unwrap()).unwrap();
         assert_eq!(latest["generation"], 22);
-        assert_eq!(latest["communities"].as_array().unwrap().len(), 3);
+        assert!(latest["communities"].as_array().unwrap().len() >= 3);
         let early: serde_json::Value = serde_json::from_str(&w.overview(5).unwrap()).unwrap();
         assert_eq!(early["communities"].as_array().unwrap().len(), 2);
         let rows: serde_json::Value = serde_json::from_str(&w.lexicon(22, 2).unwrap()).unwrap();

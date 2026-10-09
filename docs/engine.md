@@ -632,15 +632,19 @@ This bookkeeping makes no random draws and does not itself change replay.
   describes farmers on a reference-area plain. Unequal cells keep equal
   density, and larger boundary cells are not normalized away. When its lands
   hold more than they feed it, it declines, so foragers dwindle among
-  farmers. A people using most of its lands' food spreads into bordering
-  land with real room left (`spread_rate`). One too large for its way of
+  farmers. Sparse communities can bud into empty bordering land, with a
+  hazard rising with food use and livelihood growth (`spread_rate`). Entering
+  land others occupy still requires using 60% of the home lands' food.
+  One too large for its way of
   life (`cohesion_size`) or spread too far from its heart
   (`cohesion_reach`) splits along its lands: the leavers take the
-  furthest land and every land nearer it than the heart. On a single
+  furthest land and every land nearer it than the heart. The chance is
+  `fission_rate` times that strain, counted only up to `STRAIN_CAP`, so
+  even a vast people parts at a steady pace rather than shattering. On a single
   crowded land, a people with access to ships can send half its number
   overseas when a sea destination offers more room per journey effort
   than nearby land. The chance is `fission_rate` times
-  the occupied share above the same 0.6 food threshold used by spreading;
+  the occupied share above the same 0.6 threshold used for occupied-land spread;
   the destination must feed at least half the arriving group. A people
   on one land may also migrate whole (`migration_rate`): likelier the
   more crowded home is, the more mobile its land and way of life make it,
@@ -1513,9 +1517,9 @@ supercontinent coast. `continents -- timing` measures complete
 
 #### Settlement over four millennia
 
-The October 2026 expansion diagnostic used revision 55, continental-v6,
-Medium, default parameters, and seeds 0 to 39. Each world ran 160
-generations, with readings at years 0, 1000, 2000, and 4000. There were
+The **before** October 2026 expansion diagnostic used revision 55,
+continental-v6, Medium, default parameters, and seeds 0 to 39. Each world ran
+160 generations, with readings at years 0, 1000, 2000, and 4000. There were
 four cohorts: three or six independent founders, either freely placed by
 `World::found` or grouped around the first founder's chosen homeland.
 The grouped placement used `Bench::founding_sites`' walking-effort order,
@@ -1533,24 +1537,33 @@ These maps had 757 to 791 habitable regions, averaging 773.45. The
 settled share below uses spherical area, not a count of cells. Entries
 are means across 40 worlds; the same seeds are shared across cohorts.
 
-| Founding | Year | Occupied regions | Habitable area settled | Living peoples |
-| --- | ---: | ---: | ---: | ---: |
-| Three, free | 0 | 3.00 | 0.40% | 3.00 |
-| Three, free | 1000 | 3.42 | 0.46% | 3.00 |
-| Three, free | 2000 | 7.90 | 1.05% | 3.08 |
-| Three, free | 4000 | 71.03 | 9.30% | 19.90 |
-| Three, grouped | 0 | 3.00 | 0.39% | 3.00 |
-| Three, grouped | 1000 | 3.58 | 0.47% | 3.00 |
-| Three, grouped | 2000 | 8.38 | 1.10% | 3.15 |
-| Three, grouped | 4000 | 55.42 | 7.20% | 18.68 |
-| Six, free | 0 | 6.00 | 0.80% | 6.00 |
-| Six, free | 1000 | 6.60 | 0.88% | 6.00 |
-| Six, free | 2000 | 16.43 | 2.19% | 6.15 |
-| Six, free | 4000 | 140.50 | 18.40% | 40.05 |
-| Six, grouped | 0 | 6.00 | 0.77% | 6.00 |
-| Six, grouped | 1000 | 8.18 | 1.06% | 6.03 |
-| Six, grouped | 2000 | 16.73 | 2.17% | 6.42 |
-| Six, grouped | 4000 | 83.10 | 10.79% | 34.58 |
+The retained `settlement` example reproduces those before counts exactly and
+adds year 500, occupied landmasses, and cumulative native `World::step` wall
+time. Timing excludes map creation, founding, censuses, and printing. These
+are release-mode means on the same machine, not browser or facade timings.
+
+| Before: founding | Year | Occupied regions | Habitable area settled | Living peoples | Landmasses | Step total (s) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Three, free | 0 | 3.00 | 0.40% | 3.00 | 2.25 | 0.000 |
+| Three, free | 500 | 3.10 | 0.42% | 3.00 | 2.25 | 0.060 |
+| Three, free | 1000 | 3.42 | 0.46% | 3.00 | 2.25 | 0.137 |
+| Three, free | 2000 | 7.90 | 1.05% | 3.08 | 2.25 | 0.285 |
+| Three, free | 4000 | 71.03 | 9.30% | 19.90 | 2.25 | 0.972 |
+| Three, grouped | 0 | 3.00 | 0.39% | 3.00 | 1.00 | 0.000 |
+| Three, grouped | 500 | 3.23 | 0.42% | 3.00 | 1.00 | 0.061 |
+| Three, grouped | 1000 | 3.58 | 0.47% | 3.00 | 1.00 | 0.141 |
+| Three, grouped | 2000 | 8.38 | 1.10% | 3.15 | 1.00 | 0.291 |
+| Three, grouped | 4000 | 55.42 | 7.20% | 18.68 | 1.00 | 1.074 |
+| Six, free | 0 | 6.00 | 0.80% | 6.00 | 3.10 | 0.000 |
+| Six, free | 500 | 6.10 | 0.81% | 6.00 | 3.10 | 0.112 |
+| Six, free | 1000 | 6.60 | 0.88% | 6.00 | 3.10 | 0.240 |
+| Six, free | 2000 | 16.43 | 2.19% | 6.15 | 3.10 | 0.480 |
+| Six, free | 4000 | 140.50 | 18.40% | 40.05 | 3.12 | 1.834 |
+| Six, grouped | 0 | 6.00 | 0.77% | 6.00 | 1.00 | 0.000 |
+| Six, grouped | 500 | 7.10 | 0.91% | 6.00 | 1.00 | 0.112 |
+| Six, grouped | 1000 | 8.18 | 1.06% | 6.03 | 1.00 | 0.246 |
+| Six, grouped | 2000 | 16.73 | 2.17% | 6.42 | 1.00 | 0.513 |
+| Six, grouped | 4000 | 83.10 | 10.79% | 34.58 | 1.02 | 2.581 |
 
 At year 4000 the grouped three-founder cohort occupied 30 to 93
 regions, or 3.83% to 12.10% of habitable area. Every world still occupied
@@ -1643,31 +1656,152 @@ generation, before its next spread draw. Acquiring land then lowers
 food use again. This is consistent with a quiet first millennium and
 faster later growth, not a promise of worldwide occupation by year 4000.
 
-No rate, threshold, time unit, reach, revision, or statistical band was
-changed. The timescale session can choose among these separate options:
+The chosen correction is sparse frontier budding, not a larger founding
+census, a longer generation, faster demographic growth, or longer sea reach.
+Ammerman and Cavalli-Sforza's wave of advance combines local dispersal with
+growth at the population's edge; the Fisher–KPP idealization advances at
+`2 * sqrt(r * D)`, rather than waiting for every homeland to fill.
+[Pinhasi, Fort, and Ammerman (2005)](https://doi.org/10.1371/journal.pbio.0030410)
+recovered a European Neolithic range of 0.6–1.3 km/year from 735 dated sites,
+consistent with the earlier roughly 1 km/year estimate. Village budding
+likewise lets households establish nearby settlements before an entire
+region reaches its food capacity. These motivate an early local frontier;
+Umran's aggregate peoples and regions are not a numerical Fisher–KPP solver
+or a reconstruction of the LBK.
 
-1. Keep the demographic model and offer a longer horizon, such as
-   8,000 years, when the intended story starts with a few small groups.
-   Global settlement at that horizon has not been measured here.
-2. If the intended starting world is already widely inhabited, found
-   groups on several continents or use a larger founding census.
-   At the same median food, starting at 10,000 instead of 1,000 reduces
-   the logistic 60% crossing from about 1,619 to 740 years. This changes
-   the starting society, not travel speed.
-3. If one generation should contain more demographic change, jointly
-   calibrate growth, hardship, spread, adoption, and fission to that
-   duration. Doubling farming growth alone halves the idealized
-   threshold time, but is not a validated whole-model calibration.
-4. If sparse frontier settlement should precede crowding, reconsider
-   `SPREAD_FULL` separately. Changing 0.6 to 0.3 would move the same
-   idealized first crossing to about 1,171 years. Raising `spread_rate`
-   alone cannot bypass the food gate.
-5. If overseas expansion should routinely come from established
-   multi-land societies, reconsider that colony eligibility rule,
-   coastal access, craft acquisition, and provisioning together.
-   The current reaches remain 600 walking, 700 sea migration, and
-   1,200 colony effort-km. Extending them does not make inland founders
-   seafaring or turn a whole-people move into new settlement.
+Let `u = crowd / fed`. Below `SPREAD_FULL = 0.6`, the per-generation hazard is
+`spread_rate * mobility * ethos_spread * livelihood_growth * (0.65 + 0.35 * u / 0.6)`.
+Only adjacent lands with no positive resident population are eligible.
+At or above 0.6, the old hazard and occupied-destination rules apply
+unchanged: a destination must still have more than 30% of its food free.
+The low-density floor is thus 0.195 for a neutral farmer, 0.273 for a
+herder without riding, and 0.117 for a forager. The existing livelihood
+growth factors keep foragers slower despite their higher personal mobility.
+Food use increases the chance continuously within the frontier regime;
+crowding additionally permits sharing others' lands. Every success keeps
+the same `Spread` event, population redistribution, `meet_locals`, and
+purpose-keyed `"spread"` stream. Static society keeps spreading off.
+
+Earlier land acquisition also raises population sooner and exposes more
+territorial cohesion strain. Under the old linear strain, a people parted
+faster the further it sprawled and the more it grew, so splitting
+compounded late: three peoples held 65 lands as three languages until
+about year 2000, then shattered. Simply lowering `fission_rate` to restrain
+the late burst (0.015 was tried) left the first two millennia with no
+daughter languages at all, which a language simulator cannot afford: a
+farming people spread over hundreds of kilometres for a thousand years
+would have parted into dialects, as the Bantu and Austronesian expansions
+did.
+
+Strain now counts only up to `STRAIN_CAP = 0.5`: a people under strain
+parts at a steady pace, at most `fission_rate * 0.5` per generation, however
+far it sprawls or however large it grows. With the cap, `cohesion_reach`
+falls from 300 to 150 effort-km, about two days' walk from the heart, and
+`fission_rate` is 0.04 (it was 0.1 before this change), so a capped people
+parts with at most a 2% chance per generation, about once in fifty. Daughter
+peoples now appear through the history rather than at its end. The size
+and reach strain terms and partition allocation are otherwise unchanged.
+The sea-colony hazard shares `fission_rate` and so is 0.4 of its old value;
+its food, ship, and destination requirements are unchanged. Migration still
+requires one holding. Growth, hardship, adoption, and all walking/sea reaches
+remain unchanged: 600 walking, 700 sea migration, and 1,200 colony effort-km.
+
+Eight-seed pilots of three free founders, living peoples at years 1000,
+2000, and 4000, with the median first split:
+
+| Strain | `cohesion_reach` | `fission_rate` | 1000 | 2000 | 4000 | First split |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| linear | 300 | 0.1 | 3.1 | 6.2 | 139.9 | 1700 |
+| linear | 300 | 0.015 | 3.0 | 3.4 | 34.9 | 2050 |
+| linear | 150 | 0.03 | 4.0 | 12.1 | 151.2 | 675 |
+| capped at 0.5 | 150 | 0.03 | 3.6 | 6.0 | 15.5 | 1100 |
+| capped at 0.5 | 150 | 0.08 | 4.8 | 14.5 | 86.9 | 675 |
+| capped at 1 | 150 | 0.05 | 4.4 | 14.8 | 113.9 | 550 |
+
+The count at year 4000 rises steeply once the capped hazard passes about
+0.025 per generation, since daughters split in turn. Sixteen-seed checks of
+the chosen 0.04 gave 4.4, 8.0, and 26.5 peoples for three free founders
+(first split in year 700) and 8.9, 17.6, and 50.7 for six (year 400).
+
+The final forty-seed survey uses the same retained recipe and census, on
+the engine after the outcome-identical run-cost pass below. The four
+cohorts ran at once; the grouped cohorts' year-4000 step totals were
+re-timed alone.
+
+| After: founding | Year | Occupied regions | Habitable area settled | Living peoples | Landmasses | Step total (s) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Three, free | 0 | 3.00 | 0.40% | 3.00 | 2.25 | 0.000 |
+| Three, free | 500 | 13.60 | 1.80% | 3.33 | 2.25 | 0.046 |
+| Three, free | 1000 | 29.40 | 3.88% | 4.20 | 2.25 | 0.107 |
+| Three, free | 2000 | 91.20 | 11.91% | 7.95 | 2.25 | 0.294 |
+| Three, free | 4000 | 295.25 | 38.37% | 26.62 | 2.27 | 1.763 |
+| Three, grouped | 0 | 3.00 | 0.39% | 3.00 | 1.00 | 0.000 |
+| Three, grouped | 500 | 14.03 | 1.85% | 3.27 | 1.00 | 0.048 |
+| Three, grouped | 1000 | 29.10 | 3.82% | 4.12 | 1.00 | 0.119 |
+| Three, grouped | 2000 | 76.22 | 9.92% | 7.75 | 1.00 | 0.326 |
+| Three, grouped | 4000 | 169.07 | 21.97% | 22.70 | 1.10 | 1.742 |
+| Six, free | 0 | 6.00 | 0.80% | 6.00 | 3.10 | 0.000 |
+| Six, free | 500 | 27.25 | 3.59% | 6.72 | 3.10 | 0.092 |
+| Six, free | 1000 | 60.12 | 7.88% | 8.82 | 3.10 | 0.214 |
+| Six, free | 2000 | 186.95 | 24.41% | 17.25 | 3.10 | 0.626 |
+| Six, free | 4000 | 475.00 | 61.78% | 52.00 | 3.20 | 4.057 |
+| Six, grouped | 0 | 6.00 | 0.77% | 6.00 | 1.00 | 0.000 |
+| Six, grouped | 500 | 28.95 | 3.77% | 6.58 | 1.00 | 0.098 |
+| Six, grouped | 1000 | 56.58 | 7.37% | 8.57 | 1.00 | 0.250 |
+| Six, grouped | 2000 | 110.97 | 14.43% | 14.65 | 1.00 | 0.710 |
+| Six, grouped | 4000 | 191.70 | 24.91% | 38.65 | 1.50 | 4.446 |
+
+| Farming founders | Sample | Before: median first Spread | After: median first Spread |
+| --- | ---: | ---: | ---: |
+| Three, free | 118 | 1550 years | 100 years |
+| Three, grouped | 111 | 1550 years | 100 years |
+| Six, free | 236 | 1525 years | 100 years |
+| Six, grouped | 189 | 1500 years | 100 years |
+
+These are all founders who began farming, not only those who survived or
+spread; none failed to spread by year 4000 in either survey. The example
+censors any unspread founder above the horizon at 4025 years. The grouped
+three-founder targets hold without widening their bands: median first
+Spread at most 400 years, at least 3% settled by year 1000, and 20–50% by
+year 4000. Six grouped founders end with 38.65 living peoples, 1.12 times
+the before 34.58 (below the 2.5-times ceiling), but reach 14.65 by year
+2000 where they had 6.42. They cost 4.446 seconds, 1.72 times the before
+2.581 (below twice), even after the run-cost pass: more languages live
+for longer, and sound-change assessment is per language. Six freely
+placed founders begin across several landmasses and settle 61.78%; they
+still leave 38.22% unoccupied, and cost 4.057 seconds against 1.834,
+2.21 times. The explicit run-cost acceptance band is for the six-grouped
+cohort, not every recipe.
+
+Knock-on event means through year 4000, before → after:
+
+| Founding | Spread events | All splits | Splits / final occupied land | Whole-people migrations | Sea colonies | Hardship events |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Three, free | 114.58 → 465.18 | 17.20 → 26.85 | 0.240 → 0.094 | 1.48 → 0.33 | 0.00 → 0.03 | 11.38 → 72.88 |
+| Three, grouped | 136.97 → 394.57 | 16.15 → 23.38 | 0.288 → 0.155 | 1.65 → 0.47 | 0.00 → 0.10 | 9.97 → 50.02 |
+| Six, free | 238.25 → 891.40 | 34.65 → 54.75 | 0.246 → 0.115 | 2.95 → 1.60 | 0.07 → 0.20 | 22.05 → 134.90 |
+| Six, grouped | 286.50 → 649.27 | 28.82 → 40.02 | 0.349 → 0.233 | 3.42 → 3.20 | 0.05 → 0.50 | 16.65 → 65.70 |
+
+More occupied lands expose more lands to hardship; the per-land hazard was
+not reduced to hide that consequence. Whole-people migration declines for
+three founders because budding leaves fewer single-land peoples eligible;
+for six grouped founders it is nearly unchanged.
+Sea colonies remain rare; no ship, reach, or migration rule was loosened.
+The splits/land column is the mean per-world ratio, not a ratio of means.
+The single-purpose timing band test follows 40 explicit farming founders;
+unit coverage also checks static society, adjacency, population conservation,
+the occupied-land crowding gate, and meeting locals after a crowded arrival.
+
+`calibrate` (200 seeds × 40 generations, presets in rotation) stays in the
+usual core-retention band: 0.887 before and 0.886 after, against 0.80–0.90.
+Stable ranks 1–20 stay 0.936; ranks 81–100 move 0.825 → 0.823, culture kept
+0.640 → 0.639, sound laws 10.960 → 11.495, and contested concepts
+25.475 → 25.880. Case marking remains 0.550 at founding and moves 0.515 →
+0.520 at the end, with 6/110 founding case languages losing contrast, mean
+first loss 275.0 years, and 14 rebuilds. No demographic or
+linguistic statistical band was relaxed for this calibration. The
+pre-existing `calibrate` homophone diagnostic is negative before and after
+(-13.715 → -13.185); its definition is outside this settlement change.
 
 #### Native run cost
 
@@ -2028,6 +2162,7 @@ cargo run --release -p umran-sim --example family -- <seed> <proto> <outsider> <
 cargo run --release -p umran-sim --example history -- <seed> <generations> [size]
 cargo run --release -p umran-sim --example calibrate -- <seeds> <generations> [profile]
 cargo run --release -p umran-sim --example calibrate -- geography [seeds] [generations] [size] [founders]
+cargo run --release -p umran-sim --example settlement -- [seeds=40] [cohort=all]
 cargo run --release -p umran-sim --example rivers -- [seeds] [size] [generations]
 cargo run --release -p umran-sim --example seasons
 cargo run --release -p umran-sim --example fleets -- [seeds] [generations]
