@@ -11,6 +11,7 @@ use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::f64::consts::{PI, TAU};
+use std::sync::{Arc, OnceLock};
 use std::{borrow::Cow, cmp::Ordering, collections::BinaryHeap};
 
 /// Equatorial drawing scale only; never use chart lengths for physics.
@@ -362,6 +363,25 @@ impl RouteScratch {
     }
 }
 
+type WalkingRow = Arc<Vec<(u32, f32)>>;
+
+/// Derived route rows do not participate in geography equality. Cloned maps
+/// share completed rows until an edge change invalidates that map's copy.
+#[derive(Clone, Debug, Default)]
+struct WalkingRoutes(Vec<OnceLock<WalkingRow>>);
+
+impl WalkingRoutes {
+    fn new(regions: usize) -> Self {
+        Self((0..regions).map(|_| OnceLock::new()).collect())
+    }
+}
+
+impl PartialEq for WalkingRoutes {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
 /// The world's land and sea.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Map {
@@ -387,8 +407,8 @@ pub struct Map {
     pub climate_zones: Vec<ClimateZone>,
     /// Symmetric centre-to-centre effort through each shared border midpoint.
     edges: RouteRows,
-    /// Individually replaceable land-only neighbourhoods to 1800 effort-km.
-    walking: Vec<Vec<(u32, f32)>>,
+    /// Lazily read land-only neighbourhoods to 1800 effort-km.
+    walking: WalkingRoutes,
     /// Sea-interior voyage neighbourhoods to 1800 effort-km.
     voyages: RouteRows,
     valleys: Vec<ValleyEdge>,
@@ -479,12 +499,12 @@ impl Map {
             lake_regions,
             climate_zones,
             edges,
-            walking: Vec::new(),
+            walking: WalkingRoutes::default(),
             voyages: RouteRows::default(),
             valleys: Vec::new(),
         };
         map.initialize_valleys(&flows);
-        map.walking = map.cache_walking_routes();
+        map.walking = WalkingRoutes::new(map.regions.len());
         map.voyages = map.cache_voyages();
         map
     }
@@ -550,8 +570,8 @@ impl Map {
         })
     }
 
-    /// Refresh only walking rows that can reach a changed river-edge endpoint.
-    /// Flow changes within the same band do not rebuild any routes.
+    /// Invalidate read walking rows that can reach a changed river endpoint.
+    /// Unread rows cost no searches; flow changes within a band do no work.
     /// Sea edges, voyage permissions, and voyage caches are never changed.
     pub fn set_valley_flows(&mut self, flows: &[f32]) -> bool {
         assert_eq!(flows.len(), self.regions.len());
@@ -576,30 +596,17 @@ impl Map {
         if changed.is_empty() {
             return false;
         }
-        let mut scratch = RouteScratch::new(self.regions.len());
-        for source in 0..self.regions.len() {
+        for row in &mut self.walking.0 {
             // Any newly shorter path must first reach a changed edge by an
-            // unchanged prefix. Checking both endpoints in the old bounded
-            // row therefore covers decreases as well as increases, even when
-            // several edges change together or new destinations enter range.
-            if !self.walking[source]
-                .iter()
-                .any(|&(region, _)| changed[region as usize])
+            // unchanged prefix. Both endpoints in the old bounded row cover
+            // decreases as well as increases and destinations entering range.
+            // An absent row already needs a search against the latest edges.
+            if row
+                .get()
+                .is_some_and(|r| r.iter().any(|&(region, _)| changed[region as usize]))
             {
-                continue;
+                row.take();
             }
-            self.search_routes(
-                source,
-                CACHE_REACH_KM,
-                RouteMode::Walking,
-                None,
-                &mut scratch,
-            );
-            // Preserve the row's allocation; untouched rows are not copied.
-            let mut row = std::mem::take(&mut self.walking[source]);
-            row.clear();
-            scratch.append_row(self, source, RouteMode::Walking, &mut row);
-            self.walking[source] = row;
         }
         true
     }
@@ -693,7 +700,21 @@ impl Map {
 
     /// Full cached walking neighbourhood. Hot callers filter their own radius.
     pub(crate) fn walking_cached(&self, source: usize) -> &[(u32, f32)] {
-        &self.walking[source]
+        self.walking.0[source].get_or_init(|| {
+            let mut row = Vec::new();
+            if self.regions[source].terrain.is_land() {
+                let mut scratch = RouteScratch::new(self.regions.len());
+                self.search_routes(
+                    source,
+                    CACHE_REACH_KM,
+                    RouteMode::Walking,
+                    None,
+                    &mut scratch,
+                );
+                scratch.append_row(self, source, RouteMode::Walking, &mut row);
+            }
+            Arc::new(row)
+        })
     }
 
     /// ID-sorted coastal destinations within an inclusive voyage radius.
@@ -709,7 +730,12 @@ impl Map {
     /// Stored walking and voyage tuple counts, excluding row metadata and graph.
     pub fn route_entry_counts(&self) -> (usize, usize) {
         (
-            self.walking.iter().map(Vec::len).sum(),
+            self.walking
+                .0
+                .iter()
+                .filter_map(OnceLock::get)
+                .map(|r| r.len())
+                .sum(),
             self.voyages.entries.len(),
         )
     }
@@ -760,6 +786,7 @@ impl Map {
         Cow::Owned(row)
     }
 
+    #[cfg(test)]
     fn cache_walking_routes(&self) -> Vec<Vec<(u32, f32)>> {
         let mut scratch = RouteScratch::new(self.regions.len());
         (0..self.regions.len())
@@ -1887,7 +1914,7 @@ mod tests {
         map.river_regions = vec![Some(0), Some(0), Some(0), Some(1), None, None];
         let mut flows = vec![RIVER_TRAVEL_FLOW; 6];
         map.initialize_valleys(&flows);
-        map.walking = map.cache_walking_routes();
+        map.walking = WalkingRoutes::new(map.regions.len());
         let wet = map.clone();
         assert_eq!(map.distance(0, 2), 260.0);
         assert_eq!(map.closeness(0, 1), 80.0 / 130.0);
@@ -1934,18 +1961,20 @@ mod tests {
         map.initialize_valleys(&flows);
         let original = map.clone();
         assert!(!map.walking_cached(0).iter().any(|&(r, _)| r == 2));
-        let distant_allocation = map.walking[4].as_ptr();
-        let island_allocation = map.walking[6].as_ptr();
+        let distant_allocation = map.walking_cached(4).as_ptr();
+        let island_allocation = map.walking_cached(6).as_ptr();
 
         for wet in [true, false, true, false] {
             flows.fill(if wet { RIVER_TRAVEL_FLOW } else { 0.0 });
             assert!(map.set_valley_flows(&flows));
-            assert_eq!(map.walking, map.cache_walking_routes());
+            for (source, row) in map.cache_walking_routes().iter().enumerate() {
+                assert_eq!(map.walking_cached(source), row);
+            }
             assert_eq!(map.walking_cached(0).iter().any(|&(r, _)| r == 2), wet);
-            assert_eq!(map.walking[4], original.walking[4]);
-            assert_eq!(map.walking[4].as_ptr(), distant_allocation);
-            assert_eq!(map.walking[6], original.walking[6]);
-            assert_eq!(map.walking[6].as_ptr(), island_allocation);
+            assert_eq!(map.walking_cached(4), original.walking_cached(4));
+            assert_eq!(map.walking_cached(4).as_ptr(), distant_allocation);
+            assert_eq!(map.walking_cached(6), original.walking_cached(6));
+            assert_eq!(map.walking_cached(6).as_ptr(), island_allocation);
             assert_eq!(map.voyages, original.voyages);
             assert!(!map.set_valley_flows(&flows));
         }
@@ -1967,7 +1996,39 @@ mod tests {
                 })
                 .collect();
             map.set_valley_flows(&flows);
-            assert_eq!(map.walking, map.cache_walking_routes(), "phase {phase}");
+            for (source, row) in map.cache_walking_routes().iter().enumerate() {
+                assert_eq!(
+                    map.walking_cached(source),
+                    row,
+                    "phase {phase}, source {source}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn unread_routes_stay_lazy_across_flow_changes_and_clones_keep_old_rows() {
+        let mut map = route_fixture(&[Terrain::Plains; 3], &[(0, 1, 1_660.0), (1, 2, 200.0)]);
+        map.drainage[1] = Some(2);
+        map.river_regions[1..=2].fill(Some(0));
+        map.initialize_valleys(&[0.0; 3]);
+        assert_eq!(map.route_entry_counts().0, 0);
+        assert!(!map.walking_cached(0).iter().any(|&(r, _)| r == 2));
+        let old = map.clone();
+        assert_eq!(
+            old.walking_cached(0).as_ptr(),
+            map.walking_cached(0).as_ptr()
+        );
+        for wet in [true, false, true] {
+            assert!(map.set_valley_flows(&[if wet { RIVER_TRAVEL_FLOW } else { 0.0 }; 3]));
+            assert_eq!(map.route_entry_counts().0, 0);
+        }
+        assert!(!old.walking_cached(0).iter().any(|&(r, _)| r == 2));
+        assert!(map.walking_cached(0).iter().any(|&(r, _)| r == 2));
+        assert!(map.walking.0[1].get().is_none());
+        assert!(map.walking.0[2].get().is_none());
+        for (source, row) in map.cache_walking_routes().iter().enumerate() {
+            assert_eq!(map.walking_cached(source), row);
         }
     }
 
@@ -2615,11 +2676,10 @@ mod tests {
             lake_regions: vec![None; n],
             climate_zones: Vec::new(),
             edges,
-            walking: Vec::new(),
+            walking: WalkingRoutes::new(n),
             voyages: RouteRows::default(),
             valleys: Vec::new(),
         };
-        map.walking = map.cache_walking_routes();
         map.voyages = map.cache_voyages();
         map
     }

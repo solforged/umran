@@ -1303,11 +1303,11 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
         annal.members = grouped.remove(&("spread", generation)).unwrap_or_default();
         annal
     }));
-    out.extend(sound_changes(world));
-    out.extend(grammar_changes(world));
-    out.extend(pronoun_changes(world));
-    out.extend(class_changes(world));
-    out.extend(harmony_changes(world));
+    out.extend(sound_changes(world, &shifts));
+    out.extend(grammar_changes(world, &shifts));
+    out.extend(pronoun_changes(world, &shifts));
+    out.extend(class_changes(world, &shifts));
+    out.extend(harmony_changes(world, &shifts));
     fn languages(a: &mut Annal, world: &World, shifts: &Shifts) {
         for member in &mut a.members {
             languages(member, world, shifts);
@@ -2077,14 +2077,13 @@ fn place_note(world: &World, region: usize, generation: u32) -> Option<String> {
 
 /// One entry per language and generation in which its sounds changed,
 /// told through a word that changed, with the laws in the apparatus.
-fn sound_changes(world: &World) -> Vec<Annal> {
+fn sound_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
     let laws = world.law_catalog();
     let label = |id: &str| {
         laws.iter()
             .find(|l| l.id == id)
             .map_or_else(|| substrate_label(id), |l| l.label.to_string())
     };
-    let shifts = Shifts::of(world);
     let mut out = Vec::new();
     for (v, variety) in world.varieties.iter().enumerate() {
         // A daughter's inherited laws are told in its parent's annals.
@@ -2099,7 +2098,7 @@ fn sound_changes(world: &World) -> Vec<Annal> {
             by_generation.entry(generation).or_default().push(id);
         }
         for (generation, ids) in by_generation {
-            let people = speakers(world, &shifts, v, generation);
+            let people = speakers(world, shifts, v, generation);
             let keys = [key("law"), u64::from(generation), v as u64];
             let text = match example(variety, generation) {
                 Some((before, after, gloss)) => tell(
@@ -2124,7 +2123,7 @@ fn sound_changes(world: &World) -> Vec<Annal> {
                 Some(&(_, _, source)) => format!(
                     "{}, spreading from {}",
                     label(id),
-                    speakers(world, &shifts, source, generation)
+                    speakers(world, shifts, source, generation)
                 ),
                 None => label(id),
             };
@@ -2174,8 +2173,7 @@ fn sound_changes(world: &World) -> Vec<Annal> {
 
 /// Grammatical changes are told from recorded notices, not inferred from
 /// the language's current markers or how its words happen to look.
-fn grammar_changes(world: &World) -> Vec<Annal> {
-    let shifts = Shifts::of(world);
+fn grammar_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
     let mut out = Vec::new();
     for (v, variety) in world.varieties.iter().enumerate() {
         // Inherited events belong to the parent's annals. A daughter can
@@ -2197,7 +2195,7 @@ fn grammar_changes(world: &World) -> Vec<Annal> {
             })
         {
             let generation = notice.generation;
-            let people = speakers(world, &shifts, v, generation);
+            let people = speakers(world, shifts, v, generation);
             let category_id = notice.category.id();
             let category = notice.category.label();
             let (text, notes, event, donor) = match &notice.event {
@@ -2403,9 +2401,8 @@ fn grammar_changes(world: &World) -> Vec<Annal> {
     out
 }
 
-fn pronoun_changes(world: &World) -> Vec<Annal> {
+fn pronoun_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
     use umran_sim::pronouns::NoticeKind;
-    let shifts = Shifts::of(world);
     let mut out = Vec::new();
     for (v, variety) in world.varieties.iter().enumerate() {
         for (position, notice) in variety.pronouns.events.iter().enumerate() {
@@ -2420,7 +2417,7 @@ fn pronoun_changes(world: &World) -> Vec<Annal> {
                 continue;
             }
             let generation = notice.generation;
-            let people = speakers(world, &shifts, v, generation);
+            let people = speakers(world, shifts, v, generation);
             let gloss = |id: &str| umran_sim::concepts::by_id(id).map_or("", |c| c.gloss);
             let (before, after) = (variety.spell(&notice.before), variety.spell(&notice.after));
             let meaning = gloss(notice.cell);
@@ -2507,9 +2504,8 @@ fn pronoun_changes(world: &World) -> Vec<Annal> {
     out
 }
 
-fn harmony_changes(world: &World) -> Vec<Annal> {
+fn harmony_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
     use umran_sim::harmony::{Feature, Trigger};
-    let shifts = Shifts::of(world);
     let mut out = Vec::new();
     for (v, variety) in world.varieties.iter().enumerate() {
         for (position, notice) in variety
@@ -2527,7 +2523,7 @@ fn harmony_changes(world: &World) -> Vec<Annal> {
             })
         {
             let generation = notice.generation;
-            let people = speakers(world, &shifts, v, generation);
+            let people = speakers(world, shifts, v, generation);
             let agree = match notice.feature {
                 Feature::Backness => "front with front and back with back",
                 Feature::Rounding => "rounded with rounded",
@@ -2614,9 +2610,8 @@ fn harmony_changes(world: &World) -> Vec<Annal> {
     out
 }
 
-fn class_changes(world: &World) -> Vec<Annal> {
+fn class_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
     use umran_sim::gender::{Basis, ClassChange};
-    let shifts = Shifts::of(world);
     let mut out = Vec::new();
     for (v, variety) in world.varieties.iter().enumerate() {
         let classes = &variety.gender.classes;
@@ -2634,7 +2629,7 @@ fn class_changes(world: &World) -> Vec<Annal> {
             })
         {
             let generation = notice.generation;
-            let people = speakers(world, &shifts, v, generation);
+            let people = speakers(world, shifts, v, generation);
             let said = |class: u32, at: u32| {
                 format!(
                     "*{}*",
@@ -2860,22 +2855,29 @@ impl Shifts {
 /// with its meaning: preferring words changed by more laws, then the most
 /// basic meanings.
 fn example(variety: &Variety, generation: u32) -> Option<(String, String, &'static str)> {
-    variety
-        .lexicon
-        .living()
-        .filter_map(|word| {
-            let (laws, before, after) = change_in(word, generation)?;
-            let (before, after) = (variety.spell(before), variety.spell(after));
-            (before != after).then_some((laws, word, before, after))
-        })
-        .max_by_key(|(laws, word, ..)| {
-            (
-                *laws,
-                Reverse(word.first_sense.stability.unwrap_or(u8::MAX)),
-                Reverse(word.id.0),
-            )
-        })
-        .map(|(_, word, before, after)| (before, after, word.first_sense.gloss))
+    let mut best = None;
+    let mut rank = None;
+    for word in variety.lexicon.living() {
+        let Some((laws, before, after)) = change_in(word, generation) else {
+            continue;
+        };
+        let key = (
+            laws,
+            Reverse(word.first_sense.stability.unwrap_or(u8::MAX)),
+            Reverse(word.id.0),
+        );
+        // A lower-ranked word cannot replace the best audible example.
+        // Equal ranks still take the last item, just like Iterator::max_by_key.
+        if rank.is_some_and(|rank| key < rank) {
+            continue;
+        }
+        let (before, after) = (variety.spell(before), variety.spell(after));
+        if before != after {
+            rank = Some(key);
+            best = Some((before, after, word.first_sense.gloss));
+        }
+    }
+    best
 }
 
 /// How many sound laws changed `word` in `generation`, and its forms
@@ -2890,20 +2892,85 @@ fn change_in(word: &Lexeme, generation: u32) -> Option<(usize, &Form, &Form)> {
                 _ => None,
             })
     };
-    let then: Vec<(usize, &Form)> = befores(0)
-        .filter(|(_, g, _)| *g == generation)
-        .map(|(i, _, before)| (i, before))
-        .collect();
-    let &(_, before) = then.first()?;
-    let &(last, _) = then.last()?;
+    let mut then = befores(0).filter(|(_, g, _)| *g == generation);
+    let (mut last, _, before) = then.next()?;
+    let mut count = 1;
+    for (i, _, _) in then {
+        last = i;
+        count += 1;
+    }
     let after = befores(last + 1).next().map_or(&word.form, |(_, _, f)| f);
-    Some((then.len(), before, after))
+    Some((count, before, after))
 }
 
 #[cfg(test)]
 mod cause_tests {
     use super::*;
     use umran_sim::{Naming, Params, SoundProfile};
+
+    #[test]
+    fn ranked_examples_match_exhaustive_spelling() {
+        fn exhaustive(
+            variety: &Variety,
+            generation: u32,
+        ) -> Option<(String, String, &'static str)> {
+            variety
+                .lexicon
+                .living()
+                .filter_map(|word| {
+                    let befores: Vec<_> = word
+                        .log
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, e)| match &e.event {
+                            Event::SoundLaw { before, .. } => Some((i, e.generation, before)),
+                            _ => None,
+                        })
+                        .collect();
+                    let then: Vec<_> = befores
+                        .iter()
+                        .filter(|(_, g, _)| *g == generation)
+                        .collect();
+                    let first = then.first()?;
+                    let last = then.last()?;
+                    let after = befores
+                        .iter()
+                        .find(|(i, _, _)| *i > last.0)
+                        .map_or(&word.form, |(_, _, form)| *form);
+                    let before = variety.spell(first.2);
+                    let after = variety.spell(after);
+                    (before != after).then_some((then.len(), word, before, after))
+                })
+                .max_by_key(|(laws, word, ..)| {
+                    (
+                        *laws,
+                        Reverse(word.first_sense.stability.unwrap_or(u8::MAX)),
+                        Reverse(word.id.0),
+                    )
+                })
+                .map(|(_, word, before, after)| (before, after, word.first_sense.gloss))
+        }
+
+        for preset in ["familiar", "semitic", "bantu"] {
+            let mut world = World::solo(
+                7,
+                &SoundProfile::by_id(preset).unwrap(),
+                Params::static_society(),
+            );
+            for _ in 0..2 {
+                world.run(20);
+                for variety in &world.varieties {
+                    for &(generation, _) in &variety.laws {
+                        assert_eq!(
+                            example(variety, generation),
+                            exhaustive(variety, generation),
+                            "{preset}, generation {generation}"
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn founding_keeps_its_original_language_after_a_shift() {

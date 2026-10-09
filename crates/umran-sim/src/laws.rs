@@ -61,6 +61,44 @@ impl Assessment {
     }
 }
 
+/// A borrowed snapshot for one candidate selection. Iteration order and every
+/// usage contribution are retained; only repeated traversal and segment taste
+/// calculations are shared between laws. Dropping it ends the cache lifetime,
+/// so lexical, grammatical, or profile mutations cannot leave stale scores.
+pub(crate) struct Assessor<'a> {
+    forms: Vec<(&'a Form, f32)>,
+    prior: &'a InventoryPrior,
+    preferences: Vec<Option<f32>>,
+    minimal: MinimalWord,
+    stress: StressRule,
+}
+
+impl<'a> Assessor<'a> {
+    pub(crate) fn new(
+        forms: impl Iterator<Item = (&'a Form, f32)>,
+        prior: &'a InventoryPrior,
+        minimal: MinimalWord,
+        stress: StressRule,
+    ) -> Self {
+        Self {
+            forms: forms.collect(),
+            prior,
+            preferences: vec![None; crate::CATALOG.segments.len()],
+            minimal,
+            stress,
+        }
+    }
+
+    pub(crate) fn assess(&mut self, law: &Law) -> Option<Assessment> {
+        law.assess_scored(
+            self.forms.iter().copied(),
+            |id| *self.preferences[id.0 as usize].get_or_insert_with(|| preference(self.prior, id)),
+            self.minimal,
+            self.stress,
+        )
+    }
+}
+
 impl Law {
     /// The law's rules in order, each passing by a word it would wear
     /// below the language's `minimal` size.
@@ -100,6 +138,16 @@ impl Law {
         &self,
         forms: impl Iterator<Item = (&'a Form, f32)>,
         prior: &InventoryPrior,
+        minimal: MinimalWord,
+        stress: StressRule,
+    ) -> Option<Assessment> {
+        self.assess_scored(forms, |id| preference(prior, id), minimal, stress)
+    }
+
+    fn assess_scored<'a>(
+        &self,
+        forms: impl Iterator<Item = (&'a Form, f32)>,
+        mut preference: impl FnMut(PhonemeId) -> f32,
         minimal: MinimalWord,
         stress: StressRule,
     ) -> Option<Assessment> {
@@ -160,7 +208,7 @@ impl Law {
                         _ => out.map(|s| s.phone),
                     };
                     if let Some(new) = phone {
-                        total += weight * (preference(prior, new) - preference(prior, old.phone));
+                        total += weight * (preference(new) - preference(old.phone));
                     }
                     total_weight += weight;
                     shifts.push((old.phone, phone, weight));
@@ -1109,6 +1157,49 @@ mod tests {
     fn ids_are_unique() {
         let ids: HashSet<_> = catalog().iter().map(|l| l.id).collect();
         assert_eq!(ids.len(), catalog().len());
+    }
+
+    #[test]
+    fn shared_assessment_is_bit_identical_to_individual_candidates() {
+        let laws = catalog();
+        for preset in [
+            "familiar",
+            "polynesian",
+            "iranian",
+            "semitic",
+            "bantu",
+            "finnic",
+        ] {
+            let mut world = crate::World::solo(
+                7,
+                &SoundProfile::by_id(preset).unwrap(),
+                crate::Params::static_society(),
+            );
+            for _ in 0..2 {
+                for variety in &world.varieties {
+                    let mut shared = Assessor::new(
+                        variety.spoken_forms(),
+                        &variety.profile.inventory,
+                        variety.minimal,
+                        variety.stress(),
+                    );
+                    for law in &laws {
+                        assert_eq!(
+                            shared.assess(law),
+                            law.assess_weighted(
+                                variety.spoken_forms(),
+                                &variety.profile.inventory,
+                                variety.minimal,
+                                variety.stress(),
+                            ),
+                            "{preset}: {}",
+                            law.id
+                        );
+                    }
+                }
+                world.run(12);
+            }
+        }
     }
 
     #[test]

@@ -1682,36 +1682,88 @@ and called the actual `Bench::founding_sites` around the homeland that
 the first `calibrate` profile would choose. Neither recipe is the lost
 browser audit recipe.
 
-| Native timing recipe | Repeats | Median startup | Median total `act` | Median total `overview` | Final overview bytes |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Three, freely placed | 12 | 0.098 s | 1.069 s | 0.273 s | 1,186,014 |
-| Six, grouped | 8 | 0.093 s | 1.926 s | 0.532 s | 2,111,367 |
+The outcome-identical route/assessment/annal pass repeated both recipes eight
+times before and after, against baseline `03e1c9b`, with separate release
+targets. Medians on the same machine:
 
-The grouped recipe's first measured run averaged 7.91 ms per `act`
-in its first forty generations and 24.43 ms in its last forty.
-`overview` grew from 1.18 to 8.03 ms. Across repeated runs, total
-`act` ranged from 1.913 to 2.047 s and total overview from 0.526 to
-0.596 s. Startup excludes the extra world used only to choose the
-grouped anchor. Every repeat produced the same final byte count.
+| Native timing recipe | Version | Median startup | Median total `act` | Median total `overview` | Final overview bytes |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Three, freely placed | Before | 0.093 s | 1.035 s | 0.263 s | 1,186,014 |
+| Three, freely placed | After | 0.088 s | 0.517 s | 0.210 s | 1,186,014 |
+| Six, grouped | Before | 0.096 s | 1.939 s | 0.544 s | 2,111,367 |
+| Six, grouped | After | 0.089 s | 1.264 s | 0.431 s | 2,111,367 |
 
-Eight-second native samples attribute 1,331 of 4,131 grouped
+| Native timing recipe | Version | First 40 `act` | Last 40 `act` | First 40 `overview` | Last 40 `overview` |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Three, freely placed | Before | 4.472 ms | 11.351 ms | 0.500 ms | 3.636 ms |
+| Three, freely placed | After | 2.002 ms | 7.168 ms | 0.328 ms | 3.101 ms |
+| Six, grouped | Before | 7.547 ms | 23.374 ms | 1.073 ms | 7.372 ms |
+| Six, grouped | After | 4.443 ms | 17.324 ms | 0.752 ms | 6.222 ms |
+
+The per-generation columns are medians of each repeat's forty-generation
+means. Total `act` fell 50.0% for three founders and 34.8% for six;
+total `overview` fell 20.2% and 20.8%. Startup excludes the extra world
+used only to choose the grouped anchor. Every repeat produced the same
+final byte count.
+
+Outcome proof compared unmodified baseline and optimized stdout for the
+full default `audit` (20 seeds, 255 generations), `history` (seed 42,
+200 generations), and `cities` (seed 42, 80 generations) examples, plus
+both recipes' overview JSON at years 2000 and 4000. All seven `cmp`
+comparisons were byte-identical. Native/WASM parity passed for 85 worlds
+and 1,043 state/replay checks with zero mismatching states; the release
+workspace suite passed 427 tests, with 15 ignored.
+
+Before the change, eight-second native samples attributed 1,331 of 4,131 grouped
 `World::step` samples, 32.2%, to sound-change candidate assessment;
 1,093, 26.5%, to `Map::set_valley_flows`, chiefly rebuilding affected
 walking-route rows; and 307, 7.4%, to directed `Routes::search`.
 The three-founder sample put 44.5% of step samples in river-route
-refresh and 26.8% in sound-change assessment. River refresh also works
-over unoccupied geography, so a sparse population does not make that
-cost disappear. In the grouped facade sample, constructing annals
+refresh and 26.8% in sound-change assessment. That eager refresh also
+worked over unoccupied geography, so a sparse population did not make
+its cost disappear. In the grouped facade sample, constructing annals
 accounted for 650 of 1,233 overview samples, 52.7%.
+
+Walking neighbourhoods now materialize only when read. Flow-band changes
+invalidate only materialized rows whose old bounded neighbourhood reaches
+a changed edge endpoint; an unchanged prefix to the first changed edge
+covers shorter paths as well as longer ones. Unread rows search the latest
+graph on demand, using the same bounded Dijkstra and accumulation order.
+Cloned maps share completed rows, but invalidate independently. Geography
+equality excludes this derived cache; `route_entry_counts` counts resident
+rows, not all potential rows. Voyage rows and directed fleet search are
+unchanged.
+
+Sound-law selection collects one borrowed, ordered list of spoken forms
+and memoizes segment preference scores across its candidates. It retains
+every form's usage weight and the original floating accumulation order.
+The cache dies before any language mutation; it does not assume a lexicon
+stays unchanged across generations. Syllabification also avoids a temporary
+nucleus list. Annals share one shift index across their component histories,
+avoid allocating a list of each word's laws for each historical year, and
+spell a candidate example only when its rank can replace the best audible
+example.
+
+An event-index-only cache of past annals was deliberately not added:
+sound-change examples use living words, specimens use today's dominant
+words, and some state entries read current standard or ruler language.
+This was visible in the probe: from year 2000 to 4000, 25 of 442 existing
+annals in the three-founder run changed, and 85 of 611 in the grouped run
+changed, all sound-law specimens. Freezing such entries would change the
+existing overview contract without changing their event identity.
+The baseline samples put the entire annal path at 52.7% of overview, not
+all of which is safe to memoize. Similarly, cross-generation assessment
+caching needs explicit lexical, grammatical, and profile invalidation;
+the baseline 32.2% sound-candidate share is an upper bound on that opportunity,
+not an additional measured gain.
 
 These samples locate native work; they do not apportion the reported
 24 browser seconds. Browser running additionally executes WASM,
 parses the growing overview, commits React and map updates, and waits
 for animation frames. `Stage` adapts chunks to a 5 or 10 ms engine
 budget and flushes each frame's state. An exact browser breakdown needs
-the same retained recipe and a browser trace. No optimization was made:
-the measured route and linguistic paths are not a trivial local
-outcome-identical change.
+the same retained recipe and a browser trace. These native improvements do
+not measure the browser's remaining rendering or serialization costs.
 
 ### Legacy ContinentalV5
 

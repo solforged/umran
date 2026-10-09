@@ -4127,18 +4127,19 @@ impl World {
         let variety = &self.varieties[v];
         let recent = self.recent_laws(v);
         let prior = &variety.profile.inventory;
+        let mut assessor = crate::laws::Assessor::new(
+            variety.spoken_forms(),
+            prior,
+            variety.minimal,
+            variety.stress(),
+        );
         let candidates: Vec<(&Law, f32)> = self
             .laws
             .iter()
             .filter(|law| !recent.contains(law.id))
             .filter(|law| !crate::tone::is_tone_law(law))
             .filter_map(|law| {
-                let a = law.assess_weighted(
-                    variety.spoken_forms(),
-                    prior,
-                    variety.minimal,
-                    variety.stress(),
-                )?;
+                let a = assessor.assess(law)?;
                 let areal: f32 = areal.iter().map(|(target, w)| w * a.toward(target)).sum();
                 let bias = crate::math::exp(
                     self.params.preference_pull * a.pull.clamp(-5.0, 3.0)
@@ -4311,6 +4312,15 @@ impl World {
                 }
             }
             let variety = &self.varieties[v];
+            if offers.is_empty() {
+                continue;
+            }
+            let mut assessor = crate::laws::Assessor::new(
+                variety.spoken_forms(),
+                &variety.profile.inventory,
+                variety.minimal,
+                variety.stress(),
+            );
             let offered: Vec<(&Law, usize, f32)> = offers
                 .into_iter()
                 .filter_map(|(id, (h, from, _))| {
@@ -4318,12 +4328,7 @@ impl World {
                     if !crate::tone::applies(law, variety) {
                         return None;
                     }
-                    let a = law.assess_weighted(
-                        variety.spoken_forms(),
-                        &variety.profile.inventory,
-                        variety.minimal,
-                        variety.stress(),
-                    )?;
+                    let a = assessor.assess(law)?;
                     let taste =
                         crate::math::exp(self.params.preference_pull * a.pull.clamp(-5.0, 3.0))
                             .min(3.0);

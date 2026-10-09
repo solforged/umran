@@ -189,19 +189,17 @@ impl Form {
     /// following vowel the longest tail of rising sonority. A form with no
     /// vowel has no syllables.
     pub fn syllables(&self) -> Vec<Syllable> {
-        let nuclei: Vec<usize> = (0..self.segs.len()).filter(|&i| self.is_vowel(i)).collect();
-        let mut out: Vec<Syllable> = Vec::with_capacity(nuclei.len());
-        for (n, &v) in nuclei.iter().enumerate() {
-            let onset_start = match n {
-                0 => 0,
-                _ => {
-                    let from = nuclei[n - 1] + 1;
-                    let start = self.onset_start(from, v);
-                    // A geminate is one segment shared by coda and onset.
-                    let shared = usize::from(start < v && self.segs[start].long);
-                    out.last_mut().unwrap().coda = from..start + shared;
-                    start
-                }
+        let mut out: Vec<Syllable> = Vec::with_capacity(self.vowel_count());
+        for v in (0..self.segs.len()).filter(|&i| self.is_vowel(i)) {
+            let onset_start = if let Some(previous) = out.last_mut() {
+                let from = previous.nucleus + 1;
+                let start = self.onset_start(from, v);
+                // A geminate is one segment shared by coda and onset.
+                let shared = usize::from(start < v && self.segs[start].long);
+                previous.coda = from..start + shared;
+                start
+            } else {
+                0
             };
             out.push(Syllable {
                 onset: onset_start..v,
