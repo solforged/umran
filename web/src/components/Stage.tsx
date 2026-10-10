@@ -625,7 +625,7 @@ export function Stage({
           overview={settlement ? settlementReading : overview} generation={chartGeneration}
           selectedVariety={knownBy ?? overview.communities[selected]?.variety} riverNames={riverNames} lakeNames={lakeNames} climate={climate}
           known={settlement ? null : known} onOpen={settlement ? undefined : go} />
-        <div className="cartouche world-cartouche">
+        <div className="cartouche world-cartouche" data-map-furniture>
           <Popover label="This world" role="menu" side="bottom" align="start"
             trigger={(props) => (
               <button type="button" className="cartouche-open" {...props}>
@@ -646,7 +646,7 @@ export function Stage({
             </>)}
           </Popover>
         </div>
-        <div className="map-tools">
+        <div className="map-tools" data-map-furniture>
           <button type="button" className="map-tool" onClick={openIndex} title="Find anything (⌘K or /)"><Search size={15} aria-hidden="true" /><span className="map-tool-label sr-only">Find</span></button>
           <Popover role="dialog" label="What the chart shows" side="bottom" align="end"
             trigger={(props) => <button type="button" className="map-tool" title={layerName} {...props}><Layers size={15} aria-hidden="true" /><span className="map-tool-label sr-only">{layerName}</span><ChevronDown size={12} aria-hidden="true" /></button>}>
@@ -735,7 +735,7 @@ export function Stage({
             </div>}
           </Popover>
         </div>
-        {settlement === null ? <div className="map-caption">
+        {settlement === null ? <div className="map-caption" data-map-furniture>
           {generation === 0 ? <span className="chronicle-latest muted">Year 0 · {overview.communities.length === 1 ? "One people settles" : `${overview.communities.length} peoples settle`} {overview.continents.find((c) => c.name)?.name?.name ?? title}</span> : last && LastIcon ? (
             <button
               type="button"

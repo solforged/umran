@@ -4,7 +4,7 @@ import type { ClimateView, Community, Craft, EthosAxis, FoundingPreview, Lake, L
 import type { ShelfPeople } from "../shelf";
 import { reducedMotion } from "../motion";
 import { YEARS } from "../model";
-import { hue, landLabel, LEG_BY, TERRAIN_NAME } from "../lore";
+import { continentLabel, hue, landLabel, LEG_BY, TERRAIN_NAME } from "../lore";
 import { chartPoint, createCartography, geographicPoint, lakeOutline, riverPoints, riverRoutePoints, sharedBorder, type Cartography, type GlobeRotation, type MapPoint, type MapProjection } from "../cartography";
 import { MapProjectionSwitch } from "./MapProjectionSwitch";
 import type { MapFeature } from "../gazetteer";
@@ -398,6 +398,9 @@ export function MapView({
   const stateBorders = useRef<SVGGElement>(null);
   const labelAnchors = useRef<SVGElement[]>([]);
   const lettering = useRef<SVGTextElement[]>([]);
+  /// Region sites by map-unit cell, for asking which region holds a point,
+  /// and each continent's candidate sites for its name; a chart's only.
+  const siteGrid = useRef<{ cartography: Cartography; cells: Map<number, [number, number, number][]>; candidates: Map<number, [number, number, number][]> } | null>(null);
   const paths = useRef(new Map<SVGPathElement, { draw: PathDrawer; d: string; hide: HTMLElement | SVGElement | null; revision: number }>());
   const drawnPaths = useMemo(() => new WeakMap<PathDrawer, { revision: number; d: string }>(), [cartography]);
   const drawRevision = useRef(0);
@@ -551,7 +554,6 @@ export function MapView({
     }
     const kmPerPixel = (projection === "globe" ? 2 * map.radiusKm / height : map.kmPerUnit) / pixelsPerUnit;
     stateBorders.current?.style.setProperty("--state-weight", String(1 + 2 * Math.min(1, (1 - ratio) / 0.6)));
-    const occupied: DOMRect[] = [];
     const named = new Set<string>();
     // Keep names at their geographic anchors. Priority decides which fit;
     // zoom reveals the rest without sending leaders across the chart.
@@ -577,6 +579,11 @@ export function MapView({
       item.rect = item.text.getBoundingClientRect();
     }
     const chartBounds = chart.getBoundingClientRect();
+    // Overlaid furniture (the cartouche, tools, caption, scale) holds its
+    // ground too: the map's own and its container's direct children.
+    const occupied: DOMRect[] = [...chart.children, ...chart.parentElement?.children ?? []]
+      .filter((node) => node.hasAttribute("data-map-furniture"))
+      .map((node) => node.getBoundingClientRect()).filter((rect) => rect.width > 0);
     const matrix = element.getScreenCTM()!;
     const surface = new DOMRect(matrix.e, matrix.f, width * pixelsPerUnit, height * pixelsPerUnit);
     const overlaps = (rect: DOMRect) => occupied.some((other) =>
@@ -595,10 +602,99 @@ export function MapView({
       }
       return !overlaps(rect);
     };
+    // Which region holds a point: the nearest region site, since regions are
+    // their sites' cells. Indexed in map units, a mean region width per cell,
+    // so a pan never moves a cell boundary; a globe reindexes each frame,
+    // as it turns, once a continent asks. A chart keeps the index and each
+    // continent's candidate sites until its cartography changes.
+    const cell = width * Math.sqrt((projection === "globe" ? Math.PI : 1 / Math.PI) / Math.max(1, map.regions.length));
+    const kept = projection === "chart" && siteGrid.current?.cartography === cartography ? siteGrid.current : null;
+    let cells = kept?.cells ?? null;
+    const candidateSites = kept?.candidates ?? new Map<number, [number, number, number][]>();
+    const regionAt = (x: number, y: number) => {
+      if (!cells) {
+        const index = new Map<number, [number, number, number][]>();
+        map.regions.forEach((region, id) => {
+          const point = cartography.point(region.site);
+          if (!point) return;
+          const key = Math.floor(point[0] / cell) * 1e5 + Math.floor(point[1] / cell);
+          const list = index.get(key);
+          if (list) list.push([point[0], point[1], id]); else index.set(key, [[point[0], point[1], id]]);
+        });
+        cells = index;
+        if (projection === "chart") siteGrid.current = { cartography, cells, candidates: candidateSites };
+      }
+      const key = Math.floor(x / cell) * 1e5 + Math.floor(y / cell);
+      let nearest = -1, best = Infinity;
+      for (const dx of [-1e5, 0, 1e5]) for (const dy of [-1, 0, 1]) {
+        for (const [sx, sy, id] of cells.get(key + dx + dy) ?? []) {
+          const d = (sx - x) ** 2 + (sy - y) ** 2;
+          if (d < best) { best = d; nearest = id; }
+        }
+      }
+      return nearest;
+    };
     for (const item of measured) {
       const { text } = item;
       const { rect } = item;
       const kind = text.dataset.labelKind;
+      if (kind === "continent") {
+        // A continent's name goes where its own land has room, nearest the
+        // engine's anchor, and smaller on a small land. Where none fits, it
+        // waits for zoom rather than lettering across the sea. Its last
+        // placement is tried first, so a pan does not send it hopping.
+        const landmass = Number(text.dataset.landmass);
+        const mass = map.landmasses[landmass];
+        const anchor = cartography.point(map.regions[mass.anchor].site);
+        let placed = false;
+        if (anchor && rect.width > 0) {
+          let sites = candidateSites.get(landmass);
+          if (!sites) {
+            const all: [number, number, number][] = [];
+            for (const region of mass.regions) {
+              const point = cartography.point(map.regions[region].site);
+              if (point) all.push([point[0], point[1], region]);
+            }
+            all.sort((a, b) => (a[0] - anchor[0]) ** 2 + (a[1] - anchor[1]) ** 2 - (b[0] - anchor[0]) ** 2 - (b[1] - anchor[1]) ** 2);
+            const step = Math.max(1, Math.ceil(all.length / 60));
+            sites = all.filter((_, index) => index % step === 0);
+            candidateSites.set(landmass, sites);
+          }
+          const previous = sites.find((site) => String(site[2]) === text.dataset.placed);
+          const order = previous ? [previous, ...sites.filter((site) => site !== previous)] : sites;
+          // The heading was measured at the anchor at its last size.
+          const shown = Number(text.dataset.fit ?? 1);
+          const ax = matrix.a * anchor[0] + matrix.e, ay = matrix.d * anchor[1] + matrix.f;
+          for (const fit of [1, 0.8, 0.64]) {
+            const scale = fit / shown;
+            for (const [x, y, site] of order) {
+              const sx = matrix.a * x + matrix.e, sy = matrix.d * y + matrix.f;
+              const box = new DOMRect(sx + (rect.left - ax) * scale, sy + (rect.top - ay) * scale, rect.width * scale, rect.height * scale);
+              if (!fits(box)) continue;
+              const middle = (box.top + box.height / 2 - matrix.f) / matrix.d;
+              let covered = 0;
+              for (let sample = 0; sample < 9; sample++) {
+                const region = regionAt((box.left + box.width * (sample + 0.5) / 9 - matrix.e) / matrix.a, middle);
+                if (map.regions[region]?.landmass === landmass) covered++;
+              }
+              if (covered < 8) continue;
+              text.setAttribute("x", String(x));
+              text.setAttribute("y", String(y));
+              if (fit !== shown) {
+                text.style.setProperty("--fit", String(fit));
+                text.dataset.fit = String(fit);
+              }
+              text.dataset.placed = String(site);
+              occupied.push(box);
+              placed = true;
+              break;
+            }
+            if (placed) break;
+          }
+        }
+        text.style.visibility = placed ? "" : "hidden";
+        continue;
+      }
       const people = text.dataset.people;
       const allowed = kind === "tongue"
         ? tint.kind === "peoples" && kmPerPixel < TONGUE_KM_PER_PIXEL && named.has(people!)
@@ -1422,10 +1518,10 @@ export function MapView({
                 x={x}
                 y={y}
                 className="continent-name"
-                data-label-kind="continent" data-label-priority={0}
-                role={onContinent || onInspect ? "button" : undefined}
-                tabIndex={!onClearLand && (onContinent || onInspect) ? 0 : undefined}
-                aria-label={`${c.name.name}, “${c.name.meaning}”`}
+                data-label-kind="continent" data-label-priority={3} data-landmass={c.landmass}
+                role={onContinent ? "button" : undefined}
+                tabIndex={onContinent ? 0 : undefined}
+                aria-label={`${continentLabel(overview, map, c.landmass)}, “${c.name.meaning}”`}
                 {...inspectEvents({ kind: "continent", landmass: c.landmass, region: mass.anchor })}
                 onClick={() => dragged() || onContinent?.(c.landmass)}
                 onKeyDown={(e) => {
@@ -1769,7 +1865,7 @@ export function MapView({
       </svg>
       {onClearLand ? <span className="sr-only" role="status">{cursorName}</span> : null}
       {zoomable ? (
-        <div className="map-zoom" role="group" aria-label={projection === "globe" ? "Globe controls" : "Chart controls"}>
+        <div className="map-zoom" role="group" data-map-furniture aria-label={projection === "globe" ? "Globe controls" : "Chart controls"}>
           {selectedRegions.length > 0 ? <button type="button" title="Fit the selected lands (F)" aria-label="Fit the selected lands" onClick={fitSelection}><LocateFixed size={16} /></button> : null}
           {/* drawCamera owns disabled state alongside the imperative camera.
               Stale React disabled props would suppress a re-enabled button. */}
@@ -1786,10 +1882,10 @@ export function MapView({
           </button>
         </div>
       ) : null}
-      {onProjection ? <div className="map-projection-control">
+      {onProjection ? <div className="map-projection-control" data-map-furniture>
         <MapProjectionSwitch value={projection} onChange={onProjection} />
       </div> : null}
-      {zoomable ? <div className="chart-scale">
+      {zoomable ? <div className="chart-scale" data-map-furniture>
         <span ref={scaleRule} className="scale-rule"><span ref={scaleText} /></span>
         <span className="chart-help">{projection === "globe" ? "Drag to turn · scroll to zoom" : "Scroll to zoom · drag to explore"}</span>
       </div> : null}

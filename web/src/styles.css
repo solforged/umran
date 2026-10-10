@@ -1044,21 +1044,29 @@ table.preview tr {
 }
 
 /* A continent's name, lettered large and faint across it in spaced
-   capitals, under the names of its lands and peoples. */
+   capitals, under the names of its lands and peoples. `--fit` letters a
+   small land smaller (MapView fits each name to its own land). The ink
+   is mixed opaque under a paper halo, so it reads over terrain marks. */
 .continent-names text {
   font-family: var(--display);
-  font-size: calc(0.5px * var(--label, 1));
+  font-size: calc(0.5px * var(--label, 1) * var(--fit, 1));
   font-variant: small-caps;
-  letter-spacing: calc(0.12px * var(--label, 1));
+  letter-spacing: calc(0.12px * var(--label, 1) * var(--fit, 1));
   text-transform: lowercase;
   text-anchor: middle;
   dominant-baseline: middle;
-  fill: color-mix(in srgb, var(--ink) 22%, transparent);
+  fill: color-mix(in srgb, var(--ink) 70%, var(--paper));
+  paint-order: stroke;
+  stroke: color-mix(in srgb, var(--paper) 55%, transparent);
+  stroke-width: calc(0.04px * var(--label, 1) * var(--fit, 1));
+  stroke-linejoin: round;
+}
+.continent-names text[role="button"] {
   cursor: pointer;
 }
 .continent-names text:hover,
 .continent-names text:focus-visible {
-  fill: color-mix(in srgb, var(--accent) 60%, transparent);
+  fill: color-mix(in srgb, var(--accent) 75%, var(--paper));
   outline: none;
 }
 

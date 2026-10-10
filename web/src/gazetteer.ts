@@ -1,6 +1,6 @@
 import type { ClimateView, LakeNamesView, NameView, Overview, PlaceExonym, PlaceName, RiverNamesView, Subject, WorldMap } from "./model";
 import { YEARS } from "./model";
-import { TERRAIN_NAME, weatherDeparture } from "./lore";
+import { continentLabel, TERRAIN_NAME, weatherDeparture } from "./lore";
 
 export type MapFeature =
   | { kind: "land"; region: number }
@@ -207,6 +207,8 @@ export function gazette(feature: MapFeature, map: WorldMap, overview: Overview, 
       break;
     }
   }
-  result.title = result.sayings[0]?.spelled ?? result.title;
+  // Namesake continents read alike; the card's qualifier tells them apart.
+  result.title = feature.kind === "continent" && result.sayings.length
+    ? continentLabel(overview, map, feature.landmass) : result.sayings[0]?.spelled ?? result.title;
   return result;
 }
