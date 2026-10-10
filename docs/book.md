@@ -167,44 +167,67 @@ that is neither is residue of the live-game phase and goes.
 
 ### The chart room (the shelf)
 
-An index of the author's worlds, not a menu for strangers. The last
-opened world leads, large: its miniature, name, year, the last chronicle
-line, and *Continue*. Other worlds below it in a row. Then, smaller:
-*Found a new world*, *Read a chronicle already written* (the sample),
-*Open a save file*. Tile text is the world's name and the last line of
-its chronicle, never a comma list of language names.
+An index of the author's worlds. The last opened world leads, large: its
+miniature, name, year, the last chronicle line, and *Continue*. Other
+worlds below it in a row. Then, smaller: *Found a new world*, *Read a
+chronicle already written* (the sample), *Open a save file*. Tile text is
+the world's name and the last line of its chronicle, never a comma list
+of language names.
+
+With no worlds yet, the room is a title page for a stranger: the mark,
+"The book of a world", one sentence on what Umran writes, *Found a new
+world* with the founding steps listed beneath it, and the sample's chart
+as a frontispiece that opens the sample. While the engine loads, the mark
+turns above the same sentence.
 
 ### Founding
 
-Begin with an unpopulated world. Selecting a land inspects its terrain,
-area, rivers, and inhabitants; it never moves a people silently.
-*Found a people here* places one people. *A group…* places two to six
-neighbours in distinct, reachable homelands, nearest first but with two
-lands between homelands where the land allows, so each people has room
-before it meets the next. They begin either with independent languages
-or with speech inherited from a common founding people. Related speech
-has real ancestry in the engine; matching sound presets alone do not make
-a family. Moving an existing people is a separate action: *Move* on its
-portrait, then a click on the new land, or *Move them here* (named for
-the people) after selecting a land. Escape or *Cancel* leaves them where
-they were.
+Founding is a sequence of steps, always opened at the first. A rail
+across the top names them, and any step whose prerequisites hold can be
+reopened; the chart stays behind every step. All steps edit one draft on
+the real engine.
 
-A compact roster stays visible while a separate portrait scrolls beneath
-it. The portrait brings homeland, livelihood, temper, and a word specimen
-together. Grammar and names open as disclosures; the full sound chart
-opens separately. Related peoples share their ancestral sound and grammar
-choices while the world is being drafted. Reach is drawn on the chart
-for the selected people, with effort on hover.
+1. **The world.** For worlds drawn from moving plates, the coasts form
+   first: the supercontinent, the engine's ten drift steps, then the
+   drawn coasts (`forming()`), each frame the generator's own state.
+   *Skip* ends it; reduced motion shows the coasts at once. The plate
+   offers the sizes as cards, *Draw other coasts*, and the seed. Changing
+   either after founding requires an explicit choice to relocate the
+   peoples; their speech and kinship survive. Selecting a land opens the
+   next step.
+2. **The homeland.** Selecting a land reads its terrain, area, rivers,
+   and inhabitants; it never moves a people silently. Once peoples exist,
+   *Found another people here* and *Move the … here* act on that land.
+3. **The peoples.** Three ways to begin: *One people*; *Kin who parted*,
+   two to six peoples speaking branches of one ancestral tongue; or
+   *Neighbours*, two to six peoples with languages of their own. Groups
+   take distinct, reachable homelands, nearest first but with two lands
+   between homelands where the land allows. Related speech has real
+   ancestry in the engine; matching sound presets alone do not make a
+   family. Then a compact roster above a portrait: homeland, livelihood,
+   temper, and their name for themselves. *Move* on the portrait, or
+   *Another people…*, takes the next land clicked; Escape or *Cancel*
+   leaves things as they were. *Start again* clears the peoples after
+   asking. Reach is drawn on the chart for the selected people, with
+   effort on hover.
+4. **Their speech.** Every preset as a voice card showing the words this
+   people would have under it: the engine's own preview with the seed
+   founding uses, so the chosen card's words are the founded words.
+   *Hear other words* draws another seed; *Shape the sounds by hand…*
+   opens the full sound chart. Grammar follows as phrases with sample
+   sentences. Related peoples share their ancestral sound and grammar
+   choices.
+5. **The title page.** Set like a printed book's opening over the
+   dimmed chart: the world's name, the author, the peoples, the seed, and
+   the year the chronicle runs to (4000 by default). Its verb is *Write
+   the chronicle*.
+6. **The years.** The workshop opens and runs to that year at once. While
+   it runs, the frontispiece tells the chronicle being written: the year,
+   a progress rule, the latest turning points as they happen, and *Stop
+   here*.
 
-The specimen uses three equal columns in the founding portrait. Each
-meaning stays above its word, and long words wrap inside their column.
-
-The framed world title and size dropdown sit over the map. *Details*
-holds author, seed, physical dimensions, and *Redraw the coasts*.
-Changing size or redrawing after founding requires an explicit choice to
-relocate the peoples; their speech and kinship survive. The footer's
-verb is *Begin*. One starting region is enough; there is no requirement
-to populate the globe.
+One starting region is enough; there is no requirement to populate the
+globe.
 
 ### The workshop (the stage)
 
@@ -218,6 +241,8 @@ The chart, the cards, the chronicle, and the time bar. What changes:
 - At year 0 the open card is the frontispiece: the name, the peoples,
   *Run*. No tutorial, no stat box. The one-line caption at the foot of
   the chart does the teaching: "Year 0 · eight peoples settle Hūhupam".
+  While the years run, the frontispiece shows the chronicle being written
+  in place of *Run*.
 - When the years move, the open card is the frontispiece or something
   that exists at the current year, and the breadcrumb says the current
   year. The folio is a card opened wide; it never has its own title.

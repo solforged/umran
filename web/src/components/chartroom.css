@@ -167,19 +167,63 @@
   opacity: 0.75;
 }
 
-.chart-room-empty .room-actions {
+/* With no worlds yet the room is a title page: what Umran writes and
+   two ways in, beside the sample's chart as its frontispiece. */
+.chart-room-empty {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 3.5rem;
-  align-items: center;
-  max-width: 68rem;
-  margin: 1.5rem 0 4rem;
+  grid-template-rows: minmax(0, 1fr) auto;
 }
-.room-blank-chart { position: relative; aspect-ratio: 13.5 / 8.8; background: var(--sea); box-shadow: 0 10px 26px rgb(0 0 0 / 0.4); }
-.chart-room-empty .room-action-list { display: grid; gap: 2.25rem; }
-.chart-room-empty .room-action button { font-size: 1.1rem; }
-.chart-room-empty .room-found button { font-family: var(--display); font-size: 1.8rem; }
-.chart-room-empty .room-action p { font-size: 0.95rem; }
+.room-title-page {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: clamp(2rem, 5vw, 4.5rem);
+  align-items: center;
+  max-width: 84rem;
+  margin: 0 auto;
+  padding-block: 2rem;
+}
+.room-title-text { display: grid; justify-items: start; gap: 1.1rem; }
+:root .room-title-text .brand { color: var(--desk-ink); font-size: 1.5rem; }
+.room-title-text h1 { margin: 0; font: 500 clamp(2.4rem, 4.5vw, 3.8rem) / 1.05 var(--display); color: var(--desk-ink); text-wrap: balance; }
+.room-lede { max-width: 30rem; margin: 0; font-size: 1.1rem; line-height: 1.55; opacity: 0.85; }
+:root .room-found-first { display: inline-flex; align-items: center; gap: 0.5rem; margin-top: 0.4rem; padding: 0.65rem 1.3rem; font: 1.35rem var(--display); }
+.room-steps { display: flex; flex-wrap: wrap; gap: 0.2rem 0.9rem; margin: 0; padding: 0; list-style: none; font-size: 0.85rem; opacity: 0.75; }
+.room-steps span { font-family: var(--caps); margin-right: 0.15rem; color: var(--gold); }
+.room-other { margin: 0.6rem 0 0; }
+.room-other button,
+.room-sample figcaption button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--desk-ink);
+  font: 1.05rem var(--display);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--desk-ink) 40%, transparent);
+  text-underline-offset: 0.25em;
+}
+.room-other button:hover,
+.room-sample figcaption button:hover { text-decoration-color: currentColor; }
+.room-sample { margin: 0; }
+:root .room-sample-chart {
+  display: block;
+  width: 100%;
+  aspect-ratio: 13.5 / 8.8;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--sea);
+  box-shadow: 0 2px 0 rgb(0 0 0 / 0.2), 0 10px 26px rgb(0 0 0 / 0.4);
+  cursor: pointer;
+}
+.room-sample-chart:hover { outline: 1px solid var(--gold); outline-offset: 5px; }
+.room-sample-chart:disabled { cursor: progress; opacity: 0.7; }
+.room-sample figcaption { display: grid; gap: 0.3rem; margin-top: 1rem; }
+.room-sample figcaption button { font-size: 1.35rem; }
+.room-sample figcaption span { font-size: 0.95rem; opacity: 0.75; }
 
 :root:has(main.chart-room) .light-switch {
   top: 1.6rem;
@@ -195,8 +239,7 @@
   .room-world-leading { width: 100%; aspect-ratio: 1.6; }
   .room-world-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; }
   .room-action-list { flex-wrap: wrap; gap: 1.5rem; }
-  .chart-room-empty .room-actions { grid-template-columns: 1fr; gap: 2rem; }
-  .room-blank-chart { max-width: 28rem; }
+  .room-title-page { grid-template-columns: 1fr; padding-block: 1rem; }
 }
 
 @media (max-width: 480px) {

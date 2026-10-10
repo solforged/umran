@@ -1,29 +1,38 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { ChevronDown, Feather, LocateFixed, Plus } from "lucide-react";
-import { createEngine, message, presetDesign } from "../engine";
-import type { Catalog, Engine, EthosAxis, FoundingPreview, GrammarChoice, GrammarDesign, Livelihood, MapSize, Naming, Overview, PossessorOrder, Variety, WordOrder, WorldMap } from "../model";
-import { ETHOS_AXES, ETHOS_POLES, hue, LIVELIHOOD_NAME, MARKING_PHRASE, POSSESSOR_PHRASE, temperament, TERRAIN_NAME, WORD_ORDER_PHRASE } from "../lore";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { ArrowLeft, ArrowRight, Feather, LocateFixed, Plus, RefreshCw } from "lucide-react";
+import { createEngine, message, presetDesign, preview } from "../engine";
+import type { Catalog, Engine, EthosAxis, Forming, FoundingPreview, GrammarChoice, GrammarDesign, Livelihood, MapSize, Naming, Overview, PossessorOrder, Variety, WordOrder, WorldMap } from "../model";
+import { YEARS } from "../model";
+import { countWord, ETHOS_AXES, ETHOS_POLES, hue, LIVELIHOOD_NAME, MARKING_PHRASE, POSSESSOR_PHRASE, temperament, TERRAIN_NAME, WORD_ORDER_PHRASE } from "../lore";
 import { worldName } from "../shelf";
 import { Designer, randomSeed, type Founding as FoundingDesign } from "./Designer";
+import { FormingChart } from "./FormingChart";
 import { MapView } from "./MapView";
 import { useMapProjection } from "./MapProjectionSwitch";
 import { MapInspector, type MapInspection } from "./MapInspector";
 import { Modal } from "./Modal";
 import { decodeNaming, encodeNaming, namingChoices } from "./NamingSelect";
 import { Phrase } from "./Phrase";
-import { Popover } from "./Popover";
-import { Specimen } from "./Specimen";
 import { Sample } from "./Sample";
 import "./founding.css";
 
 const MOST_PEOPLES = 12;
 const BENT = 0.7;
+/// The chronicle's default length, in years.
+const DEFAULT_YEARS = 4000;
 const LIVELIHOOD_PHRASE: Record<Livelihood, string> = { farming: "farming", herding: "herding", foraging: "foraging" };
-const PEOPLE_LIVELIHOOD: Record<Livelihood, string> = { farming: "farmers", herding: "herders", foraging: "foragers" };
+/// Words a voice card shows, by the preview's gloss.
+const VOICE_WORDS = ["water", "fire", "sun", "night"];
 
-function lower(name: string): string {
-  return name.charAt(0).toLowerCase() + name.slice(1);
-}
+type Step = "world" | "homeland" | "peoples" | "speech" | "title";
+const STEPS: { id: Step; name: string; next: string }[] = [
+  { id: "world", name: "The world", next: "Choose a homeland" },
+  { id: "homeland", name: "The homeland", next: "Who lives there" },
+  { id: "peoples", name: "The peoples", next: "Their speech" },
+  { id: "speech", name: "Their speech", next: "The title page" },
+  { id: "title", name: "The title page", next: "Write the chronicle" },
+];
+type Settling = "one" | "kin" | "neighbours";
 
 interface Founder extends FoundingDesign {
   key: number;
@@ -38,6 +47,7 @@ interface Founder extends FoundingDesign {
 
 interface Built {
   map: WorldMap;
+  forming: Forming | null;
   overview: Overview;
   preview: FoundingPreview;
   founders: Founder[];
@@ -65,14 +75,15 @@ function markerChoice(speech: Variety, category: "plural" | "past" | "object"): 
   return !marker || marker.kind === "none" ? "none" : marker.kind === "particle" ? "particle" : marker.side;
 }
 
-/// Draft on the real engine; Begin hands that same world to the workshop.
-export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
+/// Draft on the real engine, one step at a time: the coasts, a homeland,
+/// the peoples, their speech, and the title page. Writing the chronicle
+/// hands that same world to the workshop with the years to run.
+export function Founding({ catalog, onBegin, onChartRoom }: {
   catalog: Catalog;
-  onBegin: (engine: Engine, title: string | null, author: string | null) => void;
+  onBegin: (engine: Engine, title: string | null, author: string | null, years: number) => void;
   onChartRoom: () => void;
-  onSample: () => Promise<void>;
 }) {
-  const [sampling, setSampling] = useState(false);
+  const [step, setStep] = useState<Step>("world");
   const [worldSeed, setWorldSeed] = useState(() => randomSeed());
   const [size, setSize] = useState<MapSize>("medium");
   const [founders, setFounders] = useState<Founder[]>([]);
@@ -86,14 +97,21 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
     try { return localStorage.getItem("umran.author") ?? ""; }
     catch { return ""; }
   });
+  const [years, setYears] = useState(DEFAULT_YEARS);
   const [projection, setProjection] = useMapProjection();
   const [adjusting, setAdjusting] = useState<number | null>(null);
   const [redraw, setRedraw] = useState<{ seed: number; size: MapSize } | null>(null);
+  const [clearing, setClearing] = useState(false);
   /// The founder whose homeland the next land click sets.
   const [moving, setMoving] = useState<number | null>(null);
+  /// Whether the next land click founds another people there.
+  const [adding, setAdding] = useState(false);
   const [moveNotice, setMoveNotice] = useState<string | null>(null);
+  const [settling, setSettling] = useState<Settling>("one");
   const [groupCount, setGroupCount] = useState(3);
-  const [related, setRelated] = useState(true);
+  /// The world whose coasts have finished forming on the chart.
+  const [formed, setFormed] = useState<string | null>(() =>
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "always" : null);
   const [built, setBuilt] = useState<Built | null>(null);
   const [error, setError] = useState<string | null>(null);
   const engine = useRef<Engine | null>(null);
@@ -108,14 +126,14 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
   useEffect(() => {
     if (pages.current) pages.current.scrollTop = 0;
     roster.current?.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: "nearest" });
-  }, [selected, inspected]);
+  }, [selected, step]);
 
   useEffect(() => {
-    if (moving === null) return;
-    const cancel = (event: KeyboardEvent) => { if (event.key === "Escape") { setMoving(null); setMoveNotice(null); } };
+    if (moving === null && !adding) return;
+    const cancel = (event: KeyboardEvent) => { if (event.key === "Escape") { setMoving(null); setAdding(false); setMoveNotice(null); } };
     document.addEventListener("keydown", cancel);
     return () => document.removeEventListener("keydown", cancel);
-  }, [moving]);
+  }, [moving, adding]);
 
   useEffect(() => {
     // Resolving new homelands publishes their draft in the same render. It
@@ -168,8 +186,10 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
             possessor: !drawn || founder.design.grammar?.possessor == null ? speech.grammar.possessor : drawn.possessor,
           });
         });
+        const sameWorld = previous?.seed === worldSeed && previous.size === size;
         const founded: Built = {
-          map: previous?.seed === worldSeed && previous.size === size ? previous.map : next.map(),
+          map: sameWorld ? previous.map : next.map(),
+          forming: sameWorld ? previous.forming : base.current.engine.forming(),
           overview, preview: next.foundingPreview(), founders: settled, seed: worldSeed, size,
         };
         engine.current?.dispose();
@@ -195,6 +215,7 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
 
   const overview = built?.overview;
   const map = built?.map;
+  const worldKey = `${worldSeed}:${size}`;
   const currentBuild = !!built && built.founders === founders && built.seed === worldSeed && built.size === size;
   const selectedIndex = founders.findIndex((founder) => founder.key === selected);
   const current = founders[selectedIndex];
@@ -206,10 +227,16 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
   const land = inspected === null ? undefined : map?.regions[inspected];
   const occupied = !!land && !!overview?.communities.some((community) => community.lands.includes(land.id));
   const defaultTitle = overview?.communities.length ? worldName(overview) : null;
-  const chartReady = !!map && !!overview;
+  const chartReady = !!map && !!overview && built?.seed === worldSeed && built.size === size;
+  const forming = step === "world" && chartReady && built.forming && formed !== worldKey && formed !== "always" ? built.forming : null;
   const riverNames = useMemo(() => map && engine.current ? map.rivers.map((river) => engine.current!.river(0, river.id)) : [], [built]);
   const lakeNames = useMemo(() => map && engine.current ? map.lakes.map((lake) => engine.current!.lake(0, lake.id)) : [], [built]);
   const landName = (region: number) => overview?.places.find((place) => place.region === region)?.names.at(-1)?.spelled ?? "unnamed land";
+  const landTitle = (region: number) => {
+    const named = landName(region);
+    const r = map?.regions[region];
+    return named !== "unnamed land" || !r ? named : `${TERRAIN_NAME[r.terrain]}${r.coastal ? " by the sea" : " inland"}`;
+  };
   const available = MOST_PEOPLES - founders.length;
   const count = Math.min(groupCount, available);
   const group = useMemo(() => {
@@ -224,16 +251,22 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
   const update = (key: number, patch: Partial<Founder>) => setFounders((all) => all.map((founder) => founder.key === key ? { ...founder, ...patch } : founder));
   const movingFounder = founders.find((founder) => founder.key === moving);
   const movingName = movingFounder ? overview?.communities[founders.indexOf(movingFounder)]?.name : undefined;
+  const homeTo = (region: number, except?: Founder) => overview?.communities
+    .filter((community, i) => founders[i] !== except && community.lands.includes(region)) ?? [];
   const settle = (region: number) => {
-    if (!movingFounder || !map || !overview) return;
-    const index = founders.indexOf(movingFounder);
-    const others = overview.communities.filter((community, i) => i !== index && community.lands.includes(region));
+    if ((!movingFounder && !adding) || !map || !overview) return;
+    const others = homeTo(region, movingFounder);
     if (others.length) {
       setMoveNotice(`${landName(region)} is home to the ${others.map((community) => community.name).join(" and ")}. Choose another land.`);
       return;
     }
-    if (region !== movingFounder.region) update(movingFounder.key, { region });
+    if (adding) {
+      const founder = drawFounder(catalog, nextKey.current++, region);
+      setFounders((all) => [...all, founder]);
+      setSelected(founder.key);
+    } else if (movingFounder && region !== movingFounder.region) update(movingFounder.key, { region });
     setMoving(null);
+    setAdding(false);
     setMoveNotice(null);
     setInspected(region);
   };
@@ -257,23 +290,31 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
     if (founders.length) setRedraw(next);
     else changeWorld(next);
   };
-  const add = () => {
-    if (!land || !currentBuild || available < 1) return;
-    const founder = drawFounder(catalog, nextKey.current++, land.id);
-    setFounders((all) => [...all, founder]);
-    setSelected(founder.key);
-  };
-  const addGroup = () => {
-    if (!land || !currentBuild || occupied || count < 2 || group.sites.length !== count) return;
+  const found = () => {
+    if (!land || !currentBuild || occupied) return;
+    if (settling === "one") {
+      if (available < 1) return;
+      const founder = drawFounder(catalog, nextKey.current++, land.id);
+      setFounders((all) => [...all, founder]);
+      setSelected(founder.key);
+      return;
+    }
+    if (count < 2 || group.sites.length !== count) return;
     const first = drawFounder(catalog, nextKey.current++, group.sites[0]);
     const members = group.sites.slice(1).map((region) => {
       const key = nextKey.current++;
-      return related
+      return settling === "kin"
         ? { ...first, key, source: first.key, region, naming: drawNaming(catalog, key) }
         : drawFounder(catalog, key, region);
     });
     setFounders((all) => [...all, first, ...members]);
     setSelected(first.key);
+  };
+  const addHere = () => {
+    if (!land || !currentBuild || available < 1 || occupied) return;
+    const founder = drawFounder(catalog, nextKey.current++, land.id);
+    setFounders((all) => [...all, founder]);
+    setSelected(founder.key);
   };
   const remove = () => {
     if (!current) return;
@@ -294,22 +335,247 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
     const grammar = speechOwner.design.grammar ?? { plural: markerChoice(speech, "plural"), past: markerChoice(speech, "past") };
     update(speechOwner.key, { design: { ...speechOwner.design, grammar: { ...grammar, ...patch } } });
   };
+  const choosePreset = (owner: Founder, key: string) => {
+    if (key === owner.preset) return;
+    update(owner.key, { preset: key, design: { ...presetDesign(key, owner.seed), ...(owner.design.grammar ? { grammar: owner.design.grammar } : {}) } });
+  };
   const adjustingFounder = founders.find((founder) => founder.key === adjusting);
-  const speechPhrase = speechOwner?.preset == null ? "their own speech, shaped by hand" : lower(catalog.presets.find((preset) => preset.id === speechOwner.preset)!.name);
+
+  // Every voice card is the engine's own preview of this people's words
+  // under that preset, with the seed founding would use.
+  const voices = useMemo(() => {
+    if (step !== "speech" || !speechOwner) return [];
+    return catalog.presets.map((preset) => {
+      const result = preview(presetDesign(preset.id, speechOwner.seed), speechOwner.seed, speechOwner.naming);
+      const words = typeof result === "string" ? [] : VOICE_WORDS
+        .map((gloss) => result.words.find((word) => word.gloss.split(",")[0] === gloss))
+        .filter((word) => word !== undefined);
+      return { preset, words };
+    });
+  }, [step, catalog, speechOwner?.key, speechOwner?.seed, speechOwner?.naming]);
+
+  const stepIndex = STEPS.findIndex((s) => s.id === step);
+  const reachable = (id: Step) => id === "world" || (chartReady && (id === "homeland" || (id === "peoples" ? (inspected !== null || founders.length > 0) : founders.length > 0)));
+  const canBegin = !!engine.current && currentBuild && chartReady && founders.length > 0 && Number.isFinite(years) && years >= YEARS;
+  const go = (next: Step) => {
+    if (!reachable(next)) return;
+    setMoving(null); setAdding(false); setMoveNotice(null);
+    if ((next === "peoples" || next === "speech") && selected === null && founders[0]) choose(founders[0].key);
+    setStep(next);
+  };
+  const begin = () => {
+    if (!engine.current || !canBegin) return;
+    try {
+      handedOver.current = true;
+      onBegin(engine.current, title?.trim() && title.trim() !== defaultTitle ? title.trim() : null, author.trim() || null, years);
+    } catch (failure) { handedOver.current = false; setError(message(failure)); }
+  };
+  const formedNow = useCallback(() => setFormed(worldKey), [worldKey]);
+
+  const rosterNav = founders.length ? <nav className="founding-roster" aria-label="Peoples at the beginning" ref={roster}>
+    {founders.map((founder, index) => {
+      const entry = overview?.communities[index];
+      const variety = entry ? overview?.varieties.find((candidate) => candidate.id === entry.variety) : undefined;
+      return <button type="button" key={founder.key} aria-pressed={selected === founder.key} onClick={() => choose(founder.key)}
+        style={{ "--tone": variety ? hue(variety.family) : undefined } as CSSProperties}>
+        <span className="founding-roster-number">{String(index + 1).padStart(2, "0")}</span>
+        <span className="founding-roster-name">{entry?.name ?? "Settling…"}</span>
+        <span className="founding-roster-place">{step === "speech" ? (variety?.name ?? "") : entry ? landName(entry.region) : ""}</span>
+      </button>;
+    })}
+  </nav> : null;
+
+  const head = (heading: string, lead?: ReactNode) => <header className="founding-head">
+    <div className="eyebrow">{stepIndex + 1} · {STEPS[stepIndex].name}</div>
+    <h2>{heading}</h2>
+    {lead ? <p>{lead}</p> : null}
+  </header>;
+
+  const hint = moving !== null || adding
+    ? <>{moveNotice ?? (adding ? "Choose a land for another people." : `Choose a new homeland for the ${movingName ?? "people"}.`)} <button type="button" className="link" onClick={() => { setMoving(null); setAdding(false); setMoveNotice(null); }}>Cancel</button></>
+    : step === "world" ? null
+    : step === "homeland" ? "Select a land to read it."
+    : step === "peoples" ? (founders.length ? "Choose a name to read its people." : null)
+    : null;
+
+  let plate: ReactNode = null;
+  if (step === "world") {
+    plate = <>
+      {head(built?.forming ? "Coasts drawn from moving plates" : "The coasts",
+        built?.forming ? "One land broke apart over ten ages of drifting plates. Its pieces became these coasts, ranges, and islands." : "Coasts, ranges, and rivers, drawn for this world.")}
+      <fieldset className="founding-sizes">
+        <legend>How large a world</legend>
+        {catalog.mapSizes.map((choice) => <label key={choice.id} className={size === choice.id ? "chosen" : undefined}>
+          <input type="radio" name="founding-size" checked={size === choice.id} onChange={() => requestWorld({ seed: worldSeed, size: choice.id as MapSize })} />
+          <span><b>{choice.name}</b> <small>{choice.description}</small></span>
+        </label>)}
+      </fieldset>
+      <div className="founding-world-actions">
+        <button type="button" onClick={() => requestWorld({ seed: randomSeed(), size })}><RefreshCw size={13} aria-hidden="true" /> Draw other coasts</button>
+        {built?.forming && !forming ? <button type="button" className="link" onClick={() => setFormed(null)}>Watch them form</button> : null}
+      </div>
+      <p className="founding-seed">Seed <code>{worldSeed}</code>{map ? ` · ${map.radiusKm.toLocaleString()} km radius · ${map.regions.length.toLocaleString()} lands and seas` : ""}</p>
+      {chartReady && !forming ? <p className="founding-invitation">Select a land on the chart to begin there.</p> : null}
+    </>;
+  } else if (step === "homeland") {
+    plate = <>
+      {head("Where does their story begin?", "Rivers, coasts, and the way through neighbouring lands will shape the people who live there.")}
+      {land ? <section className="founding-land" aria-label="Selected homeland">
+        <div className="eyebrow">{land.island ? "On an island" : "On the mainland"}</div>
+        <h3>{landTitle(land.id)}</h3>
+        <p>{landName(land.id) !== "unnamed land" ? `${TERRAIN_NAME[land.terrain]}, ${land.coastal ? "coastal" : "inland"}. ` : ""}
+          {Math.round(land.areaKm2).toLocaleString()} km²{map?.rivers.some((river) => river.course.includes(land.id)) ? " · a river runs through it" : ""}.</p>
+        {occupied ? <p className="muted">Home to {homeTo(land.id).map((community) => community.name).join(", ")}.</p> : null}
+        {founders.length ? <div className="founding-land-actions">
+          <button type="button" disabled={!currentBuild || available < 1 || occupied} onClick={addHere}><Plus size={13} aria-hidden="true" /> Found another people here</button>
+          {current && people && current.region !== land.id && !occupied ? <button type="button" className="link founding-move" disabled={!currentBuild}
+            onClick={() => update(current.key, { region: land.id })}><LocateFixed size={13} aria-hidden="true" /> Move the {people.name} here</button> : null}
+        </div> : null}
+      </section> : <p className="founding-invitation">Select a land on the chart.</p>}
+    </>;
+  } else if (step === "peoples") {
+    plate = founders.length ? <>
+      {head(founders.length === 1 ? "One people at the beginning" : `${countWord(founders.length).replace(/^./, (c) => c.toUpperCase())} peoples at the beginning`)}
+      {rosterNav}
+      <div className="founding-pages" ref={pages}>
+        {current && people && speech ? <article className="founding-portrait" key={current.key} aria-label={`The ${people.name}`}>
+          <header><h3>{people.name}</h3><span>{people.meaning}</span>
+            <button type="button" className="link founding-move-start" aria-pressed={moving === current.key} disabled={!currentBuild}
+              onClick={() => { setAdding(false); setMoving(moving === current.key ? null : current.key); setMoveNotice(null); }}><LocateFixed size={13} aria-hidden="true" /> Move</button></header>
+          <p>They live in <button type="button" className="link" onClick={() => { setInspected(people.region); setFocus(people.region); }}>{landName(people.region)}</button>,
+            {" "}<Phrase label="Way of life" value={current.livelihood ?? ""}
+              choices={[{ key: "", text: `as the land suggests (${LIVELIHOOD_PHRASE[people.livelihood]})` },
+                ...(Object.keys(LIVELIHOOD_NAME) as Livelihood[]).map((livelihood) => ({ key: livelihood, text: `by ${LIVELIHOOD_PHRASE[livelihood]}` }))]}
+              onChange={(key) => update(current.key, { livelihood: key === "" ? null : key as Livelihood })} />.</p>
+          <p>They are <Phrase label="Temper" value={current.bent ? `${current.bent.axis} ${current.bent.toward}` : ""}
+            choices={[{ key: "", text: "shaped by land and life" }, ...ETHOS_AXES.flatMap((axis) => [1, -1].map((toward) => ({ key: `${axis} ${toward}`, text: ETHOS_POLES[axis][toward > 0 ? 1 : 0] })))]}
+            onChange={(key) => { const [axis, toward] = key.split(" "); update(current.key, { bent: key === "" ? null : { axis: axis as EthosAxis, toward: Number(toward) as 1 | -1 } }); }} />
+            {current.bent === null ? ` (${temperament(people.ethos, 2).join(" and ") || "even-tempered"})` : ""}.</p>
+          <p>They name themselves <Phrase label="Name" value={encodeNaming(current.naming)} choices={namingChoices(catalog)}
+            onChange={(key) => { const naming = decodeNaming(key); if (naming) update(current.key, { naming }); }} />, <b>{people.name}</b>,
+            and speak <button type="button" className="link" onClick={() => go("speech")}><i>{speech.name}</i></button>{inherited ? ", a branch of their kin's speech" : ""}.</p>
+          <button type="button" className="link founding-remove" onClick={remove}>Leave this people out</button>
+        </article> : null}
+      </div>
+      <div className="founding-land-actions founding-more">
+        <button type="button" aria-pressed={adding} disabled={!currentBuild || available < 1}
+          onClick={() => { setMoving(null); setAdding(!adding); setMoveNotice(null); }}><Plus size={13} aria-hidden="true" /> Another people…</button>
+        <button type="button" className="link" onClick={() => setClearing(true)}>Start again</button>
+      </div>
+    </> : <>
+      {head(land ? `Who lives in ${landTitle(land.id)}?` : "Who lives there?")}
+      {land ? <>
+        <fieldset className="founding-settling">
+          <legend>At the beginning</legend>
+          <label className={settling === "one" ? "chosen" : undefined}>
+            <input type="radio" name="founding-settling" checked={settling === "one"} onChange={() => setSettling("one")} />
+            <span><b>One people</b> Alone in their land. Others may come of them as the years pass.</span>
+          </label>
+          <label className={settling === "kin" ? "chosen" : undefined}>
+            <input type="radio" name="founding-settling" checked={settling === "kin"} onChange={() => setSettling("kin")} />
+            <span><b>Kin who parted</b> Peoples in neighbouring lands, speaking branches of one ancestral tongue.</span>
+          </label>
+          <label className={settling === "neighbours" ? "chosen" : undefined}>
+            <input type="radio" name="founding-settling" checked={settling === "neighbours"} onChange={() => setSettling("neighbours")} />
+            <span><b>Neighbours</b> Peoples in neighbouring lands, each with a language of its own.</span>
+          </label>
+        </fieldset>
+        {settling !== "one" ? <p className="founding-count"><label>How many <select aria-label="Number of founding peoples" value={count} onChange={(event) => setGroupCount(Number(event.target.value))}>
+          {Array.from({ length: Math.max(0, Math.min(6, available) - 1) }, (_, i) => i + 2).map((n) => <option key={n} value={n}>{countWord(n)}</option>)}
+        </select></label>
+          <span className={group.error || group.sites.length < count ? "notice" : "muted"}>
+            {group.error || (group.sites.length < count ? `Only ${group.sites.length} free homelands are within reach. Choose fewer, or another land.` : `${countWord(count).replace(/^./, (c) => c.toUpperCase())} homelands within reach over land, with room between them.`)}
+          </span></p> : null}
+        <button type="button" className="primary founding-settle" disabled={!currentBuild || occupied || (settling !== "one" && group.sites.length !== count)} onClick={found}>
+          {settling === "one" ? "Settle them here" : "Settle them"}</button>
+        {occupied ? <p className="notice">{landTitle(land.id)} is already home to a people. Choose another land.</p> : null}
+      </> : <p className="founding-invitation">First <button type="button" className="link" onClick={() => go("homeland")}>choose a homeland</button>.</p>}
+    </>;
+  } else if (step === "speech") {
+    plate = <>
+      {head(people ? `How do the ${people.name} speak?` : "How do they speak?",
+        "Each voice is a set of sound preferences. Every card shows the words this people would have.")}
+      {founders.length > 1 ? rosterNav : null}
+      <div className="founding-pages" ref={pages}>
+        {current && people && speech && speechOwner ? <>
+          {inherited ? <p className="founding-inheritance">The {people.name} speak a branch of the speech of the{" "}
+            <button type="button" className="link" onClick={() => choose(speechOwner.key)}>{overview?.communities[founders.indexOf(speechOwner)]?.name}</button>.
+            {" "}Their kin share these choices.</p> : null}
+          <div className="founding-voices" role="radiogroup" aria-label="Voices">
+            {speechOwner.preset === null ? <button type="button" role="radio" aria-checked className="founding-voice">
+              <b>Shaped by hand</b>
+              <span className="founding-voice-words">{speech.specimen.slice(0, 4).map((w) => <span key={w.concept}><i>{w.spelled}</i><small>{w.concept}</small></span>)}</span>
+            </button> : null}
+            {voices.map(({ preset, words }) => <button type="button" role="radio" key={preset.id} aria-checked={speechOwner.preset === preset.id}
+              className="founding-voice" title={preset.description} onClick={() => choosePreset(speechOwner, preset.id)}>
+              <b>{preset.name}</b>
+              <span className="founding-voice-words">{words.map((w) => <span key={w.gloss}><i>{w.spelled}</i><small>{w.gloss.split(",")[0]}</small></span>)}</span>
+            </button>)}
+          </div>
+          <div className="founding-speech-actions">
+            <button type="button" className="link" onClick={() => { const seed = randomSeed(); update(speechOwner.key, { seed, design: speechOwner.preset === null ? speechOwner.design : { ...presetDesign(speechOwner.preset, seed), ...(speechOwner.design.grammar ? { grammar: speechOwner.design.grammar } : {}) } }); }}>Hear other words</button>
+            <button type="button" className="link" onClick={() => setAdjusting(speechOwner.key)}>Shape the sounds by hand…</button>
+          </div>
+          <section className="founding-grammar">
+            <h4>Grammar</h4>
+            <p>They put <Phrase label="Word order" value={speechOwner.design.grammar?.order ?? ""}
+              choices={[{ key: "", text: `${WORD_ORDER_PHRASE[drawn?.order ?? speech.grammar.order].choice}, as their speech falls out` },
+                ...(["SOV", "SVO", "VSO"] as WordOrder[]).map((order) => ({ key: order, text: WORD_ORDER_PHRASE[order].choice }))]}
+              onChange={(key) => setGrammar({ order: key === "" ? null : key as WordOrder })} />, <Phrase label="Object marking"
+              value={speechOwner.design.grammar?.object == null ? "" : speechOwner.design.grammar.object === "none" ? "order" : "case"}
+              choices={[{ key: "", text: `${MARKING_PHRASE[(drawn?.object ?? markerChoice(speech, "object")) === "none" ? "order" : "case"].choice}, as their speech falls out` },
+                ...(["case", "order"] as const).map((marking) => ({ key: marking, text: MARKING_PHRASE[marking].choice }))]}
+              onChange={(key) => {
+                const object = drawn?.object ?? markerChoice(speech, "object");
+                setGrammar({ object: key === "" ? null : key === "order" ? "none" : object !== "none" ? object : speechOwner.design.suffixing >= 0.5 ? "suffix" : "prefix" });
+              }} />, and put <Phrase label="Possessor placement" value={speechOwner.design.grammar?.possessor ?? ""}
+              choices={[{ key: "", text: `${POSSESSOR_PHRASE[drawn?.possessor ?? speech.grammar.possessor].choice}, as their speech falls out` },
+                ...(["before", "after"] as PossessorOrder[]).map((possessor) => ({ key: possessor, text: POSSESSOR_PHRASE[possessor].choice }))]}
+              onChange={(key) => setGrammar({ possessor: key === "" ? null : key as PossessorOrder })} />.</p>
+            {speech.grammar.sample ? <><Sample rendering={speech.grammar.sample.sentence} label="Sample sentence" />
+              <Sample rendering={speech.grammar.sample.possession} label="Sample possession" />
+              <Sample rendering={speech.grammar.sample.future} label="Sample future" /></> : null}
+          </section>
+        </> : null}
+      </div>
+    </>;
+  } else {
+    const peoples = overview?.communities ?? [];
+    plate = <section className="founding-title-page" aria-label="The title page">
+      <p className="founding-title-kicker">The book of a world</p>
+      <input className="founding-title" aria-label="World name" value={title ?? defaultTitle ?? ""}
+        placeholder="An unnamed world" onChange={(event) => setTitle(event.target.value)} />
+      <p className="founding-byline">by <input aria-label="Author" placeholder="your name" value={author} onChange={(event) => setAuthor(event.target.value)} /></p>
+      <p className="founding-title-peoples">{peoples.map((c, i) => <span key={c.id} style={{ "--tone": hue(overview?.varieties[c.variety]?.family ?? 0) } as CSSProperties}>
+        {i === 0 ? "" : i < peoples.length - 1 ? ", " : peoples.length > 2 ? ", and " : " and "}the <b>{c.name}</b></span>)}{peoples.length ? `, in ${landName(peoples[0].region)}` : ""}.</p>
+      <p className="founding-title-years"><label>Their chronicle runs to year <input type="number" aria-label="Years to write" min={YEARS} step={YEARS} value={Number.isNaN(years) ? "" : years}
+        onChange={(event) => setYears(event.currentTarget.valueAsNumber)} /></label></p>
+      <p className="founding-seed">Seed <code>{worldSeed}</code> · {catalog.mapSizes.find((choice) => choice.id === size)?.name} world</p>
+    </section>;
+  }
 
   return (
-    <div className="stage setup founding">
+    <div className="stage setup founding" data-step={step}>
       <header className="founding-rail">
         <button type="button" className="brand" aria-label="Back to the chart room" onClick={onChartRoom}>
           <span className="brand-name"><span>ʿUmrān</span></span>
         </button>
+        <ol className="founding-steps" aria-label="Founding a world">
+          {STEPS.map((s, i) => <li key={s.id}>
+            <button type="button" aria-current={s.id === step ? "step" : undefined} disabled={!reachable(s.id)} onClick={() => go(s.id)}>
+              <span>{i + 1}</span> {s.name}
+            </button>
+          </li>)}
+          <li><span className="founding-steps-last" aria-disabled="true"><span>6</span> The years</span></li>
+        </ol>
       </header>
       <section ref={mapContainer} className="stage-map" aria-label={projection === "globe" ? "Globe" : "Chart"} aria-busy={!currentBuild}>
-        {chartReady ? <MapView key={`${worldSeed}:${size}`} map={map} overview={overview} generation={0} tint={{ kind: "peoples" }}
+        {forming && map ? <FormingChart key={worldKey} map={map} forming={forming} onDone={formedNow} />
+          : chartReady ? <MapView key={worldKey} map={map} overview={overview} generation={0} tint={{ kind: "peoples" }}
           projection={projection} onProjection={setProjection}
           riverNames={riverNames}
           lakeNames={lakeNames}
-          reach={people && built ? { preview: built.preview, people: people.id } : undefined}
+          reach={people && built && step !== "world" ? { preview: built.preview, people: people.id } : undefined}
           chosen={new Set(people ? [people.id] : [])}
           lands={new Set(inspected === null ? [] : [inspected])}
           focus={focus === null ? null : map.regions[focus]?.site ?? null}
@@ -317,176 +583,39 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
           onPeople={(id) => {
             if (!currentBuild || !founders[id]) return;
             const region = founders[id].region;
-            if (moving !== null && region !== null) settle(region);
+            if ((moving !== null || adding) && region !== null) settle(region);
             else choose(founders[id].key);
           }}
           onInspect={(feature, at) => setInspection(feature ? { feature, at } : null)}
           onClearLand={() => { setInspected(null); setInspection(null); }}
           onLand={(region) => {
             if (!currentBuild || map.regions[region].terrain === "sea") return;
-            if (moving !== null) settle(region);
-            else setInspected(region);
-          }} /> : null}
-        {chartReady ? <MapInspector container={mapContainer} inspection={inspection} map={map} overview={overview} generation={0} selectedVariety={people?.variety} riverNames={riverNames} lakeNames={lakeNames} pinnable={false} /> : null}
-        <div className="cartouche founding-cartouche">
-          <input className="founding-title" aria-label="World name" value={title ?? defaultTitle ?? ""}
-            placeholder="An unnamed world" onChange={(event) => setTitle(event.target.value)} />
-          <div className="founding-world-tools">
-            <select aria-label="World size" value={size} onChange={(event) => requestWorld({ seed: worldSeed, size: event.target.value as MapSize })}>
-              {catalog.mapSizes.map((choice) => <option key={choice.id} value={choice.id} title={choice.description}>{choice.name}</option>)}
-            </select>
-            <Popover label="World details" role="dialog" align="start"
-              trigger={(props) => <button type="button" className="link" {...props}>Details <ChevronDown size={12} aria-hidden="true" /></button>}>
-              {(close) => <div className="founding-world-details">
-                <label>Author<input aria-label="Author" placeholder="Your name" value={author} onChange={(event) => setAuthor(event.target.value)} /></label>
-                <dl>
-                  <div><dt>Seed</dt><dd><code>{worldSeed}</code></dd></div>
-                  {map ? <><div><dt>Radius</dt><dd>{map.radiusKm.toLocaleString()} km</dd></div>
-                    <div><dt>Regions</dt><dd>{map.regions.length.toLocaleString()}</dd></div></> : null}
-                </dl>
-                <p>{catalog.mapSizes.find((choice) => choice.id === size)?.description}</p>
-                <button type="button" onClick={() => { close(); requestWorld({ seed: randomSeed(), size }); }}>Redraw the coasts</button>
-              </div>}
-            </Popover>
-          </div>
-        </div>
-        <p className={moving !== null ? "map-hint founding-moving" : "map-hint"}>{moving !== null
-          ? <>{moveNotice ?? `Choose a new homeland for the ${movingName ?? "people"}.`} <button type="button" className="link" onClick={() => { setMoving(null); setMoveNotice(null); }}>Cancel</button></>
-          : founders.length ? "Select a land to explore or settle; choose a name to read its people." : "Choose a homeland. The rest of the world can wait."}</p>
+            if (moving !== null || adding) settle(region);
+            else {
+              setInspected(region);
+              if (step === "world") setStep("homeland");
+            }
+          }} /> : <p className="founding-drawing">Drawing the coasts…</p>}
+        {chartReady && !forming ? <MapInspector container={mapContainer} inspection={inspection} map={map} overview={overview} generation={0} selectedVariety={people?.variety} riverNames={riverNames} lakeNames={lakeNames} pinnable={false} /> : null}
+        {hint ? <p className={moving !== null || adding ? "map-hint founding-moving" : "map-hint"}>{hint}</p> : null}
       </section>
 
-      <aside className="pedia setup-panel" aria-label="Founding peoples" aria-busy={!currentBuild}>
-        <header className="founding-head">
-          <div className="eyebrow">Before the first year</div>
-          <h2>The founding peoples</h2>
-          {!founders.length ? <p>Start in one place, with one people or a few neighbours.</p> : null}
-        </header>
-        {founders.length ? <nav className="founding-roster" aria-label="Peoples at the beginning" ref={roster}>
-          {founders.map((founder, index) => {
-            const entry = overview?.communities[index];
-            const variety = entry ? overview?.varieties.find((candidate) => candidate.id === entry.variety) : undefined;
-            return <button type="button" key={founder.key} aria-pressed={selected === founder.key} onClick={() => choose(founder.key)}
-              style={{ "--tone": variety ? hue(variety.family) : undefined } as CSSProperties}>
-              <span className="founding-roster-number">{String(index + 1).padStart(2, "0")}</span>
-              <span className="founding-roster-name">{entry?.name ?? "Settling…"}</span>
-              <span className="founding-roster-place">{entry ? landName(entry.region) : ""}</span>
-            </button>;
-          })}
-        </nav> : null}
-        <div className="founding-pages" ref={pages}>
-          {land ? <section className="founding-land" aria-label="Selected homeland">
-            <div className="eyebrow">{land.island ? "On an island" : "On the mainland"}</div>
-            <h3>{landName(land.id) === "unnamed land" ? `${TERRAIN_NAME[land.terrain]}${land.coastal ? " by the sea" : " inland"}` : landName(land.id)}</h3>
-            <p>{landName(land.id) !== "unnamed land" ? `${TERRAIN_NAME[land.terrain]}, ${land.coastal ? "coastal" : "inland"}. ` : ""}
-              {Math.round(land.areaKm2).toLocaleString()} km²{map?.rivers.some((river) => river.course.includes(land.id)) ? " · a river runs through it" : ""}.</p>
-            {occupied ? <p className="muted">Home to {overview?.communities.filter((community) => community.lands.includes(land.id)).map((community) => community.name).join(", ")}.</p> : null}
-            <div className="founding-land-actions">
-              <button type="button" disabled={!currentBuild || available < 1} onClick={add}><Plus size={13} aria-hidden="true" /> Found a people here</button>
-              <Popover label="Found a group" role="dialog" align="end"
-                trigger={(props) => <button type="button" className="link" disabled={!currentBuild || available < 2 || occupied} {...props}>A group… <ChevronDown size={12} aria-hidden="true" /></button>}>
-                {(close) => <div className="founding-group">
-                  <h3>A few neighbours</h3>
-                  <label>Peoples<select aria-label="Number of founding peoples" value={count} onChange={(event) => setGroupCount(Number(event.target.value))}>
-                    {Array.from({ length: Math.max(0, Math.min(6, available) - 1) }, (_, i) => i + 2).map((n) => <option key={n} value={n}>{n}</option>)}
-                  </select></label>
-                  <fieldset><legend>At the beginning</legend>
-                    <label><input type="radio" name="founding-kin" checked={related} onChange={() => setRelated(true)} /> Related peoples, sharing ancestral speech</label>
-                    <label><input type="radio" name="founding-kin" checked={!related} onChange={() => setRelated(false)} /> Neighbouring peoples, with separate languages</label>
-                  </fieldset>
-                  <p>{related ? "Their words begin alike and have a common origin. Their speech can part as the years pass." : "Each starts with its own language. Living nearby can bring them into contact."}</p>
-                  <p className={group.error || group.sites.length < count ? "notice" : "muted"}>
-                    {group.error || (group.sites.length < count ? `Only ${group.sites.length} unoccupied homelands are within reach. Choose fewer peoples or another land.` : `${count} nearby homelands, connected over land. Each can be changed before you begin.`)}
-                  </p>
-                  <button type="button" className="primary" disabled={group.sites.length !== count || !currentBuild} onClick={() => { addGroup(); close(); }}>Found these peoples</button>
-                </div>}
-              </Popover>
-            </div>
-            {current && current.region !== land.id ? <button type="button" className="link founding-move" disabled={!currentBuild}
-              onClick={() => update(current.key, { region: land.id })}><LocateFixed size={13} aria-hidden="true" /> Move {people?.name ?? "the selected people"} here</button> : null}
-          </section> : <section className="founding-invitation">
-            <h3>Where will their story begin?</h3>
-            <p>Select a land to read it. Rivers, coasts, and the way through neighbouring lands will shape the people who live there.</p>
-          </section>}
-
-          {current && people && speech && speechOwner && map ? <article className="founding-portrait" key={current.key} aria-label={`The ${people.name}`}>
-            <header><h3>{people.name}</h3><span>{people.meaning}</span>
-              <button type="button" className="link founding-move-start" aria-pressed={moving === current.key} disabled={!currentBuild}
-                onClick={() => { setMoving(moving === current.key ? null : current.key); setMoveNotice(null); }}><LocateFixed size={13} aria-hidden="true" /> Move</button></header>
-            <p>They live in <button type="button" className="link" onClick={() => { setInspected(people.region); setFocus(people.region); }}>{landName(people.region)}</button>,
-              {" "}<Phrase label="Way of life" value={current.livelihood ?? ""}
-                choices={[{ key: "", text: `as the land suggests (${LIVELIHOOD_PHRASE[people.livelihood]})` },
-                  ...(Object.keys(LIVELIHOOD_NAME) as Livelihood[]).map((livelihood) => ({ key: livelihood, text: `by ${LIVELIHOOD_PHRASE[livelihood]}` }))]}
-                onChange={(key) => update(current.key, { livelihood: key === "" ? null : key as Livelihood })} />.</p>
-            <p>They are <Phrase label="Temper" value={current.bent ? `${current.bent.axis} ${current.bent.toward}` : ""}
-              choices={[{ key: "", text: "shaped by land and life" }, ...ETHOS_AXES.flatMap((axis) => [1, -1].map((toward) => ({ key: `${axis} ${toward}`, text: ETHOS_POLES[axis][toward > 0 ? 1 : 0] })))]}
-              onChange={(key) => { const [axis, toward] = key.split(" "); update(current.key, { bent: key === "" ? null : { axis: axis as EthosAxis, toward: Number(toward) as 1 | -1 } }); }} />
-              {current.bent === null ? ` (${temperament(people.ethos, 2).join(" and ") || "even-tempered"})` : ""}.</p>
-            <section className="founding-speech">
-              <h4>What they speak</h4>
-              <Specimen words={speech.specimen} />
-              {inherited ? <p className="founding-inheritance">Their speech is inherited from {" "}
-                <button type="button" className="link" onClick={() => choose(speechOwner.key)}>{overview?.communities[founders.indexOf(speechOwner)]?.name}</button>.
-                {" "}The same words, a new branch.</p> : <p>Their speech is <Phrase label="Sounds" value={speechOwner.preset ?? ""}
-                choices={[...(speechOwner.preset === null ? [{ key: "", text: "their own, shaped by hand" }] : []),
-                  ...catalog.presets.map((preset) => ({ key: preset.id, text: lower(preset.name), title: preset.description }))]}
-                onChange={(key) => { if (key && key !== speechOwner.preset) update(speechOwner.key, { preset: key, design: { ...presetDesign(key, speechOwner.seed), ...(speechOwner.design.grammar ? { grammar: speechOwner.design.grammar } : {}) } }); }} />.</p>}
-              <div className="founding-speech-actions">
-                {!inherited ? <button type="button" className="link" onClick={() => { const seed = randomSeed(); update(speechOwner.key, { seed, design: speechOwner.preset === null ? speechOwner.design : { ...presetDesign(speechOwner.preset, seed), ...(speechOwner.design.grammar ? { grammar: speechOwner.design.grammar } : {}) } }); }}>Hear other words</button> : null}
-                <button type="button" className="link" onClick={() => setAdjusting(speechOwner.key)}>{inherited ? "Shape their shared speech…" : "Adjust their sounds…"}</button>
-              </div>
-            </section>
-            <details className="founding-grammar">
-              <summary>Grammar <span>{WORD_ORDER_PHRASE[speech.grammar.order].choice}</span></summary>
-              {inherited ? <p>Grammar is inherited too. <button type="button" className="link" onClick={() => choose(speechOwner.key)}>Edit their ancestral speech</button>.</p> : <p>They put <Phrase label="Word order" value={speechOwner.design.grammar?.order ?? ""}
-                choices={[{ key: "", text: `${WORD_ORDER_PHRASE[drawn?.order ?? speech.grammar.order].choice}, as their speech falls out` },
-                  ...(["SOV", "SVO", "VSO"] as WordOrder[]).map((order) => ({ key: order, text: WORD_ORDER_PHRASE[order].choice }))]}
-                onChange={(key) => setGrammar({ order: key === "" ? null : key as WordOrder })} />, <Phrase label="Object marking"
-                value={speechOwner.design.grammar?.object == null ? "" : speechOwner.design.grammar.object === "none" ? "order" : "case"}
-                choices={[{ key: "", text: `${MARKING_PHRASE[(drawn?.object ?? markerChoice(speech, "object")) === "none" ? "order" : "case"].choice}, as their speech falls out` },
-                  ...(["case", "order"] as const).map((marking) => ({ key: marking, text: MARKING_PHRASE[marking].choice }))]}
-                onChange={(key) => {
-                  const object = drawn?.object ?? markerChoice(speech, "object");
-                  setGrammar({ object: key === "" ? null : key === "order" ? "none" : object !== "none" ? object : speechOwner.design.suffixing >= 0.5 ? "suffix" : "prefix" });
-                }} />, and put <Phrase label="Possessor placement" value={speechOwner.design.grammar?.possessor ?? ""}
-                choices={[{ key: "", text: `${POSSESSOR_PHRASE[drawn?.possessor ?? speech.grammar.possessor].choice}, as their speech falls out` },
-                  ...(["before", "after"] as PossessorOrder[]).map((possessor) => ({ key: possessor, text: POSSESSOR_PHRASE[possessor].choice }))]}
-                onChange={(key) => setGrammar({ possessor: key === "" ? null : key as PossessorOrder })} />.</p>}
-              <p className="muted small">Both mean “the child’s fish”; these choices set only the order, not genitive marking.</p>
-              {speech.grammar.sample ? <><Sample rendering={speech.grammar.sample.sentence} label="Sample sentence" />
-                <Sample rendering={speech.grammar.sample.possession} label="Sample possession" />
-                <Sample rendering={speech.grammar.sample.future} label="Sample future" /></> : null}
-            </details>
-            <details className="founding-identity">
-              <summary>Names <span>{speech.name}</span></summary>
-              <p>They name themselves <Phrase label="Name" value={encodeNaming(current.naming)} choices={namingChoices(catalog)}
-                onChange={(key) => { const naming = decodeNaming(key); if (naming) update(current.key, { naming }); }} />, <b>{people.name}</b>.
-                They call their speech <i>{speech.name}</i>.</p>
-              <p className="muted">{PEOPLE_LIVELIHOOD[people.livelihood]} · {speechPhrase}</p>
-            </details>
-            <button type="button" className="link founding-remove" onClick={remove}>Leave this people out</button>
-          </article> : null}
-        </div>
-        <footer className="founding-panel-foot">
-          <button type="button" className="link" disabled={sampling} onClick={() => {
-            setSampling(true);
-            setTimeout(() => void onSample().finally(() => setSampling(false)), 30);
-          }}>{sampling ? "Writing four thousand years…" : "Read a chronicle already written"}</button>
-        </footer>
+      <aside className="pedia setup-panel founding-plate" aria-label={STEPS[stepIndex].name} aria-busy={!currentBuild}>
+        {plate}
       </aside>
 
       <footer className="timebar setup-foot">
+        {stepIndex > 0 ? <button type="button" className="link founding-back" onClick={() => go(STEPS[stepIndex - 1].id)}>
+          <ArrowLeft size={14} aria-hidden="true" /> {STEPS[stepIndex - 1].name}</button> : <span />}
         <span className="year">{error ? <span className="error" role="alert">{error}</span> : founders.length
           ? <><strong>Year 0.</strong> {founders.length} {founders.length === 1 ? "people" : "peoples"}; their chronicle is yet to be written.</>
           : "A world before its first peoples."}</span>
-        <button type="button" className="primary begin" disabled={!engine.current || !currentBuild || !chartReady || !founders.length} onClick={() => {
-          if (!engine.current || !currentBuild || !founders.length) return;
-          try {
-            handedOver.current = true;
-            onBegin(engine.current, title?.trim() && title.trim() !== defaultTitle ? title.trim() : null, author.trim() || null);
-          } catch (failure) { handedOver.current = false; setError(message(failure)); }
-        }}><Feather size={18} aria-hidden="true" /> Begin</button>
+        {step === "title"
+          ? <button type="button" className="primary begin" disabled={!canBegin} onClick={begin}><Feather size={18} aria-hidden="true" /> Write the chronicle</button>
+          : <button type="button" className="primary founding-next" disabled={!reachable(STEPS[stepIndex + 1].id)} onClick={() => go(STEPS[stepIndex + 1].id)}>
+            {STEPS[stepIndex].next} <ArrowRight size={16} aria-hidden="true" /></button>}
       </footer>
-      {adjustingFounder ? <Modal open wide title="Adjust their sounds" onClose={() => setAdjusting(null)}>
+      {adjustingFounder ? <Modal open wide title="Shape their sounds" onClose={() => setAdjusting(null)}>
         {founders.some((founder) => founder.source === adjustingFounder.key) ? <p className="shared-speech-note">These are the founding sounds shared by this people and their kin.</p> : null}
         <Designer catalog={catalog} submit="Use these sounds" initial={adjustingFounder} onCancel={() => setAdjusting(null)}
           onFound={(founder) => { setAdjusting(null); update(adjustingFounder.key, { ...founder, preset: null }); }} />
@@ -495,6 +624,11 @@ export function Founding({ catalog, onBegin, onChartRoom, onSample }: {
         footer={<><button type="button" onClick={() => setRedraw(null)}>Keep these lands</button>
           <button type="button" className="primary" onClick={() => changeWorld(redraw)}>Redraw and relocate</button></>}>
         <p>The coastlines and homelands will change. These peoples keep their speech, kinship, and choices, and settle in the redrawn world.</p>
+      </Modal> : null}
+      {clearing ? <Modal open title="Start again?" onClose={() => setClearing(false)}
+        footer={<><button type="button" onClick={() => setClearing(false)}>Keep them</button>
+          <button type="button" className="primary" onClick={() => { setFounders([]); setSelected(null); grammarDraws.current.clear(); setClearing(false); }}>Clear the peoples</button></>}>
+        <p>Every people founded here, with their speech and choices, will be cleared. The coasts and the homeland stay.</p>
       </Modal> : null}
     </div>
   );

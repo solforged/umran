@@ -39,11 +39,14 @@ Read further when the task touches it:
   by day or by lamplight (`LightSwitch`). `components/` holds the four
   screens of `docs/book.md`: the chart room (`ChartRoom`: the author's
   worlds, the last opened leading, each a miniature of its map drawn
-  from its seed with the peoples saved in the shelf index); founding
-  (`Founding`: inspect a homeland on the chart or globe, then explicitly
-  found or move peoples; a persistent roster beside a compact portrait,
-  with grammar and names in disclosures and shared ancestral speech for
-  related groups; each choice a `Phrase` that opens a menu);
+  from its seed with the peoples saved in the shelf index, or a title
+  page with the sample's chart when there are none); founding
+  (`Founding`: five steps on one engine draft, the world, the homeland,
+  the peoples, their speech, and the title page, along a rail over the
+  chart; `FormingChart` plays the coasts forming from the engine's
+  plate-drift frames; voice cards are the engine's previews of each
+  preset; each smaller choice a `Phrase` that opens a menu; the sixth
+  step is the workshop's first run, `Stage`'s `runOnOpen`);
   the workshop (`Stage`: `MapView` with chart and globe projections,
   imperative globe rotation outside React rendering, reach, layers,
   zoom, and the `lens` that draws the chart as one people knew it; the

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, FileUp, X } from "lucide-react";
 import { landMap } from "../engine";
 import { YEARS, type WorldMap } from "../model";
+import { SAMPLE_LAND } from "../sample";
 import { bookLand, type BookEntry, type BookLand, type ShelfPeople } from "../shelf";
 import { Miniature } from "./MapView";
 import { Modal } from "./Modal";
@@ -9,6 +10,8 @@ import { Told } from "./Told";
 import "./chartroom.css";
 
 const UNKNOWN: WorldMap = { size: "medium", geography: "continental-v4", radiusKm: 1600, width: 2 * Math.PI * 1600 / 100, height: Math.PI * 1600 / 100, kmPerUnit: 100, regions: [], landmasses: [], rivers: [], lakes: [], climateZones: [] };
+/// What founding asks, in order; the title page lists them before the first.
+const FOUNDING_STEPS = ["The world", "The homeland", "The peoples", "Their speech", "The title page", "The years"];
 
 function Chart({ land, peoples }: { land: BookLand | null; peoples?: ShelfPeople[] }) {
   const [loaded, setLoaded] = useState<(BookLand & { map: WorldMap }) | null>(null);
@@ -26,21 +29,37 @@ function Chart({ land, peoples }: { land: BookLand | null; peoples?: ShelfPeople
 }
 
 /// An author's worlds, with the last-opened chart leading and founding
-/// tools kept below the worlds rather than offered as their peers.
+/// tools kept below the worlds rather than offered as their peers. With no
+/// worlds yet, it is a title page: what Umran writes, and two ways in.
 export function ChartRoom({ revision, books, onOpen, onBegin, onSample, onImport, onRemove }: {
   revision: number;
   books: BookEntry[];
   onOpen: (id: string) => void;
   onBegin: () => void;
-  onSample: () => void;
+  onSample: () => Promise<void>;
   onImport: (file: File) => void;
   onRemove: (id: string) => void;
 }) {
   const [removing, setRemoving] = useState<BookEntry | null>(null);
+  const [sampling, setSampling] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const worlds = useMemo(() => [...books].sort((a, b) => b.updated - a.updated)
     .map((book) => ({ book, land: bookLand(book.id, revision) })), [books, revision]);
   const [leading, ...others] = worlds;
+  // Writing the sample holds the page for a few seconds; say so first.
+  const sample = () => {
+    setSampling(true);
+    setTimeout(() => void onSample().finally(() => setSampling(false)), 30);
+  };
+  const sampleLabel = sampling ? "Writing four thousand years…" : "Read a chronicle already written";
+  const openFile = <>
+    <button type="button" onClick={() => fileInput.current?.click()}><FileUp size={16} aria-hidden="true" /> Open a save file</button>
+    <input ref={fileInput} type="file" accept="application/json,.json" hidden onChange={(e) => {
+      const file = e.target.files?.[0];
+      if (file) onImport(file);
+      e.target.value = "";
+    }} />
+  </>;
 
   function world({ book, land }: typeof worlds[number], lead: boolean) {
     return <article key={book.id} className={`room-world${lead ? " room-world-leading" : ""}`}>
@@ -60,38 +79,53 @@ export function ChartRoom({ revision, books, onOpen, onBegin, onSample, onImport
     </article>;
   }
 
-  return <main className={`chart-room${leading ? "" : " chart-room-empty"}`}>
+  if (!leading) return <main className="chart-room chart-room-empty" data-engine-revision={revision}>
+    <section className="room-title-page">
+      <div className="room-title-text">
+        <span className="brand"><span className="brand-name"><span>ʿUmrān</span></span></span>
+        <h1>The book of a world</h1>
+        <p className="room-lede">Found peoples on a world’s coasts, let the centuries run, and read what became of them and of their speech.
+          Every sound change is regular, and every borrowed word has a meeting behind it.</p>
+        <button type="button" className="primary room-found-first" onClick={onBegin}>Found a new world <ArrowRight size={19} aria-hidden="true" /></button>
+        <ol className="room-steps" aria-label="Founding, step by step">{FOUNDING_STEPS.map((step, i) => <li key={step}><span>{i + 1}</span> {step}</li>)}</ol>
+        <p className="room-other">{openFile}</p>
+      </div>
+      <figure className="room-sample">
+        <button type="button" className="room-sample-chart" disabled={sampling} onClick={sample} aria-label={sampleLabel}>
+          <Chart land={SAMPLE_LAND} />
+        </button>
+        <figcaption>
+          <button type="button" className="link" disabled={sampling} onClick={sample}>{sampleLabel}</button>
+          <span>Four thousand years on this chart: three peoples, a conquest, and a new faith.</span>
+        </figcaption>
+      </figure>
+    </section>
+    <footer className="room-colophon">Worlds live in this browser; the book page exports them as save files or text.</footer>
+  </main>;
+
+  return <main className="chart-room">
     <header className="room-head cartouche">
       <span className="brand"><span className="brand-name"><span>ʿUmrān</span></span></span>
       <h1>The chart room</h1>
     </header>
 
-    {leading ? <section className="room-worlds" aria-label="Your worlds">
+    <section className="room-worlds" aria-label="Your worlds">
       {world(leading, true)}
       {others.length ? <ul className="room-world-row">
         {others.map((entry) => <li key={entry.book.id}>{world(entry, false)}</li>)}
       </ul> : null}
-    </section> : null}
+    </section>
 
     <section className="room-actions" aria-label="Found or open a world">
-      {!leading ? <div className="room-blank-chart" aria-hidden="true"><Chart land={null} /></div> : null}
       <div className="room-action-list">
         <div className="room-action room-found">
           <button type="button" onClick={onBegin}>Found a new world <ArrowRight size={19} aria-hidden="true" /></button>
-          {!leading ? <p>Draw its coasts and choose who lives there.</p> : null}
         </div>
         <div className="room-action">
-          <button type="button" onClick={onSample}>Read a chronicle already written</button>
+          <button type="button" disabled={sampling} onClick={sample}>{sampleLabel}</button>
           <p>Four thousand years, a conquest, and a new faith.</p>
         </div>
-        <div className="room-action">
-          <button type="button" onClick={() => fileInput.current?.click()}><FileUp size={16} aria-hidden="true" /> Open a save file</button>
-          <input ref={fileInput} type="file" accept="application/json,.json" hidden onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) onImport(file);
-            e.target.value = "";
-          }} />
-        </div>
+        <div className="room-action">{openFile}</div>
       </div>
     </section>
 

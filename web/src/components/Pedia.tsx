@@ -15,6 +15,7 @@ import {
   Play,
   ScrollText,
   Search,
+  Square,
   ChevronRight,
   Users,
   WholeWord,
@@ -78,7 +79,9 @@ interface Context {
   onVisit: (subject: Focus, generation: number) => void;
   title?: string;
   onRun: () => void;
-  running?: boolean;
+  /// The generation a run is writing toward, or null when the years are still.
+  running?: number | null;
+  onStopRun: () => void;
   canUndo: boolean;
   onUndo: () => void;
   onDialog: (kind: InterventionKind, community: number) => void;
@@ -1155,12 +1158,22 @@ function WorldCard({ context }: { context: Context }) {
   const crafts = overview.crafts.filter((c) => c.first !== null);
   const continent = overview.continents.find((c) => c.name)?.name?.name ?? context.title ?? "these lands";
   const last = overview.annals.at(-1);
+  const writing = context.running ?? null;
+  // While the years run, the frontispiece tells the latest turning points.
+  const told = writing === null ? [] : overview.annals.filter((annal) => !QUIET_KINDS.has(annal.kind)).slice(-6);
   return <>
     <CardHead icon={Globe} kind="A chart of" title={context.title ?? continent} />
-    <p className="frontispiece-caption">{overview.generation === 0 ? `${peoples.length === 1 ? "One people settles" : `${peoples.length} peoples settle`} ${continent}.`
-      : last ? <><Told text={last.text} /><EntryAnnotations annal={last} context={context} /></> : `Year ${overview.generation * YEARS}.`}</p>
+    {writing === null ? <p className="frontispiece-caption">{overview.generation === 0 ? `${peoples.length === 1 ? "One people settles" : `${peoples.length} peoples settle`} ${continent}.`
+      : last ? <><Told text={last.text} /><EntryAnnotations annal={last} context={context} /></> : `Year ${overview.generation * YEARS}.`}</p> : null}
     <ul className="frontispiece-peoples">{peoples.map((c) => <li key={c.id}><PeopleLink c={c} context={context} /></li>)}</ul>
-    <button type="button" className="primary frontispiece-run" disabled={!overview.atTip || context.running} onClick={context.onRun}><Play size={15} aria-hidden="true" /> Run</button>
+    {writing === null
+      ? <button type="button" className="primary frontispiece-run" disabled={!overview.atTip} onClick={context.onRun}><Play size={15} aria-hidden="true" /> Run</button>
+      : <section className="frontispiece-writing" aria-label="The chronicle being written">
+        <p className="frontispiece-year">The chronicle is being written <span>year {(overview.generation * YEARS).toLocaleString()} <small>of {(writing * YEARS).toLocaleString()}</small></span></p>
+        <progress max={writing} value={overview.generation} aria-label="Years written" />
+        <ol aria-live="polite">{told.map((annal) => <li key={annal.id}><span className="frontispiece-when">{annal.generation * YEARS}</span> <Told text={annal.text} /></li>)}</ol>
+        <button type="button" onClick={context.onStopRun}><Square size={13} aria-hidden="true" /> Stop here</button>
+      </section>}
     {overview.generation > 0 ? <p><button type="button" className="link" onClick={() => context.go({ kind: "history" })}>The chronicle</button></p> : null}
     <Leaf id="crafts" title="Crafts" summary={<p>{crafts.length ? <Joined items={crafts} link={(craft) => <CraftLink craft={craft.id} context={context} />} /> : <span className="muted">No people has a craft yet.</span>}</p>}>
       <table className="peoples"><thead><tr><th>Craft</th><th>First held</th><th>Holders</th></tr></thead><tbody>
@@ -1360,7 +1373,7 @@ function TemperLeaf({ c, told, context }: { c: Community; told: Annal[]; context
 }
 
 function Decisions({ community, choices, context, disabled = false, label = "Decide for this people" }: { community: number; choices: [InterventionKind, string][]; context: Context; disabled?: boolean; label?: string }) {
-  return <Popover label={label} trigger={(props) => <button type="button" className="decide" disabled={context.running || disabled} {...props}>Decide…</button>}>
+  return <Popover label={label} trigger={(props) => <button type="button" className="decide" disabled={context.running != null || disabled} {...props}>Decide…</button>}>
     {(close) => <>{choices.map(([kind, label]) => <button type="button" key={kind} onClick={() => { close(); context.onDialog(kind, community); }}>{label}</button>)}</>}
   </Popover>;
 }

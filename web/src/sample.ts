@@ -8,10 +8,11 @@
 // Opening it puts a copy on the shelf to continue.
 
 import { createEngine, presetDesign } from "./engine";
-import type { Action, Engine, MapSize, Naming } from "./model";
+import type { Action, Engine, GeographyVersion, MapSize, Naming } from "./model";
 
 /// The land the sample plays out on, for drawing it before it is opened.
-export const SAMPLE_LAND: { seed: number; size: MapSize } = { seed: 21, size: "medium" };
+/// Its geography is the one `createEngine` draws new worlds with.
+export const SAMPLE_LAND: { seed: number; size: MapSize; geography: GeographyVersion } = { seed: 21, size: "medium", geography: "continental-v6" };
 
 export async function sampleWorld(): Promise<Engine> {
   const engine = await createEngine(SAMPLE_LAND.seed, SAMPLE_LAND.size);

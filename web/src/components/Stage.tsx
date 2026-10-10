@@ -104,6 +104,8 @@ export function Stage({
   onNextEvent,
   onUndo,
   onDialog,
+  runOnOpen,
+  onRunOpened,
   initialFocus,
   onFocus,
   onSettle,
@@ -159,6 +161,9 @@ export function Stage({
   comparisonReturn: number;
   sheetReturn: number;
   mapMotion: RefObject<MapMotionReading | null>;
+  /// A year to run to as soon as the workshop opens, once.
+  runOnOpen: number | null;
+  onRunOpened: () => void;
 }) {
   const { latest } = overview;
   const atPresent = overview.atTip;
@@ -331,6 +336,13 @@ export function Stage({
     if (running !== null || playing) return;
     setRunYear((value) => Number.isFinite(value) && value <= latest * YEARS ? nextRunYear(latest) : value);
   }, [latest, running, playing]);
+  useEffect(() => {
+    if (runOnOpen === null) return;
+    onRunOpened();
+    if (!atPresent || runOnOpen <= generation * YEARS) return;
+    setRunYear(runOnOpen);
+    setRunning(Math.ceil(runOnOpen / YEARS));
+  }, [runOnOpen]);
   useEffect(() => {
     if (running === null) return;
     let frame = 0;
@@ -789,7 +801,8 @@ export function Stage({
         overview={overview}
         title={title}
         onRun={startRun}
-        running={running !== null}
+        running={running}
+        onStopRun={() => flushSync(() => setRunning(null))}
         map={map}
         words={words}
         go={go}

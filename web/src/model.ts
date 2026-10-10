@@ -925,6 +925,11 @@ export interface ReadEngine {
   /// The author's decisions in this reading's telling, up to its point.
   decisions(): DecisionView[];
 }
+/// How the coasts formed: the supercontinent, ten plate-drift steps, then
+/// the drawn coasts. Each string has one char per map region.
+export interface Forming {
+  frames: { land: string; plate: string }[];
+}
 export interface Engine extends ReadEngine {
   /// Copy an untouched year-zero base, sharing its generated geography.
   foundingDraft(): Engine;
@@ -932,6 +937,8 @@ export interface Engine extends ReadEngine {
   /// Up to 12 nearby unoccupied year-zero lands, in land-travel order.
   /// An unoccupied anchor comes first; an occupied anchor is only the origin.
   foundingSites(region: number, count: number): number[];
+  /// The coasts as they formed; null for worlds not drawn from moving plates.
+  forming(): Forming | null;
   notebook(): NotebookNote[];
   saveNote(note: NotebookNote): void;
   resolveNote(id: string): Destination | null;

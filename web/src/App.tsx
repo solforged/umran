@@ -67,6 +67,8 @@ export default function App() {
   const [dialog, setDialog] = useState<DialogKind | null>(null);
   const [page, setPage] = useState<Page>("stage");
   const [bookChapter, setBookChapter] = useState<string | null>(null);
+  /// Years a newly founded world runs to when the workshop first opens.
+  const [firstRun, setFirstRun] = useState<number | null>(null);
   useEffect(() => {
     if (page === "book" && bookChapter) document.getElementById(`book-${bookChapter}`)?.scrollIntoView({ block: "start" });
   }, [page, bookChapter]);
@@ -320,12 +322,13 @@ export default function App() {
     [overview, persist],
   );
 
-  const begin = useCallback((next: Engine, title: string | null, author: string | null) => {
+  const begin = useCallback((next: Engine, title: string | null, author: string | null, years: number) => {
     next.setTitle(title ?? "");
     next.setAuthor(author ?? "");
     try { localStorage.setItem("umran.author", author ?? ""); }
     catch { /* The author is still kept in the world save. */ }
     adopt(newBookId(), next, true);
+    setFirstRun(years);
   }, [adopt]);
 
   const sample = async () => {
@@ -345,7 +348,11 @@ export default function App() {
   };
 
   if (view.kind === "loading" || !catalog) {
-    return <main className="splash">{error ?? "Loading the language engine…"}</main>;
+    return <main className="splash title-splash">
+      <span className="brand"><span className="brand-name"><span>ʿUmrān</span></span></span>
+      <p>The book of a world: its peoples, their fortunes, and the languages that grew out of both.</p>
+      <p className={error ? "error" : "muted"} role={error ? "alert" : "status"}>{error ?? "Setting out the instruments…"}</p>
+    </main>;
   }
 
   if (view.kind === "recovery") {
@@ -373,7 +380,6 @@ export default function App() {
           catalog={catalog}
           onBegin={begin}
           onChartRoom={toShelf}
-          onSample={sample}
         />
       </div>
     );
@@ -387,7 +393,7 @@ export default function App() {
           books={shelf.books}
           onOpen={openBook}
           onBegin={() => setView({ kind: "setup" })}
-          onSample={() => void sample()}
+          onSample={sample}
           onImport={(f) => void importFile(f)}
           onRemove={(id) => {
             try {
@@ -556,6 +562,8 @@ export default function App() {
         onNextEvent={() => nextEvent(EVENT_LIMIT)}
         onUndo={strike}
         onDialog={setDialog}
+        runOnOpen={firstRun}
+        onRunOpened={() => setFirstRun(null)}
       />
       {dialogs}
       {liftedComparison.value !== null ? <TellingComparison open={compareWith !== null} engine={engine.current} overview={overview} map={worldMap} other={liftedComparison.value}

@@ -282,6 +282,43 @@ select {
   margin-bottom: 0.25rem;
 }
 
+/* While the engine loads: the mark turning, and one sentence. */
+.title-splash {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 1rem;
+  min-height: 70dvh;
+  text-align: center;
+}
+
+:root .title-splash .brand {
+  font-size: 2.6rem;
+}
+
+:root .title-splash .brand::before {
+  animation: splash-turn 6s linear infinite;
+}
+
+.title-splash p {
+  max-width: 30rem;
+  margin: 0;
+  font: italic 1.15rem var(--display);
+  line-height: 1.45;
+}
+
+.title-splash p.muted {
+  font-size: 0.95rem;
+}
+
+@keyframes splash-turn {
+  to { rotate: 1turn; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root .title-splash .brand::before { animation: none; }
+}
+
 /* App frame */
 
 .app {

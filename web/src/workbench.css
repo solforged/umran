@@ -351,6 +351,21 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .frontispiece-caption { color: var(--ink-soft); line-height: 1.5; }
 .frontispiece-peoples { list-style: none; display: flex; flex-wrap: wrap; gap: .65rem 1.2rem; padding: .6rem 0; margin: .3rem 0 1rem; font-size: 1.2rem; }
 .frontispiece-run { display: inline-flex; align-items: center; gap: .5rem; margin-bottom: 1rem; }
+/* While the years run, the frontispiece tells the chronicle as it is written. */
+.frontispiece-writing { margin: 0 0 1.2rem; }
+.frontispiece-year { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: .3rem 1rem; margin: 0 0 .4rem; font: italic 1.05rem var(--display); color: var(--ink-soft); }
+.frontispiece-year > span { font: 1.5rem var(--display); font-style: normal; color: var(--ink); font-variant-numeric: tabular-nums; }
+.frontispiece-year small { font-size: .9rem; color: var(--ink-soft); }
+.frontispiece-writing progress { display: block; width: 100%; height: 3px; margin: 0 0 .8rem; appearance: none; border: 0; background: var(--line); accent-color: var(--accent); }
+.frontispiece-writing progress::-webkit-progress-bar { background: var(--line); }
+.frontispiece-writing progress::-webkit-progress-value { background: var(--accent); transition: width .2s; }
+.frontispiece-writing progress::-moz-progress-bar { background: var(--accent); }
+.frontispiece-writing ol { list-style: none; margin: 0 0 .9rem; padding: 0; min-height: 9rem; }
+.frontispiece-writing li { display: grid; grid-template-columns: 3.2rem minmax(0, 1fr); gap: .5rem; padding: .25rem 0; border-bottom: 1px solid var(--line); line-height: 1.35; animation: writing-in .5s ease-out both; }
+.frontispiece-when { color: var(--ink-soft); font-variant-numeric: tabular-nums; text-align: right; }
+.frontispiece-writing button { display: inline-flex; align-items: center; gap: .4rem; }
+@keyframes writing-in { from { opacity: 0; translate: 0 .3rem; } }
+@media (prefers-reduced-motion: reduce) { .frontispiece-writing li { animation: none; } }
 .trail .trail-year { color: var(--ink); white-space: nowrap; }
 .folio-head h2.folio-of { font: 1.6rem var(--serif); margin: .25rem 0 .6rem; }
 .chronicle-tools > .phrase { text-align: left; justify-self: start; border: 0; border-bottom: 1px dotted var(--ink-soft); padding: .3rem 0; background: transparent; color: var(--ink); }

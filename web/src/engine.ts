@@ -9,6 +9,7 @@ import type {
   ReadEngine,
   Comparison,
   ClimateView,
+  Forming,
   RiverNamesView,
   LakeNamesView,
   ReadingRef,
@@ -119,6 +120,10 @@ function wrap(bench: Workbench): Engine {
     foundingDraft: () => wrap(bench.foundingDraft()),
     foundingPreview: () => JSON.parse(bench.foundingPreview()) as FoundingPreview,
     foundingSites: (region, count) => JSON.parse(bench.foundingSites(region, count)) as number[],
+    forming: () => {
+      try { return JSON.parse(bench.forming()) as Forming; }
+      catch { return null; }
+    },
     notebook: () => JSON.parse(bench.notebook()) as NotebookNote[],
     saveNote: (note) => { bench.saveNote(JSON.stringify(note)); },
     resolveNote: (id) => JSON.parse(bench.resolveNote(id)) as Destination | null,
