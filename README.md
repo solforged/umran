@@ -14,9 +14,9 @@ are borrowed and compete, names wear down, and families of related
 languages branch out. It runs entirely in the browser.
 
 **[Try it in your browser](https://solforged.github.io/umran/)**: the first
-visit opens the chart room. Choose "Found a new world" to draw coasts and
-choose who lives there, or "Read a chronicle already written" to open a
-sample four thousand years along.
+visit opens the chart room. Choose "Found a new world" to watch the coasts
+form and found a world step by step, or "Read a chronicle already written"
+to open a sample four thousand years along.
 
 Umran writes the book of a world: its peoples, their fortunes, and the
 languages that grew out of both. The simulation is how the book gets
@@ -202,8 +202,8 @@ quiet. The system's reduced-motion setting makes all these changes immediate.
 
 | | |
 |---|---|
-| ![Founding: the chart of a new world with its continents, islands, and rivers, a chosen homeland outlined, and the book beside it reading that land and offering to found a people there](docs/images/setup.png) | ![Words compared: a table of basic words across related languages, shaded by shared root](docs/images/cognates.png) |
-| **Founding a world.** Select a homeland, then found one people or a nearby group. Groups can begin with independent languages or genuinely shared ancestral speech. The roster stays visible beside the chosen people's homeland, livelihood, temper, and word specimen. Grammar and names unfold when needed; the full sound chart opens separately. Size is a dropdown, while author and seed live in Details. Inspecting a land never moves its people; relocation is explicit. | **Words compared.** Basic words across the living languages, shaded alike when they come from one root (cognates). |
+| ![Founding, their speech: three kin peoples on a new world's chart, and beside it every sound preset as a card of the words this people would have](docs/images/setup.png) | ![Words compared: a table of basic words across related languages, shaded by shared root](docs/images/cognates.png) |
+| **Founding a world.** Five steps over the chart. The coasts form from the engine's own plate-drift history; then a homeland; then one people, kin who parted with shared ancestral speech, or neighbours with languages of their own; then their speech, where every sound preset is a card of this people's own words; then the title page. Writing the chronicle runs the years at once. | **Words compared.** Basic words across the living languages, shaded alike when they come from one root (cognates). |
 | ![Language families branching through four thousand years, including ended and classical languages](docs/images/family.png) | ![A sound law's card: the peoples who have it and where it spread, with the isogloss drawn on the map](docs/images/law.png) |
 | **Family trees.** The world's languages branch as peoples part; ended languages and classical forms keep their places in the record. Each language also has a card for its sounds, grammar, and word-building patterns. | **A sound law.** Who has a change, whether it arose among them or spread from a neighbour, and on the map, where it stopped. |
 
