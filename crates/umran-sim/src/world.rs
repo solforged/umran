@@ -1316,7 +1316,7 @@ impl World {
     }
 
     /// Current food can invite valley farming or grazing on a drying plain.
-    fn default_livelihood(&self, region: usize) -> Livelihood {
+    pub fn default_livelihood(&self, region: usize) -> Livelihood {
         let baseline = Livelihood::of_land(self.map.regions[region].terrain);
         if self.map.river_regions[region].is_some()
             && self.feeds(region, Livelihood::Farming) > self.feeds(region, baseline) * 1.5

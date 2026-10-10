@@ -143,6 +143,13 @@ impl Workbench {
         self.bench.founding_preview().map_err(fail)
     }
 
+    #[wasm_bindgen(js_name = foundingTraits)]
+    pub fn founding_traits(&self, community: f64) -> Result<String, JsValue> {
+        self.bench
+            .founding_traits(entity_id(community).map_err(fail)?)
+            .map_err(fail)
+    }
+
     #[wasm_bindgen(js_name = foundingSites)]
     pub fn founding_sites(&self, region: f64, count: f64) -> Result<String, JsValue> {
         if !region.is_finite()
@@ -1267,6 +1274,38 @@ impl Bench {
 
     pub fn latest(&self) -> u32 {
         self.chronicle.latest().generation
+    }
+
+    /// The unauthored temper and homeland capacities of a year-zero people.
+    pub fn founding_traits(&self, community: usize) -> Result<String, String> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Traits {
+            drawn: umran_sim::Ethos,
+            suggested: Livelihood,
+            feeds: FeedingView,
+        }
+        let world = self.chronicle.latest();
+        if world.generation != 0 {
+            return Err("Founding traits belong to year zero.".into());
+        }
+        let people = world
+            .communities
+            .get(community)
+            .ok_or_else(|| format!("There is no community {community}."))?;
+        if !people.living() {
+            return Err("That people has ended.".into());
+        }
+        let home = people.home();
+        to_json(&Traits {
+            drawn: world.founding_ethos(community, home, people.livelihood, None),
+            suggested: world.default_livelihood(home),
+            feeds: FeedingView {
+                farming: world.feeds(home, Livelihood::Farming),
+                herding: world.feeds(home, Livelihood::Herding),
+                foraging: world.feeds(home, Livelihood::Foraging),
+            },
+        })
     }
 
     /// Possible first encounters, using the same nearness and merchant reach
@@ -6466,6 +6505,139 @@ mod tests {
         let redrawn = Bench::new(8, "small").unwrap();
         assert!(!Arc::ptr_eq(map, &redrawn.chronicle.latest().map));
         assert_ne!(base.map().unwrap(), redrawn.map().unwrap());
+    }
+
+    #[test]
+    fn founding_traits_match_draws_overrides_and_homeland_capacities() {
+        use umran_sim::ethos::Axis;
+
+        for seed in [0, 5, 42] {
+            let base = Bench::new(seed, "small").unwrap();
+            for related in [false, true] {
+                let mut drawn = base.founding_draft().unwrap();
+                if related {
+                    let mut source: serde_json::Value =
+                        serde_json::from_str(&found("Source", "familiar")).unwrap();
+                    source["ethos"] = serde_json::json!({
+                        "martial": 1.0, "open": 1.0, "pious": 1.0,
+                        "hierarchical": 1.0, "roving": 1.0, "seaward": 1.0
+                    });
+                    drawn.act(&source.to_string()).unwrap();
+                }
+                let community = usize::from(related);
+                let mut action: serde_json::Value = if related {
+                    let home = drawn.chronicle.latest().communities[0].home();
+                    serde_json::json!({
+                        "kind": "found-related", "source": 0, "region": home,
+                        "naming": {"kind": "people"}
+                    })
+                } else {
+                    serde_json::from_str(&found("Founder", "familiar")).unwrap()
+                };
+                let before = drawn.save().unwrap();
+                drawn.act(&action.to_string()).unwrap();
+                let view: serde_json::Value =
+                    serde_json::from_str(&drawn.founding_traits(community).unwrap()).unwrap();
+                let world = drawn.chronicle.latest();
+                let people = &world.communities[community];
+                assert_eq!(view.as_object().unwrap().len(), 3);
+                assert_eq!(
+                    serde_json::from_value::<umran_sim::Ethos>(view["drawn"].clone()).unwrap(),
+                    people.ethos
+                );
+                assert_eq!(
+                    view["suggested"],
+                    serde_json::to_value(people.livelihood).unwrap()
+                );
+                assert_eq!(view["feeds"].as_object().unwrap().len(), 3);
+                for (id, livelihood) in [
+                    ("farming", Livelihood::Farming),
+                    ("herding", Livelihood::Herding),
+                    ("foraging", Livelihood::Foraging),
+                ] {
+                    assert_eq!(
+                        serde_json::from_value::<f32>(view["feeds"][id].clone()).unwrap(),
+                        world.feeds(people.home(), livelihood)
+                    );
+                }
+                if related {
+                    assert_ne!(people.ethos, world.communities[0].ethos);
+                    assert_eq!(people.parents, vec![0]);
+                }
+                for axis in Axis::ALL {
+                    let mut authored = Bench::load(&before).unwrap();
+                    action["ethos"] = serde_json::json!({axis.id(): 1.0});
+                    authored.act(&action.to_string()).unwrap();
+                    let traits = authored.founding_traits(community).unwrap();
+                    assert_eq!(
+                        serde_json::from_str::<serde_json::Value>(&traits).unwrap(),
+                        view
+                    );
+                    assert_ne!(people.ethos.get(axis), 1.0);
+                    let actual = authored.chronicle.latest().communities[community].ethos;
+                    for other in Axis::ALL {
+                        assert_eq!(
+                            actual.get(other),
+                            if other == axis {
+                                1.0
+                            } else {
+                                people.ethos.get(other)
+                            }
+                        );
+                    }
+                }
+                // An explicit livelihood controls the draw, but never the land's suggestion.
+                action.as_object_mut().unwrap().remove("ethos");
+                for livelihood in [
+                    Livelihood::Farming,
+                    Livelihood::Herding,
+                    Livelihood::Foraging,
+                ] {
+                    let mut authored = Bench::load(&before).unwrap();
+                    action["livelihood"] = serde_json::to_value(livelihood).unwrap();
+                    authored.act(&action.to_string()).unwrap();
+                    let traits: serde_json::Value =
+                        serde_json::from_str(&authored.founding_traits(community).unwrap())
+                            .unwrap();
+                    assert_eq!(traits["suggested"], view["suggested"]);
+                    assert_eq!(traits["feeds"], view["feeds"]);
+                    assert_eq!(
+                        serde_json::from_value::<umran_sim::Ethos>(traits["drawn"].clone())
+                            .unwrap(),
+                        authored.chronicle.latest().communities[community].ethos
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn founding_traits_are_pure_and_reject_unknown_or_later_people() {
+        let mut bench = Bench::new(7, "small").unwrap();
+        assert!(bench.founding_traits(0).is_err());
+        bench.act(&found("First", "familiar")).unwrap();
+        let saved = bench.save().unwrap();
+        let before = bench.overview(0).unwrap();
+        let traits = bench.founding_traits(0).unwrap();
+        assert_eq!(bench.founding_traits(0).unwrap(), traits);
+        assert!(bench.founding_traits(1).is_err());
+        assert!(bench.founding_traits(usize::MAX).is_err());
+        assert_eq!(bench.save().unwrap(), saved);
+        assert_eq!(bench.overview(0).unwrap(), before);
+
+        let mut untouched = Bench::load(&saved).unwrap();
+        for world in [&mut bench, &mut untouched] {
+            world.act(&found("Second", "iranian")).unwrap();
+            world.act(r#"{"kind":"run","generations":1}"#).unwrap();
+        }
+        let overview = |bench: &mut Bench| {
+            let mut value: serde_json::Value =
+                serde_json::from_str(&bench.overview(1).unwrap()).unwrap();
+            value.as_object_mut().unwrap().remove("mutation");
+            value
+        };
+        assert_eq!(overview(&mut bench), overview(&mut untouched));
+        assert!(bench.founding_traits(0).is_err());
     }
 
     #[test]

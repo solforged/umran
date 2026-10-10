@@ -1089,6 +1089,17 @@ at founding as well as when new names enter fashion. Existing martial
 name meanings are spear, shield, war, fight, and bow; there is no wolf
 concept in the lexicon.
 
+The facade's read-only, year-zero `foundingTraits(community)` query returns
+`{ drawn, suggested, feeds }`: the six unauthored ethos axes, the homeland's
+default livelihood, and its food capacity in souls for farming, herding,
+and foraging. It reruns the same independent founding streams using the
+people's identity, homeland, and chosen livelihood; it changes neither
+history nor future draws. Unknown and ended peoples and later years are
+rejected. Related founders draw their own ethos by this same rule, rather
+than inheriting their source's axes: only standing, openness, and speech
+come from the source. Authored axes replace draws without changing the
+other axes. Replay and the engine revision are unchanged.
+
 Every generation, contacts pull each axis simultaneously toward their
 partners, weighted by intensity times `(0.5 + partner prestige)` times
 kind: intermarriage 1, rule 0.9, religion 0.6, neighbours 0.45, trade 0.2.

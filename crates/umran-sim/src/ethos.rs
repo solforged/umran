@@ -294,7 +294,9 @@ impl Community {
 }
 
 impl World {
-    pub(crate) fn founding_ethos(
+    /// Recompute founding temper from independent purpose-keyed streams.
+    /// Passing no authored axes recovers the draw without changing the world.
+    pub fn founding_ethos(
         &self,
         community: usize,
         region: usize,
