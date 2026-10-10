@@ -65,7 +65,7 @@ recovery. Their old flat-map land IDs cannot be replayed on the new sphere.
 Spherical saves retain their recorded geography when opened, exported, or
 branched; a new terrain generator does not redraw an existing world.
 
-![The workbench after 4,000 years: the inked globe turned toward the sample's peoples, a city's gazetteer card open over it, beside the world's card, with its chronicle caption and timeline below](docs/images/stage.jpg)
+![The workbench after 4,000 years: the inked globe turned toward the sample's peoples, a state's card pinned over it, beside the world's card, with its chronicle caption and timeline below](docs/images/stage.jpg)
 
 ## What happens in a world
 
@@ -198,7 +198,7 @@ links leave focus alone. A single 25-year advance or intervention briefly
 marks changed holdings and new state borders, while playback keeps the chart
 quiet. The system's reduced-motion setting makes all these changes immediate.
 
-![The chronicle laid over the chart, read in eras: headline entries at full weight and each year's bookkeeping folded into one line](docs/images/chronicle.jpg)
+![The chronicle laid over the chart, read in eras from the beginning: an era opened by a conquest, its line on speech, and headline entries at full weight, beside the contents card listing each era with its speech in counts](docs/images/chronicle.jpg)
 
 | | |
 |---|---|
