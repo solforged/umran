@@ -209,6 +209,7 @@ impl Adapter {
                 },
             );
         }
+        form.fuse_consonants(0);
         form
     }
 
@@ -290,6 +291,17 @@ mod tests {
             "bilingual speakers keep liked sounds"
         );
         assert_eq!(adapt(&a, "θasa", 1.0), "sasa", "but rarely forbidden ones");
+    }
+
+    #[test]
+    fn substituted_consonants_do_not_remain_adjacent_copies() {
+        let a = adapter(&["pat", "kas", "man"]);
+        let mut source = Form::from_ipa("apba").unwrap();
+        source.stress = Some(1);
+        let out = a.adapt(&source, 0.0, &mut stream(1, &[]));
+        assert_eq!(out.ipa(), "apːa");
+        assert_eq!(out.vowel_count(), source.vowel_count());
+        assert_eq!(out.stress, source.stress);
     }
 
     #[test]

@@ -1733,12 +1733,17 @@ impl World {
                     let b = base(&n);
                     (n, b)
                 })
-                .chain(crate::names::EPITHETS.iter().map(|e| {
-                    let epithet = Naming::Epithet {
-                        epithet: (*e).into(),
-                    };
-                    (epithet, Some((&short_parent, &self.varieties[parent])))
-                }));
+                .chain(
+                    crate::names::EPITHETS
+                        .iter()
+                        .filter(|_| !parent_name.has_epithet())
+                        .map(|e| {
+                            let epithet = Naming::Epithet {
+                                epithet: (*e).into(),
+                            };
+                            (epithet, Some((&short_parent, &self.varieties[parent])))
+                        }),
+                );
             let wholes: Vec<Name> = std::iter::once((naming.clone(), base(&naming)))
                 .chain(others)
                 .filter_map(|(n, b)| {
@@ -1770,6 +1775,15 @@ impl World {
                         })
                         .find(|n| !taken(n))
                 });
+            // A short whole candidate can fall below the clipping search's
+            // lower bound. Try every whole name before qualifying any again.
+            let free = free.or_else(|| {
+                wholes
+                    .iter()
+                    .filter(|whole| !taken(whole))
+                    .min_by_key(|whole| whole.form.vowel_count())
+                    .cloned()
+            });
             name = match free {
                 Some(free) => free,
                 None => {
@@ -1796,8 +1810,8 @@ impl World {
                             break whole;
                         }
                         // Hiatus fusion can consume the entire prefix, making
-                        // qualification a fixed point. Only then try the next
-                        // whole name; terminating first choices stay unchanged.
+                        // qualification a fixed point. Try the next whole name
+                        // rather than looping forever on that candidate.
                         if first.is_none() {
                             first = Some(whole);
                         }
@@ -6448,11 +6462,7 @@ mod tests {
         // Short whole candidates bypass the usual three-syllable search.
         let (send, receive) = std::sync::mpsc::channel();
         let worker = std::thread::spawn(move || {
-            for (epithet, all_taken, expected) in [
-                ("aː", false, "aːtaːt"),
-                ("aː", true, "aːt"),
-                ("ka", false, "kat"),
-            ] {
+            for (epithet, all_taken) in [("aː", false), ("aː", true), ("ka", false)] {
                 let mut world = World::new(0, Params::static_society());
                 let parent = world.found(&SoundProfile::base(), 0.5, 0.5);
                 let other = world.found(&SoundProfile::base(), 0.5, 0.5);
@@ -6499,11 +6509,26 @@ mod tests {
                     },
                     None,
                 );
-                assert_eq!(
-                    world.communities[daughter].name.form.segs,
-                    Form::from_ipa(expected).unwrap().segs,
-                    "epithet {epithet}, all_taken {all_taken}"
-                );
+                let name = &world.communities[daughter].name;
+                if all_taken {
+                    assert_eq!(
+                        name.form.segs, short.segs,
+                        "fixed-point fallback terminates"
+                    );
+                } else {
+                    assert!(
+                        world.communities[..daughter]
+                            .iter()
+                            .all(|c| c.name.form.segs != name.form.segs)
+                    );
+                    if name.has_epithet() {
+                        assert!(
+                            name.meaning
+                                .ends_with(&format!(" {}", world.community_name(parent))),
+                            "a free direct epithet precedes qualifying another candidate"
+                        );
+                    }
+                }
             }
             send.send(()).unwrap();
         });
@@ -6514,7 +6539,7 @@ mod tests {
     }
 
     #[test]
-    fn names_stay_short_when_every_name_is_had() {
+    fn names_stay_distinct_and_exhaust_short_choices_before_growing() {
         // Each split from the newest people, all in one generation, so the
         // daughters speak alike and soon run out of places and epithets.
         for seed in 0..4 {
@@ -6534,14 +6559,31 @@ mod tests {
                     world.communities.len(),
                     "seed {seed}, {profile}"
                 );
-                for c in &world.communities {
-                    let syllables = c.name.form.vowel_count();
-                    assert!(
-                        syllables <= crate::names::MAX_PEOPLE_NAME + 1,
-                        "seed {seed}, {profile}: {} is {syllables} syllables, “{}”",
-                        c.name.form.ipa(),
-                        c.name.meaning
-                    );
+                for (i, c) in world.communities.iter().enumerate() {
+                    if c.name.form.vowel_count() <= crate::names::MAX_PEOPLE_NAME + 1 {
+                        continue;
+                    }
+                    // Avoiding epithet-on-epithet candidates exhausts the
+                    // finite short names sooner. A whole name or the final
+                    // "new" rescue may then exceed the clipping allowance,
+                    // but not while a short place candidate is still free.
+                    for place in crate::names::PLACES {
+                        let candidate = Naming::Place {
+                            place: place.into(),
+                        }
+                        .coin_whole(&world.varieties[c.variety], None, c.name.coined)
+                        .unwrap();
+                        let short = crate::names::clipped(
+                            candidate.form,
+                            crate::names::MAX_PEOPLE_NAME + 1,
+                        );
+                        assert!(
+                            world.communities[..i]
+                                .iter()
+                                .any(|old| old.name.form.segs == short.segs),
+                            "seed {seed}, {profile}: grew a long name before exhausting {place}"
+                        );
+                    }
                 }
             }
         }

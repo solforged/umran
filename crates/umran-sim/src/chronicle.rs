@@ -44,7 +44,9 @@ use std::collections::BTreeMap;
 /// Revision 54 separates V5 whole-people sea reach from colony expeditions.
 /// Revision 55 draws new worlds with ContinentalV6's plate-drift history.
 /// Revision 56 lets sparse peoples bud onto empty land and caps fission strain.
-pub const ENGINE_REVISION: u32 = 56;
+/// Revision 57 gives epithet-named peoples no further epithet and fuses
+/// identical consonants into one long consonant.
+pub const ENGINE_REVISION: u32 = 57;
 /// Revision 33 replaces flat geography and its region identities with a sphere.
 /// Earlier region-targeted actions cannot be replayed on the spherical mesh.
 pub const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;

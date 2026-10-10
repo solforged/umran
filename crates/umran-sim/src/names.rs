@@ -40,9 +40,7 @@ pub enum Naming {
 pub const PLACES: [&str; 5] = ["hill", "mountain", "river", "sea", "island"];
 /// Words a people's name can be qualified with.
 pub const EPITHETS: [&str; 7] = ["new", "far", "small", "big", "old", "red", "black"];
-/// Syllables beyond which a name takes no further epithet, so epithets
-/// do not stack over many splits: there were Ostrogoths and Visigoths,
-/// never "far East Goths".
+/// Syllables beyond which even an unqualified name takes no epithet.
 pub(crate) const MAX_EPITHET_BASE: usize = 2;
 /// Most syllables a people's name keeps, and a language's. Names said
 /// every day are short, and long ones are clipped in use: Deutsch,
@@ -76,6 +74,17 @@ pub struct Name {
 }
 
 impl Name {
+    /// Whether the name was coined with a qualifying epithet, even if
+    /// later sound changes have worn that epithet away.
+    pub fn has_epithet(&self) -> bool {
+        self.meaning.strip_prefix("the ").is_some_and(|rest| {
+            EPITHETS.iter().any(|e| {
+                rest.strip_prefix(e)
+                    .is_some_and(|suffix| suffix.starts_with(' '))
+            })
+        })
+    }
+
     /// Applies a sound law; records it if it changed anything.
     pub fn change(
         &mut self,
@@ -149,10 +158,10 @@ impl Naming {
 
     /// What a split-off people may call itself, given its parent's name:
     /// epithets common for emigrants, and places not already in the name.
-    /// Names already long take no further epithet, so "the far new small
-    /// X" does not pile up over many splits.
+    /// Long names and names already coined with an epithet take no further
+    /// epithet, even when sound change has made them short.
     pub fn for_daughter(parent: &Name) -> Vec<(Naming, f32)> {
-        let short = parent.form.vowel_count() <= MAX_EPITHET_BASE;
+        let short = parent.form.vowel_count() <= MAX_EPITHET_BASE && !parent.has_epithet();
         let epithets = DAUGHTER_EPITHETS.iter().filter(|_| short).map(|e| {
             let naming = Naming::Epithet {
                 epithet: (*e).into(),
@@ -739,6 +748,43 @@ mod tests {
             Livelihood::Farming,
             Default::default(),
         )
+    }
+
+    #[test]
+    fn epithet_coined_parents_offer_only_place_names() {
+        for epithet in EPITHETS {
+            let parent = Name {
+                form: Form::from_ipa("a").unwrap(),
+                meaning: format!("the {epithet} people"),
+                ..Name::default()
+            };
+            assert!(parent.has_epithet());
+            let options = Naming::for_daughter(&parent);
+            assert!(!options.is_empty());
+            assert!(
+                options
+                    .iter()
+                    .all(|(n, _)| matches!(n, Naming::Place { .. }))
+            );
+        }
+        let plain = Name {
+            form: Form::from_ipa("a").unwrap(),
+            meaning: "the people".into(),
+            ..Name::default()
+        };
+        assert!(!plain.has_epithet());
+        assert!(
+            Naming::for_daughter(&plain)
+                .iter()
+                .any(|(n, _)| matches!(n, Naming::Epithet { .. }))
+        );
+        assert!(
+            !Name {
+                meaning: "the olden people".into(),
+                ..plain
+            }
+            .has_epithet()
+        );
     }
 
     #[test]

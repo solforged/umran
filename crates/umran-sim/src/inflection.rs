@@ -125,6 +125,7 @@ impl Template {
                     .min(form.vowel_count().saturating_sub(1)),
             );
         }
+        form.fuse_consonants(0);
         Some(form)
     }
 

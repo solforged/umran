@@ -228,10 +228,12 @@ impl Morphology {
     }
 
     pub fn realize(pattern: &Pattern, skeleton: [PhonemeId; 3]) -> Form {
-        Form::from_phones(pattern.0.iter().map(|slot| match slot {
+        let mut form = Form::from_phones(pattern.0.iter().map(|slot| match slot {
             Slot::Root(i) => skeleton[*i],
             Slot::Fixed(p) => *p,
-        }))
+        }));
+        form.fuse_consonants(0);
+        form
     }
 
     /// A root-and-pattern word of `class` from a skeleton.
@@ -280,18 +282,27 @@ impl Morphology {
 
     /// Joins two pieces, recording the boundary. Two vowels meeting lose
     /// the second, or, when it is all the affix has, get a glide between
-    /// them; two consonants meeting get the link vowel in a language that
-    /// keeps syllables open inside words.
+    /// them; identical consonants fuse into one geminate. Other consonants
+    /// get the link vowel in a language that keeps syllables open inside words.
     pub(crate) fn join(&self, left: &Form, right: &Form) -> Form {
+        self.join_with_edge(left, right).0
+    }
+
+    /// Also retain a grammatical edge when fusion leaves it at the word end,
+    /// where it cannot be represented as an internal Form boundary.
+    pub(crate) fn join_with_edge(&self, left: &Form, right: &Form) -> (Form, usize) {
         let vowel = |f: &Form, i: usize| CATALOG.get(f.segs[i].phone).is_vowel();
         let mut segs: Vec<Seg> = left.segs.clone();
         let mut tail: Vec<Seg> = right.segs.clone();
         let (Some(last), Some(_)) = (segs.len().checked_sub(1), tail.first()) else {
-            return Form {
-                segs: [segs, tail].concat(),
-                boundaries: Vec::new(),
-                stress: left.stress.or(right.stress),
-            };
+            return (
+                Form {
+                    segs: [segs, tail].concat(),
+                    boundaries: Vec::new(),
+                    stress: left.stress.or(right.stress),
+                },
+                left.segs.len(),
+            );
         };
         let (left_vowel, right_vowel) = (vowel(left, last), vowel(right, 0));
         if left_vowel && right_vowel && tail.len() > 1 {
@@ -304,6 +315,10 @@ impl Morphology {
                     tone: None,
                 });
             }
+        } else if !left_vowel && !right_vowel && segs[last].phone == tail[0].phone {
+            segs[last].long = true;
+            segs[last].tone = None;
+            tail.remove(0);
         } else if !left_vowel
             && !right_vowel
             && self.open_medial
@@ -327,13 +342,21 @@ impl Morphology {
                 (prefix + s).saturating_sub(deleted)
             })
         });
-        let boundary = segs.len();
+        let edge = segs.len();
+        let boundaries = if tail.is_empty() {
+            Vec::new()
+        } else {
+            vec![segs.len()]
+        };
         segs.extend(tail);
-        Form {
-            segs,
-            boundaries: vec![boundary],
-            stress,
-        }
+        (
+            Form {
+                segs,
+                boundaries,
+                stress,
+            },
+            edge,
+        )
     }
 }
 
@@ -442,6 +465,22 @@ mod tests {
     }
 
     #[test]
+    fn adjacent_repeated_roots_realize_as_one_geminate() {
+        let phone = |ipa| CATALOG.id_by_ipa(ipa).unwrap();
+        let pattern = Pattern(vec![
+            Slot::Fixed(phone("m")),
+            Slot::Fixed(phone("i")),
+            Slot::Root(0),
+            Slot::Root(1),
+            Slot::Fixed(phone("a")),
+            Slot::Root(2),
+        ]);
+        let form = Morphology::realize(&pattern, [phone("r"); 3]);
+        assert_eq!(form.ipa(), "mirːar");
+        assert_eq!(form.vowel_count(), 2);
+    }
+
+    #[test]
     fn affixes_are_distinct_and_attach_at_a_boundary() {
         let profile = SoundProfile::base();
         for seed in 0..50 {
@@ -454,7 +493,10 @@ mod tests {
             let derived = m.derive(&base, None, Relation::Agent).unwrap();
             assert_eq!(derived.boundaries.len(), 1);
             assert!(
-                derived.ipa().contains("kat"),
+                derived
+                    .segs
+                    .windows(base.segs.len())
+                    .any(|part| part.iter().zip(&base.segs).all(|(a, b)| a.phone == b.phone)),
                 "{} keeps its base",
                 derived.ipa()
             );
@@ -479,6 +521,32 @@ mod tests {
             "a prefixed pattern clusters the first two: {}",
             place.ipa()
         );
+    }
+
+    #[test]
+    fn identical_junction_consonants_fuse_even_in_open_syllable_languages() {
+        let mut m = morphology(&SoundProfile::base(), MorphologyKind::Concatenative, 1).0;
+        m.link = CATALOG.id_by_ipa("a");
+        m.open_medial = true;
+        for left in ["if", "ifː"] {
+            for right in ["fa", "fːa"] {
+                let mut right = Form::from_ipa(right).unwrap();
+                right.stress = Some(0);
+                let joined = m.join(&Form::from_ipa(left).unwrap(), &right);
+                assert_eq!(joined.ipa(), "ifːa");
+                assert_eq!(joined.boundaries, vec![2]);
+                assert_eq!(joined.stress, Some(1));
+                assert_eq!(joined.syllables()[0].coda, 1..2);
+                assert_eq!(joined.syllables()[1].onset, 1..2);
+            }
+        }
+        let (joined, edge) = m.join_with_edge(
+            &Form::from_ipa("if").unwrap(),
+            &Form::from_ipa("f").unwrap(),
+        );
+        assert_eq!(joined.ipa(), "ifː");
+        assert!(joined.boundaries.is_empty());
+        assert_eq!(edge, joined.segs.len());
     }
 
     #[test]

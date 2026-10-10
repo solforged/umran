@@ -118,6 +118,40 @@ impl Form {
     pub fn vowel_count(&self) -> usize {
         (0..self.segs.len()).filter(|&i| self.is_vowel(i)).count()
     }
+
+    /// Collapse identical consonants to one geminate, in place. A boundary
+    /// inside a run stays just after its shared segment. Lexical stress
+    /// counts vowels, so it does not move. Return the remapped marker edge.
+    pub(crate) fn fuse_consonants(&mut self, edge: usize) -> usize {
+        let mut written = 0;
+        let mut boundary = 0;
+        let mut mapped_edge = 0;
+        for read in 0..self.segs.len() {
+            while boundary < self.boundaries.len() && self.boundaries[boundary] <= read {
+                self.boundaries[boundary] = written;
+                boundary += 1;
+            }
+            let seg = self.segs[read];
+            if written > 0
+                && self.segs[written - 1].phone == seg.phone
+                && !CATALOG.get(seg.phone).is_vowel()
+            {
+                self.segs[written - 1].long = true;
+                self.segs[written - 1].tone = None;
+            } else {
+                self.segs[written] = seg;
+                written += 1;
+            }
+            if read < edge {
+                mapped_edge = written;
+            }
+        }
+        self.segs.truncate(written);
+        self.boundaries.truncate(boundary);
+        self.boundaries.retain(|&b| b > 0 && b < written);
+        self.boundaries.dedup();
+        mapped_edge
+    }
     pub fn stressed_syllable(&self, rule: StressRule) -> Option<usize> {
         let count = self.vowel_count();
         if count == 0 {
@@ -252,6 +286,23 @@ mod tests {
         let form = Form::from_ipa("kaːsta").unwrap();
         assert!(form.segs[1].long);
         assert_eq!(form.ipa(), "kaːsta");
+    }
+
+    #[test]
+    fn consonant_runs_share_one_segment_without_touching_vowels() {
+        let mut form = Form::from_ipa("iffːfaai").unwrap();
+        form.boundaries = vec![1, 2, 3, 4, 5];
+        form.stress = Some(2);
+        assert_eq!(form.fuse_consonants(3), 2);
+        assert_eq!(form.ipa(), "ifːaai");
+        assert_eq!(form.boundaries, vec![1, 2, 3]);
+        assert_eq!(form.stress, Some(2));
+        assert_eq!(form.vowel_count(), 4);
+        let syllables = form.syllables();
+        assert_eq!(syllables[0].coda, 1..2);
+        assert_eq!(syllables[1].onset, 1..2);
+        assert_eq!(form.fuse_consonants(5), 5);
+        assert_eq!(form.ipa(), "ifːaai");
     }
 
     #[test]

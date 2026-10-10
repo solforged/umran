@@ -395,9 +395,16 @@ mod tests {
                             .phones()
                             .filter(|p| !CATALOG.get(*p).is_vowel())
                             .peekable();
-                        for p in m.form.phones() {
-                            if wanted.peek() == Some(&p) {
+                        for seg in &m.form.segs {
+                            if wanted.peek() == Some(&seg.phone) {
                                 wanted.next();
+                                // Adjacent equal radicals share one geminate;
+                                // even three copies have no longer contrast.
+                                if seg.long {
+                                    while wanted.peek() == Some(&seg.phone) {
+                                        wanted.next();
+                                    }
+                                }
                             }
                         }
                         assert!(

@@ -658,21 +658,17 @@ impl Grammar {
     ) -> Realization {
         let m = self.marker(marker);
         let (form, edge) = if m.kind == MarkerKind::Bound {
-            let mut joined = if m.form.segs.is_empty() {
-                base.clone()
-            } else {
-                match m.side {
-                    Side::Prefix => morphology.join(&m.form, base),
-                    Side::Suffix => morphology.join(base, &m.form),
-                }
-            };
-            let edge = if m.form.segs.is_empty() {
-                match m.side {
+            let (mut joined, edge) = if m.form.segs.is_empty() {
+                let edge = match m.side {
                     Side::Prefix => 0,
-                    Side::Suffix => joined.segs.len(),
-                }
+                    Side::Suffix => base.segs.len(),
+                };
+                (base.clone(), edge)
             } else {
-                joined.boundaries[0]
+                match m.side {
+                    Side::Prefix => morphology.join_with_edge(&m.form, base),
+                    Side::Suffix => morphology.join_with_edge(base, &m.form),
+                }
             };
             if let Some(feature) = self.harmony {
                 feature.realize_bound(&mut joined, edge, m.side, base);

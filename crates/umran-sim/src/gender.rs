@@ -251,11 +251,10 @@ impl Gender {
         };
         let start = self.classes.len();
         for (&core, (marker, source)) in choice.cores(markers.len()).iter().zip(markers) {
-            let mut agreement = match side {
-                Side::Prefix => morphology.join(&marker, &target.form),
-                Side::Suffix => morphology.join(&target.form, &marker),
+            let (mut agreement, edge) = match side {
+                Side::Prefix => morphology.join_with_edge(&marker, &target.form),
+                Side::Suffix => morphology.join_with_edge(&target.form, &marker),
             };
-            let edge = agreement.boundaries[0];
             if stress == StressRule::Free && agreement.stress.is_none() {
                 agreement.stress = Some(match side {
                     Side::Suffix => target.form.stress.unwrap_or(0),

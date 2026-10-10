@@ -81,7 +81,13 @@ This bookkeeping makes no random draws and does not itself change replay.
   affixes, or vowel patterns over consonant roots for root-and-pattern
   (`MorphologyKind::RootPattern`), and builds some family members from
   their bases (`Origin::Derived`). Junctions get a link vowel or a glide as
-  the language needs. Root-and-pattern derivations use each word's true
+  the language needs. Identical consonants meeting at a join become one
+  long consonant, shared by coda and onset, rather than two or three
+  separate sounds. Sound-law outputs, adapted loans, and adjacent root
+  slots in derivational or grammatical patterns use the same rule;
+  vowels are not fused by it. Morpheme boundaries move with the
+  surviving segments, and consonant fusion leaves vowel stress unchanged.
+  Root-and-pattern derivations use each word's true
   root skeleton, never a surface reading that includes a pattern's prefix.
   New words come from curated semantic shifts (`RELATED`) or fresh roots.
 - Grammar (`grammar.rs`) begins with count noun plural and object marking,
@@ -563,16 +569,18 @@ This bookkeeping makes no random draws and does not itself change replay.
   belonging affix or a compound with "tongue" or "word" (`NameRules` in
   `morphology.rs`, drawn after all other founding draws). Names are
   clipped to three syllables for a people and four for a language, as
-  names said every day are, and epithets go only on short names, so they
-  do not stack over many splits. A split-off people avoids meanings other
-  peoples have; when all are had, it is named for its land, or failing
-  that for a place another people is also named for. When its clipped
-  name is another's, its land, a place, or an epithet on the old name said
-  short ("the far Goths") tells it apart, or else whichever of those needs
-  the fewest syllables more. If every whole name is taken, it qualifies
-  the first with "new". Where vowel fusion swallows the "new" and leaves
-  the name unchanged, it tries the other whole names in order, and keeps
-  the first if none can grow. A new language whose
+  names said every day are. Epithets go only on short names that were not
+  themselves coined with an epithet, including founders called "the old
+  people". A split-off people avoids meanings other peoples have; when
+  all are had, it is named for its land, or failing that for a place
+  another people is also named for. When its clipped name is another's,
+  its land, a place, or an epithet on an unqualified old name said short
+  ("the far Goths") tells it apart, or else whichever of those needs the
+  fewest syllables more. Whole names are tried before adding "new".
+  Only when every whole candidate is taken may this last resort put an
+  epithet on another epithet. Where vowel fusion swallows the "new" and
+  leaves the name unchanged, it tries the other whole names in order,
+  and keeps the first if none can grow. A new language whose
   usual name is taken is named the other way ("the X tongue" for "of the
   X"), then either way a syllable longer, and only then in full. Names
   then undergo the same sound

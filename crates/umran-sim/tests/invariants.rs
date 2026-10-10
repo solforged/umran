@@ -308,13 +308,28 @@ fn reference_rule(rule: &SoundChange, before: &Form, stress_rule: StressRule) ->
             .count();
         (count > 0).then(|| surviving_before.min(count - 1))
     });
-    let segs: Vec<_> = outcomes.iter().flatten().copied().collect();
+    let mut segs: Vec<_> = outcomes.iter().flatten().copied().collect();
     let mut boundaries: Vec<_> = before
         .boundaries
         .iter()
         .map(|&b| outcomes[..b].iter().flatten().count())
         .filter(|&b| b > 0 && b < segs.len())
         .collect();
+    // Independently collapse each consonant run from its right end. Boundaries
+    // inside it remain after the shared geminate, not after a deleted copy.
+    for i in (1..segs.len()).rev() {
+        if segs[i - 1].phone == segs[i].phone && !CATALOG.get(segs[i].phone).is_vowel() {
+            segs[i - 1].long = true;
+            segs[i - 1].tone = None;
+            segs.remove(i);
+            for boundary in &mut boundaries {
+                if *boundary > i {
+                    *boundary -= 1;
+                }
+            }
+        }
+    }
+    boundaries.retain(|&b| b > 0 && b < segs.len());
     boundaries.dedup();
     Form {
         segs,

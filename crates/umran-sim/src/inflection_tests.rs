@@ -87,6 +87,21 @@ fn vowel_law(left: Env, result: Rewrite) -> Law {
 }
 
 #[test]
+fn adjacent_repeated_radicals_are_one_geminate() {
+    let (_, _, morphology) = fixture();
+    let template = Template::from_form(&Form::from_ipa("aktab").unwrap(), 1.0).unwrap();
+    let mut base = Form::from_ipa("kakab").unwrap();
+    base.stress = Some(1);
+    let form = template
+        .realize(&base, &morphology, StressRule::Free)
+        .unwrap();
+    assert_eq!(form.ipa(), "akːab");
+    assert_eq!(form.vowel_count(), 2);
+    assert_eq!(form.stress, Some(1));
+    assert!(template.contrasts(&base, &morphology));
+}
+
+#[test]
 fn roots_exclude_derivational_prefixes_and_unfitting_loans_take_affixes() {
     let (mut grammar, mut lexicon, mut morphology) = fixture();
     morphology.patterns = vec![(

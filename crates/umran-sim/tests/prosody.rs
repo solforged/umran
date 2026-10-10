@@ -435,7 +435,8 @@ fn founding_knobs_and_spelling_keep_length_and_stress_separate() {
         StressRule::Initial,
         9,
     );
-    assert_eq!(name.form.ipa(), "katta");
+    assert_eq!(name.form.ipa(), "katːa");
+    assert_eq!(spelling.write(&name.form), "katta");
 }
 
 #[test]

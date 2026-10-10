@@ -450,14 +450,13 @@ impl SoundChange {
             .filter(|&b| b > 0 && b < segs.len())
             .collect();
         boundaries.dedup();
-        (
-            Form {
-                segs,
-                boundaries,
-                stress,
-            },
-            mapped_edge,
-        )
+        let mut form = Form {
+            segs,
+            boundaries,
+            stress,
+        };
+        mapped_edge = form.fuse_consonants(mapped_edge);
+        (form, mapped_edge)
     }
 }
 
@@ -533,6 +532,42 @@ mod tests {
             apocope().apply(&form("ta"), StressRule::Initial).ipa(),
             "ta"
         );
+    }
+
+    #[test]
+    fn law_outputs_fuse_consonants_and_remap_boundaries_and_edges() {
+        let rule = SoundChange {
+            id: "p>f".into(),
+            target: Matcher::Phone(id("p")),
+            result: Rewrite::Phone(id("f")),
+            left: Env::Any,
+            right: Env::Any,
+        };
+        let mut input = form("ipffa");
+        input.boundaries = vec![1, 2, 3, 4];
+        input.stress = Some(1);
+        let (out, edge) = rule.apply_with_edge(&input, StressRule::Free, 3);
+        assert_eq!(out.ipa(), "ifːa");
+        assert_eq!(out.boundaries, vec![1, 2]);
+        assert_eq!(out.stress, Some(1));
+        assert_eq!(edge, 2);
+        assert_eq!(out.vowel_count(), input.vowel_count());
+        assert_eq!(rule.apply(&input, StressRule::Free), out);
+        let law = crate::Law {
+            id: "fusion-test",
+            label: "fusion test",
+            commonness: 1.0,
+            rules: vec![rule],
+            stress: None,
+        };
+        let after = law.apply(&input, crate::MinimalWord::Syllable, StressRule::Free);
+        assert_eq!(after, out);
+        assert!(law.changes(&input, &after, StressRule::Free));
+        assert!(!law.changes(
+            &after,
+            &law.apply(&after, crate::MinimalWord::Syllable, StressRule::Free),
+            StressRule::Free
+        ));
     }
 
     #[test]
