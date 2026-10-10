@@ -2,7 +2,7 @@
 //! All state below is generation scratch, never mutable world or replay state.
 
 use super::{Field, Wind, move_on_sphere, prevailing_wind};
-use crate::geography::{Terrain, coast_distances, random_direction};
+use crate::geography::{Forming, FormingFrame, Map, Terrain, coast_distances, random_direction};
 use crate::math;
 use crate::rng::{index, key, stream};
 use crate::sphere::{self, Point, cross, dot, tangent, unit};
@@ -101,6 +101,18 @@ pub(crate) struct Evidence {
     pub initial_coast: Vec<[Point; 2]>,
 }
 
+struct Frame {
+    land: Vec<bool>,
+    plate: Vec<u8>,
+}
+
+/// Enough step-local state to finish a frame once coastal detail is drawn.
+/// Keeping only elevation and plate avoids copying the full crust history.
+struct PendingFrame {
+    elevation: Vec<f64>,
+    plate: Vec<u8>,
+}
+
 struct History {
     crust: Vec<Crust>,
     initial: Vec<bool>,
@@ -108,10 +120,26 @@ struct History {
     detail: Field,
     wet: Field,
     land_share: f64,
+    frames: Vec<Frame>,
 }
 
 impl History {
     fn new(seed: u64) -> Self {
+        Self::build::<false>(seed)
+    }
+
+    /// Record the initial crust and each completed drift step on the simulation
+    /// mesh. At step s, elevation is isostasy + uplift * exp(-0.045 *
+    /// (s - last_uplift)) + the final coastal-detail field. Land is elevation
+    /// strictly above `sea_level`'s area-weighted quantile using the final
+    /// 29.6–30.8% land share. Frame zero is emerged initial crust, not the
+    /// entire continental-crust mask (which includes submerged shelves).
+    /// Basin filling and regional resampling belong only to the drawn frame.
+    fn new_recorded(seed: u64) -> Self {
+        Self::build::<true>(seed)
+    }
+
+    fn build<const RECORD: bool>(seed: u64) -> Self {
         let mesh = simulation_mesh();
         let mut rng = stream(seed, &[key("continental-v6 supercontinent")]);
         let centre = random_direction(&mut rng);
@@ -312,6 +340,16 @@ impl History {
         let mut pairs = vec![false; count * count];
         let mut uplift = vec![0.0_f64; crust.len()];
         let mut rotations = vec![Rotation::new([0.0; 3]); count];
+        let mut frames = Vec::new();
+        let mut pending = Vec::new();
+        if RECORD {
+            frames.reserve(usize::from(STEPS) + 1);
+            pending.reserve(usize::from(STEPS) + 1);
+            pending.push(PendingFrame {
+                elevation: crust.iter().map(|&c| crust_elevation(c, 0)).collect(),
+                plate: crust.iter().map(|c| c.plate as u8).collect(),
+            });
+        }
         for step in 1..=STEPS {
             // A marginal fragment returns as the spreading system reorganizes.
             // Its later overlap is resolved by the same collision and welding
@@ -503,8 +541,14 @@ impl History {
                 plate.centre = rotation.apply(plate.centre, false);
             }
             std::mem::swap(&mut crust, &mut next);
+            if RECORD {
+                pending.push(PendingFrame {
+                    elevation: crust.iter().map(|&c| crust_elevation(c, step)).collect(),
+                    plate: crust.iter().map(|c| c.plate as u8).collect(),
+                });
+            }
         }
-        Self {
+        let mut history = Self {
             crust,
             initial,
             sutures,
@@ -514,19 +558,69 @@ impl History {
             ),
             wet: Field::new(&mut stream(seed, &[key("continental-v6 moisture")]), 1.0),
             land_share: stream(seed, &[key("continental-v6 sea level")]).gen_range(0.296..0.308),
+            frames,
+        };
+        if RECORD {
+            let detail: Vec<_> = mesh
+                .cells
+                .iter()
+                .map(|c| 0.012 * history.detail.at(c.position))
+                .collect();
+            for mut frame in pending {
+                for (elevation, &detail) in frame.elevation.iter_mut().zip(&detail) {
+                    *elevation += detail;
+                }
+                let level = sea_level(&frame.elevation, &areas, history.land_share);
+                history.frames.push(Frame {
+                    land: frame.elevation.iter().map(|&e| e > level).collect(),
+                    plate: frame.plate,
+                });
+            }
         }
+        history
     }
 
     fn elevation(&self, r: usize) -> f64 {
-        let c = self.crust[r];
-        let erosion = math::exp64(-0.045 * f64::from(STEPS - c.last_uplift));
-        let isostasy = if c.continental {
-            (c.thickness - 26.0) * 0.016
-        } else {
-            (c.thickness - 32.0) * 0.035 - 0.025 * f64::from(c.age).sqrt()
-        };
-        isostasy + c.uplift * erosion + 0.012 * self.detail.at(simulation_mesh().cells[r].position)
+        crust_elevation(self.crust[r], STEPS)
+            + 0.012 * self.detail.at(simulation_mesh().cells[r].position)
     }
+}
+
+fn crust_elevation(c: Crust, step: u8) -> f64 {
+    let erosion = math::exp64(-0.045 * f64::from(step - c.last_uplift));
+    let isostasy = if c.continental {
+        (c.thickness - 26.0) * 0.016
+    } else {
+        (c.thickness - 32.0) * 0.035 - 0.025 * f64::from(c.age).sqrt()
+    };
+    isostasy + c.uplift * erosion
+}
+
+pub(crate) fn forming(seed: u64, map: &Map) -> Forming {
+    let history = History::new_recorded(seed);
+    let count = map.regions.len();
+    let mut frames = Vec::with_capacity(usize::from(STEPS) + 2);
+    for frame in &history.frames {
+        frames.push(FormingFrame {
+            land: frame.land[..count]
+                .iter()
+                .map(|&land| if land { '1' } else { '0' })
+                .collect(),
+            plate: frame.plate[..count]
+                .iter()
+                .map(|&plate| char::from_digit(u32::from(plate), 36).unwrap())
+                .collect(),
+        });
+    }
+    frames.push(FormingFrame {
+        land: map
+            .regions
+            .iter()
+            .map(|r| if r.terrain != Terrain::Sea { '1' } else { '0' })
+            .collect(),
+        plate: frames.last().unwrap().plate.clone(),
+    });
+    Forming { frames }
 }
 
 fn sea_level(values: &[f64], areas: &[f64], fraction: f64) -> f64 {
@@ -696,6 +790,148 @@ fn draw(history: &History, mesh: &mut sphere::Mesh, radius_km: f32) -> Surface {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geography::MapSize;
+
+    #[test]
+    fn forming_recording_preserves_every_surface_input_to_map_generation() {
+        for seed in [0, 7, 21] {
+            let recorded = History::new_recorded(seed);
+            let normal = History::new(seed);
+            assert!(normal.frames.is_empty());
+            assert_eq!(recorded.frames.len(), 11);
+            for (r, &c) in recorded.crust.iter().enumerate() {
+                // Keep the pre-recording expression as a bitwise regression oracle.
+                let erosion = math::exp64(-0.045 * f64::from(STEPS - c.last_uplift));
+                let isostasy = if c.continental {
+                    (c.thickness - 26.0) * 0.016
+                } else {
+                    (c.thickness - 32.0) * 0.035 - 0.025 * f64::from(c.age).sqrt()
+                };
+                let old = isostasy
+                    + c.uplift * erosion
+                    + 0.012 * recorded.detail.at(simulation_mesh().cells[r].position);
+                assert_eq!(recorded.elevation(r).to_bits(), old.to_bits());
+                assert_eq!(
+                    recorded.elevation(r).to_bits(),
+                    normal.elevation(r).to_bits()
+                );
+            }
+            for size in [
+                MapSize::Small,
+                MapSize::Medium,
+                MapSize::Large,
+                MapSize::Vast,
+            ] {
+                let level = match size {
+                    MapSize::Small => 3,
+                    MapSize::Medium | MapSize::Large => 4,
+                    MapSize::Vast => 5,
+                };
+                let mut a = sphere::mesh(level);
+                for (region, simulation) in a.cells.iter().zip(&simulation_mesh().cells) {
+                    assert_eq!(region.position, simulation.position, "{size:?}");
+                }
+                let mut b = sphere::mesh(level);
+                let recorded_surface = draw(&recorded, &mut a, size.radius_km());
+                let normal_surface = draw(&normal, &mut b, size.radius_km());
+                assert_eq!(recorded_surface, normal_surface, "seed {seed}, {size:?}");
+                for (a, b) in a.cells.iter().zip(&b.cells) {
+                    assert_eq!(a.position, b.position);
+                    assert_eq!(a.boundary, b.boundary);
+                    assert_eq!(a.neighbours, b.neighbours);
+                }
+                for (a, b) in a.borders.iter().zip(&b.borders) {
+                    assert_eq!((a.a, a.b, a.midpoint), (b.a, b.b, b.midpoint));
+                }
+                let recorded_map = Map::from_surface(
+                    seed,
+                    size,
+                    crate::geography::GeographyVersion::ContinentalV6,
+                    a,
+                    recorded_surface,
+                );
+                assert_eq!(
+                    recorded_map,
+                    Map::generate(seed, size),
+                    "seed {seed}, {size:?}"
+                );
+            }
+        }
+        println!(
+            "forming: recorded/normal complete maps, mesh, and legacy elevation bits identical; 3 seeds x 4 sizes"
+        );
+    }
+
+    fn bodies(land: &[bool], mesh: &sphere::Mesh) -> (usize, f64) {
+        let mut seen = vec![false; land.len()];
+        let mut count = 0;
+        let mut largest: f64 = 0.0;
+        let mut total = 0.0;
+        for root in 0..land.len() {
+            if seen[root] || !land[root] {
+                continue;
+            }
+            count += 1;
+            let mut area = 0.0;
+            let mut stack = vec![root];
+            seen[root] = true;
+            while let Some(r) = stack.pop() {
+                let cell = &mesh.cells[r];
+                area += sphere::area(cell.position, &cell.boundary);
+                for &n in &cell.neighbours {
+                    if land[n] && !seen[n] {
+                        seen[n] = true;
+                        stack.push(n);
+                    }
+                }
+            }
+            largest = largest.max(area);
+            total += area;
+        }
+        (count, largest / total)
+    }
+
+    #[test]
+    fn forming_initial_emerged_crust_and_fragmentation_band() {
+        let mesh = simulation_mesh();
+        let mut initial_bodies = 0;
+        let mut final_bodies = 0;
+        let mut minimum_largest: f64 = 1.0;
+        let mut maximum_largest: f64 = 0.0;
+        for seed in 0..20 {
+            let history = History::new_recorded(seed);
+            let initial = &history.frames[0].land;
+            assert!(
+                initial
+                    .iter()
+                    .zip(&history.initial)
+                    .all(|(&land, &crust)| !land || crust)
+            );
+            let share = mesh
+                .cells
+                .iter()
+                .zip(initial)
+                .filter(|(_, land)| **land)
+                .map(|(c, _)| sphere::area(c.position, &c.boundary))
+                .sum::<f64>()
+                / (4.0 * PI);
+            assert!((0.295..0.31).contains(&share), "seed {seed}: {share}");
+            let (before, largest) = bodies(initial, mesh);
+            let (after, _) = bodies(&history.frames[10].land, mesh);
+            initial_bodies += before;
+            final_bodies += after;
+            minimum_largest = minimum_largest.min(largest);
+            maximum_largest = maximum_largest.max(largest);
+            assert!(largest > 0.9, "seed {seed}: largest initial body {largest}");
+            println!(
+                "forming seed {seed}: initial land {share:.4}, bodies {before} -> {after}, largest initial {largest:.4}, outside crust 0"
+            );
+        }
+        assert!(final_bodies > initial_bodies);
+        println!(
+            "forming 20-seed band: total bodies {initial_bodies} -> {final_bodies}; largest initial share {minimum_largest:.4}..{maximum_largest:.4}"
+        );
+    }
 
     #[test]
     fn spatial_index_matches_exhaustive_nearest_and_rotations_are_rigid() {

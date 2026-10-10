@@ -1461,6 +1461,25 @@ volcanic vents. Continental overlap thickens crust and welds the plate
 groups, which share one Euler velocity thereafter. Three fixed mantle
 hotspots leave volcanic material behind as plates move over them.
 
+The opt-in `Bench::forming()` view reconstructs twelve frames without
+changing the map, consuming new random draws, or adding replay state.
+Frames 0–10 record the initial crust and each real drift step on the fixed
+simulation mesh. At step `s`, elevation is the same isostatic term used by
+the final drawing, plus `uplift * exp(-0.045 * (s - last_uplift))` and the
+same coastal-detail field. Land is strictly above the area-weighted
+`sea_level` quantile for the final 29.6–30.8% land share. Thus frame zero is
+the emerged supercontinent, not the full 38–42% continental-crust mask
+including submerged shelves. Each regional mesh reads its exact prefix
+of simulation points. Frame 11 instead uses the map's own `terrain != Sea`
+and the last drift step's plates, so regional sea levels and basin filling
+cannot leave the animation on different coasts. The JSON contains only
+`frames`, each with ASCII `land` bits and base-36 `plate` indices in region
+order. Older geographies return an error. Normal generation does not
+allocate or compute recorded frames. The `umran-web` example `forming`
+reports per-frame cell land shares, land-body counts and native timings
+for seed 21 at every size. Its `--json` mode emits the four views for
+comparison with the WASM facade.
+
 The analogues are Pangaea's breakup and Africa and South America's
 conjugate passive margins, young rift seas such as the Red Sea, Andean
 subduction ranges, Japanese island arcs, Himalayan collision plateaus,

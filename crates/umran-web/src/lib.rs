@@ -277,6 +277,11 @@ impl Workbench {
         self.bench.map().map_err(fail)
     }
 
+    /// The generator's initial supercontinent, ten drift steps, and drawn coasts.
+    pub fn forming(&self) -> Result<String, JsValue> {
+        self.bench.forming().map_err(fail)
+    }
+
     /// The climate and feeding capacities at `generation`.
     pub fn climate(&mut self, generation: u32) -> Result<String, JsValue> {
         self.bench.climate(generation).map_err(fail)
@@ -396,6 +401,9 @@ impl ReadView {
     }
     pub fn map(&self) -> Result<String, JsValue> {
         self.bench.borrow().map().map_err(fail)
+    }
+    pub fn forming(&self) -> Result<String, JsValue> {
+        self.bench.borrow().forming().map_err(fail)
     }
     #[wasm_bindgen(js_name = wordMap)]
     pub fn word_map(&mut self, generation: u32, concept: &str) -> Result<String, JsValue> {
@@ -1972,6 +1980,12 @@ impl Bench {
             variants,
             cognates,
         })
+    }
+
+    /// Generation-only V6 plate history, valid at every historical generation.
+    pub fn forming(&self) -> Result<String, String> {
+        let world = self.chronicle.latest();
+        to_json(&world.map.forming(world.seed)?)
     }
 
     /// The land the history plays out on. It never changes, so the

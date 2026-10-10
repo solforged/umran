@@ -382,6 +382,19 @@ impl PartialEq for WalkingRoutes {
     }
 }
 
+/// Generation-only plate history, in map-region order; never replay state.
+#[derive(Debug, Serialize)]
+pub struct Forming {
+    pub frames: Vec<FormingFrame>,
+}
+
+/// Compact land bits and base-36 plate indices, one ASCII character per region.
+#[derive(Debug, Serialize)]
+pub struct FormingFrame {
+    pub land: String,
+    pub plate: String,
+}
+
 /// The world's land and sea.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Map {
@@ -415,6 +428,15 @@ pub struct Map {
 }
 
 impl Map {
+    /// Reconstruct the V6 drift frames with the same seed used to generate this map.
+    /// The final frame uses this map's authoritative terrain, including basin fill.
+    pub fn forming(&self, seed: u64) -> Result<Forming, String> {
+        if self.geography != GeographyVersion::ContinentalV6 {
+            return Err("Forming frames require continental-v6 geography.".into());
+        }
+        Ok(continental::v6::forming(seed, self))
+    }
+
     /// The closed world `seed` draws at the physical scale of `size`.
     pub fn generate(seed: u64, size: MapSize) -> Map {
         Self::generate_with_version(seed, size, GeographyVersion::CURRENT)
@@ -423,8 +445,6 @@ impl Map {
     /// Replays a recorded geography without changing its geometry or streams.
     pub fn generate_with_version(seed: u64, size: MapSize, geography: GeographyVersion) -> Map {
         let radius_km = size.radius_km();
-        let width = TAU * f64::from(radius_km) / f64::from(KM_PER_UNIT);
-        let height = width / 2.0;
         let mut mesh = sphere::mesh(size.subdivisions());
         let (terrain, elevation, moisture) = match geography {
             GeographyVersion::SphericalV1 => surface(seed, &mesh.cells, radius_km),
@@ -442,6 +462,20 @@ impl Map {
             GeographyVersion::ContinentalV5 => continental::v5::surface(seed, &mut mesh, radius_km),
             GeographyVersion::ContinentalV6 => continental::v6::surface(seed, &mut mesh, radius_km),
         };
+        Self::from_surface(seed, size, geography, mesh, (terrain, elevation, moisture))
+    }
+
+    /// Shared assembly keeps recorded-surface tests on the complete map pipeline.
+    pub(crate) fn from_surface(
+        seed: u64,
+        size: MapSize,
+        geography: GeographyVersion,
+        mesh: sphere::Mesh,
+        (terrain, elevation, moisture): (Vec<Terrain>, Vec<f64>, Vec<f64>),
+    ) -> Map {
+        let radius_km = size.radius_km();
+        let width = TAU * f64::from(radius_km) / f64::from(KM_PER_UNIT);
+        let height = width / 2.0;
         let landmass = landmasses(&terrain, &mesh.cells);
         let edges = travel_edges(&mesh.cells, &terrain, &mesh.borders, radius_km);
         let mut regions: Vec<_> = mesh
