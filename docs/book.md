@@ -63,17 +63,23 @@ the engine, not a second source. Blank where the engine has nothing yet.
    erodes), the author, the seed and engine revision, the chart, and the
    year the book is read at. Which telling, if there are several.
 2. **The lands.** The chart as drawn, its coasts, terrain, rivers, lakes,
-   and climate; every named land with the chronology of its names and who
-   calls it what (`Place`, `PlaceName`, `climate`, `river`, `lake`).
+   and climate; every named land in a line, with the peoples who hold it,
+   and the chronology of its names and who calls it what folded beneath
+   (`Place`, `PlaceName`, `climate`, `river`, `lake`).
 3. **The peoples.** One section per people, living or ended, ordered by
    founding. Each opens the way the engine derives it: *where they live*
    and what the land is like; *how they live* (livelihood); *what they
    are like* (temper, with the causes that turned it); *their fortunes*
-   (the chronicle filtered to them, challenge beside response); *what
-   they speak*, with the specimen. Then kin, dealings, faith, crafts,
-   names others call them (`Community`, `story`).
+   (the chronicle filtered to them and read in the world's eras, its
+   headlines in full and each era's quieter entries folded into a line);
+   *what they speak*, with the specimen. Then kin, dealings, faith,
+   crafts, and names others call them, each name once with every people
+   that says it (`Community`, `story`). A people that has ended keeps a
+   paragraph (its last land, way of life, speech, and what became of
+   it), with the rest folded.
 4. **The languages.** The centre of the book and the reason for it. One
-   chapter per language, living or silent, grouped by family:
+   chapter per language, living or silent, grouped by family; a silent
+   language keeps its specimen with its chapter folded:
    - *Position*: parent, daughters, the family tree, kin by shared core
      words (`Variety.parent/fork/family`, `kin`).
    - *Sounds*: the inventories, the minimal word, stress, geminates.
@@ -93,29 +99,39 @@ the engine, not a second source. Blank where the engine has nothing yet.
      in this tongue (`givenNames`, `PlaceName.coiner`).
    - *Standing*: standard, classical, sacred, written, vernacular, and
      which state, faith, or city made it so.
+   The sound laws, grammar, lexicon, and names, each hundreds of rows
+   for a long-lived language, open beneath a one-line summary.
 5. **The states, faiths, crafts, cities.** Short sections; their effect on
    speech is the point (court speech, sacred language, koine, the words a
    craft brings) (`StateView`, `ReligionView`, `crafts`, `cities`).
-6. **The chronicle.** Every entry, by year, with causes where recorded,
-   and the author's decisions marked as such. It is read in eras, not
-   as a log. An era opens when a state rises or falls, a people
-   conquers another, a faith is founded, or a language becomes
-   classical, and runs at least two hundred years: an opener sooner
-   than that stays a headline inside the era. The era's heading is a
-   few words from the opener's subjects ("Iffi rises"); its full entry
-   is the title. Within an era the headline entries stand at full
-   weight (a people appears, parts, moves, or changes tongue; a
-   conquest; a state; a faith and its
+6. **The chronicle.** The headline entries, by year, with causes where
+   recorded, and the author's decisions marked on the entries they
+   produced. It is read in eras, not as a log. An era opens when a state
+   rises or falls, a people conquers another, a faith is founded, or a
+   language becomes classical, and runs at least two hundred years: an
+   opener sooner than that stays a headline inside the era. The era's
+   heading is a few words from the opener's subjects ("Iffi rises"); its
+   full entry is the title. Under the heading, one line tells what
+   happened to speech in the era: the languages that arose, how many
+   sound changes fell and on which languages most, new words, and
+   grammar changes, since eras are named for states and faiths and the
+   languages' own history would otherwise sit unseen. Within an era the
+   headline entries stand at full weight (a people appears, parts,
+   moves, or changes tongue; a conquest; a state; a faith and its
    schisms, conversions, and holy lands; a craft; a city and its
    speech; a language written, standardised, or made classical; a
    people ends; a way of life or hard times). The bookkeeping of a
    year (neighbours, spreads, crowding, the weather, a river, a
    meaning or spelling, a temper, a sound change, a grammar change)
    folds into one quiet line under the year, "also that year", which
-   opens to its entries. A filter to one group or a search unfolds
-   what it matches. The chronicle's card is the table of contents:
-   each era with its span, its heading, and the peoples, states, and
-   languages it concerns, at the dense scale.
+   opens to its entries; consecutive quiet years fold into one line
+   for the run. A filter to one group or a search unfolds what it
+   matches. Every reading of a chronicle (the chronicle's wide card, a
+   subject's fortunes, and the book) uses the same eras and reads from
+   the beginning; latest first is a choice. The chronicle's card is the
+   table of contents: each era with its span, its heading, the peoples,
+   states, and languages it concerns, and its speech in counts, at the
+   dense scale. The Markdown export keeps every entry.
 7. **Notes.** The author's own, dated, with the subjects they refer to.
 8. **Other tellings.** Each draft's name, the year and decision it
    diverged on, and what it kept.
@@ -125,7 +141,8 @@ then a compass direction among namesakes on like terrain. A local ordinal
 appears only on labels that remain identical. Compare names shown in the
 same reading, not unrelated historical spellings or exonyms. Cities use
 their land; rivers use their source; lakes use a shore region. Peoples use
-a number when needed.
+their heart land ("Kin of Opuw"), and a number only when that land is
+unnamed or shared.
 Successive realms of one people carry their founding year, including in
 era headings. The breadcrumb is a path: revisiting a card truncates the
 path to it. Chronicle pages keep each year together, and the contents'

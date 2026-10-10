@@ -30,8 +30,11 @@ chart room). Find and the map's layers sit top-right, the chronicle's
 latest line is a caption over the map's foot, and the time bar beneath
 runs the years to a date and draws every turning point on a timeline,
 with sound changes as a quieter track below it. The chronicle reads in
-eras, with headline entries at full weight and the year's quieter
-bookkeeping folded into one line; its card is a table of contents.
+eras, from the beginning, with headline entries at full weight, a line on
+what happened to speech in each era, and the year's quieter bookkeeping
+folded into one line; its card is a table of contents. A people's or a
+language's fortunes read in the same eras, and so does the book, which
+keeps its long ledgers folded beneath one-line summaries.
 Where the engine recorded why something happened, the chronicle says so:
 "after hard times", "as the city grew", each phrase a link to the entry
 that caused it. The author can also choose a sound change for a language

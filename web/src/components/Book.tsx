@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Annal, Catalog, ClimateView, Community, DecisionView, NotebookNote, Overview, ReadEngine, Subject, WorldMap } from "../model";
 import { YEARS } from "../model";
 import * as lore from "../lore";
-import { CONTACT_NAME, faithTeaching, LIVELIHOOD_NAME, seasonalPhrase, TENET_NOUN, TERRAIN_NAME, temperament, weatherDeparture } from "../lore";
+import { CONTACT_NAME, countWord, faithTeaching, LIVELIHOOD_NAME, seasonalPhrase, TENET_NOUN, TERRAIN_NAME, temperament, weatherDeparture } from "../lore";
 import { findAnnal, individualAnnals } from "../history";
-import { eras, quietLine } from "../eras";
+import { eraBirths, eras, listed, quietLine, quietRuns, QUIET_KINDS, speechLine, type Era } from "../eras";
 import { bookMarkdown, craftLines, download, fileName, givenNameLines, peopleLines, religionLines, renderingLines, stateLines } from "../takeout";
 import { CHAPTER, ChapterSummary, type ChapterContext } from "./LanguageChapter";
 import { Miniature } from "./MapView";
@@ -27,9 +27,9 @@ const CONTENTS = [
 
 
 /// Sections whose full form runs to hundreds of rows per language. In the
-/// book they open on request, so thirty languages do not render thirty
-/// lexicons at once.
-const FOLDED: Record<string, true> = { laws: true, lexicon: true };
+/// book they open on request beneath a one-line summary, so thirty
+/// languages do not render thirty lexicons and paradigm sets at once.
+const FOLDED: Record<string, true> = { laws: true, grammar: true, lexicon: true, names: true };
 
 function Folded({ summary, children }: { summary: ReactNode; children: () => ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -85,11 +85,11 @@ function CausePhrase({ annal, overview }: { annal: Annal; overview: Overview }) 
   return cause ? <span className="book-cause"> <a href={`#event-${cause.trigger.id}`} title={cause.trigger.text}>{cause.text[0].toUpperCase() + cause.text.slice(1)}</a>.</span> : null;
 }
 
-/// `marked` names the author's decision on the entry itself; the whole
-/// chronicle passes false, since the decision's own row precedes it there.
-function ChronicleEntry({ annal, overview, anchor = false, marked = true }: { annal: Annal; overview: Overview; anchor?: boolean; marked?: boolean }) {
-  return <li id={anchor ? `event-${annal.id}` : undefined} className="book-annal">
-    <span className="gen">{annal.generation * YEARS}</span>
+/// `marked` names the author's decision on the entry itself. `dated`
+/// prints its year, which an entry under its year's heading leaves out.
+function ChronicleEntry({ annal, overview, anchor = false, marked = true, dated = true }: { annal: Annal; overview: Overview; anchor?: boolean; marked?: boolean; dated?: boolean }) {
+  return <li id={anchor ? `event-${annal.id}` : undefined} className={dated ? "book-annal" : "book-annal undated"}>
+    {dated ? <span className="gen">{annal.generation * YEARS}</span> : null}
     <div><Told text={annal.text} /><CausePhrase annal={annal} overview={overview} />
       {marked && annal.decision !== undefined ? <small className="book-decision">The author’s decision</small> : null}
       {annal.specimen.length ? <Specimen words={annal.specimen} changes={annal.laws.length > 0} /> : null}
@@ -98,8 +98,27 @@ function ChronicleEntry({ annal, overview, anchor = false, marked = true }: { an
   </li>;
 }
 
-/** The people has its own chapter: land, livelihood, temper, fortunes, speech. */
-export function PeopleChapter({ community: c, ctx }: { community: Community; ctx: ChapterContext }) {
+/// A subject's fortunes in the world's eras: the headlines in full, the
+/// quieter entries of each era folded into one line that opens to them.
+function Fortunes({ annals, eras, overview }: { annals: Annal[]; eras: Era[]; overview: Overview }) {
+  return <>{eras.map((era) => {
+    const within = annals.filter((a) => a.generation >= era.start && a.generation <= era.end);
+    if (!within.length) return null;
+    const headlines = within.filter((a) => !QUIET_KINDS.has(a.kind));
+    const quiet = within.filter((a) => QUIET_KINDS.has(a.kind));
+    return <section className="book-fortune-era" key={era.start}>
+      <h5><span className="book-era-span">{era.start * YEARS}–{era.end * YEARS}</span> {era.heading}</h5>
+      {headlines.length ? <ol className="book-chronicle">{headlines.map((a) => <ChronicleEntry key={a.id} annal={a} overview={overview} />)}</ol> : null}
+      {quiet.length ? <Folded summary={<span className="book-quiet-line">{quietLine({ generation: era.start, headlines, quiet }, overview, lore.CHRONICLE.alsoEra)}</span>}>
+        {() => <ol className="book-quiet">{quiet.map((a) => <ChronicleEntry key={a.id} annal={a} overview={overview} />)}</ol>}
+      </Folded> : null}
+    </section>;
+  })}</>;
+}
+
+/** The people has its own chapter: land, livelihood, temper, fortunes,
+ * speech. A people that has ended keeps a paragraph; the rest folds. */
+function PeopleChapter({ community: c, eras, ctx }: { community: Community; eras: Era[]; ctx: ChapterContext }) {
   const { overview, map } = ctx;
   const annals = useMemo(() => ctx.engine.story(ctx.generation, { kind: "people", id: c.id }).annals.map((id) => findAnnal(overview.annals, id)).filter((a): a is Annal => a !== undefined), [ctx.engine, ctx.generation, ctx.version, c.id, overview]);
   const contacts = overview.contacts.filter((contact) => contact.a === c.id || contact.b === c.id);
@@ -108,21 +127,32 @@ export function PeopleChapter({ community: c, ctx }: { community: Community; ctx
   const phrases = lore.peoplePhrases(c.ended);
   const landLink = (region: number) => ctx.link({ kind: "land", region }, lore.landCardLabel(overview, map, region));
   const personLink = (id: number) => ctx.link({ kind: "people", id }, lore.peopleLabel(overview, id));
-  return <article className="book-subject people-chapter" id={`people-${c.id}`}>
-    <h3>{lore.peopleLabel(overview, c.id)}</h3><p className="book-subtitle">“{c.meaning}” · <span className="ipa">/{c.ipa}/</span>{c.once ? ` · once ${c.once}` : ""}{c.ended !== null ? ` · ended in year ${c.ended * YEARS}` : ""}</p>
+  // One name others share is said once, with every people that says it.
+  const exonyms = new Map<string, number[]>();
+  for (const name of c.exonyms) exonyms.set(name.name, [...(exonyms.get(name.name) ?? []), name.by]);
+  const temper = temperament(c.ethos, 6).join(", ");
+  const body = () => <>
     <h4>{phrases.land}</h4><p>{phrases.homeland} {landLink(c.region)}, {map.regions[c.region].coastal ? "coastal " : ""}{TERRAIN_NAME[map.regions[c.region].terrain].toLowerCase()}{map.regions[c.region].island ? ", on an island" : ""}. {c.lands.length > 1 ? <>Their lands: {c.lands.map((region, i) => <span key={region}>{i ? ", " : ""}{landLink(region)}</span>)}.</> : null}</p>
     <h4>{phrases.livelihood}</h4><p>{LIVELIHOOD_NAME[c.livelihood]}; {Math.round(c.size).toLocaleString()} people{c.ended !== null ? " when they ended" : " now"}.</p>
-    <h4>What they are like</h4><p>{temperament(c.ethos, 6).join(", ") || "No marked leaning"}.</p>
+    <h4>What they are like</h4><p>{temper ? `${temper[0].toUpperCase()}${temper.slice(1)}` : "No marked leaning"}.</p>
     {annals.some((a) => a.temper !== null) ? <ol className="book-chronicle">{annals.filter((a) => a.temper !== null).map((a) => <ChronicleEntry key={a.id} annal={a} overview={overview} />)}</ol> : null}
-    <h4>Their fortunes</h4>{annals.length ? <ol className="book-chronicle">{annals.map((a) => <ChronicleEntry key={a.id} annal={a} overview={overview} />)}</ol> : <p className="muted">No fortunes recorded.</p>}
+    <h4>Their fortunes</h4>{annals.length ? <Fortunes annals={annals} eras={eras} overview={overview} /> : <p className="muted">No fortunes recorded.</p>}
     <h4>{phrases.speech}</h4><p>{phrases.lastSpeech}{ctx.link({ kind: "language", variety: language.id }, language.name)}{language.meaning ? `, “${language.meaning}”` : ""}.</p><Specimen words={language.specimen} onWord={(concept) => ctx.open({ kind: "word", variety: language.id, concept })} />
     <dl className="chapter-facts">
       <div><dt>Kin</dt><dd>{kin.length ? kin.map((other, i) => <span key={other.id}>{i ? ", " : ""}{personLink(other.id)}</span>) : "No recorded parents, daughters, or siblings"}.</dd></div>
       <div><dt>Dealings</dt><dd>{contacts.length ? contacts.map((contact, i) => <span key={i}>{i ? "; " : ""}{CONTACT_NAME[contact.kind]} with {personLink(contact.a === c.id ? contact.b : contact.a)}</span>) : "No current contact recorded"}.</dd></div>
       <div><dt>Faith</dt><dd>{c.faith === null ? "Their own gods" : ctx.link({ kind: "religion", id: c.faith }, overview.religions[c.faith]?.name)}.</dd></div>
       <div><dt>Crafts</dt><dd>{c.crafts.length ? c.crafts.map((craft, i) => <span key={craft}>{i ? ", " : ""}{ctx.link({ kind: "craft", id: craft }, overview.crafts.find((item) => item.id === craft)?.name ?? craft)}</span>) : "None recorded"}.</dd></div>
-      <div><dt>Called by others</dt><dd>{c.exonyms.length ? c.exonyms.map((name, i) => <span key={i}>{i ? "; " : ""}<span className="word">{name.name}</span> by {personLink(name.by)}</span>) : "No other name recorded"}.</dd></div>
+      <div><dt>Called by others</dt><dd>{exonyms.size ? [...exonyms].map(([name, by], i) => <span key={name}>{i ? "; " : ""}<span className="word">{name}</span> by {by.map((id, j) => <span key={id}>{j ? ", " : ""}{personLink(id)}</span>)}</span>) : "No other name recorded"}.</dd></div>
     </dl>
+  </>;
+  return <article className="book-subject people-chapter" id={`people-${c.id}`}>
+    <h3>{lore.peopleLabel(overview, c.id)}</h3><p className="book-subtitle">“{c.meaning}” · <span className="ipa">/{c.ipa}/</span>{c.once ? ` · once ${c.once}` : ""}{c.ended !== null ? ` · ended in year ${c.ended * YEARS}` : ""}</p>
+    {c.ended === null ? body() : <>
+      <p>{phrases.homeland} {landLink(c.region)}. They were {LIVELIHOOD_NAME[c.livelihood].toLowerCase()}. {phrases.lastSpeech}{ctx.link({ kind: "language", variety: language.id }, language.name)}.
+        {" "}{c.endedInto !== null ? <>They merged into the {personLink(c.endedInto)}.</> : "They died out."}</p>
+      <Folded summary={`Their chapter: ${annals.length.toLocaleString()} recorded ${annals.length === 1 ? "entry" : "entries"}, kin, and dealings`}>{body}</Folded>
+    </>}
   </article>;
 }
 
@@ -240,30 +270,37 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
               {ctx.link({ kind: "language", variety: continent.name.variety }, overview.varieties[continent.name.variety]?.name)}.
             </p> : null}
             <p>{mass.regions.length} lands; {Array.from(new Set(mass.regions.map((id) => TERRAIN_NAME[map.regions[id].terrain].toLowerCase()))).join(", ")}.</p>
-            {places.map((place) => <section className="book-land" id={`land-${place.region}`} key={place.region}>
-              <h4>{lore.landCardLabel(overview, map, place.region)}</h4>
-              <p>{map.regions[place.region].coastal ? "Coastal " : ""}{TERRAIN_NAME[map.regions[place.region].terrain].toLowerCase()}
-                {map.regions[place.region].island ? ", on an island" : ""}.
-              </p>
-              <ol className="book-name-ledger">{place.names.map((n, i) => <li key={i}>
-                <span className="gen">{n.since * YEARS}</span>
-                <span><span className="word">{n.spelled}</span> <span className="ipa">/{n.ipa}/</span> “{n.meaning}” · {n.origin},
-                  in {ctx.link({ kind: "language", variety: n.variety }, n.language)}
-                  {n.by !== null ? <>; coined by {ctx.link({ kind: "people", id: n.by }, lore.peopleLabel(overview, n.by))}</> : null}
-                  {n.once ? `; once ${n.once}` : ""}.
-                </span>
-              </li>)}</ol>
-              {place.exonyms.length ? <>
-                <h5>Called by others</h5>
-                <ul className="book-name-ledger book-exonym-ledger">{lore.otherNames(place.exonyms, place.names.at(-1)?.spelled).map((group) => <li key={group.spelled}>
-                  <span className="gen" title="First heard in year">{group.heard * YEARS}</span>
-                  <span><span className="word">{group.spelled}</span> <span className="ipa">/{group.ipa}/</span>{group.once ? `, once ${group.once}` : ""}</span>
-                  <span>{group.varieties.map((variety, i) => <span key={variety}>
-                    {i ? ", " : ""}{ctx.link({ kind: "language", variety }, overview.varieties[variety]?.name)}
-                  </span>)}</span>
-                </li>)}</ul>
-              </> : null}
-            </section>)}
+            {places.map((place) => {
+              const holders = overview.communities.filter((c) => c.ended === null && c.lands.includes(place.region));
+              const languages = new Set([...place.names.map((n) => n.variety), ...place.exonyms.map((x) => x.variety)]).size;
+              return <section className="book-land" id={`land-${place.region}`} key={place.region}>
+                <h4>{lore.landCardLabel(overview, map, place.region)}</h4>
+                <p>{map.regions[place.region].coastal ? "Coastal " : ""}{TERRAIN_NAME[map.regions[place.region].terrain].toLowerCase()}
+                  {map.regions[place.region].island ? ", on an island" : ""}.
+                  {holders.length ? <> Held by {holders.map((c, i) => <span key={c.id}>{i ? ", " : ""}{ctx.link({ kind: "people", id: c.id }, lore.peopleLabel(overview, c.id))}</span>)}.</> : null}
+                </p>
+                <Folded summary={`Its names, in ${countWord(languages)} ${languages === 1 ? "language" : "languages"}`}>{() => <>
+                  <ol className="book-name-ledger">{place.names.map((n, i) => <li key={i}>
+                    <span className="gen">{n.since * YEARS}</span>
+                    <span><span className="word">{n.spelled}</span> <span className="ipa">/{n.ipa}/</span> “{n.meaning}” · {n.origin},
+                      in {ctx.link({ kind: "language", variety: n.variety }, n.language)}
+                      {n.by !== null ? <>; coined by {ctx.link({ kind: "people", id: n.by }, lore.peopleLabel(overview, n.by))}</> : null}
+                      {n.once ? `; once ${n.once}` : ""}.
+                    </span>
+                  </li>)}</ol>
+                  {place.exonyms.length ? <>
+                    <h5>Called by others</h5>
+                    <ul className="book-name-ledger book-exonym-ledger">{lore.otherNames(place.exonyms, place.names.at(-1)?.spelled).map((group) => <li key={group.spelled}>
+                      <span className="gen" title="First heard in year">{group.heard * YEARS}</span>
+                      <span><span className="word">{group.spelled}</span> <span className="ipa">/{group.ipa}/</span>{group.once ? `, once ${group.once}` : ""}</span>
+                      <span>{group.varieties.map((variety, i) => <span key={variety}>
+                        {i ? ", " : ""}{ctx.link({ kind: "language", variety }, overview.varieties[variety]?.name)}
+                      </span>)}</span>
+                    </li>)}</ul>
+                  </> : null}
+                </>}</Folded>
+              </section>;
+            })}
           </article>;
         })}
         <h3>Climate and rivers</h3>
@@ -287,7 +324,7 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
       </section>
       <section className="book-chapter" id="book-peoples" data-book-chapter="peoples">
         {head(2, peopleLines(overview))}<h2>The peoples</h2>
-        {peoples.map((c) => <PeopleChapter key={c.id} community={c} ctx={ctx} />)}
+        {peoples.map((c) => <PeopleChapter key={c.id} community={c} eras={chronicle} ctx={ctx} />)}
       </section>
       <section className="book-chapter" id="book-languages" data-book-chapter="languages">
         {head(3, () => overview.varieties.flatMap((v) => [
@@ -297,21 +334,22 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
         <h2>The languages</h2>
         {families.map((family) => <section className="book-family" key={family}>
           <h3>The family of {overview.varieties[family]?.name}</h3>
-          {overview.varieties.filter((v) => v.family === family).sort((a, b) => a.born - b.born || a.id - b.id).map((v) => (
-            <article className="book-subject language-chapter" id={`language-${v.id}`} key={v.id}>
+          {overview.varieties.filter((v) => v.family === family).sort((a, b) => a.born - b.born || a.id - b.id).map((v) => {
+            const sections = () => CHAPTER.map(({ id, title: sectionTitle, Section }) => (
+              <section className="book-language-section" key={id} id={`language-${v.id}-${id}`}>
+                <h4>{sectionTitle}</h4>
+                {FOLDED[id]
+                  ? <Folded summary={<ChapterSummary variety={v} section={id} ctx={ctx} />}>{() => <Section variety={v} ctx={ctx} />}</Folded>
+                  : <Section variety={v} ctx={ctx} />}
+              </section>
+            ));
+            return <article className="book-subject language-chapter" id={`language-${v.id}`} key={v.id}>
               <h3>{v.name}</h3>
-              <p className="book-subtitle">{v.meaning ? `“${v.meaning}” · ` : ""}{v.spoken ? "Spoken" : "Silent"} · first spoken in year {v.born * YEARS}</p>
+              <p className="book-subtitle">{v.meaning ? `“${v.meaning}” · ` : ""}{v.spoken ? "Spoken" : v.silentSince !== null ? `Silent since year ${v.silentSince * YEARS}` : "Silent"} · first spoken in year {v.born * YEARS}</p>
               <Specimen words={v.specimen} onWord={(concept) => ctx.open({ kind: "word", variety: v.id, concept })} />
-              {CHAPTER.map(({ id, title: sectionTitle, Section }) => (
-                <section className="book-language-section" key={id} id={`language-${v.id}-${id}`}>
-                  <h4>{sectionTitle}</h4>
-                  {FOLDED[id]
-                    ? <Folded summary={<ChapterSummary variety={v} section={id} ctx={ctx} />}>{() => <Section variety={v} ctx={ctx} />}</Folded>
-                    : <Section variety={v} ctx={ctx} />}
-                </section>
-              ))}
-            </article>
-          ))}
+              {v.spoken ? sections() : <Folded summary={`Its chapter: ${listed(CHAPTER.map(({ title: sectionTitle }) => sectionTitle.toLowerCase()), CHAPTER.length)}`}>{sections}</Folded>}
+            </article>;
+          })}
         </section>)}
       </section>
       <section className="book-chapter" id="book-institutions" data-book-chapter="institutions">
@@ -363,33 +401,38 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
       </section>
       <section className="book-chapter" id="book-chronicle" data-book-chapter="chronicle">
         {head(5)}<h2>The chronicle</h2>
-        <p className="muted">Every recorded entry, read in eras. Challenges are named only where the engine recorded a cause.</p>
-        {chronicle.map((era) => <section className="book-era" key={era.start}>
+        <p className="muted">The headline entries of each era, with what happened to speech. Each year’s quieter entries fold into one line that opens to them. Challenges are named only where the engine recorded a cause.</p>
+        {chronicle.map((era) => {
+          const speech = speechLine(era.years.flatMap((year) => [...year.headlines, ...year.quiet]), overview, eraBirths(era, overview));
+          return <section className="book-era" key={era.start}>
           <h3><span className="book-era-span">{era.start * YEARS}–{era.end * YEARS}</span> {era.heading}</h3>
-          {era.years.map((year) => {
+          {speech ? <p className="book-era-speech">{speech}</p> : null}
+          {quietRuns(era.years, (year) => decisionsByYear.has(year.generation)).map((year) => {
+            // A decision that produced a headline is marked on it; only
+            // one whose entries are all quiet, or that left none, stands alone.
+            const told = new Set(year.headlines.flatMap((annal) => [annal.id, ...annal.members.map((member) => member.id)]));
             const rows = [
               ...year.headlines.map((annal) => ({ order: annalOrder.get(annal.id) ?? Infinity, annal, decision: null })),
-              ...(decisionsByYear.get(year.generation) ?? []).map((decision) => ({
+              ...(decisionsByYear.get(year.generation) ?? []).filter((decision) => !decision.annals.some((id) => told.has(id))).map((decision) => ({
                 order: Math.min(...decision.annals.map((id) => annalOrder.get(id) ?? Infinity)), annal: null, decision,
               })),
             ].sort((a, b) => a.order - b.order || Number(a.annal !== null) - Number(b.annal !== null));
             const quietIds = year.quiet.flatMap((annal) => [annal.id, ...annal.members.map((member) => member.id)]);
             return <section className="book-era-year" key={year.generation}>
-              <h4>Year {year.generation * YEARS}</h4>
+              <h4>{year.through === undefined ? `Year ${year.generation * YEARS}` : `Years ${year.generation * YEARS}–${year.through * YEARS}`}</h4>
               {rows.length ? <ol className="book-chronicle">{rows.map(({ annal, decision }) => annal
-                ? <ChronicleEntry key={annal.id} annal={annal} overview={overview} anchor marked={false} />
-                : <li className="book-decision-row" key={`decision-${decision!.index}`}>
-                    <span className="gen">{decision!.generation * YEARS}</span>
+                ? <ChronicleEntry key={annal.id} annal={annal} overview={overview} anchor dated={false} />
+                : <li className="book-decision-row book-annal undated" key={`decision-${decision!.index}`}>
                     <div><Told text={decision!.text} /><small className="book-decision">The author’s decision</small></div>
                   </li>
               )}</ol> : null}
-              {year.quiet.length ? <>
-                <p className="book-quiet-line" data-annals={quietIds.join(" ")}>{year.quiet.filter((annal) => annal.members.length).map((annal) => <span id={`event-${annal.id}`} key={annal.id} />)}{quietLine(year, overview)}</p>
-                <ol className="book-quiet">{individualAnnals(year.quiet).map((annal) => <ChronicleEntry key={annal.id} annal={annal} overview={overview} anchor marked={false} />)}</ol>
-              </> : null}
+              {year.quiet.length ? <Folded summary={<span className="book-quiet-line" data-annals={quietIds.join(" ")}>{quietIds.map((id) => <span id={`event-${id}`} key={id} />)}{quietLine(year, overview, year.through === undefined ? lore.CHRONICLE.also : lore.CHRONICLE.alsoEra)}</span>}>
+                {() => <ol className="book-quiet">{individualAnnals(year.quiet).map((annal) => <ChronicleEntry key={annal.id} annal={annal} overview={overview} dated={year.through !== undefined} />)}</ol>}
+              </Folded> : null}
             </section>;
           })}
-        </section>)}
+        </section>;
+        })}
       </section>
       <section className="book-chapter" id="book-notes" data-book-chapter="notes">
         {head(6)}<h2>Notes</h2>
