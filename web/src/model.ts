@@ -930,6 +930,14 @@ export interface ReadEngine {
 export interface Forming {
   frames: { land: string; plate: string }[];
 }
+/// What land and life give a founding people before the author leans on
+/// them, and what each way of life would mean on their homeland.
+export interface FoundingTraits {
+  drawn: Ethos;
+  suggested: Livelihood;
+  /// Souls their homeland would feed under each way of life.
+  feeds: Record<Livelihood, number>;
+}
 export interface Engine extends ReadEngine {
   /// Copy an untouched year-zero base, sharing its generated geography.
   foundingDraft(): Engine;
@@ -937,6 +945,8 @@ export interface Engine extends ReadEngine {
   /// Up to 12 nearby unoccupied year-zero lands, in land-travel order.
   /// An unoccupied anchor comes first; an occupied anchor is only the origin.
   foundingSites(region: number, count: number): number[];
+  /// Year 0 only: a founding people's drawn temper and their land's yields.
+  foundingTraits(community: number): FoundingTraits;
   /// The coasts as they formed; null for worlds not drawn from moving plates.
   forming(): Forming | null;
   notebook(): NotebookNote[];

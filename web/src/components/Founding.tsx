@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, Feather, LocateFixed, Plus, RefreshCw } from "lucide-react";
 import { createEngine, message, presetDesign, preview } from "../engine";
-import type { Catalog, Engine, EthosAxis, Forming, FoundingPreview, GrammarChoice, GrammarDesign, Livelihood, MapSize, Naming, Overview, PossessorOrder, Variety, WordOrder, WorldMap } from "../model";
+import type { Action, Catalog, Craft, Engine, EthosAxis, Forming, FoundingPreview, FoundingTraits, GrammarChoice, GrammarDesign, Livelihood, MapSize, Naming, Overview, PossessorOrder, Variety, WordOrder, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { countWord, ETHOS_AXES, ETHOS_POLES, hue, LIVELIHOOD_NAME, MARKING_PHRASE, POSSESSOR_PHRASE, temperament, TERRAIN_NAME, WORD_ORDER_PHRASE } from "../lore";
+import { countWord, ETHOS_AXES, ETHOS_DRIVES, ETHOS_POLES, hue, LIVELIHOOD_DRIVES, LIVELIHOOD_NAME, MARKING_PHRASE, MILD, OPENNESS, OPENNESS_DRIVES, POSSESSOR_PHRASE, STANDING, STANDING_DRIVES, STRONG, TERRAIN_NAME, WORD_ORDER_PHRASE } from "../lore";
 import { worldName } from "../shelf";
 import { Designer, randomSeed, type Founding as FoundingDesign } from "./Designer";
 import { FormingChart } from "./FormingChart";
@@ -17,10 +17,10 @@ import { Sample } from "./Sample";
 import "./founding.css";
 
 const MOST_PEOPLES = 12;
-const BENT = 0.7;
+/// Where an author's "somewhat" and "strongly" put a leaning.
+const LEANING = [0.35, 0.7];
 /// The chronicle's default length, in years.
 const DEFAULT_YEARS = 4000;
-const LIVELIHOOD_PHRASE: Record<Livelihood, string> = { farming: "farming", herding: "herding", foraging: "foraging" };
 /// Words a voice card shows, by the preview's gloss.
 const VOICE_WORDS = ["water", "fire", "sun", "night"];
 
@@ -42,13 +42,22 @@ interface Founder extends FoundingDesign {
   /// Null only while explicitly redrawing the draft's geography.
   region: number | null;
   livelihood: Livelihood | null;
-  bent: { axis: EthosAxis; toward: 1 | -1 } | null;
+  /// Leanings the author set; other axes are as land and life make them.
+  ethos: Partial<Record<EthosAxis, number>>;
+  /// What they bring to year 0, each a dated decision in the chronicle.
+  crafts: Craft[];
+  realm: boolean;
+  faith: boolean;
 }
 
 interface Built {
   map: WorldMap;
   forming: Forming | null;
   overview: Overview;
+  /// Per founder, in founding order: what land and life gave them.
+  traits: FoundingTraits[];
+  /// Per founder key: year-0 decisions the engine did not take, by item.
+  refused: Map<number, Set<string>>;
   preview: FoundingPreview;
   founders: Founder[];
   seed: number;
@@ -67,7 +76,7 @@ function drawNaming(catalog: Catalog, key: number): Naming {
 function drawFounder(catalog: Catalog, key: number, region: number): Founder {
   const preset = catalog.presets[Math.floor(Math.random() * catalog.presets.length)].id;
   const seed = randomSeed();
-  return { key, preset, source: null, seed, design: presetDesign(preset, seed), naming: drawNaming(catalog, key), power: 0.5, openness: 0.5, region, livelihood: null, bent: null };
+  return { key, preset, source: null, seed, design: presetDesign(preset, seed), naming: drawNaming(catalog, key), power: 0.5, openness: 0.5, region, livelihood: null, ethos: {}, crafts: [], realm: false, faith: false };
 }
 
 function markerChoice(speech: Variety, category: "plural" | "past" | "object"): GrammarChoice {
@@ -155,7 +164,7 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
         for (const [index, founder] of founders.entries()) {
           const options = {
             ...(founder.livelihood === null ? {} : { livelihood: founder.livelihood }),
-            ...(founder.bent === null ? {} : { ethos: { [founder.bent.axis]: founder.bent.toward * BENT } }),
+            ...(Object.keys(founder.ethos).length ? { ethos: founder.ethos } : {}),
           };
           if (founder.source === null) {
             next.act({
@@ -172,7 +181,30 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
           }
           indices.set(founder.key, index);
         }
+        // Year-0 decisions follow every founding, so community indices hold.
+        // The engine may refuse one or quietly decline it (riding needs open
+        // country); the overview says what was taken.
+        const refused = new Map<number, Set<string>>();
+        founders.forEach((founder, community) => {
+          const declined = new Set<string>();
+          const attempt = (item: string, action: Action) => {
+            try { next.act(action); } catch { declined.add(item); }
+          };
+          if (founder.realm) attempt("realm", { kind: "state", community });
+          for (const craft of founder.crafts) attempt(craft, { kind: "craft", community, craft });
+          if (founder.faith) attempt("faith", { kind: "religion", community });
+          if (declined.size) refused.set(founder.key, declined);
+        });
         const overview = next.overview(0);
+        founders.forEach((founder, index) => {
+          const held = overview.communities[index];
+          const declined = refused.get(founder.key) ?? new Set<string>();
+          for (const craft of founder.crafts) if (!held.crafts.includes(craft)) declined.add(craft);
+          if (founder.realm && !overview.states.some((state) => state.rulers === held.id)) declined.add("realm");
+          if (founder.faith && held.faith === null) declined.add("faith");
+          if (declined.size) refused.set(founder.key, declined);
+        });
+        const traits = founders.map((_, index) => next.foundingTraits(index));
         const resolved = founders.map((founder, index) => founder.region === null
           ? { ...founder, region: overview.communities[index].region } : founder);
         const settled = resolved.some((founder, index) => founder !== founders[index]) ? resolved : founders;
@@ -190,7 +222,7 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
         const founded: Built = {
           map: sameWorld ? previous.map : next.map(),
           forming: sameWorld ? previous.forming : base.current.engine.forming(),
-          overview, preview: next.foundingPreview(), founders: settled, seed: worldSeed, size,
+          overview, traits, refused, preview: next.foundingPreview(), founders: settled, seed: worldSeed, size,
         };
         engine.current?.dispose();
         engine.current = next;
@@ -220,6 +252,7 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
   const selectedIndex = founders.findIndex((founder) => founder.key === selected);
   const current = founders[selectedIndex];
   const people = overview?.communities[selectedIndex];
+  const traits: FoundingTraits | undefined = built?.traits[selectedIndex];
   const speech = people ? overview?.varieties.find((variety) => variety.id === people.variety) : undefined;
   const speechOwner = current?.source == null ? current : founders.find((founder) => founder.key === current.source);
   const inherited = !!current && current.source !== null;
@@ -323,7 +356,7 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
       if (!firstChild || founder.source !== current.key) return founder;
       // Keep a family's speech when its first draft member is removed.
       return founder === firstChild
-        ? { ...current, key: founder.key, source: null, naming: founder.naming, region: founder.region, livelihood: founder.livelihood, bent: founder.bent }
+        ? { ...current, key: founder.key, source: null, naming: founder.naming, region: founder.region, livelihood: founder.livelihood, ethos: founder.ethos, crafts: founder.crafts, realm: founder.realm, faith: founder.faith }
         : { ...founder, source: firstChild.key };
     });
     grammarDraws.current.delete(current.key);
@@ -438,22 +471,106 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
       {head(founders.length === 1 ? "One people at the beginning" : `${countWord(founders.length).replace(/^./, (c) => c.toUpperCase())} peoples at the beginning`)}
       {rosterNav}
       <div className="founding-pages" ref={pages}>
-        {current && people && speech ? <article className="founding-portrait" key={current.key} aria-label={`The ${people.name}`}>
+        {current && people && speech && traits ? <article className="founding-portrait" key={current.key} aria-label={`The ${people.name}`}>
           <header><h3>{people.name}</h3><span>{people.meaning}</span>
             <button type="button" className="link founding-move-start" aria-pressed={moving === current.key} disabled={!currentBuild}
               onClick={() => { setAdding(false); setMoving(moving === current.key ? null : current.key); setMoveNotice(null); }}><LocateFixed size={13} aria-hidden="true" /> Move</button></header>
-          <p>They live in <button type="button" className="link" onClick={() => { setInspected(people.region); setFocus(people.region); }}>{landName(people.region)}</button>,
-            {" "}<Phrase label="Way of life" value={current.livelihood ?? ""}
-              choices={[{ key: "", text: `as the land suggests (${LIVELIHOOD_PHRASE[people.livelihood]})` },
-                ...(Object.keys(LIVELIHOOD_NAME) as Livelihood[]).map((livelihood) => ({ key: livelihood, text: `by ${LIVELIHOOD_PHRASE[livelihood]}` }))]}
-              onChange={(key) => update(current.key, { livelihood: key === "" ? null : key as Livelihood })} />.</p>
-          <p>They are <Phrase label="Temper" value={current.bent ? `${current.bent.axis} ${current.bent.toward}` : ""}
-            choices={[{ key: "", text: "shaped by land and life" }, ...ETHOS_AXES.flatMap((axis) => [1, -1].map((toward) => ({ key: `${axis} ${toward}`, text: ETHOS_POLES[axis][toward > 0 ? 1 : 0] })))]}
-            onChange={(key) => { const [axis, toward] = key.split(" "); update(current.key, { bent: key === "" ? null : { axis: axis as EthosAxis, toward: Number(toward) as 1 | -1 } }); }} />
-            {current.bent === null ? ` (${temperament(people.ethos, 2).join(" and ") || "even-tempered"})` : ""}.</p>
-          <p>They name themselves <Phrase label="Name" value={encodeNaming(current.naming)} choices={namingChoices(catalog)}
+          <p>They live in <button type="button" className="link" onClick={() => { setInspected(people.region); setFocus(people.region); }}>{landName(people.region)}</button>.
+            {" "}They name themselves <Phrase label="Name" value={encodeNaming(current.naming)} choices={namingChoices(catalog)}
             onChange={(key) => { const naming = decodeNaming(key); if (naming) update(current.key, { naming }); }} />, <b>{people.name}</b>,
             and speak <button type="button" className="link" onClick={() => go("speech")}><i>{speech.name}</i></button>{inherited ? ", a branch of their kin's speech" : ""}.</p>
+
+          <section className="founding-trait" aria-labelledby="founding-livelihood">
+            <h4 id="founding-livelihood">How they live</h4>
+            <div className="founding-choices" role="radiogroup" aria-labelledby="founding-livelihood">
+              {([null, "farming", "herding", "foraging"] as (Livelihood | null)[]).map((way) => <button type="button" role="radio" key={way ?? "land"}
+                aria-checked={current.livelihood === way} onClick={() => update(current.key, { livelihood: way })}>
+                <b>{way === null ? "As the land suggests" : LIVELIHOOD_NAME[way]}</b>
+                <small>{way === null ? LIVELIHOOD_NAME[traits.suggested].toLowerCase() : `the land feeds ${(Math.round(traits.feeds[way] / 100) * 100).toLocaleString()}`}</small>
+              </button>)}
+            </div>
+            <p className="founding-drive">{LIVELIHOOD_DRIVES[people.livelihood]}</p>
+          </section>
+
+          <section className="founding-trait" aria-labelledby="founding-temper">
+            <h4 id="founding-temper">What they are like <button type="button" className="link" disabled={!Object.keys(current.ethos).length}
+              onClick={() => update(current.key, { ethos: {} })}>as land and life made them</button></h4>
+            <ul className="founding-leanings">
+              {ETHOS_AXES.map((axis) => {
+                const [low, high] = ETHOS_POLES[axis];
+                const authored = current.ethos[axis];
+                const lean = (value: number | undefined) => {
+                  const { [axis]: _, ...rest } = current.ethos;
+                  update(current.key, { ethos: value === undefined ? rest : { ...rest, [axis]: value } });
+                };
+                return <li key={axis}>
+                  <span className={people.ethos[axis] <= -MILD ? "pole low leans" : "pole low"}>{low}</span>
+                  <span className="founding-leaning" role="radiogroup" aria-label={`${low} or ${high}`}>
+                    <button type="button" role="radio" className="drawn" aria-checked={authored === undefined}
+                      style={{ left: `${(traits.drawn[axis] + 1) * 50}%` }} title="As land and life made them"
+                      aria-label="As land and life made them"
+                      onClick={() => lean(undefined)} />
+                    {[-LEANING[1], -LEANING[0], LEANING[0], LEANING[1]].map((value) => <button type="button" role="radio" key={value}
+                      aria-checked={authored === value} style={{ left: `${(value + 1) * 50}%` }}
+                      aria-label={`${Math.abs(value) < STRONG ? "somewhat" : "strongly"} ${value < 0 ? low : high}`}
+                      title={`${Math.abs(value) < STRONG ? "somewhat" : "strongly"} ${value < 0 ? low : high}`}
+                      onClick={() => lean(authored === value ? undefined : value)} />)}
+                  </span>
+                  <span className={people.ethos[axis] >= MILD ? "pole leans" : "pole"}>{high}</span>
+                </li>;
+              })}
+            </ul>
+            <ul className="founding-drives">
+              {ETHOS_AXES.filter((axis) => Math.abs(people.ethos[axis]) >= MILD)
+                .sort((a, b) => Math.abs(people.ethos[b]) - Math.abs(people.ethos[a]))
+                .map((axis) => <li key={axis}><b>{ETHOS_POLES[axis][people.ethos[axis] > 0 ? 1 : 0]}.</b> {ETHOS_DRIVES[axis][people.ethos[axis] > 0 ? 1 : 0]}</li>)}
+            </ul>
+          </section>
+
+          <section className="founding-trait" aria-labelledby="founding-standing">
+            <h4 id="founding-standing">Among other peoples</h4>
+            {inherited && speechOwner ? <p className="founding-drive">Their standing and openness are their kin's: <button type="button" className="link"
+              onClick={() => choose(speechOwner.key)}>{overview?.communities[founders.indexOf(speechOwner)]?.name}</button>.</p> : null}
+            {([["Standing", STANDING, "power", STANDING_DRIVES], ["Foreign words", OPENNESS, "openness", OPENNESS_DRIVES]] as const).map(([label, stops, field, drives]) => {
+              const owner = speechOwner ?? current;
+              const nearest = stops.reduce((best, stop) => Math.abs(stop.value - owner[field]) < Math.abs(best.value - owner[field]) ? stop : best);
+              return <div className="founding-stops" key={field}>
+                <span>{label}</span>
+                <div role="radiogroup" aria-label={label}>
+                  {stops.map((stop) => <button type="button" role="radio" key={stop.value} aria-checked={stop === nearest} disabled={inherited}
+                    onClick={() => update(owner.key, field === "power" ? { power: stop.value } : { openness: stop.value })}>{stop.name}</button>)}
+                </div>
+                <small>{drives}</small>
+              </div>;
+            })}
+          </section>
+
+          <section className="founding-trait" aria-labelledby="founding-bring">
+            <h4 id="founding-bring">What they begin with</h4>
+            <div className="founding-brings">
+              {[
+                ...catalog.crafts.map((craft) => ({ id: craft.id, name: craft.name, description: craft.description, on: current.crafts.includes(craft.id as Craft),
+                  toggle: () => update(current.key, { crafts: current.crafts.includes(craft.id as Craft) ? current.crafts.filter((c) => c !== craft.id) : [...current.crafts, craft.id as Craft] }) })),
+                { id: "realm", name: "A realm", description: `A state of their own, its seat in ${landName(people.region)}.`, on: current.realm, toggle: () => update(current.key, { realm: !current.realm }) },
+                { id: "faith", name: "A faith", description: "A faith of their own, with a name and a teaching.", on: current.faith, toggle: () => update(current.key, { faith: !current.faith }) },
+              ].map((item) => {
+                const declined = item.on && !!built?.refused.get(current.key)?.has(item.id);
+                return <button type="button" key={item.id} aria-pressed={item.on} className={declined ? "declined" : undefined}
+                  title={item.description} onClick={item.toggle}>
+                  <b>{item.name}</b><small>{declined ? "Not possible for them here" : item.description}</small>
+                </button>;
+              })}
+            </div>
+            <p className="founding-drive">Each is a decision of the author's, dated year 0 in the chronicle.</p>
+          </section>
+
+          {speech.names.length ? <section className="founding-trait" aria-labelledby="founding-given">
+            <h4 id="founding-given">What they call their children</h4>
+            <ul className="founding-given">{speech.names.slice(0, 8).map((given) => <li key={given.name} title={`/${given.ipa}/`}>
+              <i>{given.name}</i> <small>{given.meaning}</small></li>)}</ul>
+            <p className="founding-drive">Drawn from their words, as their way of life and temper favour.</p>
+          </section> : null}
+
           <button type="button" className="link founding-remove" onClick={remove}>Leave this people out</button>
         </article> : null}
       </div>

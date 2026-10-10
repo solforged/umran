@@ -10,6 +10,7 @@ import type {
   Comparison,
   ClimateView,
   Forming,
+  FoundingTraits,
   RiverNamesView,
   LakeNamesView,
   ReadingRef,
@@ -120,6 +121,7 @@ function wrap(bench: Workbench): Engine {
     foundingDraft: () => wrap(bench.foundingDraft()),
     foundingPreview: () => JSON.parse(bench.foundingPreview()) as FoundingPreview,
     foundingSites: (region, count) => JSON.parse(bench.foundingSites(region, count)) as number[],
+    foundingTraits: (community) => JSON.parse(bench.foundingTraits(community)) as FoundingTraits,
     forming: () => {
       try { return JSON.parse(bench.forming()) as Forming; }
       catch { return null; }

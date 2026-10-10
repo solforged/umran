@@ -204,12 +204,27 @@ the real engine.
    take distinct, reachable homelands, nearest first but with two lands
    between homelands where the land allows. Related speech has real
    ancestry in the engine; matching sound presets alone do not make a
-   family. Then a compact roster above a portrait: homeland, livelihood,
-   temper, and their name for themselves. *Move* on the portrait, or
-   *Another people…*, takes the next land clicked; Escape or *Cancel*
-   leaves things as they were. *Start again* clears the peoples after
-   asking. Reach is drawn on the chart for the selected people, with
-   effort on hover.
+   family. Then a compact roster above a portrait in derivation order:
+   - *How they live*: as the land suggests, or farmers, herders, or
+     foragers, each card saying how many souls the homeland would feed
+     that way (`foundingTraits`), with a line on what the way of life does.
+   - *What they are like*: all six leanings, each a ruled line between its
+     ends. A lozenge marks where land and life put them; four stops let
+     the author lean them somewhat or strongly, replacing that axis only.
+     Beneath, one line per notable leaning says what it drives in the
+     engine.
+   - *Among other peoples*: standing (the floor of prestige, which decides
+     conquest and whose words are borrowed) and openness to foreign words,
+     three stops each. Kin share their ancestor's.
+   - *What they begin with*: crafts, a realm, a faith, each a dated year-0
+     decision. One the engine declines shows as not possible here.
+   - *What they call their children*: the given names their language
+     draws, which move with their way of life and temper.
+
+   *Move* on the portrait, or *Another people…*, takes the next land
+   clicked; Escape or *Cancel* leaves things as they were. *Start again*
+   clears the peoples after asking. Reach is drawn on the chart for the
+   selected people, with effort on hover.
 4. **Their speech.** Every preset as a voice card showing the words this
    people would have under it: the engine's own preview with the seed
    founding uses, so the chosen card's words are the founded words.

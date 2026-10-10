@@ -45,8 +45,11 @@ Read further when the task touches it:
   the peoples, their speech, and the title page, along a rail over the
   chart; `FormingChart` plays the coasts forming from the engine's
   plate-drift frames; voice cards are the engine's previews of each
-  preset; each smaller choice a `Phrase` that opens a menu; the sixth
-  step is the workshop's first run, `Stage`'s `runOnOpen`);
+  preset; a people's portrait sets way of life, the six leanings
+  against the engine's `foundingTraits` draw, standing, openness, and
+  year-0 crafts, realm, and faith, each with a `lore.ts` line on what it
+  drives; the sixth step is the workshop's first run, `Stage`'s
+  `runOnOpen`);
   the workshop (`Stage`: `MapView` with chart and globe projections,
   imperative globe rotation outside React rendering, reach, layers,
   zoom, and the `lens` that draws the chart as one people knew it; the

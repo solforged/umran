@@ -127,6 +127,31 @@ export const LIVELIHOOD_NAME: Record<Livelihood, string> = {
   farming: "Farmers",
 };
 
+/// What a way of life does to a people over the years, in the order the
+/// engine weighs it: growth, how readily they move, how long they hold
+/// together before parting (`livelihood.rs`).
+export const LIVELIHOOD_DRIVES: Record<Livelihood, string> = {
+  farming: "They grow fastest, move least, and hold together longest.",
+  herding: "They move twice as readily as farmers and part sooner.",
+  foraging: "Few and wandering; their bands part early.",
+};
+
+/// Standing (`power`) and openness to foreign words, the two leanings a
+/// people is founded with besides its temper: the authored values and
+/// their words. Standing is the floor of a people's prestige.
+export const STANDING: { value: number; name: string }[] = [
+  { value: 0.25, name: "of little account" },
+  { value: 0.5, name: "of middling standing" },
+  { value: 0.8, name: "renowned" },
+];
+export const STANDING_DRIVES = "Their prestige before numbers and might are counted. Prestige decides who can conquer whom, and whose words neighbours borrow.";
+export const OPENNESS: { value: number; name: string }[] = [
+  { value: 0.25, name: "guarded" },
+  { value: 0.5, name: "ordinary" },
+  { value: 0.85, name: "open" },
+];
+export const OPENNESS_DRIVES = "How readily they take in a neighbour's words. Only the open borrow even pronouns.";
+
 export const CONTACT_NAME: Record<ContactKind, string> = {
   neighbours: "Neighbours",
   trade: "Trade",
@@ -187,8 +212,19 @@ export const ETHOS_POLES: Record<EthosAxis, [string, string]> = {
   seaward: ["landbound", "seagoing"],
 };
 
+/// What each end of a leaning drives in the engine (`ethos.rs` effects), as
+/// [low, high]. The middle drives nothing beyond the ordinary.
+export const ETHOS_DRIVES: Record<EthosAxis, [string, string]> = {
+  martial: ["They seldom conquer, even when they could.", "They conquer weaker neighbours more readily."],
+  open: ["They trade less, borrow fewer words, and keep their speech pure.", "They trade more, borrow words freely, and care little for purity."],
+  pious: ["They are slow to found or take up a faith.", "They found faiths, convert, quarrel over doctrine, and go on pilgrimage."],
+  hierarchical: ["They are slow to found a state or fix a standard speech.", "They found states and fix a standard speech more readily."],
+  roving: ["They stay put, spread slowly, and hold together.", "They migrate, spread, and part more readily."],
+  seaward: ["They seldom take to the sea.", "They learn seafaring and settle across the sea."],
+};
+
 /// Below this a leaning goes unremarked; below `STRONG` it is "somewhat".
-const MILD = 0.2;
+export const MILD = 0.2;
 /// Where the engine records a people's temper turning.
 export const STRONG = 0.5;
 
