@@ -22,10 +22,11 @@ describe("chronicle readings", () => {
     const overview = { annals: [aggregate] } as Overview;
     expect(subjectHistory({ kind: "people", id: 0 }, overview, {} as WorldMap)).toEqual([a]);
   });
-  test("an unfiltered reading includes sound changes and reads latest first without mutating history", () => {
-    const source = [annal(1, "found", 0), annal(2, "law", 0)];
-    expect(filterHistory(source, family, INITIAL_HISTORY).map((a) => a.kind)).toEqual(["law", "found"]);
-    expect(source.map((a) => a.kind)).toEqual(["found", "law"]);
+  test("an unfiltered reading includes sound changes, reads forwards, and reverses on request without mutating history", () => {
+    const source = [annal(2, "law", 0), annal(1, "found", 0)];
+    expect(filterHistory(source, family, INITIAL_HISTORY).map((a) => a.kind)).toEqual(["found", "law"]);
+    expect(filterHistory(source, family, { ...INITIAL_HISTORY, order: "newest" }).map((a) => a.kind)).toEqual(["law", "found"]);
+    expect(source.map((a) => a.kind)).toEqual(["law", "found"]);
   });
   test("follows ancestors only until their descendant forked", () => {
     const source = [annal(3, "law", 0), annal(5, "law", 0), annal(7, "law", 1), annal(9, "law", 1), annal(10, "law", 2)];
@@ -43,7 +44,7 @@ describe("chronicle readings", () => {
   });
   test("categories and omitted sound changes compose without hiding other language events", () => {
     const source = [annal(1, "law", 0), annal(2, "shift", 0), annal(3, "migration", 0), annal(4, "grammar", 0)];
-    expect(filterHistory(source, family, { ...INITIAL_HISTORY, group: "Languages & words", sounds: "none" })).toEqual([source[3], source[1]]);
+    expect(filterHistory(source, family, { ...INITIAL_HISTORY, group: "Languages & words", sounds: "none" })).toEqual([source[1], source[3]]);
   });
 });
 

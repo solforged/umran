@@ -1,6 +1,7 @@
 import type { Annal, Overview } from "./model";
 import { YEARS } from "./model";
 import { CHRONICLE, countWord, EVENT_KIND, peopleLabel, stateLabel } from "./lore";
+import { individualAnnals } from "./history";
 
 export type Era = {
   opening: Annal | null;
@@ -14,6 +15,8 @@ export type Era = {
 };
 export type EraYear = {
   generation: number;
+  /// The last year of a run of quiet years read as one, if it is a run.
+  through?: number;
   headlines: Annal[];
   quiet: Annal[];
 };
@@ -25,6 +28,57 @@ const DESCRIBED: ReadonlySet<Annal["kind"]> = new Set(["neighbours", "spread", "
 /// An opener within this many generations of an era's start stays a
 /// headline inside it; two hundred years is the shortest era.
 export const MIN_ERA = 8;
+/// Changes to a language's grammar, each a quiet or headline entry.
+const GRAMMAR_KINDS: Partial<Record<Annal["kind"], true>> = {
+  grammar: true, "pronoun-renewed": true, "pronoun-polite": true, "pronoun-generalised": true, "pronoun-borrowed": true,
+  "class-emerged": true, "class-merged": true, "class-lost": true, "harmony-gained": true, "harmony-lost": true, "tone-gained": true, "tone-lost": true,
+};
+/// Entries that give a language a word it did not have.
+const WORD_KINDS: Partial<Record<Annal["kind"], true>> = { coinage: true, calque: true, "purist-replacement": true, "taboo-replacement": true };
+
+/// "A", "A and B", "A, B, and C", or "A, B, and two more" past `max`.
+export function listed(names: string[], max = 3): string {
+  const shown = names.length > max ? [...names.slice(0, max - 1), `${countWord(names.length - max + 1)} more`] : names;
+  if (shown.length < 3) return shown.join(" and ");
+  return `${shown.slice(0, -1).join(", ")}, and ${shown.at(-1)}`;
+}
+
+/// The languages that arose in an era: daughters parting, and peoples
+/// founded after the first year.
+export function eraBirths(era: Era, overview: Overview): number[] {
+  return overview.varieties.filter((v) => v.born >= era.start && v.born <= era.end && (v.born > 0 || v.parent !== null)).map((v) => v.id);
+}
+
+/// What happened to speech in a span of the chronicle: the languages that
+/// arose, how many sound changes fell and on which languages most, new
+/// words, and grammar. Eras are opened by states, conquests, and faiths;
+/// this line keeps the languages' own history beside them. `brief` gives
+/// counts without names, for the contents. Null when speech was quiet.
+export function speechLine(annals: Annal[], overview: Overview, born: number[] = [], brief = false): string | null {
+  const entries = individualAnnals(annals);
+  const parts: string[] = [];
+  const named = (ids: number[]) => ids.map((id) => overview.varieties[id]?.name).filter((n): n is string => n !== undefined);
+  if (born.length) {
+    parts.push(brief || !named(born).length
+      ? `${countWord(born.length)} ${born.length === 1 ? "language" : "languages"} arose`
+      : `${listed(named(born))} arose`);
+  }
+  const laws = entries.filter((a) => a.kind === "law");
+  if (laws.length) {
+    const counts = new Map<number, number>();
+    for (const law of laws) for (const id of law.variety === null ? law.languages : [law.variety]) counts.set(id, (counts.get(id) ?? 0) + 1);
+    const most = named([...counts].sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(([id]) => id));
+    let phrase = `${countWord(laws.length)} ${CHRONICLE.law[laws.length === 1 ? 0 : 1]}`;
+    if (!brief && most.length) phrase += most.length === 1 ? ` in ${most[0]}` : `, most in ${listed(most.slice(0, 2), 2)}`;
+    parts.push(phrase);
+  }
+  const words = entries.filter((a) => WORD_KINDS[a.kind]).length;
+  if (words) parts.push(`${countWord(words)} ${CHRONICLE.words[words === 1 ? 0 : 1]}`);
+  const grammar = entries.filter((a) => GRAMMAR_KINDS[a.kind]).length;
+  if (grammar) parts.push(`${countWord(grammar)} ${CHRONICLE.grammar[grammar === 1 ? 0 : 1]}`);
+  if (!parts.length) return null;
+  return brief ? parts.join(" · ") : `${CHRONICLE.speech}: ${parts.join("; ")}.`;
+}
 
 /// A short heading for an opener, from the subjects it names, in their
 /// current names; the full entry stays the era's title.
@@ -77,14 +131,34 @@ export function eras(annals: Annal[], latest: number, overview: Overview): Era[]
   return result;
 }
 
+/// Consecutive years with only quieter entries, read as one run: a
+/// people's fortunes or a quiet stretch of the world's chronicle would
+/// otherwise be a column of "This year: one quieter entry". Years `apart`
+/// marks (the book's years of the author's decisions) stand alone.
+export function quietRuns(years: EraYear[], apart: (year: EraYear) => boolean = () => false): EraYear[] {
+  const out: EraYear[] = [];
+  let open = false;
+  for (const year of years) {
+    const quiet = !year.headlines.length && !apart(year);
+    const previous = out.at(-1);
+    if (previous && open && quiet) {
+      out[out.length - 1] = { ...previous, through: year.generation, quiet: [...previous.quiet, ...year.quiet] };
+    } else out.push(year);
+    open = quiet;
+  }
+  return out;
+}
+
 /// The collapsed row stays brief; the full category account lives inside.
 export function quietSummary(year: EraYear): string {
   const count = year.quiet.reduce((sum, annal) => sum + (annal.members.length || 1), 0);
-  return `${year.headlines.length ? "Also this year" : "This year"}: ${count} quieter ${count === 1 ? "entry" : "entries"}.`;
+  const lead = year.through !== undefined ? "In these years" : year.headlines.length ? "Also this year" : "This year";
+  return `${lead}: ${count} quieter ${count === 1 ? "entry" : "entries"}.`;
 }
 
 /// A folded year describes recorded activity; names remain the engine's.
-export function quietLine(year: EraYear, overview: Overview): string {
+/// `lead` opens the line: "Also that year", or a span's own words.
+export function quietLine(year: EraYear, overview: Overview, lead: string = CHRONICLE.also): string {
   const byKind = new Map<Annal["kind"], Annal[]>();
   for (const annal of year.quiet) {
     const entries = byKind.get(annal.kind) ?? [];
@@ -116,9 +190,7 @@ export function quietLine(year: EraYear, overview: Overview): string {
     if (kind === "law" || kind === "grammar") {
       const ids = [...new Set(entries.flatMap((a) => a.variety === null ? a.languages : [a.variety]))];
       const names = ids.map((id) => overview.varieties[id]?.name).filter((name): name is string => name !== undefined);
-      const first = names.slice(0, 2);
-      if (names.length > 2) first.push(`${countWord(names.length - 2)} more`);
-      if (first.length) phrase += ` in ${first.length === 1 ? first[0] : first.length === 2 ? first.join(" and ") : `${first.slice(0, -1).join(", ")}, and ${first.at(-1)}`}`;
+      if (names.length) phrase += ` in ${listed(names)}`;
     }
     parts.push(phrase);
   }
@@ -127,5 +199,5 @@ export function quietLine(year: EraYear, overview: Overview): string {
     const name = EVENT_KIND[kind].name;
     parts.push(`${name[0].toLowerCase()}${name.slice(1)}${entries.length > 1 ? ` (${countWord(entries.length)} times)` : ""}`);
   }
-  return `${CHRONICLE.also}: ${parts.join("; ")}.`;
+  return `${lead}: ${parts.join("; ")}.`;
 }

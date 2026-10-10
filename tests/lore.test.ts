@@ -103,6 +103,15 @@ describe("reading names", () => {
     expect(landCardLabel(world, map, 1)).toContain("southern forest");
   });
 
+  test("namesake peoples are told apart by their heart land, by number only when it does not tell them apart", () => {
+    const places = [{ region: 0, names: [{ spelled: "Opuw" }], exonyms: [] }, { region: 1, names: [{ spelled: "Tinea" }], exonyms: [] }] as Overview["places"];
+    const world = overview({ varieties: [], places, communities: [{ id: 0, name: "Kin", region: 0 }, { id: 1, name: "Kin", region: 1 }, { id: 2, name: "Kin", region: 1 }, { id: 3, name: "Iff", region: 1 }] as Overview["communities"] });
+    expect(peopleLabel(world, 0)).toBe("Kin of Opuw");
+    expect(new Set([1, 2].map((id) => peopleLabel(world, id))).size).toBe(2);
+    expect(peopleLabel(world, 1)).not.toBe("Kin of Tinea");
+    expect(peopleLabel(world, 3)).toBe("Iff");
+  });
+
   test("successive realms of one people keep distinct labels even when their names diverge", () => {
     const world = overview({ states: [
       { id: 0, name: "Iffi", rulers: 0, rose: 88 },

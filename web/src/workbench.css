@@ -281,9 +281,6 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .card-reading-tools button { display: inline-flex; align-items: center; gap: .25rem; font-size: .75rem; color: var(--ink-soft); }
 .following-note { margin: 0; padding: .4rem 1rem; font-size: .85rem; border-bottom: 1px solid var(--line); background: var(--paper-raised); }
 .following-note .link { margin-left: .5rem; }
-.story-era { border-block-end: 1px solid var(--line); padding: .75rem 0; }
-.story-era > summary { color: var(--accent); cursor: pointer; }
-.story-era > summary span { float: right; font-size: .8rem; color: var(--ink-soft); }
 .subject-timeline .chronicle-tools { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .related-moments { list-style: none; padding: 0; }
 .related-moments li { padding: .65rem 0; border-bottom: 1px solid var(--line); }

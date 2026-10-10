@@ -430,6 +430,7 @@ export const CHRONICLE = {
   faith: "A faith is founded",
   classical: "A classical language",
   also: "Also that year",
+  alsoEra: "Also in these years",
   weather: "the weather turned",
   neighbours: ["pair of neighbours", "pairs of neighbours"],
   lands: ["land", "lands"],
@@ -441,6 +442,8 @@ export const CHRONICLE = {
   grammar: ["grammar change", "grammar changes"],
   meaning: ["meaning changed", "meanings changed"],
   respelling: ["spelling changed", "spellings changed"],
+  speech: "In speech",
+  words: ["new word", "new words"],
 } as const;
 
 export function countWord(count: number): string {
@@ -508,11 +511,18 @@ export function landCardLabel(overview: Overview, map: WorldMap, region: number,
   return `${name} (${geographicQualifier(sites, region)})`;
 }
 
+/// Namesake peoples are told apart by the land at their heart, as the
+/// Visigoths of Aquitaine were; a number only when that land is unnamed or
+/// shared too.
 export function peopleLabel(overview: Overview, id: number): string {
   const people = overview.communities[id];
   if (!people) return "An unrecorded people";
-  return overview.communities.some((other) => other.id !== id && other.name === people.name)
-    ? `${people.name} (people ${id + 1})` : people.name;
+  const namesakes = overview.communities.filter((other) => other.name === people.name);
+  if (namesakes.length < 2) return people.name;
+  const heart = (c: Community) => overview.places.find((place) => place.region === c.region)?.names.at(-1)?.spelled;
+  const land = heart(people);
+  return land && namesakes.filter((other) => heart(other) === land).length === 1
+    ? `${people.name} of ${land}` : `${people.name} (people ${id + 1})`;
 }
 
 export function stateLabel(overview: Overview, id: number): string {

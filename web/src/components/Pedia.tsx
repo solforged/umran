@@ -25,10 +25,10 @@ import {
 } from "lucide-react";
 import type { Annal, Catalog, CityView, Community, Craft, CraftView, ReadEngine, Ethos, HistoryPoint, HolyLand, NotebookNote, Overview, ReligionView, RenderingRow, ShrineKind, StateView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { causePhrase, CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, faithTeaching, FAITH_HOW, FAITH_NAME, FALL_NAME, howCame, howNamed, hue, landCardLabel, LEG_BY, LIVELIHOOD_NAME, otherNames, peopleLabel, peoplePhrases, RISE_NAME, SCHISM_CAUSE, seasonalPhrase, stateLabel, STRONG, temperament, TENET_NOUN, TERRAIN_NAME, unnamedName, weatherDeparture } from "../lore";
+import { causePhrase, CHRONICLE, CONTACT_NAME, countWord, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, faithTeaching, FAITH_HOW, FAITH_NAME, FALL_NAME, howCame, howNamed, hue, landCardLabel, LEG_BY, LIVELIHOOD_NAME, otherNames, peopleLabel, peoplePhrases, RISE_NAME, SCHISM_CAUSE, seasonalPhrase, stateLabel, STRONG, temperament, TENET_NOUN, TERRAIN_NAME, unnamedName, weatherDeparture } from "../lore";
 import { cityLabel, continentLabel, waterLabel } from "../lore";
 import { filterHistory, findAnnal, individualAnnals, relatedMoments, subjectHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
-import { eras, quietLine, quietSummary, QUIET_KINDS, type Era } from "../eras";
+import { eraBirths, eras, quietLine, quietRuns, quietSummary, QUIET_KINDS, speechLine, type Era, type EraYear } from "../eras";
 import { bond } from "../words";
 import type { InterventionKind } from "./ActionDialog";
 import { SettlementAccount } from "./SettlementDesk";
@@ -968,24 +968,28 @@ function Few<T>({ items, link, leaf, max = 3 }: { items: T[]; link: (item: T) =>
   );
 }
 
-/// Something's story in the folio, newest first, with its latest moment
-/// on the card: the latest headline, or the latest entry of any kind
-/// when the story holds nothing louder.
+/// Something's story in the folio, read in the world's eras, with its
+/// latest turning on the card: the latest headline, or the latest entry of
+/// any kind when the story holds nothing louder.
 function StoryLeaf({ title, annals, context }: { title: string; annals: Annal[]; context: Context }) {
+  const { overview } = context;
+  const contents = useMemo(() => eras(overview.annals, overview.generation, overview), [overview]);
   const last = annals.findLast((annal) => !QUIET_KINDS.has(annal.kind)) ?? annals.at(-1);
   if (!last) return null;
+  const spanned = contents.filter((era) => annals.some((a) => a.generation >= era.start && a.generation <= era.end)).length;
   return (
     <Leaf
       id="story"
       title={title}
       summary={
         <p>
-          Latest, in year <Year generation={last.generation} context={context} />: <Told text={last.text} />
+          {annals.length.toLocaleString()} {annals.length === 1 ? "entry" : "entries"} across {countWord(spanned)} {spanned === 1 ? "era" : "eras"}.
+          {" "}Last turning, in year <Year generation={last.generation} context={context} />: <Told text={last.text} />
           <EntryAnnotations annal={last} context={context} />
         </p>
       }
     >
-      <SubjectTimeline annals={annals} context={context} />
+      <SubjectTimeline annals={annals} contents={contents} context={context} />
     </Leaf>
   );
 }
@@ -1008,25 +1012,67 @@ function ChronicleFilters({ view, update, overview, sounds = false }: {
   </div>;
 }
 
-function SubjectTimeline({ annals, context }: { annals: Annal[]; context: Context }) {
+function SubjectTimeline({ annals, contents, context }: { annals: Annal[]; contents: Era[]; context: Context }) {
   const view = context.storyView;
   const update = (patch: Partial<HistoryView>) => context.onStoryView({ ...view, limit: 100, ...patch });
   const lines = filterHistory(annals, context.overview.varieties, view);
-  const eras = new Map<number, Annal[]>();
-  for (const a of lines.slice(0, view.limit)) {
-    const era = Math.floor(a.generation / 20) * 20;
-    eras.set(era, [...(eras.get(era) ?? []), a]);
-  }
   return <div className="subject-timeline">
     <ChronicleFilters view={view} update={update} overview={context.overview} />
-    <p className="muted small" role="status">{lines.length} recorded entries. Names are written as they were known then.</p>
-    {[...eras].map(([era, entries], index) => <details className="story-era" key={`${view.order}:${era}`} open={index === 0 ? true : undefined}>
-      <summary>Years {era * YEARS}–{(era + 19) * YEARS}<span>{entries.length} {entries.length === 1 ? "entry" : "entries"}</span></summary>
-      <Story annals={entries} context={context} />
-    </details>)}
-    {lines.length > view.limit ? <button type="button" className="chronicle-load" onClick={() => update({ limit: view.limit + 100 })}>Read another {Math.min(100, lines.length - view.limit)} entries</button> : null}
+    <p className="muted small" role="status">{lines.length.toLocaleString()} recorded {lines.length === 1 ? "entry" : "entries"}, read in the world’s eras. Names are written as they were known then.</p>
+    <EraReading contents={contents} lines={lines} view={view} update={update} context={context} />
     {!lines.length ? <p className="muted">No recorded entries match these filters.</p> : null}
   </div>;
+}
+
+/// A chronicle read in the world's eras, for the whole world or for one
+/// subject: each era under its opening entry with a line on what happened
+/// to speech, each year's headlines at full weight and its quieter entries
+/// folded into one line. A filter or search unfolds what it matches. A
+/// page of entries never splits a year. `births` names the languages that
+/// arose in each era, which only the whole world's reading tells.
+function EraReading({ contents, lines, view, update, births = false, context }: {
+  contents: Era[]; lines: Annal[]; view: HistoryView; update: (patch: Partial<HistoryView>) => void; births?: boolean; context: Context;
+}) {
+  const { overview } = context;
+  const boundary = lines[view.limit - 1]?.generation;
+  const nextYear = boundary === undefined ? -1 : lines.findIndex((annal, index) => index >= view.limit && annal.generation !== boundary);
+  const shown = lines.slice(0, nextYear < 0 ? lines.length : nextYear);
+  const unfold = view.group !== "All events" || view.query.trim() !== "" || view.sounds !== "all";
+  const ordered = view.order === "newest" ? [...contents].reverse() : contents;
+  return <>
+    <div className="chronicle-years">
+      {ordered.map((era) => {
+        const within = (annal: Annal) => annal.generation >= era.start && annal.generation <= era.end;
+        const years: EraYear[] = [];
+        for (const annal of shown) {
+          if (!within(annal)) continue;
+          let year = years.at(-1);
+          if (year?.generation !== annal.generation) years.push(year = { generation: annal.generation, headlines: [], quiet: [] });
+          (!unfold && QUIET_KINDS.has(annal.kind) ? year.quiet : year.headlines).push(annal);
+        }
+        if (!years.length) return null;
+        const speech = speechLine(lines.filter(within), overview, births ? eraBirths(era, overview) : []);
+        return <section className="chronicle-era" key={era.start}>
+          <h3 className="chronicle-era-head" data-chronicle-era={era.start} tabIndex={-1}>{era.opening ? <>Year {era.start * YEARS} · <Told text={era.opening.text} /></> : era.title}</h3>
+          {speech ? <p className="chronicle-era-speech">{speech}</p> : null}
+          {quietRuns(years).map((year) => <section className="chronicle-year-group" key={year.generation}>
+            <h4><button type="button" className="link" title="See the world in this year" onClick={() => context.onScrub(year.generation)}>
+              {year.through === undefined ? `Year ${year.generation * YEARS}` : `Years ${Math.min(year.generation, year.through) * YEARS}–${Math.max(year.generation, year.through) * YEARS}`}
+            </button></h4>
+            <div>
+              {year.headlines.length ? <ChronicleEvents annals={year.headlines} context={context} /> : null}
+              {year.quiet.length ? <details className="chronicle-quiet" key={`${view.order}:${year.generation}`}>
+                <summary><span>{quietSummary(year)}</span></summary>
+                <p className="chronicle-quiet-detail">{quietLine(year, overview, year.through === undefined ? CHRONICLE.also : CHRONICLE.alsoEra)}</p>
+                <ChronicleEvents annals={year.quiet} context={context} />
+              </details> : null}
+            </div>
+          </section>)}
+        </section>;
+      })}
+    </div>
+    {lines.length > shown.length ? <button type="button" className="chronicle-load" onClick={() => update({ limit: view.limit + 100 })}>Read another {Math.min(100, lines.length - shown.length)} entries</button> : null}
+  </>;
 }
 
 /// A language's specimen, each word opening its own card.
@@ -1193,14 +1239,9 @@ function HistoryCard({ context }: { context: Context }) {
   const [destination, setDestination] = useState<number | null>(null);
   const update = (patch: Partial<HistoryView>) => onHistoryView({ ...view, limit: 100, ...patch });
   const contents = useMemo(() => eras(overview.annals, overview.generation, overview), [overview]);
+  const speech = useMemo(() => contents.map((era) => speechLine(era.years.flatMap((year) => [...year.headlines, ...year.quiet]), overview, eraBirths(era, overview), true)), [contents, overview]);
   const lines = useMemo(() => filterHistory(overview.annals, overview.varieties, view), [overview, view]);
-  // Never split a year between pages: its quiet count and headlines belong together.
-  const boundary = lines[view.limit - 1]?.generation;
-  const nextYear = boundary === undefined ? -1 : lines.findIndex((annal, index) => index >= view.limit && annal.generation !== boundary);
-  const shown = lines.slice(0, nextYear < 0 ? lines.length : nextYear);
-  const selected = new Set(shown.map((a) => a.id));
   const unfold = view.group !== "All events" || view.query.trim() !== "" || view.sounds !== "all";
-  const ordered = view.order === "newest" ? [...contents].reverse() : contents;
   const headlineCount = contents.reduce((sum, era) => sum + era.years.reduce((n, year) => n + year.headlines.length, 0), 0);
   const quietYears = contents.reduce((sum, era) => sum + era.years.filter((year) => year.quiet.length).length, 0);
   const missingLanguage = typeof view.sounds === "number" && !overview.varieties[view.sounds];
@@ -1227,12 +1268,13 @@ function HistoryCard({ context }: { context: Context }) {
   return (
     <>
       <CardHead icon={ScrollText} kind={overview.tellings.find((t) => t.id === overview.telling)?.name ?? "This telling"} title="The chronicle" />
-      <ol className="chronicle-contents" aria-label="The chronicle's eras">{contents.map((era) => <li key={era.start}>
+      <ol className="chronicle-contents" aria-label="The chronicle's eras">{contents.map((era, index) => <li key={era.start}>
         <button type="button" className="chronicle-contents-row" title={era.title} onClick={() => openEra(era)}>
           <span className="chronicle-era-span">{era.start * YEARS}–{era.end * YEARS}</span>
           <span>{era.heading}</span>
         </button>
         <EraSubjects era={era} context={context} onOpen={() => openEra(era)} />
+        {speech[index] ? <span className="chronicle-era-speech">{speech[index]}</span> : null}
       </li>)}</ol>
       <Leaf id="history" title="Entries" summary={
         <p>{headlineCount.toLocaleString()} headline {headlineCount === 1 ? "entry" : "entries"} and {quietYears.toLocaleString()} quiet {quietYears === 1 ? "year" : "years"}.</p>
@@ -1243,31 +1285,7 @@ function HistoryCard({ context }: { context: Context }) {
         </div>
         {missingLanguage ? <p className="muted small">The selected language has not arisen in this year. Its sound changes will appear when you return to its time.</p> : null}
         {lines.length === 0 ? <p className="index-empty">No entries match these filters. Try a different name or broaden the filters.</p> : null}
-        <div className="chronicle-years">
-          {ordered.map((era) => {
-            const years = (view.order === "newest" ? [...era.years].reverse() : era.years).flatMap((year) => {
-              const matching = shown.filter((annal) => annal.generation === year.generation);
-              if (!matching.length) return [];
-              return [{ generation: year.generation, headlines: unfold ? matching : year.headlines.filter((a) => selected.has(a.id)), quiet: unfold ? [] : year.quiet.filter((a) => selected.has(a.id)) }];
-            });
-            if (!years.length) return null;
-            return <section className="chronicle-era" key={era.start}>
-              <h3 className="chronicle-era-head" data-chronicle-era={era.start} tabIndex={-1}>{era.opening ? <>Year {era.start * YEARS} · <Told text={era.opening.text} /></> : era.title}</h3>
-              {years.map((year) => <section className="chronicle-year-group" key={year.generation}>
-                <h4><button type="button" className="link" title="See the world in this year" onClick={() => context.onScrub(year.generation)}>Year {year.generation * YEARS}</button></h4>
-                <div>
-                  {year.headlines.length ? <ChronicleEvents annals={year.headlines} context={context} /> : null}
-                  {year.quiet.length ? <details className="chronicle-quiet" key={`${view.order}:${year.generation}`}>
-                    <summary><span>{quietSummary(year)}</span></summary>
-                    <p className="chronicle-quiet-detail">{quietLine(year, overview)}</p>
-                    <ChronicleEvents annals={year.quiet} context={context} />
-                  </details> : null}
-                </div>
-              </section>)}
-            </section>;
-          })}
-        </div>
-        {lines.length > shown.length ? <button type="button" className="chronicle-load" onClick={() => update({ limit: view.limit + 100 })}>Read another {Math.min(100, lines.length - shown.length)} entries</button> : null}
+        <EraReading contents={contents} lines={lines} view={view} update={update} births context={context} />
       </Leaf>
       <Leaf id="tellings" title="Other tellings" summary={<p>{overview.tellings.length} {overview.tellings.length === 1 ? "telling" : "tellings"} kept. Name them, read them, or compare the same year.</p>}>
         <section className="other-tellings">
@@ -1389,7 +1407,7 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
         <h3>{phrases.livelihood}</h3>
         <p><Explained term="way of life">{LIVELIHOOD_NAME[c.livelihood]}</Explained> · {Math.round(c.size).toLocaleString()} souls.</p>
       </section>
-      <p className="people-temper"><Explained term="temper">{temperament(c.ethos).join(", ") || "Even-tempered"}</Explained>.</p>
+      <p className="people-temper"><Explained term="temper">{temperament(c.ethos).join(", ").replace(/^./, (first) => first.toUpperCase()) || "Even-tempered"}</Explained>.</p>
       <TemperLeaf c={c} told={told} context={context} />
       <StoryLeaf title="Their fortunes" annals={told} context={context} />
       <section>

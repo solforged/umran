@@ -9,7 +9,8 @@ export interface HistoryView {
   sounds: "all" | "none" | number;
   limit: number;
 }
-export const INITIAL_HISTORY: HistoryView = { query: "", group: "All events", order: "newest", sounds: "all", limit: 100 };
+/// Chronicles read forwards, as histories are written; "Latest first" is a choice.
+export const INITIAL_HISTORY: HistoryView = { query: "", group: "All events", order: "oldest", sounds: "all", limit: 100 };
 const GROUP: Record<Annal["kind"], HistoryGroup> = {
   settlement: "Peoples & journeys",
   found: "Peoples & journeys", split: "Peoples & journeys", migration: "Peoples & journeys", shift: "Languages & words",
