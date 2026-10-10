@@ -56,7 +56,6 @@
 .stage[data-settlement=true] .stage-bar { opacity: .5; }
 .reconsider { margin-bottom: 1rem; border-color: var(--accent); color: var(--accent); width: 100%; }
 kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(--line); padding: 0 .3em; border-radius: 2px; }
-.stage-panes { display: none; }
 .pedia-nav { gap: .35rem; padding-block: .6rem; border-bottom: 1px solid var(--line); }
 .pedia-nav .icon { display: inline-flex; align-items: center; gap: .4rem; min-height: 2rem; border-color: var(--line); }
 .pedia-nav .pedia-search { margin-left: auto; }
@@ -142,24 +141,11 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
   *, *::before, *::after, .modal::backdrop { animation: none !important; scroll-behavior: auto !important; transition: none !important; }
 }
 
-/* On a small desk, turn between chart and reading instead of squeezing
-   both into shallow strips. Navigation keeps its history in either view. */
-@media (max-width: 900px) {
-  .workbench {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr) auto;
-    grid-template-areas: "notices" "content" "time";
-  }
-  .workbench .stage-map, .workbench .pedia, .workbench .folio-host { grid-area: content; min-width: 0; }
-  .workbench[data-pane=map] .pedia { display: none; }
-  .workbench[data-pane=reading] .stage-map { visibility: hidden; }
-  .workbench .pedia { border-top: 0; }
-  .stage-panes { display: flex; gap: .3rem; align-items: stretch; justify-content: end; }
-  :root .stage-panes button { display: flex; align-items: center; justify-content: center; gap: .25rem; min-height: 2.5rem; padding: .2rem .35rem; border: 0; border-bottom: 2px solid transparent; color: var(--ink-soft); border-radius: 0; }
-  :root .stage-panes button[aria-pressed=true] { color: var(--accent); border-bottom-color: var(--accent); }
+/* Compact and medium desks retain the chart while the card stays readable. */
+@media (max-width: 839px) {
   .workbench .folio { inset: 0; border: 0; box-shadow: none; }
   .workbench:has(.folio:not([data-closing])) .pedia { visibility: hidden; }
-  .stage-bar { grid-template-columns: auto auto auto minmax(0, 1fr) auto auto; padding: .4rem .7rem .6rem; gap: .4rem; }
+  .stage-bar { grid-template-columns: auto auto minmax(0, 1fr) auto; padding: .4rem .7rem .6rem; gap: .4rem; }
   .stage-bar > :not(.timeline) { grid-row: 1; }
   .stage-bar .timeline { grid-row: 2; grid-column: 1 / -1; min-width: 0; margin-top: .3rem; }
   .stage-year { font-size: .9rem; text-align: center; white-space: normal; line-height: 1.15; }
@@ -176,10 +162,10 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
   .index-results { max-height: 45dvh; }
   .index-results button { min-height: 3.75rem; }
 }
-@media (max-width: 900px) {
+@media (max-width: 839px) {
   .workbench[data-settlement=true] { grid-template-rows: auto minmax(10rem, 1fr) minmax(16rem, 50dvh); grid-template-areas: "notices" "map" "decision"; }
   .workbench[data-settlement=true] .stage-map { grid-area: map; visibility: visible; }
-  .workbench[data-settlement=true] .stage-panes, .workbench[data-settlement=true] .stage-bar, .workbench[data-settlement=true] .folio-host { display: none; }
+  .workbench[data-settlement=true] .bottom-sheet, .workbench[data-settlement=true] .stage-bar, .workbench[data-settlement=true] .folio-host { display: none; }
   .workbench .settlement-desk { grid-area: decision; border-left: 0; border-top: 1px solid var(--line); }
   .settlement-pages { padding: .75rem 1rem; }
   .settlement-desk > header { padding: .35rem .8rem; }
@@ -192,7 +178,7 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
   .settlement-desk > footer { padding: .5rem .7rem; }
   .settlement-desk > footer button { min-height: 2.5rem; }
 }
-@media (max-width: 560px) {
+@media (max-width: 599px) {
   .map-tools { flex-direction: column; }
   :root .map-tool { width: 2.4rem; height: 2.4rem; padding: 0; justify-content: center; }
   .map-tool .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
@@ -203,8 +189,6 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
   .stage-bar button.play { min-width: 3.3rem; padding-inline: .25rem; gap: .2rem; font-size: .8rem; }
   .stage-bar > button.icon { width: 1.5rem; padding-inline: .1rem; }
   .stage-year { font-size: .75rem; }
-  .stage-panes { gap: .1rem; }
-  :root .stage-panes button { flex-direction: column; gap: 0; padding-inline: .2rem; font-size: .75rem; }
   .pedia { padding-inline: .8rem; }
   .pedia-nav .icon { min-height: 2.5rem; padding-inline: .5rem; }
   .folio-page { padding-inline: .8rem; }
@@ -217,8 +201,7 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
   .modal-head { padding: .8rem; }
   .modal-head h2 { font-size: 1.5rem; }
 }
-@media (max-height: 500px) and (max-width: 900px) {
-  .stage-panes button { min-height: 2rem; }
+@media (max-height: 479px) {
   .map-caption { display: none; }
   .index-results { max-height: 28dvh; }
 }
@@ -240,7 +223,7 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .other-tellings details { padding-block: .6rem; border-bottom: 1px solid var(--line); }
 .other-tellings summary { cursor: pointer; color: var(--accent); }
 .other-tellings details > button { margin-top: .6rem; }
-@media (max-width: 560px) {
+@media (max-width: 599px) {
   .chronicle-tools { grid-template-columns: 1fr 1fr; }
   .chronicle-tools label:last-child { grid-column: 1 / -1; }
   .chronicle-year-group { grid-template-columns: 1fr; gap: .2rem; }
@@ -255,7 +238,7 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .telling-entry .row { flex-wrap: wrap; gap: .5rem; }
 .telling-comparison { min-width: 0; }
 .modal:has(.telling-comparison) { width: min(78rem, calc(100vw - 2rem)); }
-.modal:has(.telling-comparison) .modal-body { max-height: 80vh; }
+.modal:has(.telling-comparison) .modal-body { max-height: 80dvh; }
 .comparison-tools { display: flex; gap: 1rem; align-items: end; flex-wrap: wrap; }
 .comparison-tools p { margin: 0; }
 .comparison-tools label, .comparison-investigation > label, .comparison-words > label { display: grid; gap: .35rem; color: var(--ink-soft); font-size: .86rem; }
@@ -263,7 +246,7 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .comparison-year input { width: 100%; accent-color: var(--accent); }
 .comparison-maps, .comparison-accounts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.2rem; }
 .comparison-maps h3 { margin-bottom: .5rem; }
-.comparison-map { position: relative; height: clamp(12rem, 30vh, 22rem); border: 1px solid var(--line); overflow: hidden; }
+.comparison-map { position: relative; height: clamp(12rem, 30dvh, 22rem); border: 1px solid var(--line); overflow: hidden; }
 .comparison-map > .mapview { height: 100%; }
 .comparison-map .mapview > svg:not(.chart-rose) { height: 100%; }
 .comparison-maps .row { display: flex; flex-wrap: wrap; gap: .4rem; }
@@ -285,7 +268,7 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .related-moments { list-style: none; padding: 0; }
 .related-moments li { padding: .65rem 0; border-bottom: 1px solid var(--line); }
 .related-moments .moment { text-align: left; }
-@media (max-width: 600px) {
+@media (max-width: 599px) {
   .comparison-tools { align-items: stretch; }
   .comparison-tools > * { width: 100%; }
   .comparison-maps, .comparison-accounts { gap: .65rem; }
@@ -335,7 +318,7 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .scale-rule { width: max-content; min-width: var(--scale-width, 6rem); display: block; position: relative; text-align: center; padding-bottom: .3rem; white-space: nowrap; }
 .scale-rule::before { content: ""; position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: var(--scale-width, 6rem); height: .3rem; border: 1px solid var(--ink); border-top: 0; }
 .chart-scale .chart-help { position: static; display: block; background: none; padding: 0; font-size: inherit; }
-@media (max-width: 700px) {
+@media (max-width: 599px) {
   .chart-scale { gap: .5rem; left: .4rem; font-size: .66rem; max-width: calc(100% - 1rem); }
 }
 .chart-ripples path { stroke-linecap: round; }
@@ -384,13 +367,12 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .study-open { display: inline-flex; align-items: center; gap: .4rem; }
 .study-actions { display: grid; gap: .4rem; grid-column: 1 / -1; }
 .study-actions button { display: flex; align-items: center; gap: .5rem; text-align: left; }
-@media (max-width: 900px) {
-  .stage-bar { grid-template-columns: auto auto minmax(0, 1fr) auto auto; }
-  .stage-bar .stage-panes { grid-column: 5; }
+@media (max-width: 839px) {
+  .stage-bar { grid-template-columns: auto auto minmax(0, 1fr) auto; }
   .stage-bar .stage-year { grid-column: 3; }
   .stage-bar .strike-out { grid-column: 4; }
 }
-@media (max-width: 560px) {
+@media (max-width: 599px) {
   .run-control, .run-control label { gap: .25rem; font-size: .8rem; }
   .run-control input { width: 4.4rem; }
   .study-open { font-size: .8rem; padding-inline: .3rem; gap: 0; }

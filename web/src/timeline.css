@@ -201,3 +201,9 @@
   background: var(--accent);
   clip-path: polygon(0 0, 100% 0, 70% 50%, 100% 100%, 0 100%);
 }
+
+@media (pointer: coarse) {
+  .timeline-track.main { height: 2.75rem; }
+  :root .timebar .timeline .mark { min-width: 2.75rem; min-height: 2.75rem; height: 2.75rem; display: flex; align-items: center; justify-content: center; }
+  :root .timebar .timeline .mark-cluster { bottom: 0; }
+}

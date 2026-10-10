@@ -24,7 +24,7 @@
 .grammar-category details, .word-paradigm details { margin-top: var(--dense-row); }
 .language-section details > summary { padding: var(--dense-row) 0; font-size: var(--dense-size); line-height: 1.3; }
 .grammar-category .roster { margin-block: var(--dense-row); }
-@media (max-width: 700px) {
+@media (max-width: 599px) {
   .law-evidence { margin-left: 0; }
   .chapter-facts > div { grid-template-columns: 6rem minmax(0, 1fr); }
 }

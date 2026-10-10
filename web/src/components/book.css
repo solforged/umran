@@ -8,7 +8,7 @@
 .book-of { font-family: var(--display); font-size: .8rem; letter-spacing: .15em; text-transform: uppercase; color: var(--ink-soft); }
 .book-close { margin-left: auto; }
 .book-page { min-height: 0; overflow: auto; overscroll-behavior: contain; scroll-behavior: smooth; padding: 1rem clamp(1rem, 5vw, 4.5rem) 4rem; }
-@media (max-width: 900px) {
+@media (max-width: 839px) {
   .workbench .sheet-host .book { inset: 0; }
   .workbench:has(.sheet-host .book) .pedia { visibility: hidden; }
   .book-sheet-head { gap: .5rem; padding-inline: .6rem; }
@@ -55,4 +55,4 @@
 .book-note > p:last-child { white-space: pre-wrap; }
 .book-colophon { margin: 2rem 0; text-align: center; font-size: .85rem; color: var(--ink-soft); }
 @media (prefers-reduced-motion: reduce) { .book .book-page { scroll-behavior: auto; } }
-@media (max-width: 700px) { .book-contents ol { columns: 1; } .book-chronicle > li, .book-name-ledger > li { grid-template-columns: 2.8rem minmax(0, 1fr); } .book-chronicle > li { gap: .5rem; } }
+@media (max-width: 599px) { .book-contents ol { columns: 1; } .book-chronicle > li, .book-name-ledger > li { grid-template-columns: 2.8rem minmax(0, 1fr); } .book-chronicle > li { gap: .5rem; } }

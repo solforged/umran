@@ -235,14 +235,14 @@
   background: transparent;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 839px) {
   .room-world-leading { width: 100%; aspect-ratio: 1.6; }
   .room-world-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; }
   .room-action-list { flex-wrap: wrap; gap: 1.5rem; }
   .room-title-page { grid-template-columns: 1fr; padding-block: 1rem; }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 599px) {
   .room-world-row { grid-template-columns: 1fr; }
   .room-world-leading .room-world-title { width: 85%; padding: 0.7rem 0.9rem; }
   .room-world-leading .room-world-title strong { font-size: 1.5rem; }

@@ -360,7 +360,7 @@
   box-shadow: none;
   color: var(--desk-ink);
 }
-@media (max-width: 900px) {
+@media (max-width: 839px) {
   :root .setup {
     grid-template-rows: auto auto auto;
     grid-template-areas: "map" "pedia" "time";
@@ -498,7 +498,7 @@
   max-width: calc(100% - 5rem);
 }
 :root .stage:not(.setup) .mapview :is(.chart-scale, svg.chart-rose) { bottom: 3.5rem; }
-@media (max-width: 700px) {
+@media (max-width: 599px) {
   :root .mapview .chart-scale .chart-help { display: none; }
   :root .setup .map-hint { max-width: calc(100% - 3.2rem); }
   :root .stage:not(.setup) .mapview :is(.chart-scale, svg.chart-rose) { bottom: 4rem; }
@@ -539,7 +539,7 @@
 :root .map-inspector h3 { flex: 1; margin: 0; font-size: 1.15em; overflow-wrap: anywhere; }
 :root .map-inspector .inspector-close { color: var(--ink-soft); font-size: 1.2em; line-height: 1; min-width: 1.2em; }
 .inspector-subtitle { margin: var(--dense-row) 0 0.3rem; font-style: italic; color: var(--ink-soft); }
-.inspector-sayings { list-style: none; padding: 0; margin: 0.3rem 0; max-height: min(18rem, 40vh); overflow-y: auto; }
+.inspector-sayings { list-style: none; padding: 0; margin: 0.3rem 0; max-height: min(18rem, 40dvh); overflow-y: auto; }
 .inspector-sayings li { padding: var(--dense-row) 0; border-bottom: 1px dotted var(--line); }
 .inspector-sayings li:last-child { border: 0; }
 .map-inspector .inspector-more { color: var(--ink-soft); font-size: 0.9em; }
@@ -617,7 +617,7 @@
   top: 1.6rem;
   right: 4.5rem;
 }
-@media (max-width: 760px) {
+@media (max-width: 839px) {
   .setup .map-projection-control {
     top: auto;
     bottom: 1.6rem;
@@ -633,11 +633,11 @@
     height: 2.4rem;
   }
 }
-@media (max-width: 600px) {
+@media (max-width: 599px) {
   .workbench .map-projection-control { top: 6.2rem; right: 4rem; }
 }
 @media (pointer: coarse) {
-  .map-projection-switch span { min-height: 2.75rem; }
+  .map-projection-switch span { min-width: 2.75rem; min-height: 2.75rem; }
 }
 .chart-graticule {
   fill: none;

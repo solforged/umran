@@ -179,8 +179,10 @@ journeys of peoples, the fortunes of states, faiths, language, or livelihood.
 Sound changes can follow one language and its ancestors. Open a moment to
 follow its people and words, then step back to the same reading. Dictionaries
 also keep their search and selected word when returning from a word's history.
-On a small screen, turn between **Chart** and **Reading** for a full page of each;
-the [atlas index](docs/images/atlas-mobile.jpg) stays within reach in either view.
+On a phone, the [map fills the screen](docs/images/phone-sheet.jpg) and the card
+rises over it as a sheet: a peek, half the screen, or the whole page. The
+engine runs on its own thread, so the chart and Stop stay responsive while
+the years pass.
 
 The **chart** shows rivers in the ink of the coast, bending through the
 lands they cross. Failed flows fade to a

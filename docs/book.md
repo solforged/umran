@@ -150,9 +150,12 @@ remaining-subject count opens that era.
 
 ## A spherical world, two views
 
-The chart remains the first view, with a rotatable inked globe beside it
-as a choice next to the map's navigation controls. Founding, lands,
-journeys, names, and cards refer to the same world in both views.
+The chart remains the first view on wide screens, with a rotatable inked
+globe beside it as a choice next to the map's navigation controls; a
+tall, narrow map opens on the globe instead, since a whole sphere fits a
+portrait screen better than a strip of chart. Once the author picks
+one, that choice holds. Founding, lands, journeys, names, and cards refer
+to the same world in both views.
 A projection is a way of reading, not a decision in the world's history.
 
 The world is spherical from its founding. A people's known-world lens can
@@ -299,6 +302,24 @@ A first-class page, reached from the workshop's cartouche, laid out to
 be read in the order above, with the chart as frontispiece. Reuses the
 card sections rather than restating them. *As a save file* and *As text*
 are its last page, not its reason for existing.
+
+### At every size
+
+The same four screens on a phone, a folding phone, a tablet, and a
+desktop, arranged by Android's window size classes and no other
+breakpoints: compact below 600 px wide, medium to 840, expanded beyond,
+and a short class below 480 px tall for phones on their side.
+
+On compact screens the map fills the window and the card is a sheet over
+it, with three detents: a peek that shows the title and the time bar, a
+half that shares the screen with the chart, and the full card. Opening a
+subject raises the sheet to half; a decision on the chart lowers it.
+Founding keeps its panel in the same sheet and folds the rail into one
+line, "2 of 6 · The homeland", that opens a menu of the steps. A medium
+screen held upright stacks the chart above the card; expanded screens
+keep the card as a column beside the map.
+Touch targets grow to 44 px on coarse pointers, and the frame respects
+the notch and gesture bar.
 
 ## Vocabulary
 

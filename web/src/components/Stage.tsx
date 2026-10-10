@@ -1,6 +1,6 @@
 import { use, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { flushSync } from "react-dom";
-import { BookOpen, ChevronDown, Feather, Layers, Map as MapIcon, Pause, Play, ScrollText, Search, SkipForward, Square, StepForward, Undo2, X } from "lucide-react";
+import { ChevronDown, Feather, Layers, Pause, Play, ScrollText, Search, SkipForward, Square, StepForward, Undo2, X } from "lucide-react";
 import type { Annal, Catalog, Craft, Destination, HistoryPoint, NotebookNote, ReadEngine, EthosAxis, Overview, SettlementChoice, SettlementPreview, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { ETHOS_AXES, ETHOS_POLES, EVENT_KIND, hue } from "../lore";
@@ -22,6 +22,7 @@ import { emphasizeInk, useLiftedValue } from "../motion";
 import { LightChoice } from "./LightSwitch";
 import { Popover } from "./Popover";
 import { Timeline, marksFromAnnals } from "./Timeline";
+import { Sheet, type SheetDetent } from "./Sheet";
 
 /// What stops the years passing on their own.
 type PauseOn = "nothing" | "peoples" | "sounds" | "anything";
@@ -169,8 +170,8 @@ export function Stage({
   const { latest } = overview;
   const atPresent = overview.atTip;
 
-  const [projection, setProjection] = useMapProjection();
   const mapContainer = useRef<HTMLElement>(null);
+  const [projection, setProjection] = useMapProjection(mapContainer);
   const [inspection, setInspection] = useState<MapInspection | null>(null);
   // The encyclopedia's trail of cards; the last is the one open.
   const [trail, setTrail] = useState<Destination[]>([{ subject: initialFocus ?? { kind: "world" }, reading: { telling: overview.telling, point: overview.point } }]);
@@ -212,7 +213,7 @@ export function Stage({
   const [dictionaryViews, setDictionaryViews] = useState<Record<number, DictionaryView>>({});
   const [indexOpen, setIndexOpen] = useState(false);
   useLiftedValue(indexOpen ? true : null, resumeFolio);
-  const [pane, setPane] = useState<"map" | "reading">(initialFocus ? "reading" : "map");
+  const [detent, setDetent] = useState<SheetDetent>(initialFocus ? "half" : "peek");
   const completeLift = () => {
     const action = afterLift.current;
     afterLift.current = null;
@@ -250,7 +251,7 @@ export function Stage({
     afterLift.current = null; suspendedLeaf.current = null; comparing.current = false;
     if (liftedSettlement.closing) liftedSettlement.finishLift();
     setFolioFromCard(JSON.stringify(focus) !== JSON.stringify(next));
-    setPane("reading");
+    setDetent((current) => current === "peek" ? "half" : current);
     leavesByCard.current.set(JSON.stringify(focus), leaf);
     setInstantFolio(false);
     if (JSON.stringify(focus) !== JSON.stringify(next)) {
@@ -273,7 +274,7 @@ export function Stage({
     setTrail((t) => t.slice(0, index + 1));
     const visit = trail[index];
     setLeaf(leavesByCard.current.get(JSON.stringify(visit.subject)) ?? (visit.subject.kind === "history" ? "history" : null));
-    setPane("reading");
+    setDetent((current) => current === "peek" ? "half" : current);
     onReadPoint(visit.reading.point);
   };
   // Back navigation and time travel must keep actions attached to the
@@ -401,7 +402,7 @@ export function Stage({
       settlementOpener.current = document.activeElement instanceof HTMLElement
         ? document.activeElement.closest("details")?.querySelector<HTMLElement>("summary") ?? document.activeElement : null;
       const open = () => {
-        setPane("map");
+        setDetent("peek");
         setSettlement({ community, intent: overview.communities[community].lands.length > 1 ? "partition" : "settlers", share: 0.5, destination: null, point: overview.point });
       };
       if (liftedSettlement.closing) { afterLift.current = null; open(); }
@@ -412,7 +413,7 @@ export function Stage({
     if (!annal.settlement || !annal.before) return;
     halt();
     settlementOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    liftThen(() => { setPane("map"); setSettlement({ ...annal.settlement!.plan.choice, destination: null, point: annal.before! }); });
+    liftThen(() => { setDetent("peek"); setSettlement({ ...annal.settlement!.plan.choice, destination: null, point: annal.before! }); });
   };
   const openIndex = () => {
     halt();
@@ -577,7 +578,7 @@ export function Stage({
     : tint.kind === "words" ? `Words for “${concept?.replaceAll("_", " ")}”` : "Sound change";
 
   return (
-    <div className="stage workbench" data-pane={pane} data-settlement={desk !== null}
+    <div className="stage workbench" data-detent={detent} data-settlement={desk !== null}
       onClickCapture={(event) => { keyboardActivation.current = event.detail === 0; }}
       onKeyDownCapture={(event) => { if (event.key === "Enter" || event.key === " ") keyboardActivation.current = true; }}>
       <div className="stage-notices">{notices}{runError ? <p className="notice error" role="alert">{runError}</p> : null}{followed ? <p className="following-note">Following {followed.label}. Study pauses when this subject appears in the chronicle. <button type="button" className="link" onClick={() => setFollowed(null)}>Stop following</button></p> : null}</div>
@@ -769,7 +770,8 @@ export function Stage({
 
       {desk ? <SettlementDesk draft={desk} closing={liftedSettlement.closing} preview={settlementPreview.preview} error={settlementPreview.error}
         overview={settlementReading} map={map} catalog={catalog} latest={present} onChange={setSettlement}
-        onCancel={() => { afterLift.current = null; setPane("reading"); setSettlement(null); }} onCommit={onSettle} returnFocus={settlementOpener.current} /> : null}
+        onCancel={() => { afterLift.current = null; setDetent("half"); setSettlement(null); }} onCommit={onSettle} returnFocus={settlementOpener.current} /> : null}
+      <Sheet detent={detent} onDetent={setDetent} label="Raise or lower the card">
       <Pedia
         hidden={desk !== null && !liftedSettlement.closing}
         cardMotion={cardMotion}
@@ -825,6 +827,7 @@ export function Stage({
         onReconsider={reconsider}
         onReturnBefore={(point) => { halt(); onReadPoint(point); }}
       />
+      </Sheet>
 
       <footer className="timebar stage-bar">
         <form className="run-control" onSubmit={(e) => { e.preventDefault(); startRun(); }}>
@@ -853,10 +856,6 @@ export function Stage({
           onScrub={(g) => scrub(Math.min(g, latest))} onOpen={(mark) => { scrub(mark.generation); go({ kind: "event", id: mark.annal.id }); }} />
         <span className={`stage-year${atPresent ? "" : " in-past"}`}>Year {generation * YEARS}{atPresent ? null : <> · <button type="button" className="link" onClick={() => scrub(latest)}>to the present</button></>}</span>
         <button type="button" className="icon strike-out" disabled={!canUndo || running !== null || playing} title="Return before the last decision" aria-label="Return before the last decision" onClick={onUndo}><Undo2 size={16} aria-hidden="true" /></button>
-        <nav className="stage-panes" aria-label="Workspace">
-          <button type="button" aria-pressed={pane === "map"} onClick={() => { setPane("map"); setLeaf(null); }}><MapIcon size={16} aria-hidden="true" /> Chart</button>
-          <button type="button" aria-pressed={pane === "reading"} onClick={() => setPane("reading")}><BookOpen size={16} aria-hidden="true" /> Card</button>
-        </nav>
       </footer>
       <AtlasIndex open={indexOpen} overview={overview} map={map} riverNames={riverNames} lakeNames={lakeNames} go={go} onClose={() => setIndexOpen(false)} />
     </div>

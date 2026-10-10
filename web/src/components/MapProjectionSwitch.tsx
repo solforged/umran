@@ -1,16 +1,37 @@
 import { Globe2, Map as MapIcon } from "lucide-react";
-import { useId, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import type { MapProjection } from "../cartography";
 
 const KEY = "umran.projection";
 
 // A reading preference, independent of the world's seed and history.
-export function useMapProjection(): [MapProjection, (projection: MapProjection) => void] {
-  const [projection, setProjection] = useState<MapProjection>(() => {
-    try { return localStorage.getItem(KEY) === "globe" ? "globe" : "chart"; }
-    catch { return "chart"; }
+export function useMapProjection(container: RefObject<HTMLElement | null>): [MapProjection, (projection: MapProjection) => void] {
+  const [saved] = useState<MapProjection | null>(() => {
+    try {
+      const choice = localStorage.getItem(KEY);
+      return choice === "globe" || choice === "chart" ? choice : null;
+    } catch { return null; }
   });
+  const [projection, setProjection] = useState<MapProjection>(saved ?? "chart");
+  const chosen = useRef(saved !== null);
+  useLayoutEffect(() => {
+    const element = container.current;
+    if (!element || chosen.current) return;
+    const measure = () => {
+      if (chosen.current) return;
+      const { width, height } = element.getBoundingClientRect();
+      if (!width || !height) return;
+      chosen.current = true;
+      setProjection(height > width ? "globe" : "chart");
+      observer.disconnect();
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    measure();
+    return () => observer.disconnect();
+  }, [container]);
   return [projection, (next) => {
+    chosen.current = true;
     setProjection(next);
     try { localStorage.setItem(KEY, next); }
     catch { /* The choice still applies when storage is unavailable. */ }

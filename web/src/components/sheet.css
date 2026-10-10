@@ -1,0 +1,106 @@
+/* Android window classes: compact <600, medium 600–839, expanded ≥840.
+   A sheet is only a sheet on the compact desk. */
+.bottom-sheet, .sheet-content { display: contents; }
+.sheet-handle { display: none; }
+.stage { overflow: hidden; }
+.stage-notices { padding-top: env(safe-area-inset-top); }
+.founding-rail { padding-top: max(.55rem, env(safe-area-inset-top)); padding-left: max(1rem, env(safe-area-inset-left)); }
+.timebar { padding-bottom: max(.6rem, env(safe-area-inset-bottom)); padding-left: max(.7rem, env(safe-area-inset-left)); padding-right: max(.7rem, env(safe-area-inset-right)); }
+.world-cartouche { top: max(.8rem, env(safe-area-inset-top)); left: max(.8rem, env(safe-area-inset-left)); }
+.map-tools { top: max(.6rem, env(safe-area-inset-top)); right: max(.6rem, env(safe-area-inset-right)); }
+
+@media (min-width: 600px) and (max-width: 839px) and (orientation: portrait) {
+  .workbench { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 45fr) minmax(0, 55fr) auto; grid-template-areas: "notices" "map" "pedia" "time"; }
+  .workbench .pedia { border-left: 0; border-top: 1px solid var(--line); }
+  .workbench .folio-host, .workbench .sheet-host { grid-column: 1; grid-row: 2 / 4; }
+}
+@media (min-width: 600px) and (max-width: 839px) and (orientation: landscape) {
+  .workbench { grid-template-columns: minmax(0, 1fr) minmax(20rem, 45%); grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: "notices notices" "map pedia" "time time"; }
+  .workbench .folio-host, .workbench .sheet-host { grid-area: map; }
+  .workbench .pedia { border-top: 0; border-left: 1px solid var(--line); }
+}
+
+@media (max-width: 599px) {
+  .workbench { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: "notices" "map" "time"; }
+  .workbench .folio-host, .workbench .sheet-host { grid-area: map; z-index: 8; }
+  /* The wrapper anchors the sheet; only the drawn map fits above its detent.
+     Drag height is deliberately not used, so fitting happens on snap only. */
+  .stage { --map-sheet-peek: 5.5rem; --map-sheet-inset: var(--map-sheet-peek); }
+  .founding { --map-sheet-peek: 9rem; }
+  .stage[data-detent="half"] { --map-sheet-inset: 50dvh; }
+  :root .stage[data-detent]:not([data-settlement="true"]) .stage-map > .mapview { height: max(0px, calc(100% - var(--map-sheet-inset))); }
+  .bottom-sheet {
+    --sheet-peek: 5.5rem;
+    --sheet-ceiling: 6rem;
+    --sheet-height: var(--sheet-peek);
+    grid-area: map;
+    display: flex;
+    flex-direction: column;
+    align-self: end;
+    position: relative;
+    z-index: 6;
+    min-height: 0;
+    min-width: 0;
+    height: var(--sheet-height);
+    max-height: calc(100% - var(--sheet-ceiling));
+    border-top: 1px solid var(--line);
+    border-radius: .6rem .6rem 0 0;
+    background: var(--paper-raised);
+    box-shadow: 0 -5px 18px rgb(0 0 0 / .18);
+    overflow: hidden;
+    transition: height var(--settle) var(--paper-ease);
+  }
+  .bottom-sheet[data-detent="half"] { --sheet-height: 50dvh; }
+  .bottom-sheet[data-detent="full"] { --sheet-height: calc(100% - var(--sheet-ceiling)); }
+  .bottom-sheet[data-dragging] { height: var(--sheet-drag-height); transition: none; }
+  :root .sheet-handle { display: grid; place-items: center; flex: none; width: 100%; height: 1.5rem; min-height: 1.5rem; padding: 0; border: 0; border-radius: 0; background: none; touch-action: none; cursor: ns-resize; }
+  .sheet-handle span { width: 2.5rem; height: .2rem; border-radius: 1rem; background: var(--ink-soft); opacity: .65; }
+  .sheet-content { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+  .bottom-sheet .pedia { flex: 1; width: 100%; min-height: 0; border: 0; margin: 0; }
+  .bottom-sheet[data-detent="peek"] .pedia { overflow: clip; }
+  .workbench .bottom-sheet[data-detent="peek"] :is(.pedia-nav, .trail, .card-kind, .card-sub) { display: none; }
+  .workbench .bottom-sheet[data-detent="peek"] .card-head { margin: 0; padding: 0; border: 0; }
+  .workbench .bottom-sheet[data-detent="peek"] .card-head h2 { margin: 0; font-size: 1.6rem; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .workbench .bottom-sheet[data-detent="peek"] .card-head ~ * { display: none; }
+  .bottom-sheet .pedia-nav { padding-top: 0; padding-bottom: .3rem; }
+  .workbench[data-settlement="true"] .bottom-sheet { display: none; }
+  .founding .bottom-sheet { --sheet-peek: 9rem; --sheet-ceiling: 0rem; }
+  :root .founding .bottom-sheet .founding-plate { flex: 1; min-height: 0; }
+  .workbench .map-caption { bottom: 5.8rem; }
+  .workbench .map-perspective { bottom: 8.5rem; }
+  :root .stage:not(.setup) .mapview svg.chart-rose { bottom: 8.5rem; }
+  :root .stage:not(.setup)[data-detent="half"] .mapview svg.chart-rose { left: .8rem; right: auto; bottom: .5rem; }
+  :root .stage:not(.setup) .mapview .chart-scale { display: none; }
+  .chart-help, .map-hint { display: none; }
+  :root .founding .map-zoom { top: .5rem; bottom: auto; right: .5rem; }
+  .founding .map-projection-control { top: .5rem; bottom: auto; right: 3.8rem; }
+  :root .founding .mapview .chart-scale { display: none; }
+  .founding .mapview svg.chart-rose { bottom: 9.5rem; }
+  .stage-bar { gap: .3rem; }
+}
+
+@media (max-height: 479px) {
+  .map-caption, .chronicle-latest { display: none; }
+  .stage-bar { grid-template-columns: auto auto minmax(0, 1fr) auto auto; padding-block: .3rem; padding-bottom: max(.3rem, env(safe-area-inset-bottom)); }
+  .stage-bar > :not(.timeline), .stage-bar .timeline { grid-row: 1; }
+  .stage-bar .timeline { grid-column: 3; margin: 0; }
+  .stage-bar .stage-year { grid-column: 4; white-space: nowrap; }
+  .stage-bar .strike-out { grid-column: 5; }
+  .founding-rail { padding-block: .2rem; }
+  .founding-head { padding-top: .6rem; }
+}
+
+@media (pointer: coarse) {
+  :root :is(.timebar, .map-tools, .map-zoom, .founding-rail, .setup-foot, .popover-panel) :is(button, select, input[type="number"], [role="menuitem"], [role="menuitemradio"]),
+  :root .sheet-handle, :root .map-projection-switch span {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+  }
+  :root .map-tool, :root .map-zoom button { width: 2.75rem; height: 2.75rem; }
+  :root .map-tool .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+  :root .map-tool > .lucide-chevron-down { display: none; }
+  :root .sheet-handle { height: 2.75rem; }
+  :root .pedia .link { padding-block: .35rem; margin-block: -.35rem; line-height: max(1.3em, 2rem); }
+  :root .popover-panel label { min-height: 2.75rem; min-width: 2.75rem; }
+  :root button.light-switch { min-height: 2.75rem; min-width: 2.75rem; }
+}

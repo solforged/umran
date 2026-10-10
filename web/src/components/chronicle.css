@@ -145,7 +145,7 @@
   scroll-margin-top: 1rem;
 }
 
-@media (max-width: 560px) {
+@media (max-width: 599px) {
   .chronicle-contents-row { grid-template-columns: 4.2rem minmax(0, 1fr); }
   .chronicle-era-subjects, .chronicle-contents .chronicle-era-speech { padding-left: 4.65rem; }
   .book-quiet > li { grid-template-columns: 2.8rem minmax(0, 1fr); gap: .5rem; }

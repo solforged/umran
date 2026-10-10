@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, Feather, LocateFixed, Plus, RefreshCw } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronDown, Feather, LocateFixed, Plus, RefreshCw } from "lucide-react";
 import { attempt, createEngine, message, presetDesign, preview } from "../engine";
 import type { Action, Catalog, Craft, Engine, EthosAxis, Forming, FoundingPreview, FoundingTraits, GrammarChoice, GrammarDesign, LakeNamesView, Livelihood, MapSize, Naming, Overview, PossessorOrder, RiverNamesView, Variety, WordOrder, WorldMap } from "../model";
 import { YEARS } from "../model";
@@ -15,6 +15,8 @@ import { decodeNaming, encodeNaming, namingChoices } from "./NamingSelect";
 import { Phrase } from "./Phrase";
 import { Sample } from "./Sample";
 import { useAnswer } from "./Pending";
+import { Popover } from "./Popover";
+import { Sheet, type SheetDetent } from "./Sheet";
 import "./founding.css";
 
 const MOST_PEOPLES = 12;
@@ -97,6 +99,7 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
   onChartRoom: () => void;
 }) {
   const [step, setStep] = useState<Step>("world");
+  const [detent, setDetent] = useState<SheetDetent>("half");
   const [worldSeed, setWorldSeed] = useState(() => randomSeed());
   const [size, setSize] = useState<MapSize>("medium");
   const [founders, setFounders] = useState<Founder[]>([]);
@@ -111,7 +114,7 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
     catch { return ""; }
   });
   const [years, setYears] = useState(DEFAULT_YEARS);
-  const [projection, setProjection] = useMapProjection();
+  const [projection, setProjection] = useMapProjection(mapContainer);
   const [adjusting, setAdjusting] = useState<number | null>(null);
   const [redraw, setRedraw] = useState<{ seed: number; size: MapSize } | null>(null);
   const [clearing, setClearing] = useState(false);
@@ -675,11 +678,20 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
   }
 
   return (
-    <div className="stage setup founding" data-step={step}>
+    <div className="stage setup founding" data-step={step} data-detent={detent}>
       <header className="founding-rail">
         <button type="button" className="brand" aria-label="Back to the chart room" onClick={onChartRoom}>
           <span className="brand-name"><span>ʿUmrān</span></span>
         </button>
+        <Popover label="Founding a world" role="menu" align="end"
+          trigger={(props) => <button type="button" className="founding-step-menu" {...props}>
+            {stepIndex + 1} of 6 · {STEPS[stepIndex].name} <ChevronDown size={14} aria-hidden="true" />
+          </button>}>
+          {(close) => <>{STEPS.map((s, i) => <button type="button" key={s.id}
+            aria-current={s.id === step ? "step" : undefined} disabled={!reachable(s.id)}
+            onClick={() => { close(); go(s.id); }}>{i + 1} · {s.name}</button>)}
+            <button type="button" disabled>6 · The years</button></>}
+        </Popover>
         <ol className="founding-steps" aria-label="Founding a world">
           {STEPS.map((s, i) => <li key={s.id}>
             <button type="button" aria-current={s.id === step ? "step" : undefined} disabled={!reachable(s.id)} onClick={() => go(s.id)}>
@@ -714,12 +726,14 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
             else {
               setInspected(region);
               if (step === "world") setStep("homeland");
+              setDetent((current) => current === "peek" ? "half" : current);
             }
           }} /> : <p className="founding-drawing">Drawing the coasts…</p>}
         {chartReady && !forming ? <MapInspector container={mapContainer} inspection={inspection} map={map} overview={overview} generation={0} selectedVariety={people?.variety} riverNames={riverNames} lakeNames={lakeNames} pinnable={false} /> : null}
         {hint ? <p className={moving !== null || adding ? "map-hint founding-moving" : "map-hint"}>{hint}</p> : null}
       </section>
 
+      <Sheet detent={detent} onDetent={setDetent} label={`Raise or lower ${STEPS[stepIndex].name.toLowerCase()}`}>
       <aside className="pedia setup-panel founding-plate" aria-label={STEPS[stepIndex].name} aria-busy={!currentBuild}>
         {plate}
       </aside>
@@ -735,6 +749,7 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
           : <button type="button" className="primary founding-next" disabled={!reachable(STEPS[stepIndex + 1].id)} onClick={() => go(STEPS[stepIndex + 1].id)}>
             {STEPS[stepIndex].next} <ArrowRight size={16} aria-hidden="true" /></button>}
       </footer>
+      </Sheet>
       {adjustingFounder ? <Modal open wide title="Shape their sounds" onClose={() => setAdjusting(null)}>
         {founders.some((founder) => founder.source === adjustingFounder.key) ? <p className="shared-speech-note">These are the founding sounds shared by this people and their kin.</p> : null}
         <Designer catalog={catalog} submit="Use these sounds" initial={adjustingFounder} onCancel={() => setAdjusting(null)}

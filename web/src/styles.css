@@ -637,7 +637,7 @@ tbody tr.selected {
 
 .modal-body {
   padding: 1rem;
-  max-height: 70vh;
+  max-height: 70dvh;
   overflow: auto;
 }
 
@@ -680,13 +680,13 @@ tbody tr.selected {
   color: var(--ink-soft);
 }
 
-@media (max-width: 960px) {
+@media (max-width: 839px) {
   .app {
     height: auto;
   }
 
   .table-wrap {
-    max-height: 60vh;
+    max-height: 60dvh;
   }
 }
 
@@ -889,7 +889,7 @@ tbody tr.selected {
   padding: var(--dense-pad);
   background: var(--paper-raised);
   /* Leave room for the modal body's padding and the sticky action row. */
-  max-height: calc(70vh - 6rem);
+  max-height: calc(70dvh - 6rem);
   overflow: auto;
 }
 
@@ -924,7 +924,7 @@ table.preview tr {
   justify-content: flex-end;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 839px) {
   .designer {
     grid-template-columns: 1fr;
   }
@@ -981,11 +981,6 @@ table.preview tr {
   gap: 0.6rem;
 }
 
-@media (max-width: 900px) {
-  .workbench .sheet-host {
-    grid-area: content;
-  }
-}
 
 /* Terrain is a tint of the paper, so it suits day and lamplight alike. */
 
@@ -2328,10 +2323,10 @@ button.chronicle-latest:hover {
   padding-inline: 1.2rem;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 839px) {
   .stage {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr) minmax(0, 42vh) auto;
+    grid-template-rows: auto minmax(0, 1fr) minmax(0, 42dvh) auto;
     grid-template-areas:
       "notices"
       "map"
@@ -2357,7 +2352,7 @@ button.chronicle-latest:hover {
   z-index: 40;
   min-width: 12rem;
   max-width: min(24rem, calc(100vw - 1rem));
-  max-height: calc(100vh - 1rem);
+  max-height: calc(100dvh - 1rem);
   overflow: auto;
   padding: 0.35rem;
   background: var(--paper-raised);
@@ -2412,6 +2407,7 @@ button.chronicle-latest:hover {
 @media (pointer: coarse) {
   :root .popover-panel[role="menu"] > :is(button, label) {
     min-height: 2.75rem;
+    min-width: 2.75rem;
     padding-block: 0.4rem;
   }
 }

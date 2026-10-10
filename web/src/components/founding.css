@@ -2,13 +2,13 @@
    always behind, and one plate per step. The world and the title page lay
    their plate over the chart; the middle steps keep it beside the chart. */
 :root .setup.founding {
-  grid-template-columns: minmax(0, 1fr) minmax(21rem, 26rem);
+  grid-template-columns: minmax(0, 1fr) minmax(20rem, clamp(20rem, 35vw, 26rem));
   grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-areas: "rail rail" "map pedia" "time time";
 }
 
 :root .setup.founding:is([data-step="speech"], [data-step="peoples"]) {
-  grid-template-columns: minmax(0, 1fr) minmax(24rem, 40rem);
+  grid-template-columns: minmax(0, 1fr) minmax(22rem, clamp(22rem, 50vw, 40rem));
 }
 
 :root .setup.founding:is([data-step="world"], [data-step="title"]) {
@@ -335,7 +335,7 @@
 
 .founding-roster {
   flex: none;
-  max-height: min(22vh, 11rem);
+  max-height: min(22dvh, 11rem);
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -1027,44 +1027,53 @@
   gap: 0.35rem;
 }
 
-@media (max-width: 1100px) and (min-width: 761px) {
-  :root .setup.founding {
-    grid-template-columns: minmax(0, 1fr) minmax(20rem, 35%);
-  }
+.founding-step-menu { display: none; }
 
-  :root .setup.founding:is([data-step="speech"], [data-step="peoples"]) {
-    grid-template-columns: minmax(0, 1fr) minmax(22rem, 50%);
-  }
-
-  .founding-steps button { font-size: 0.85rem; }
-}
-
-@media (max-width: 760px) {
-  :root .setup.founding,
-  :root .setup.founding:is([data-step="world"], [data-step="title"], [data-step="speech"], [data-step="peoples"]) {
-    height: auto;
-    min-height: 100dvh;
+@media (max-width: 839px) {
+  :root .setup.founding[data-step] {
+    height: 100dvh;
+    overflow: hidden;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(23rem, 50vh) auto auto;
+    grid-template-rows: auto minmax(0, 45fr) minmax(0, 55fr) auto;
     grid-template-areas: "rail" "map" "pedia" "time";
   }
-
-  .founding-rail { padding-right: 3rem; }
-  .founding-steps li + li::before { width: 0.4rem; }
-
-  :root .setup.founding .founding-plate,
-  :root .setup.founding:is([data-step="world"], [data-step="title"]) .founding-plate {
+  .founding-rail { padding-right: 3rem; gap: .5rem; }
+  .founding-steps li + li::before { width: .4rem; }
+  :root .setup.founding[data-step] .stage-map { margin: 0; box-shadow: none; }
+  :root .setup.founding[data-step] .founding-plate {
     grid-area: pedia;
+    align-self: stretch;
+    justify-self: stretch;
     width: auto;
-    margin: 0.8rem 0.6rem 0;
-    padding: 0 0.9rem 0.8rem 1.1rem;
+    max-height: none;
+    margin: 0;
+    padding: 0 .9rem .8rem 1.1rem;
+    border: 0;
+    outline: 0;
     box-shadow: none;
+    overflow: auto;
   }
-
   .founding-head h2 { font-size: 1.4rem; }
-  .founding-roster { max-height: 9rem; }
   .founding .map-hint { display: none; }
-  .founding .setup-foot .year { min-width: 0; font-size: 0.85rem; white-space: normal; }
+  .founding .setup-foot .year { min-width: 0; font-size: .85rem; white-space: normal; }
+  .founding-pages { overflow: visible; flex: none; }
+}
+
+@media (max-width: 599px) {
+  :root .setup.founding[data-step] {
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas: "rail" "map";
+  }
+  .founding-rail { justify-content: space-between; padding: .35rem 3rem .35rem .6rem; }
+  .founding-rail > .founding-steps { display: none; }
+  :root .founding-step-menu { display: inline-flex; align-items: center; gap: .35rem; padding: .2rem .35rem; border: 0; background: none; color: var(--desk-ink); font-size: .9rem; white-space: nowrap; }
+  :root .founding-rail .brand-name { display: none; }
+  :root .setup.founding[data-step] .founding-plate { padding: 0 .85rem .8rem; background: var(--paper-raised); }
+  :root .founding .setup-foot { flex: none; gap: .5rem; padding: .4rem .6rem max(.4rem, env(safe-area-inset-bottom)); background: var(--paper-raised); color: var(--ink); border-top: 1px solid var(--line); }
+  :root .founding .setup-foot .year { display: none; }
+  :root .setup.founding .setup-foot button.link { color: var(--ink-soft); }
+  :root .founding .setup-foot button { font-size: .95rem; padding-inline: .5rem; }
+  .founding-title-page { padding-block: .8rem; }
 }
 
 @media (pointer: coarse) {
@@ -1075,5 +1084,6 @@
   .founding-sizes label,
   .founding-settling label {
     min-height: 2.75rem;
+    min-width: 2.75rem;
   }
 }

@@ -77,7 +77,11 @@ Read further when the task touches it:
   the card and the book share); and the book (`Book`: the world read in
   chapter order, laid over the map like a wide card, with the author
   named on the frontispiece). Every menu is a `Popover`: one open at a
-  time, closed by an outside click or Escape. Annals carry the peoples,
+  time, closed by an outside click or Escape. Layout follows Android's
+  window size classes only (compact below 600 px, medium to 840,
+  expanded beyond, short below 480 px tall); on compact screens the card
+  and the founding panel sit in a `Sheet` with peek, half, and full
+  detents over the map. Annals carry the peoples,
   lands, and laws they tell of, so every entry can link to their cards;
   an optional `cause` naming the entry that triggered them where the
   engine recorded it; and the `decision` that produced them, recorded by

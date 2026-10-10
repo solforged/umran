@@ -27,7 +27,7 @@
   bottom: auto;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 599px) {
   .pwa-notice {
     bottom: max(3rem, env(safe-area-inset-bottom));
   }
