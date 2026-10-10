@@ -29,7 +29,12 @@ Read further when the task touches it:
   is tested natively; `Workbench` is a thin wrapper, since `JsValue` panics
   off WASM.
 - `web/src`: React, TypeScript, and Vite. `model.ts` mirrors the facade's
-  JSON views; `engine.ts` adapts the WASM; `shelf.ts` stores the saved
+  JSON views; `engine.ts` adapts the WASM, running every world in
+  `engine.worker.ts` (messages typed in `engineProtocol.ts`) so the page
+  stays live while years pass: reads return a `Read` that components
+  take with React's `use` inside `<Pending>` or with `useAnswer`
+  (`components/Pending.tsx`), and a write starts a new reading of the
+  tip while old readings keep their answers; `shelf.ts` stores the saved
   worlds (still keyed as books, so old saves open) and names a world
   after its earliest-named continent unless the author titled it;
   `takeout.ts` formats exports; `lore.ts` holds shared names, the
@@ -107,6 +112,9 @@ rules. Bun manages frontend dependencies; Rust is pinned in
 - Bump `ENGINE_REVISION` (`chronicle.rs`) whenever an existing recipe would
   replay differently.
 - Never delete a user's saved data; unreadable saves open recovery.
+- Worlds live in the engine worker. The main thread keeps only the
+  stateless WASM helpers (catalog, voice designs, previews) and never
+  blocks on a world.
 
 ## Commands
 

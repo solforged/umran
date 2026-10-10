@@ -1,25 +1,11 @@
-import { useMemo, type ReactNode } from "react";
+import { use, type ReactNode } from "react";
 import type { LoanCause, Overview, ReadEngine, Variant } from "../model";
 import { YEARS } from "../model";
 import type { ParadigmView } from "./LanguageChapter";
+import { Pending } from "./Pending";
 
-/// A marginal note on one word: its forms, how it came to be, and its kin
-/// in related languages.
-export function WordGloss({
-  engine,
-  version,
-  generation,
-  variety,
-  concept,
-  onScrub,
-  onOpenVariety,
-  renderCause,
-  renderOrigin,
-  family,
-  overview,
-}: {
+interface GlossProps {
   engine: ReadEngine;
-  version: number;
   generation: number;
   variety: number;
   concept: string | null;
@@ -30,12 +16,28 @@ export function WordGloss({
   renderOrigin?: (variant: Variant) => ReactNode;
   family?: number;
   overview?: Overview;
-}) {
-  const detail = useMemo(
-    () => (concept ? engine.word(generation, variety, concept) : null),
-    // `version` changes whenever the history does.
-    [engine, generation, variety, concept, version],
-  );
+}
+
+/// A marginal note on one word: its forms, how it came to be, and its kin
+/// in related languages. It waits on its own, so opening one word never
+/// blanks the card around it.
+export function WordGloss(props: GlossProps) {
+  return <Pending reading={props.engine}><Gloss {...props} /></Pending>;
+}
+
+function Gloss({
+  engine,
+  generation,
+  variety,
+  concept,
+  onScrub,
+  onOpenVariety,
+  renderCause,
+  renderOrigin,
+  family,
+  overview,
+}: GlossProps) {
+  const detail = concept ? use(engine.word(generation, variety, concept)) : null;
   if (!detail) {
     return <p className="muted gloss-hint">Choose a word, and its chronicle will be noted here.</p>;
   }

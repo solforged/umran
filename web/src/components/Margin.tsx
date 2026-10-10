@@ -15,9 +15,9 @@ export function Margin({ notes, overview, subject, label, onSave, onRemove, onRe
   overview: Overview;
   subject: Subject;
   label: string;
-  onSave: (note: NotebookNote) => string | null;
-  onRemove: (id: string) => string | null;
-  onRead: (note: NotebookNote) => string | null;
+  onSave: (note: NotebookNote) => Promise<string | null>;
+  onRemove: (id: string) => Promise<string | null>;
+  onRead: (note: NotebookNote) => Promise<string | null>;
   onStart: () => void;
 }) {
   const [draft, setDraft] = useState<NotebookNote | null>(null);
@@ -29,15 +29,15 @@ export function Margin({ notes, overview, subject, label, onSave, onRemove, onRe
     .sort((a, b) => a.generation - b.generation);
   const choose = (note: NotebookNote) => { onStart(); setDraft({ ...note }); setError(null); };
   const discard = () => { setDraft(null); setError(null); tools.current?.querySelector<HTMLButtonElement>("button")?.focus(); };
-  const keep = () => {
+  const keep = async () => {
     if (!draft) return;
     const kept = { ...draft, title: draft.title.trim() };
     if (!kept.title) { setError("Give this note a title."); return; }
-    const failure = onSave(kept);
+    const failure = await onSave(kept);
     setError(failure);
     if (!failure) setDraft(null);
   };
-  const editor = draft ? <form className="margin-editor" onSubmit={(event) => { event.preventDefault(); keep(); }}
+  const editor = draft ? <form className="margin-editor" onSubmit={(event) => { event.preventDefault(); void keep(); }}
     onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); discard(); } }}>
     <p className="margin-date">Year {draft.generation * YEARS}{draft.archived ? " · archived" : ""}</p>
     <input aria-label="Note title" value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.currentTarget.value })} />
@@ -53,8 +53,8 @@ export function Margin({ notes, overview, subject, label, onSave, onRemove, onRe
           <span className="margin-title">{note.title}</span>{note.body.split(/\n\s*\n/).filter((paragraph) => paragraph.trim()).map((paragraph, index) => <span className="margin-para" key={index}>{paragraph}</span>)}
         </button>
         <div className="margin-actions">
-          {subject.kind === "history" && note.target ? <button type="button" className="link margin-subject" onClick={() => { onStart(); setError(onRead(note)); }}>{note.label}</button> : null}
-          <button type="button" className="link" aria-label={`Remove note: ${note.title}`} onClick={() => setError(onRemove(note.id))}>Remove</button>
+          {subject.kind === "history" && note.target ? <button type="button" className="link margin-subject" onClick={async () => { onStart(); setError(await onRead(note)); }}>{note.label}</button> : null}
+          <button type="button" className="link" aria-label={`Remove note: ${note.title}`} onClick={async () => setError(await onRemove(note.id))}>Remove</button>
         </div>
       </>}
     </article>)}

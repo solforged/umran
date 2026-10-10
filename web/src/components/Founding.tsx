@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, Feather, LocateFixed, Plus, RefreshCw } from "lucide-react";
-import { createEngine, message, presetDesign, preview } from "../engine";
-import type { Action, Catalog, Craft, Engine, EthosAxis, Forming, FoundingPreview, FoundingTraits, GrammarChoice, GrammarDesign, Livelihood, MapSize, Naming, Overview, PossessorOrder, Variety, WordOrder, WorldMap } from "../model";
+import { attempt, createEngine, message, presetDesign, preview } from "../engine";
+import type { Action, Catalog, Craft, Engine, EthosAxis, Forming, FoundingPreview, FoundingTraits, GrammarChoice, GrammarDesign, LakeNamesView, Livelihood, MapSize, Naming, Overview, PossessorOrder, RiverNamesView, Variety, WordOrder, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { countWord, ETHOS_AXES, ETHOS_DRIVES, ETHOS_POLES, hue, LIVELIHOOD_DRIVES, LIVELIHOOD_NAME, MARKING_PHRASE, MILD, OPENNESS, OPENNESS_DRIVES, POSSESSOR_PHRASE, STANDING, STANDING_DRIVES, STRONG, TERRAIN_NAME, WORD_ORDER_PHRASE } from "../lore";
 import { worldName } from "../shelf";
@@ -14,6 +14,7 @@ import { Modal } from "./Modal";
 import { decodeNaming, encodeNaming, namingChoices } from "./NamingSelect";
 import { Phrase } from "./Phrase";
 import { Sample } from "./Sample";
+import { useAnswer } from "./Pending";
 import "./founding.css";
 
 const MOST_PEOPLES = 12;
@@ -59,6 +60,9 @@ interface Built {
   /// Per founder key: year-0 decisions the engine did not take, by item.
   refused: Map<number, Set<string>>;
   preview: FoundingPreview;
+  /// Every river's and lake's names at year 0, for the chart.
+  riverNames: RiverNamesView[];
+  lakeNames: LakeNamesView[];
   founders: Founder[];
   seed: number;
   size: MapSize;
@@ -89,7 +93,7 @@ function markerChoice(speech: Variety, category: "plural" | "past" | "object"): 
 /// hands that same world to the workshop with the years to run.
 export function Founding({ catalog, onBegin, onChartRoom }: {
   catalog: Catalog;
-  onBegin: (engine: Engine, title: string | null, author: string | null, years: number) => void;
+  onBegin: (engine: Engine, title: string | null, author: string | null, years: number) => Promise<void>;
   onChartRoom: () => void;
 }) {
   const [step, setStep] = useState<Step>("world");
@@ -158,7 +162,9 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
         base.current = { seed: worldSeed, size, engine: fresh };
       }
       if (!live) return;
-      const next = base.current.engine.foundingDraft();
+      const origin = base.current.engine;
+      const next = await origin.foundingDraft();
+      if (!live) { next.dispose(); return; }
       try {
         const indices = new Map<number, number>();
         for (const [index, founder] of founders.entries()) {
@@ -167,7 +173,7 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
             ...(Object.keys(founder.ethos).length ? { ethos: founder.ethos } : {}),
           };
           if (founder.source === null) {
-            next.act({
+            await next.act({
               kind: "found", naming: founder.naming, design: founder.design, seed: founder.seed,
               power: founder.power, openness: founder.openness,
               ...(founder.region === null ? {} : { region: founder.region }), ...options,
@@ -175,9 +181,9 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
           } else {
             const source = indices.get(founder.source);
             if (source === undefined) throw new Error("Their ancestral people must be founded first.");
-            const region = founder.region ?? next.foundingSites(next.overview(0).communities[source].region, 1)[0];
+            const region = founder.region ?? (await next.foundingSites((await next.tip().overview(0)).communities[source].region, 1))[0];
             if (region === undefined) throw new Error("There is no nearby homeland for these related peoples. Try another coast or a larger world.");
-            next.act({ kind: "found-related", source, region, naming: founder.naming, ...options });
+            await next.act({ kind: "found-related", source, region, naming: founder.naming, ...options });
           }
           indices.set(founder.key, index);
         }
@@ -185,17 +191,24 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
         // The engine may refuse one or quietly decline it (riding needs open
         // country); the overview says what was taken.
         const refused = new Map<number, Set<string>>();
-        founders.forEach((founder, community) => {
+        for (const [community, founder] of founders.entries()) {
           const declined = new Set<string>();
-          const attempt = (item: string, action: Action) => {
-            try { next.act(action); } catch { declined.add(item); }
+          const settle = async (item: string, action: Action) => {
+            try { await next.act(action); } catch { declined.add(item); }
           };
-          if (founder.realm) attempt("realm", { kind: "state", community });
-          for (const craft of founder.crafts) attempt(craft, { kind: "craft", community, craft });
-          if (founder.faith) attempt("faith", { kind: "religion", community });
+          if (founder.realm) await settle("realm", { kind: "state", community });
+          for (const craft of founder.crafts) await settle(craft, { kind: "craft", community, craft });
+          if (founder.faith) await settle("faith", { kind: "religion", community });
           if (declined.size) refused.set(founder.key, declined);
-        });
-        const overview = next.overview(0);
+        }
+        const year = next.tip();
+        const sameWorld = previous && previous.seed === worldSeed && previous.size === size ? previous : null;
+        const [overview, traits, reach, riverNames, lakeNames, drawn, forming] = await Promise.all([
+          year.overview(0), Promise.all(founders.map((_, index) => next.foundingTraits(index))), next.foundingPreview(),
+          year.rivers(0), year.lakes(0),
+          sameWorld ? sameWorld.map : next.map(), sameWorld ? sameWorld.forming : origin.forming(),
+        ]);
+        if (!live) { next.dispose(); return; }
         founders.forEach((founder, index) => {
           const held = overview.communities[index];
           const declined = refused.get(founder.key) ?? new Set<string>();
@@ -204,7 +217,6 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
           if (founder.faith && held.faith === null) declined.add("faith");
           if (declined.size) refused.set(founder.key, declined);
         });
-        const traits = founders.map((_, index) => next.foundingTraits(index));
         const resolved = founders.map((founder, index) => founder.region === null
           ? { ...founder, region: overview.communities[index].region } : founder);
         const settled = resolved.some((founder, index) => founder !== founders[index]) ? resolved : founders;
@@ -218,11 +230,8 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
             possessor: !drawn || founder.design.grammar?.possessor == null ? speech.grammar.possessor : drawn.possessor,
           });
         });
-        const sameWorld = previous?.seed === worldSeed && previous.size === size;
         const founded: Built = {
-          map: sameWorld ? previous.map : next.map(),
-          forming: sameWorld ? previous.forming : base.current.engine.forming(),
-          overview, traits, refused, preview: next.foundingPreview(), founders: settled, seed: worldSeed, size,
+          map: drawn, forming, overview, traits, refused, preview: reach, riverNames, lakeNames, founders: settled, seed: worldSeed, size,
         };
         engine.current?.dispose();
         engine.current = next;
@@ -262,8 +271,8 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
   const defaultTitle = overview?.communities.length ? worldName(overview) : null;
   const chartReady = !!map && !!overview && built?.seed === worldSeed && built.size === size;
   const forming = step === "world" && chartReady && built.forming && formed !== worldKey && formed !== "always" ? built.forming : null;
-  const riverNames = useMemo(() => map && engine.current ? map.rivers.map((river) => engine.current!.river(0, river.id)) : [], [built]);
-  const lakeNames = useMemo(() => map && engine.current ? map.lakes.map((lake) => engine.current!.lake(0, lake.id)) : [], [built]);
+  const riverNames = built?.riverNames ?? [];
+  const lakeNames = built?.lakeNames ?? [];
   const landName = (region: number) => overview?.places.find((place) => place.region === region)?.names.at(-1)?.spelled ?? "unnamed land";
   const landTitle = (region: number) => {
     const named = landName(region);
@@ -272,14 +281,9 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
   };
   const available = MOST_PEOPLES - founders.length;
   const count = Math.min(groupCount, available);
-  const group = useMemo(() => {
-    if (!currentBuild || inspected === null || count < 2 || occupied || !engine.current) return { sites: [], error: "" };
-    try {
-      return { sites: engine.current.foundingSites(inspected, count), error: "" };
-    } catch (failure) {
-      return { sites: [], error: message(failure) };
-    }
-  }, [built, currentBuild, inspected, count, occupied]);
+  const sites = useAnswer(currentBuild && inspected !== null && count >= 2 && !occupied && engine.current
+    ? attempt(engine.current.foundingSites(inspected, count)) : null);
+  const group = { sites: sites?.value ?? [], error: sites?.error ?? "" };
 
   const update = (key: number, patch: Partial<Founder>) => setFounders((all) => all.map((founder) => founder.key === key ? { ...founder, ...patch } : founder));
   const movingFounder = founders.find((founder) => founder.key === moving);
@@ -398,10 +402,9 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
   };
   const begin = () => {
     if (!engine.current || !canBegin) return;
-    try {
-      handedOver.current = true;
-      onBegin(engine.current, title?.trim() && title.trim() !== defaultTitle ? title.trim() : null, author.trim() || null, years);
-    } catch (failure) { handedOver.current = false; setError(message(failure)); }
+    handedOver.current = true;
+    onBegin(engine.current, title?.trim() && title.trim() !== defaultTitle ? title.trim() : null, author.trim() || null, years)
+      .catch((failure: unknown) => { handedOver.current = false; setError(message(failure)); });
   };
   const formedNow = useCallback(() => setFormed(worldKey), [worldKey]);
 

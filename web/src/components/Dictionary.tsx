@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { use, useEffect, useMemo, useRef, type ReactNode } from "react";
 import type { ReadEngine, LexiconRow } from "../model";
 
 type OriginFilter = "all" | "inherited" | "derived" | "coined" | "borrowed" | "kept";
@@ -39,11 +39,7 @@ export function Dictionary({
   const open = (concept: string) => { onView({ ...view, concept }); onConcept(concept); };
   const tableRef = useRef<HTMLTableSectionElement>(null);
 
-  const rows = useMemo(
-    () => engine.lexicon(generation, variety),
-    // `version` changes whenever the history does.
-    [engine, generation, variety, version],
-  );
+  const rows = use(engine.lexicon(generation, variety));
   const fields = useMemo(() => [...new Set(rows.map((r) => r.field))].sort(), [rows]);
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();

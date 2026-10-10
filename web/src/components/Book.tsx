@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Annal, Catalog, ClimateView, Community, DecisionView, NotebookNote, Overview, ReadEngine, Subject, WorldMap } from "../model";
+import { use, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { Annal, Catalog, ClimateView, Community, DecisionView, LexiconRow, NotebookNote, Overview, Read, ReadEngine, Subject, WorldMap } from "../model";
 import { YEARS } from "../model";
 import * as lore from "../lore";
 import { CONTACT_NAME, countWord, faithTeaching, LIVELIHOOD_NAME, seasonalPhrase, TENET_NOUN, TERRAIN_NAME, temperament, weatherDeparture } from "../lore";
@@ -120,7 +120,8 @@ function Fortunes({ annals, eras, overview }: { annals: Annal[]; eras: Era[]; ov
  * speech. A people that has ended keeps a paragraph; the rest folds. */
 function PeopleChapter({ community: c, eras, ctx }: { community: Community; eras: Era[]; ctx: ChapterContext }) {
   const { overview, map } = ctx;
-  const annals = useMemo(() => ctx.engine.story(ctx.generation, { kind: "people", id: c.id }).annals.map((id) => findAnnal(overview.annals, id)).filter((a): a is Annal => a !== undefined), [ctx.engine, ctx.generation, ctx.version, c.id, overview]);
+  const story = use(ctx.engine.story(ctx.generation, { kind: "people", id: c.id }));
+  const annals = useMemo(() => story.annals.map((id) => findAnnal(overview.annals, id)).filter((a): a is Annal => a !== undefined), [story, overview]);
   const contacts = overview.contacts.filter((contact) => contact.a === c.id || contact.b === c.id);
   const kin = overview.communities.filter((other) => other.id !== c.id && (c.parents.includes(other.id) || other.parents.includes(c.id) || c.parents.some((parent) => other.parents.includes(parent))));
   const language = overview.varieties[c.variety];
@@ -159,7 +160,7 @@ function PeopleChapter({ community: c, eras, ctx }: { community: Community; eras
 export function Book({ engine, catalog, version, generation, overview, map, title, author, decisionsFor, notes, onBack }: {
   engine: ReadEngine; catalog: Catalog; version: number; generation: number;
   overview: Overview; map: WorldMap; title: string; author: string | null;
-  decisionsFor: (telling: number) => DecisionView[]; notes: NotebookNote[]; onBack: () => void;
+  decisionsFor: (telling: number) => Read<DecisionView[]>; notes: NotebookNote[]; onBack: () => void;
 }) {
   const [copied, setCopied] = useState<string | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
@@ -188,7 +189,8 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
     },
     wordAnchor: (variety, concept) => `word-${variety}-${concept}`,
   };
-  const decisions = useMemo(() => engine.decisions().filter((decision) => decision.generation <= generation), [engine, version, generation]);
+  const recorded = use(engine.decisions());
+  const decisions = useMemo(() => recorded.filter((decision) => decision.generation <= generation), [recorded, generation]);
   const chronicle = useMemo(() => {
     const sections = eras(overview.annals, generation, overview);
     // A decision remains visible even when it produced no recorded entry.
@@ -214,7 +216,10 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
   }
   const peoples = [...overview.communities].sort((a, b) => a.coined - b.coined || a.id - b.id);
   const families = [...new Set(overview.varieties.map((v) => v.family))];
-  const climate = useMemo(() => engine.climate(generation), [engine, generation, version]);
+  const climate = use(engine.climate(generation));
+  const rivers = use(engine.rivers(generation));
+  const lakes = use(engine.lakes(generation));
+  const lexicons = () => Promise.all(overview.varieties.map(async (v) => [v, await engine.lexicon(generation, v.id)] as const));
   const telling = overview.tellings.find((t) => t.id === overview.telling);
   const religions = religionLines(overview);
   const states = stateLines(overview);
@@ -223,11 +228,11 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
     try { await navigator.clipboard.writeText(text); setCopied(id); setCopyError(null); }
     catch { setCopyError("Copy was not available. Use As text on the last page instead."); }
   };
-  const head = (index: number, copyLines?: string[] | (() => string[])) => (
+  const head = (index: number, copyLines?: string[] | (() => string[] | Promise<string[]>)) => (
     <header className="book-running-head">
       <span>{index + 1} · {CONTENTS[index][1]}</span>
       <a href="#book-contents">Contents</a>
-      {copyLines ? <button type="button" className="book-copy" onClick={() => void copy(CONTENTS[index][0], (typeof copyLines === "function" ? copyLines() : copyLines).join("\n"))}>
+      {copyLines ? <button type="button" className="book-copy" onClick={async () => void copy(CONTENTS[index][0], (await (typeof copyLines === "function" ? copyLines() : copyLines)).join("\n"))}>
         {copied === CONTENTS[index][0] ? "Copied" : "Copy"}
       </button> : null}
     </header>
@@ -305,7 +310,7 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
         })}
         <h3>Climate and rivers</h3>
         <ul className="roster">{map.rivers.map((river) => {
-          return <li key={river.id} id={`river-${river.id}`}>{lore.waterLabel(engine, generation, map, "river", river.id)} · {climate.rivers.find((flow) => flow.id === river.id)?.flowing ? "flowing" : "flow has failed"}.</li>;
+          return <li key={river.id} id={`river-${river.id}`}>{lore.waterLabel(rivers, map, "river", river.id)} · {climate.rivers.find((flow) => flow.id === river.id)?.flowing ? "flowing" : "flow has failed"}.</li>;
         })}</ul>
         {climate.zones.map((zone) => {
           const seasons = commonestSeasons(climate, zone.id);
@@ -314,10 +319,10 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
         <h3>Lakes</h3>
         <ul className="roster">{map.lakes.map((lake) => {
           return <li key={lake.id} id={`lake-${lake.id}`}>
-            {ctx.link({ kind: "lake", id: lake.id }, lore.waterLabel(engine, generation, map, "lake", lake.id))} ·{" "}
+            {ctx.link({ kind: "lake", id: lake.id }, lore.waterLabel(lakes, map, "lake", lake.id))} ·{" "}
             {lake.outlet === null ? "no outlet; a closed basin" : <>drains to {ctx.link(
               { kind: "river", id: lake.outlet },
-              lore.waterLabel(engine, generation, map, "river", lake.outlet),
+              lore.waterLabel(rivers, map, "river", lake.outlet),
             )}</>}.
           </li>;
         })}</ul>
@@ -327,9 +332,9 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
         {peoples.map((c) => <PeopleChapter key={c.id} community={c} eras={chronicle} ctx={ctx} />)}
       </section>
       <section className="book-chapter" id="book-languages" data-book-chapter="languages">
-        {head(3, () => overview.varieties.flatMap((v) => [
+        {head(3, async () => (await lexicons()).flatMap(([v, rows]) => [
           v.name, ...givenNameLines(v, overview),
-          ...engine.lexicon(generation, v.id).map((row) => `${row.spelled}${row.said === null ? "" : ` · said ${row.said}`} /${row.ipa}/ ${row.gloss}`),
+          ...rows.map((row: LexiconRow) => `${row.spelled}${row.said === null ? "" : ` · said ${row.said}`} /${row.ipa}/ ${row.gloss}`),
         ]))}
         <h2>The languages</h2>
         {families.map((family) => <section className="book-family" key={family}>
@@ -452,7 +457,7 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
         {overview.tellings.filter((t) => t.id !== overview.telling).length ? <ul className="roster">
           {overview.tellings.filter((t) => t.id !== overview.telling).map((t) => {
             const diverging = t.parent
-              ? decisionsFor(t.id).find((decision) => decision.index === t.parent!.point.action)
+              ? use(decisionsFor(t.id)).find((decision) => decision.index === t.parent!.point.action)
               : undefined;
             return <li key={t.id}>
               <h3>{t.name}</h3>
@@ -468,7 +473,7 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
           <li><button type="button" onClick={() => download(fileName(title, "json"), engine.save(), "application/json")}>As a save file</button>
             {" "}<span className="muted">The world, every telling, and all the author’s notes; open it from the chart room.</span>
           </li>
-          <li><button type="button" onClick={() => download(fileName(title, "md"), bookMarkdown(title, overview, overview.varieties.map((v) => [v.name, engine.lexicon(generation, v.id)]), catalog, notes), "text/markdown")}>As text</button>
+          <li><button type="button" onClick={async () => download(fileName(title, "md"), bookMarkdown(title, overview, (await lexicons()).map(([v, rows]) => [v.name, rows]), catalog, notes), "text/markdown")}>As text</button>
             {" "}<span className="muted">The engine’s peoples, institutions, chronicle, lexicons, and notes as Markdown.</span>
           </li>
         </ul>

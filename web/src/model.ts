@@ -906,24 +906,34 @@ export interface FoundingPreview {
   }[];
 }
 
+/// An engine answer from its thread. React's `use` reads one synchronously
+/// once it has settled; until then the reading component suspends.
+export type Read<T> = Promise<T> & ({ status: "pending" } | { status: "fulfilled"; value: T } | { status: "rejected"; reason: unknown });
+
+/// One reading of a telling, fixed at the history it was opened on. Its
+/// answers are kept, so a component re-rendered with the same reading and
+/// arguments gets the same promise back.
 export interface ReadEngine {
-  overviewAt(point: HistoryPoint): Overview;
-  settlement(point: HistoryPoint, community: number, intent: SettlementIntent, share: number, destination: number | null): SettlementPreview;
-  lawChoices(point: HistoryPoint, variety: number): LawChoice[];
-  latest(): number;
-  overview(generation: number): Overview;
-  lexicon(generation: number, variety: number): LexiconRow[];
-  kin(generation: number, variety: number): Kin[];
-  word(generation: number, variety: number, concept: string): WordDetail;
-  story(generation: number, subject: Subject): Story;
-  climate(generation: number): ClimateView;
-  river(generation: number, id: number): RiverNamesView;
-  lake(generation: number, id: number): LakeNamesView;
-  map(): WorldMap;
-  wordMap(generation: number, concept: string): WordMap;
+  overviewAt(point: HistoryPoint): Read<Overview>;
+  settlement(point: HistoryPoint, community: number, intent: SettlementIntent, share: number, destination: number | null): Read<SettlementPreview>;
+  lawChoices(point: HistoryPoint, variety: number): Read<LawChoice[]>;
+  latest(): Read<number>;
+  overview(generation: number): Read<Overview>;
+  lexicon(generation: number, variety: number): Read<LexiconRow[]>;
+  kin(generation: number, variety: number): Read<Kin[]>;
+  word(generation: number, variety: number, concept: string): Read<WordDetail>;
+  story(generation: number, subject: Subject): Read<Story>;
+  climate(generation: number): Read<ClimateView>;
+  river(generation: number, id: number): Read<RiverNamesView>;
+  lake(generation: number, id: number): Read<LakeNamesView>;
+  /// Every river's and every lake's names, in map order, for the chart.
+  rivers(generation: number): Read<RiverNamesView[]>;
+  lakes(generation: number): Read<LakeNamesView[]>;
+  map(): Read<WorldMap>;
+  wordMap(generation: number, concept: string): Read<WordMap>;
   save(): string;
   /// The author's decisions in this reading's telling, up to its point.
-  decisions(): DecisionView[];
+  decisions(): Read<DecisionView[]>;
 }
 /// How the coasts formed: the supercontinent, ten plate-drift steps, then
 /// the drawn coasts. Each string has one char per map region.
@@ -938,37 +948,45 @@ export interface FoundingTraits {
   /// Souls their homeland would feed under each way of life.
   feeds: Record<Livelihood, number>;
 }
-export interface Engine extends ReadEngine {
-  /// Copy an untouched year-zero base, sharing its generated geography.
-  foundingDraft(): Engine;
-  foundingPreview(): FoundingPreview;
-  /// Up to 12 nearby unoccupied year-zero lands, in land-travel order.
-  /// An unoccupied anchor comes first; an occupied anchor is only the origin.
-  foundingSites(region: number, count: number): number[];
-  /// Year 0 only: a founding people's drawn temper and their land's yields.
-  foundingTraits(community: number): FoundingTraits;
-  /// The coasts as they formed; null for worlds not drawn from moving plates.
-  forming(): Forming | null;
-  notebook(): NotebookNote[];
-  saveNote(note: NotebookNote): void;
-  resolveNote(id: string): Destination | null;
-  removeNote(id: string): void;
+/// An open world on the engine's thread. What a reload must save, and what
+/// the page shows of the world itself, is kept here synchronously and
+/// refreshed by every change; everything else is read through a `ReadEngine`.
+export interface Engine {
+  latest(): number;
+  save(): string;
   /// The author's title and name, kept in the save; empty clears.
   title(): string | null;
   author(): string | null;
-  setTitle(title: string): void;
-  setAuthor(author: string): void;
-  dispose(): void;
+  notebook(): NotebookNote[];
+  /// The present telling as it stands; a new reading after every change.
+  tip(): ReadEngine;
   read(telling: number, point?: HistoryPoint | null): ReadEngine;
-  previous(reading: ReadingRef): ReadingRef;
-  compare(left: number, right: number, generation: number): Comparison;
-  rename(telling: number, name: string): void;
-  actAt(reading: ReadingRef, mutation: number, action: Action): void;
-  untilAt(reading: ReadingRef, mutation: number, limit: number): number;
-  act(action: Action): void;
-  runUntilEvent(limit: number): number;
-  branch(generation: number): void;
-  restore(telling: number): void;
+  map(): Read<WorldMap>;
+  /// Copy an untouched year-zero base, sharing its generated geography.
+  foundingDraft(): Promise<Engine>;
+  foundingPreview(): Read<FoundingPreview>;
+  /// Up to 12 nearby unoccupied year-zero lands, in land-travel order.
+  /// An unoccupied anchor comes first; an occupied anchor is only the origin.
+  foundingSites(region: number, count: number): Read<number[]>;
+  /// Year 0 only: a founding people's drawn temper and their land's yields.
+  foundingTraits(community: number): Read<FoundingTraits>;
+  /// The coasts as they formed; null for worlds not drawn from moving plates.
+  forming(): Read<Forming | null>;
+  saveNote(note: NotebookNote): Promise<void>;
+  resolveNote(id: string): Promise<Destination | null>;
+  removeNote(id: string): Promise<void>;
+  setTitle(title: string): Promise<void>;
+  setAuthor(author: string): Promise<void>;
+  previous(reading: ReadingRef): Promise<ReadingRef>;
+  compare(left: number, right: number, generation: number): Read<Comparison>;
+  rename(telling: number, name: string): Promise<void>;
+  actAt(reading: ReadingRef, mutation: number, action: Action): Promise<void>;
+  untilAt(reading: ReadingRef, mutation: number, limit: number): Promise<number>;
+  act(action: Action): Promise<void>;
+  runUntilEvent(limit: number): Promise<number>;
+  branch(generation: number): Promise<void>;
+  restore(telling: number): Promise<void>;
+  dispose(): void;
 }
 
 /// Years per generation, for display only.

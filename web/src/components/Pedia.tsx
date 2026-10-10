@@ -1,4 +1,4 @@
-import { createContext, Fragment, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createContext, Fragment, use, useCallback, useContext, useDeferredValue, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft,
@@ -24,7 +24,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, Catalog, CityView, Community, Craft, CraftView, ReadEngine, Ethos, HistoryPoint, HolyLand, NotebookNote, Overview, ReligionView, RenderingRow, ShrineKind, StateView, Variety, WordMap, WorldMap } from "../model";
+import type { Annal, Catalog, CityView, Community, Craft, CraftView, ReadEngine, Ethos, HistoryPoint, HolyLand, LakeNamesView, NotebookNote, Overview, ReligionView, RenderingRow, RiverNamesView, ShrineKind, StateView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { causePhrase, CHRONICLE, CONTACT_NAME, countWord, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, faithTeaching, FAITH_HOW, FAITH_NAME, FALL_NAME, howCame, howNamed, hue, landCardLabel, LEG_BY, LIVELIHOOD_NAME, otherNames, peopleLabel, peoplePhrases, RISE_NAME, SCHISM_CAUSE, seasonalPhrase, stateLabel, STRONG, temperament, TENET_NOUN, TERRAIN_NAME, unnamedName, weatherDeparture } from "../lore";
 import { cityLabel, continentLabel, waterLabel } from "../lore";
@@ -45,6 +45,8 @@ import { closeClosingDialogs, emphasizeInk, reducedMotion, useLiftedValue } from
 import { Popover } from "./Popover";
 import { CHAPTER, ChapterSummary, LawEvidence, LoanCauseText, WordOrigin, type ChapterContext } from "./LanguageChapter";
 import { Margin } from "./Margin";
+import { Pending } from "./Pending";
+import { attempt } from "../engine";
 import "./chronicle.css";
 
 /// What the encyclopedia is open at.
@@ -57,9 +59,9 @@ interface Context {
   storyView: HistoryView;
   onStoryView: (view: HistoryView) => void;
   notes: NotebookNote[];
-  onSaveNote: (note: NotebookNote) => string | null;
-  onRemoveNote: (id: string) => string | null;
-  onReadNote: (note: NotebookNote) => string | null;
+  onSaveNote: (note: NotebookNote) => Promise<string | null>;
+  onRemoveNote: (id: string) => Promise<string | null>;
+  onReadNote: (note: NotebookNote) => Promise<string | null>;
   onStartNote: () => void;
   onFollow: (subject: Focus, label: string) => void;
   historyView: HistoryView;
@@ -72,6 +74,9 @@ interface Context {
   generation: number;
   overview: Overview;
   map: WorldMap;
+  /// Every river's and every lake's names this year, in map order.
+  rivers: RiverNamesView[];
+  lakes: LakeNamesView[];
   /// Every people's word for the meaning in view, if a word is in view.
   words: WordMap | null;
   go: (focus: Focus) => void;
@@ -133,9 +138,17 @@ export function Pedia({
   instantFolio,
   folioFromCard,
   onFolioLifted,
-  ...context
-}: Context & { trail: Focus[]; onReturn: (index: number) => void; onIndex: () => void; hidden: boolean;
+  ...live
+}: Omit<Context, "rivers" | "lakes"> & { trail: Focus[]; onReturn: (index: number) => void; onIndex: () => void; hidden: boolean;
   cardMotion: { direction: string; keyboard: boolean; ink: boolean }; instantFolio: boolean; onFolioLifted: () => void; folioFromCard: boolean }) {
+  // Cards read the engine on its own thread. While the years pass, a card
+  // keeps showing the year it has until the next year's answers arrive,
+  // rather than blanking each year.
+  const reading = useDeferredValue(useMemo(() => ({ engine: live.engine, generation: live.generation, overview: live.overview, version: live.version, words: live.words }),
+    [live.engine, live.generation, live.overview, live.version, live.words]));
+  const rivers = use(reading.engine.rivers(reading.generation));
+  const lakes = use(reading.engine.lakes(reading.generation));
+  const context: Context = { ...live, ...reading, rivers, lakes };
   const focus = trail.at(-1)!;
   const cardKey = JSON.stringify(focus);
   const aside = useRef<HTMLElement>(null);
@@ -274,7 +287,7 @@ export function Pedia({
           {!["world", "history", "event", "word"].includes(focus.kind) ? <div className="card-reading-tools">
             <button type="button" className="link" onClick={() => context.onFollow(focus, focusLabel(focus, context))}><Eye size={14} aria-hidden="true" /> Follow</button>
           </div> : null}
-          <Card focus={focus} context={context} />
+          <Pending reading={context.engine}><Card focus={focus} context={context} /></Pending>
           <Margin notes={context.notes} overview={context.overview} subject={focus}
             label={`${focusLabel(focus, context)}${focus.kind === "word" ? ` in ${context.overview.varieties[focus.variety]?.name ?? "its language"}` : ""}`}
             onSave={context.onSaveNote} onRemove={context.onRemoveNote} onRead={context.onReadNote} onStart={context.onStartNote} />
@@ -348,9 +361,9 @@ function focusLabel(focus: Focus, context: Context): string {
     case "continent":
       return continentName(focus.landmass, context);
     case "river":
-      return waterLabel(context.engine, context.generation, context.map, "river", focus.id);
+      return waterLabel(context.rivers, context.map, "river", focus.id);
     case "lake":
-      return waterLabel(context.engine, context.generation, context.map, "lake", focus.id);
+      return waterLabel(context.lakes, context.map, "lake", focus.id);
     case "zone":
       return zoneName(focus.id, context);
     case "event":
@@ -734,13 +747,13 @@ function ContinentCard({ landmass, context }: { landmass: number; context: Conte
 
 function RiverLink({ id, context }: { id: number; context: Context }) {
   return <button type="button" className="link word" onClick={() => context.go({ kind: "river", id })}>
-    {waterLabel(context.engine, context.generation, context.map, "river", id)}
+    {waterLabel(context.rivers, context.map, "river", id)}
   </button>;
 }
 
 function LakeLink({ id, context }: { id: number; context: Context }) {
   return <button type="button" className="link word" onClick={() => context.go({ kind: "lake", id })}>
-    {waterLabel(context.engine, context.generation, context.map, "lake", id)}
+    {waterLabel(context.lakes, context.map, "lake", id)}
   </button>;
 }
 
@@ -784,15 +797,15 @@ function zoneName(id: number, context: Context): string {
 }
 
 function RiverCard({ id, context }: { id: number; context: Context }) {
-  const { engine, generation, version, map, overview } = context;
-  const view = useMemo(() => engine.river(generation, id), [engine, generation, version, id]);
-  const climate = useMemo(() => engine.climate(generation), [engine, generation, version]);
+  const { engine, generation, map, overview } = context;
+  const view = use(engine.river(generation, id));
+  const climate = use(engine.climate(generation));
   const river = map.rivers[id];
   const now = view.names.at(-1);
   const living = overview.communities.filter((c) => c.ended === null && c.lands.some((land) => river.course.includes(land)));
   const flow = climate.rivers.find((flow) => flow.id === id);
   return <>
-    <CardHead icon={Waves} kind="A river" title={waterLabel(context.engine, context.generation, context.map, "river", id)}
+    <CardHead icon={Waves} kind="A river" title={waterLabel(context.rivers, context.map, "river", id)}
       sub={now ? <span className="ipa">/{now.ipa}/</span> : null} />
     <Facts rows={[
       ["Length", `${Math.round(river.lengthKm).toLocaleString()} km`],
@@ -826,12 +839,12 @@ function RiverCard({ id, context }: { id: number; context: Context }) {
 }
 
 function LakeCard({ id, context }: { id: number; context: Context }) {
-  const { engine, generation, version, map, overview } = context;
-  const view = useMemo(() => engine.lake(generation, id), [engine, generation, version, id]);
+  const { engine, generation, map, overview } = context;
+  const view = use(engine.lake(generation, id));
   const lake = map.lakes[id];
   const now = view.names.at(-1);
   return <>
-    <CardHead icon={Waves} kind="A lake" title={waterLabel(context.engine, context.generation, context.map, "lake", id)}
+    <CardHead icon={Waves} kind="A lake" title={waterLabel(context.lakes, context.map, "lake", id)}
       sub={now ? <span className="ipa">/{now.ipa}/</span> : null} />
     <Facts rows={[
       ["Lies in", <Joined items={lake.regions} link={(region) => <LandLink region={region} context={context} />} />],
@@ -862,8 +875,8 @@ function LakeCard({ id, context }: { id: number; context: Context }) {
 }
 
 function ZoneCard({ id, context }: { id: number; context: Context }) {
-  const { engine, generation, version, map, overview } = context;
-  const climate = useMemo(() => engine.climate(generation), [engine, generation, version]);
+  const { engine, generation, map, overview } = context;
+  const climate = use(engine.climate(generation));
   const zone = climate.zones.find((zone) => zone.id === id)!;
   const lands = map.climateZones[id].regions;
   return <>
@@ -1092,18 +1105,15 @@ function LanguageSpecimen({ variety, context }: { variety: number; context: Cont
 /// with words from one root shaded alike: a comparative word list, the
 /// table a linguist starts from to find which languages are kin.
 function WordsCompared({ spoken, context }: { spoken: Variety[]; context: Context }) {
-  const { engine, version, generation, overview } = context;
+  const { engine, generation, overview } = context;
   const concepts = spoken[0]?.specimen.map((w) => w.concept) ?? [];
-  const groups = useMemo(() => {
-    const speaker = new Map(overview.communities.map((c) => [c.id, c.variety]));
-    return new Map(
-      concepts.map((concept) => [
-        concept,
-        new Map(engine.wordMap(generation, concept).words.map((w) => [speaker.get(w.community), w.group])),
-      ]),
-    );
-    // `version` changes whenever the history does.
-  }, [engine, generation, version, concepts.join()]);
+  // Ask for every meaning's map before reading any, so they arrive together.
+  const maps = concepts.map((concept) => engine.wordMap(generation, concept));
+  const speaker = new Map(overview.communities.map((c) => [c.id, c.variety]));
+  const groups = new Map(concepts.map((concept, index) => [
+    concept,
+    new Map(use(maps[index]).words.map((w) => [speaker.get(w.community), w.group])),
+  ]));
   const rows = [...spoken].sort((a, b) => a.family - b.family || a.id - b.id);
   return (
     <div className="compared">
@@ -1825,7 +1835,7 @@ function languageChapterContext(context: Context, variety: number): ChapterConte
 }
 
 function WordCard({ variety, concept, context }: { variety: number; concept: string; context: Context }) {
-  const { engine, version, generation, overview, words } = context;
+  const { engine, generation, overview, words } = context;
   const groups = useMemo(() => {
     if (!words) return [];
     const seen = new Map<number, string[]>();
@@ -1833,14 +1843,8 @@ function WordCard({ variety, concept, context }: { variety: number; concept: str
     return [...seen.entries()].map(([group, forms]) => ({ group, forms: [...new Set(forms)] }));
   }, [words]);
   const v = overview.varieties[variety];
-  const wordStory = useMemo(() => {
-    try {
-      const { annals } = engine.story(generation, { kind: "word", variety, concept });
-      return annals.map((id) => findAnnal(overview.annals, id)).filter((a): a is Annal => a !== undefined);
-    } catch {
-      return [];
-    }
-  }, [engine, version, generation, variety, concept, overview]);
+  const story = use(attempt(engine.story(generation, { kind: "word", variety, concept }))).value;
+  const wordStory = useMemo(() => (story?.annals ?? []).map((id) => findAnnal(overview.annals, id)).filter((a): a is Annal => a !== undefined), [story, overview]);
   if (!v) return <p className="muted">This language has not yet arisen in this year.</p>;
   return (
     <>
@@ -1857,7 +1861,6 @@ function WordCard({ variety, concept, context }: { variety: number; concept: str
       />
       <WordGloss
         engine={engine}
-        version={version}
         generation={generation}
         variety={variety}
         concept={concept}
@@ -1976,8 +1979,8 @@ function LawCard({ id, context }: { id: string; context: Context }) {
 }
 
 function LandCard({ region, context }: { region: number; context: Context }) {
-  const { engine, generation, version, map, overview } = context;
-  const climate = useMemo(() => engine.climate(generation), [engine, generation, version]);
+  const { engine, generation, map, overview } = context;
+  const climate = use(engine.climate(generation));
   const seasons = climate.regions.find((r) => r.id === region)?.seasons;
   const place = overview.places.find((p) => p.region === region);
   const names = place?.names ?? [];

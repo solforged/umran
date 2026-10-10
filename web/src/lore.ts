@@ -585,11 +585,13 @@ export function cityLabel(overview: Overview, map: WorldMap, city: Overview["cit
   return sites.length > 1 ? `${city.name.name} (${geographicQualifier(sites, city.region)})` : city.name.name;
 }
 
-export function waterLabel(engine: ReadEngine, generation: number, map: WorldMap, kind: "river" | "lake", id: number): string {
-  const name = engine[kind](generation, id).names.at(-1)?.spelled ?? unnamedName(kind);
+/// A river's or lake's present name, told apart from namesakes by where it
+/// lies. `names` holds every river's or every lake's names, in map order.
+export function waterLabel(names: { names: { spelled: string }[] }[], map: WorldMap, kind: "river" | "lake", id: number): string {
+  const name = names[id]?.names.at(-1)?.spelled ?? unnamedName(kind);
   const waters = kind === "river" ? map.rivers.map((river) => ({ id: river.id, region: river.course[0] }))
     : map.lakes.map((lake) => ({ id: lake.id, region: lake.regions[0] }));
-  const sites = waters.filter((other) => (engine[kind](generation, other.id).names.at(-1)?.spelled ?? unnamedName(kind)) === name)
+  const sites = waters.filter((other) => (names[other.id]?.names.at(-1)?.spelled ?? unnamedName(kind)) === name)
     .map((other) => ({ id: other.id, center: map.regions[other.region].center, terrain: TERRAIN_NAME[map.regions[other.region].terrain].toLowerCase() }));
   return sites.length > 1 ? `${name} (${kind === "river" ? "from " : ""}${geographicQualifier(sites, id)})` : name;
 }

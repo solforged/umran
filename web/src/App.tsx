@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { loadCatalog, loadEngine, message } from "./engine";
-import type { Action, Catalog, Engine, HistoryPoint, NotebookNote, Overview, SettlementChoice, SettlementPreview, WorldMap } from "./model";
+import type { Action, Catalog, Engine, HistoryPoint, NotebookNote, Overview, ReadEngine, SettlementChoice, SettlementPreview, WorldMap } from "./model";
 import type { Focus } from "./components/Pedia";
 import { YEARS } from "./model";
 import { ActionDialog, type DialogKind } from "./components/ActionDialog";
@@ -12,6 +13,7 @@ import { Stage } from "./components/Stage";
 import { TellingComparison } from "./components/TellingComparison";
 import type { MapMotionReading } from "./components/MapView";
 import { Founding } from "./components/Founding";
+import { Pending } from "./components/Pending";
 import { sampleWorld } from "./sample";
 import { download } from "./takeout";
 import { useLiftedValue } from "./motion";
@@ -43,6 +45,14 @@ type View =
 /// The workshop, or the book laid open over its chart.
 type Page = "stage" | "book";
 
+/// Which telling and year are on screen. Null telling and point read the
+/// present telling; null viewing is its latest year.
+interface Place { telling: number | null; point: HistoryPoint | null; viewing: number | null }
+const PRESENT: Place = { telling: null, point: null, viewing: null };
+/// A place opened: its reading and the year's overview, committed together so
+/// the stage never draws one reading's year with another's views.
+interface Frame extends Place { reading: ReadEngine; latest: number; overview: Overview }
+
 function foundingAction(f: FoundingDesign): Action {
   return { kind: "found", naming: f.naming, design: f.design, seed: f.seed, power: f.power, openness: f.openness };
 }
@@ -58,11 +68,9 @@ export default function App() {
   // so cards and language filters cannot silently point into another branch.
   const [tellingVersion, setTellingVersion] = useState(0);
   const [initialFocus, setInitialFocus] = useState<Focus | null>(null);
-  const [viewTelling, setViewTelling] = useState<number | null>(null);
-  const [viewPoint, setViewPoint] = useState<HistoryPoint | null>(null);
+  const [frame, setFrame] = useState<Frame | null>(null);
   const [compareWith, setCompareWith] = useState<number | null>(null);
   const [notebook, setNotebook] = useState<NotebookNote[]>([]);
-  const [viewing, setViewing] = useState<number | null>(null); // null = latest
   const [community, setCommunity] = useState(0);
   const [dialog, setDialog] = useState<DialogKind | null>(null);
   const [page, setPage] = useState<Page>("stage");
@@ -82,11 +90,15 @@ export default function App() {
   const [info, setInfo] = useState<string | null>(null);
   const bookId = view.kind === "book" ? view.id : null;
 
+  // The present telling at its latest year, which the shelf describes. Kept
+  // whenever it is opened, so saving never waits on the engine's thread.
+  const present = useRef<Overview | null>(null);
   const persist = useCallback(() => {
-    if (!engine.current || bookId === null) return true;
+    const world = engine.current;
+    if (!world || bookId === null || !present.current) return true;
     try {
-      const entry = describe(bookId, engine.current);
-      setShelf(saveBook(shelf, entry, engine.current.save()));
+      const entry = describe(bookId, present.current, world.title(), world.author());
+      setShelf(saveBook(shelf, entry, world.save()));
       setSaveError(null);
       return true;
     } catch (e) {
@@ -114,27 +126,46 @@ export default function App() {
     }
   }, [unsaved, bookId, persist]);
 
-  const adopt = useCallback((id: string, next: Engine, fresh: boolean) => {
-    engine.current?.dispose();
+  /// Opens a place on the engine's thread, then commits it and `then`'s state
+  /// in one render. A later call supersedes an earlier one still reading,
+  /// which then resolves to null.
+  const showing = useRef(0);
+  const show = useCallback(async (place: Place, then?: (frame: Frame) => void): Promise<Frame | null> => {
+    const world = engine.current;
+    if (!world) return null;
+    const request = ++showing.current;
+    const atPresent = place.telling === null && place.point === null;
+    const reading = atPresent ? world.tip()
+      : world.read(place.telling ?? (await world.tip().overview(world.latest())).telling, place.point);
+    const latest = await reading.latest();
+    const overview = await reading.overview(place.viewing === null ? latest : Math.min(place.viewing, latest));
+    // The chart's own views, so the stage draws the year at once.
+    await Promise.all([reading.climate(overview.generation), reading.rivers(overview.generation), reading.lakes(overview.generation)]);
+    if (request !== showing.current || world !== engine.current) return null;
+    if (atPresent && overview.generation === latest) present.current = overview;
+    const next: Frame = { ...place, reading, latest, overview };
+    flushSync(() => { setFrame(next); then?.(next); });
+    return next;
+  }, []);
+
+  const adopt = useCallback(async (id: string, next: Engine, fresh: boolean) => {
+    const [map, tip] = await Promise.all([next.map(), next.tip().overview(next.latest())]);
+    // The world on screen stays readable until the new one is committed.
+    const previous = engine.current;
     engine.current = next;
+    present.current = tip;
     mapMotion.current = null;
-    setNotebook(next.notebook());
-    setWorldMap(next.map());
-    setViewTelling(null); setViewPoint(null); setCompareWith(null);
-    setInitialFocus(null); setFocus({ kind: "world" });
-    setViewing(null);
-    // Reopen where the reader left off, if that reading still exists.
+    // Reopen where the reader left off, if that reading still exists; a place
+    // from another engine revision or a removed telling opens the latest year.
     const place = fresh ? null : readPlace(id);
-    if (place) {
-      try {
-        const reading = next.read(place.telling ?? next.overview(next.latest()).telling, place.point);
-        reading.overview(place.viewing === null ? reading.latest() : Math.min(place.viewing, reading.latest()));
-        setViewTelling(place.telling); setViewPoint(place.point); setViewing(place.viewing);
-        setInitialFocus(place.focus); setFocus(place.focus);
-      } catch {
-        // A place from another engine revision or a removed telling: start at the latest year.
-      }
-    }
+    const opened = place ? await show({ telling: place.telling, point: place.point, viewing: place.viewing }).catch(() => null) : null;
+    if (!opened) await show(PRESENT);
+    if (previous !== next) previous?.dispose();
+    setNotebook(next.notebook());
+    setWorldMap(map);
+    setCompareWith(null);
+    setInitialFocus(opened && place ? place.focus : null);
+    setFocus(opened && place ? place.focus : { kind: "world" });
     setTellingVersion((v) => v + 1);
     setCommunity(0);
     setDialog(null);
@@ -144,12 +175,12 @@ export default function App() {
     setVersion((v) => v + 1);
     setView({ kind: "book", id });
     if (fresh) setUnsaved(true);
-  }, []);
+  }, [show]);
 
   const [focus, setFocus] = useState<Focus>({ kind: "world" });
   useEffect(() => {
-    if (view.kind === "book") savePlace(view.id, { telling: viewTelling, point: viewPoint, viewing, focus });
-  }, [view, viewTelling, viewPoint, viewing, focus]);
+    if (view.kind === "book" && frame) savePlace(view.id, { telling: frame.telling, point: frame.point, viewing: frame.viewing, focus });
+  }, [view, frame, focus]);
 
   const openBook = useCallback(
     (id: string) => {
@@ -159,8 +190,7 @@ export default function App() {
         setView({ kind: "shelf" });
         return;
       }
-      loadEngine(raw).then(
-        (next) => adopt(id, next, false),
+      loadEngine(raw).then((next) => adopt(id, next, false)).catch(
         (e) => {
           // Open the shelf next time rather than this book again.
           setShelf((current) => setLast(current, null));
@@ -198,142 +228,133 @@ export default function App() {
     setView({ kind: "shelf" });
   }, []);
 
-  const readingEngine = useMemo(() => {
-    const current = engine.current;
-    if (!current || view.kind !== "book") return null;
-    const telling = viewTelling ?? current.overview(current.latest()).telling;
-    return current.read(telling, viewPoint);
-  }, [bookId, view.kind, viewTelling, viewPoint, version]);
-  const latest = readingEngine?.latest() ?? 0;
-  const requestedGeneration = viewing === null ? latest : Math.min(viewing, latest);
-  const overview = useMemo(() => readingEngine?.overview(requestedGeneration) ?? null, [readingEngine, requestedGeneration]);
-  const generation = overview?.generation ?? requestedGeneration;
+  const overview = frame?.overview ?? null;
+  const latest = frame?.latest ?? 0;
+  const generation = overview?.generation ?? 0;
   const selected = overview ? Math.min(community, overview.communities.length - 1) : 0;
-  const scrub = useCallback((g: number): HistoryPoint | null => {
-    if (!engine.current || !overview) return null;
+  const scrub = useCallback(async (g: number): Promise<HistoryPoint | null> => {
+    if (!engine.current || !frame) return null;
     try {
-      const point = engine.current.read(overview.telling).overview(g).point;
-      setViewPoint(null); setViewing(g >= latest ? null : g);
-      return point;
+      const point = (await engine.current.read(frame.overview.telling).overview(g)).point;
+      return await show({ telling: frame.telling, point: null, viewing: g >= frame.latest ? null : g }) ? point : null;
     } catch (e) { setError(message(e)); return null; }
-  }, [latest, overview]);
+  }, [frame, show]);
+
+  /// After a change: the present telling at its latest year, or, if the
+  /// change began another telling, a fresh reading of it.
+  const changed = useCallback((from: Overview, then?: (frame: Frame) => void) => show(PRESENT, (next) => {
+    if (!from.atTip || next.overview.telling !== frame?.overview.telling) {
+      setInitialFocus(null); setCommunity(0); setTellingVersion((v) => v + 1);
+    }
+    setVersion((v) => v + 1);
+    setError(null);
+    then?.(next);
+  }), [frame, show]);
 
   const run = useCallback(
-    (action: Action, from: Overview | null = overview) => {
+    async (action: Action, from: Overview | null = overview) => {
       const current = engine.current;
-      if (!current) return;
+      if (!current || !from) return;
       try {
-        if (!from) return;
-        current.actAt({ telling: from.telling, point: from.point }, from.mutation, action);
-        if (!from.atTip || current.overview(current.latest()).telling !== overview?.telling) {
-          setInitialFocus(null); setCommunity(0); setTellingVersion((v) => v + 1);
-        }
-        setViewTelling(null); setViewPoint(null);
-        setViewing(null);
-        setVersion((v) => v + 1);
-        setError(null);
+        await current.actAt({ telling: from.telling, point: from.point }, from.mutation, action);
+        await changed(from);
         persist();
       } catch (e) {
         setError(message(e));
       }
     },
-    [overview, persist],
+    [overview, changed, persist],
   );
 
   // Acting while viewing the past begins another telling from there; the
   // later years are set aside, not lost.
   const perform = run;
 
-  const readTelling = useCallback((telling: number, at?: number, focus?: Focus) => {
+  const readTelling = useCallback(async (telling: number, at?: number, focus?: Focus) => {
+    const world = engine.current;
+    if (!world) return;
     try {
       // Validate a saved telling before switching; an unreadable alternate
       // stays listed and keeps its original recipe for recovery/export.
-      const reading = engine.current?.read(telling);
-      if (!reading) return;
-      const last = reading.latest();
-      setViewTelling(telling); setViewPoint(null);
-      setInitialFocus(focus ?? null); setTellingVersion((v) => v + 1);
-      setViewing(at === undefined || at >= last ? null : at);
-      setCompareWith(null); setError(null);
+      const last = await world.read(telling).latest();
+      await show({ telling, point: null, viewing: at === undefined || at >= last ? null : at }, () => {
+        setInitialFocus(focus ?? null); setTellingVersion((v) => v + 1);
+        setCompareWith(null); setError(null);
+      });
     } catch (e) { setError(`This telling could not be read: ${message(e)}. Its saved telling is still kept.`); }
-  }, []);
-  const renameTelling = (telling: number, name: string) => {
-    try { engine.current?.rename(telling, name); setVersion((v) => v + 1); persist(); }
-    catch (e) { setError(message(e)); }
+  }, [show]);
+  const renameTelling = async (telling: number, name: string) => {
+    try {
+      await engine.current?.rename(telling, name);
+      if (frame) await show(frame, () => setVersion((v) => v + 1));
+      persist();
+    } catch (e) { setError(message(e)); }
   };
 
-  const saveNote = (note: NotebookNote): string | null => {
+  const saveNote = async (note: NotebookNote): Promise<string | null> => {
     try {
-      engine.current?.saveNote(note);
+      await engine.current?.saveNote(note);
       setNotebook(engine.current?.notebook() ?? []);
       return persist() ? null : "The entry is kept in this open world, but browser storage failed. Export a save file before closing.";
     } catch (e) { return message(e); }
   };
-  const removeNote = (id: string): string | null => {
+  const removeNote = async (id: string): Promise<string | null> => {
     try {
-      engine.current?.removeNote(id);
+      await engine.current?.removeNote(id);
       setNotebook(engine.current?.notebook() ?? []);
       return persist() ? null : "The note was removed in this open world, but browser storage failed. Export a save file before closing.";
     } catch (e) { return message(e); }
   };
-  const openNote = (note: NotebookNote): string | null => {
+  const openNote = async (note: NotebookNote): Promise<string | null> => {
     try {
-      const destination = engine.current?.resolveNote(note.id);
+      const destination = await engine.current?.resolveNote(note.id);
       if (!destination) return "This note has no fixed year.";
-      setViewTelling(destination.reading.telling); setViewPoint(destination.reading.point);
-      setInitialFocus(destination.subject); setTellingVersion((v) => v + 1);
-      setViewing(null); setError(null);
+      await show({ telling: destination.reading.telling, point: destination.reading.point, viewing: null }, () => {
+        setInitialFocus(destination.subject); setTellingVersion((v) => v + 1); setError(null);
+      });
       return null;
     } catch (e) { return message(e); }
   };
 
   // One frame's run at the selected point; saving waits until it stops.
-  const runYears = useCallback((generations: number): boolean => {
+  const runYears = useCallback(async (generations: number): Promise<boolean> => {
     const current = engine.current;
-    if (!current) return false;
+    if (!current || !overview) return false;
     try {
-      if (!overview) return false;
-      current.actAt({ telling: overview.telling, point: overview.point }, overview.mutation, { kind: "run", generations });
-      if (!overview.atTip) { setInitialFocus(null); setTellingVersion((v) => v + 1); }
-      setViewTelling(null); setViewPoint(null); setViewing(null);
-      setVersion((v) => v + 1);
-      setError(null);
-      return true;
+      await current.actAt({ telling: overview.telling, point: overview.point }, overview.mutation, { kind: "run", generations });
+      return await changed(overview) !== null;
     } catch (e) {
       setError(message(e));
       return false;
     }
-  }, [overview]);
+  }, [overview, changed]);
   const tick = useCallback(() => runYears(1), [runYears]);
 
   const nextEvent = useCallback(
-    (limit: number) => {
+    async (limit: number) => {
       const current = engine.current;
-      if (!current) return;
-      if (!overview) return;
+      if (!current || !overview) return;
       try {
-        const ran = current.untilAt({ telling: overview.telling, point: overview.point }, overview.mutation, limit);
-        if (!overview.atTip) { setInitialFocus(null); setTellingVersion((v) => v + 1); }
-        setViewTelling(null); setViewPoint(null); setViewing(null);
-        setVersion((v) => v + 1); persist();
-        setInfo(ran >= limit ? `${limit * YEARS} years passed, and nothing of note befell.` : null);
+        const ran = await current.untilAt({ telling: overview.telling, point: overview.point }, overview.mutation, limit);
+        await changed(overview, () => setInfo(ran >= limit ? `${limit * YEARS} years passed, and nothing of note befell.` : null));
+        persist();
       } catch (e) { setError(message(e)); }
     },
-    [overview, persist],
+    [overview, changed, persist],
   );
 
-  const begin = useCallback((next: Engine, title: string | null, author: string | null, years: number) => {
-    next.setTitle(title ?? "");
-    next.setAuthor(author ?? "");
+  const begin = useCallback(async (next: Engine, title: string | null, author: string | null, years: number) => {
+    await next.setTitle(title ?? "");
+    await next.setAuthor(author ?? "");
     try { localStorage.setItem("umran.author", author ?? ""); }
     catch { /* The author is still kept in the world save. */ }
-    adopt(newBookId(), next, true);
+    await adopt(newBookId(), next, true);
     setFirstRun(years);
   }, [adopt]);
 
   const sample = async () => {
     try {
-      adopt(newBookId(), await sampleWorld(), true);
+      await adopt(newBookId(), await sampleWorld(), true);
     } catch (e) {
       setError(`The sample could not be written: ${message(e)}`);
     }
@@ -341,12 +362,11 @@ export default function App() {
 
   const importFile = async (file: File) => {
     try {
-      adopt(newBookId(), await loadEngine(await file.text()), true);
+      await adopt(newBookId(), await loadEngine(await file.text()), true);
     } catch (e) {
       setError(`Could not bring in ${file.name}: ${message(e)}`);
     }
   };
-
   if (view.kind === "loading" || !catalog) {
     return <main className="splash title-splash">
       <span className="brand"><span className="brand-name"><span>ʿUmrān</span></span></span>
@@ -385,7 +405,7 @@ export default function App() {
     );
   }
 
-  if (view.kind === "shelf" || !overview || !engine.current || !readingEngine) {
+  if (view.kind === "shelf" || !frame || !overview || !engine.current || !worldMap) {
     return (
       <>
         <ChartRoom
@@ -432,26 +452,29 @@ export default function App() {
     </>
   );
 
-  const strike = () => {
+  const strike = async () => {
     if (!engine.current) return;
-    const previous = engine.current.previous({ telling: overview.telling, point: overview.point });
-    setViewTelling(previous.telling); setViewPoint(previous.point);
-    setInitialFocus(null); setTellingVersion((v) => v + 1);
+    try {
+      const previous = await engine.current.previous({ telling: overview.telling, point: overview.point });
+      await show({ telling: previous.telling, point: previous.point, viewing: frame.viewing }, () => {
+        setInitialFocus(null); setTellingVersion((v) => v + 1);
+      });
+    } catch (e) { setError(message(e)); }
   };
 
-  const settle = (choice: SettlementChoice, preview: SettlementPreview) => {
+  const settle = async (choice: SettlementChoice, preview: SettlementPreview) => {
     const current = engine.current;
     if (!current) return;
     try {
-      current.actAt({ telling: preview.telling, point: preview.point }, preview.mutation, { kind: "settle", ...choice });
-      const after = current.overview(current.latest());
-      const event = after.annals.findLast((a) => a.kind === "settlement");
-      setInitialFocus(event ? { kind: "event", id: event.id } : { kind: "people", id: choice.community });
-      setCommunity(event?.settlement?.daughter ?? choice.community);
-      setViewTelling(null); setViewPoint(null); setViewing(null);
-      setTellingVersion((v) => v + 1);
-      setVersion((v) => v + 1);
-      setError(null);
+      await current.actAt({ telling: preview.telling, point: preview.point }, preview.mutation, { kind: "settle", ...choice });
+      await show(PRESENT, (after) => {
+        const event = after.overview.annals.findLast((a) => a.kind === "settlement");
+        setInitialFocus(event ? { kind: "event", id: event.id } : { kind: "people", id: choice.community });
+        setCommunity(event?.settlement?.daughter ?? choice.community);
+        setTellingVersion((v) => v + 1);
+        setVersion((v) => v + 1);
+        setError(null);
+      });
       persist();
     } catch (e) { setError(message(e)); }
   };
@@ -476,7 +499,7 @@ export default function App() {
         kind={liftedDialog.value}
         catalog={catalog}
         overview={overview}
-        engine={engine.current!}
+        engine={frame.reading}
         selected={selected}
         onClose={() => setDialog(null)}
         onAction={(action) => {
@@ -486,33 +509,12 @@ export default function App() {
       />
     ) : null;
 
-  if (!worldMap) {
-    return (
-      <div className="app">
-        {notices}
-        <Book
-          engine={readingEngine}
-          author={engine.current!.author()}
-          decisionsFor={(telling) => engine.current!.read(telling).decisions()}
-          notes={notebook}
-          catalog={catalog}
-          version={version}
-          generation={generation}
-          overview={overview}
-          title={title}
-          map={readingEngine.map()}
-          onBack={() => setPage("stage")}
-        />
-        {dialogs}
-      </div>
-    );
-  }
-
   return (
     <div className="app">
+      <Pending reading={frame.reading}>
       <Stage
         key={`${view.id}:${tellingVersion}`}
-        engine={readingEngine}
+        engine={frame.reading}
         catalog={catalog}
         map={worldMap}
         version={version}
@@ -521,9 +523,10 @@ export default function App() {
         title={title}
         notices={notices}
         sheet={page === "book" ? (
+          <Pending reading={frame.reading}>
           <Book
-            engine={readingEngine}
-            author={engine.current!.author()}
+            engine={frame.reading}
+            author={engine.current.author()}
             decisionsFor={(telling) => engine.current!.read(telling).decisions()}
             notes={notebook}
             catalog={catalog}
@@ -534,6 +537,7 @@ export default function App() {
             map={worldMap}
             onBack={() => setPage("stage")}
           />
+          </Pending>
         ) : null}
         initialFocus={initialFocus}
         onFocus={setFocus}
@@ -545,7 +549,7 @@ export default function App() {
         onSaveNote={saveNote}
         onRemoveNote={removeNote}
         onReadNote={openNote}
-        onReadPoint={(point) => { setViewTelling(overview.telling); setViewPoint(point); setViewing(null); }}
+        onReadPoint={(point) => void show({ telling: overview.telling, point, viewing: null })}
         canUndo={overview.point.offset > 0 || overview.point.action > 1}
         selected={selected}
         onSelect={setCommunity}
@@ -565,9 +569,10 @@ export default function App() {
         runOnOpen={firstRun}
         onRunOpened={() => setFirstRun(null)}
       />
-      {dialogs}
-      {liftedComparison.value !== null ? <TellingComparison open={compareWith !== null} engine={engine.current} overview={overview} map={worldMap} other={liftedComparison.value}
-        onClose={() => setCompareWith(null)} onRead={readTelling} onContinue={(from) => { setCompareWith(null); run({ kind: "run", generations: 1 }, from); }} /> : null}
+      </Pending>
+      <Pending reading={frame.reading}>{dialogs}</Pending>
+      {liftedComparison.value !== null ? <Pending reading={frame.reading}><TellingComparison open={compareWith !== null} engine={engine.current} overview={overview} map={worldMap} other={liftedComparison.value}
+        onClose={() => setCompareWith(null)} onRead={readTelling} onContinue={(from) => { setCompareWith(null); void run({ kind: "run", generations: 1 }, from); }} /></Pending> : null}
     </div>
   );
 }

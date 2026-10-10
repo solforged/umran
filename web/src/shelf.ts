@@ -2,7 +2,7 @@
 // key, plus an index of titles. The older single-world save is copied onto
 // the shelf once and otherwise left untouched.
 
-import type { Engine, GeographyVersion, HistoryPoint, MapSize, Overview, Subject as Focus } from "./model";
+import type { GeographyVersion, HistoryPoint, MapSize, Overview, Subject as Focus } from "./model";
 
 export interface BookEntry {
   id: string;
@@ -169,10 +169,9 @@ export function newBookId(): string {
   return `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
 }
 
-/// A world's entry, using the author's title or the fixed continent name.
-export function describe(id: string, engine: Engine): BookEntry {
-  const overview = engine.overview(engine.latest());
-  const title = engine.title();
+/// A world's entry from its present telling at its latest year, using the
+/// author's title or the fixed continent name.
+export function describe(id: string, overview: Overview, title: string | null, author: string | null): BookEntry {
   const last = overview.latest === 0 ? null : overview.annals.at(-1);
   const peoples = overview.communities
     .filter((c) => c.ended === null)
@@ -182,7 +181,7 @@ export function describe(id: string, engine: Engine): BookEntry {
     id,
     title: title ?? worldName(overview) ?? "Unknown waters",
     named: title != null,
-    author: engine.author() ?? undefined,
+    author: author ?? undefined,
     subtitle: last?.text ?? "Nothing is written yet",
     generation: overview.latest,
     updated: Date.now(),

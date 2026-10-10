@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { use, useDeferredValue, useMemo, useState } from "react";
 import type { Community, Engine, Overview, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { message } from "../engine";
+import { attempt } from "../engine";
 import { LIVELIHOOD_NAME } from "../lore";
 import { Modal } from "./Modal";
 import { MapView, type MapCamera } from "./MapView";
@@ -31,23 +31,23 @@ export function TellingComparison({ open, engine, overview, map, other, onClose,
   const [person, setPerson] = useState(0);
   const [concept, setConcept] = useState("water");
   const [camera, setCamera] = useState<MapCamera>([0, 0, map.width, map.height]);
-  const result = useMemo(() => {
-    try { return { value: engine.compare(leftId, rightId, generation), error: null }; }
-    catch (e) { return { value: null, error: message(e) }; }
-  }, [engine, overview.mutation, leftId, rightId, generation]);
-  const readings = useMemo(() => [engine.read(leftId), engine.read(rightId)] as const, [engine, leftId, rightId]);
+  // Both tellings are read on the engine's thread; while another year or
+  // people is read, the comparison keeps showing the last one.
+  const reading = useDeferredValue(useMemo(() => ({ rightId, generation, person }), [rightId, generation, person]));
+  const result = use(attempt(engine.compare(leftId, reading.rightId, reading.generation)));
+  const readings = [engine.read(leftId), engine.read(reading.rightId)] as const;
   const comparison = result.value;
   const shared = comparison?.sharedPeoples ?? [];
-  const selected = shared.includes(person) ? person : shared[0];
+  const selected = shared.includes(reading.person) ? reading.person : shared[0];
   const sides = comparison ? [comparison.left, comparison.right] : [];
-  const lexicons = useMemo(() => sides.map((side, index) => {
-    const c = side.communities[selected];
-    return c && readings ? readings[index].lexicon(generation, c.variety) : [];
-  }), [comparison, selected, readings, generation]);
-  const geography = useMemo(() => sides.map((_, index) => ({
-    climate: readings[index].climate(generation),
-    names: map.rivers.map((river) => readings[index].river(generation, river.id)),
-  })), [comparison, readings, generation, map]);
+  // Ask for both sides' views before reading any, so they arrive together.
+  const asked = sides.map((side, index) => ({
+    lexicon: side.communities[selected] ? readings[index].lexicon(reading.generation, side.communities[selected].variety) : null,
+    climate: readings[index].climate(reading.generation),
+    names: readings[index].rivers(reading.generation),
+  }));
+  const lexicons = asked.map((side) => side.lexicon ? use(side.lexicon) : []);
+  const geography = asked.map((side) => ({ climate: use(side.climate), names: use(side.names) }));
   const concepts = [...new Map(lexicons.flat().map((w) => [w.concept, w.gloss])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
   const read = (side: Overview, focus?: Focus) => onRead(side.telling, generation, focus);
   const title = (side: Overview) => side.tellings.find((t) => t.id === side.telling)!.name;
@@ -67,7 +67,7 @@ export function TellingComparison({ open, engine, overview, map, other, onClose,
         <div className="comparison-maps">
           {sides.map((side, index) => <section key={side.telling} aria-label={`${title(side)} chart`}>
             <h3>{title(side)}</h3>
-            <div className="comparison-map"><MapView map={map} overview={side} generation={generation} tint={{ kind: "peoples" }}
+            <div className="comparison-map"><MapView map={map} overview={side} generation={reading.generation} tint={{ kind: "peoples" }}
               climate={geography[index].climate} riverNames={geography[index].names}
               selectedVariety={side.communities[selected]?.variety}
               names routes={false} contacts={false} states zoomable camera={camera} onCamera={setCamera}

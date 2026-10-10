@@ -1,9 +1,10 @@
-import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import type { Action, Catalog, ContactKind, Craft, EthosAxis, Overview, ReadEngine } from "../model";
 import { YEARS } from "../model";
 import { CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, FAITH_NAME, PEOPLE_NAME, temperament } from "../lore";
 import { Modal } from "./Modal";
 import { Specimen } from "./Specimen";
+import { useAnswer } from "./Pending";
 
 /// "found" opens the language designer; the rest are here.
 export type DialogKind = "found" | "connect" | "shift" | "state" | "religion" | "craft" | "temper" | "law";
@@ -60,8 +61,7 @@ export function ActionDialog({
   const languages = overview.varieties.filter((v) => communities.some((c) => c.variety === v.id));
   const [variety, setVariety] = useState(overview.communities[first]?.variety ?? languages[0]?.id ?? -1);
   const [law, setLaw] = useState<string | null>(null);
-  const lawChoices = useMemo(() => open && kind === "law" && variety >= 0
-    ? engine.lawChoices(overview.point, variety) : [], [engine, open, kind, overview.point, variety]);
+  const lawChoices = useAnswer(open && kind === "law" && variety >= 0 ? engine.lawChoices(overview.point, variety) : null) ?? [];
   const canSubmit = kind === "law" ? lawChoices.some((choice) => choice.id === law) :
     !!people && (kind === "state" ? people.lands.includes(capital) :
       kind === "craft" ? !people.crafts.includes(craft) :

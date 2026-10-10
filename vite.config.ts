@@ -60,6 +60,8 @@ export default defineConfig({
       },
     }),
   ],
+  // The engine's thread imports the WASM module as ES modules do.
+  worker: { format: "es" },
   build: { target: "es2023", outDir: "../dist", emptyOutDir: true },
   server: { host: "127.0.0.1", port: 5173, strictPort: true },
   preview: { host: "127.0.0.1", port: 4173, strictPort: true },

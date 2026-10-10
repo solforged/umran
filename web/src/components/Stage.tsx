@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { use, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { flushSync } from "react-dom";
 import { BookOpen, ChevronDown, Feather, Layers, Map as MapIcon, Pause, Play, ScrollText, Search, SkipForward, Square, StepForward, Undo2, X } from "lucide-react";
 import type { Annal, Catalog, Craft, Destination, HistoryPoint, NotebookNote, ReadEngine, EthosAxis, Overview, SettlementChoice, SettlementPreview, WorldMap } from "../model";
@@ -6,7 +6,8 @@ import { YEARS } from "../model";
 import { ETHOS_AXES, ETHOS_POLES, EVENT_KIND, hue } from "../lore";
 import { PACES } from "../words";
 import type { DialogKind, InterventionKind } from "./ActionDialog";
-import { message } from "../engine";
+import { attempt, message } from "../engine";
+import { useAnswer } from "./Pending";
 import { SettlementDesk, type SettlementDraft } from "./SettlementDesk";
 import { concerns, findAnnal, individualAnnals, INITIAL_HISTORY } from "../history";
 import { QUIET_KINDS } from "../eras";
@@ -138,11 +139,11 @@ export function Stage({
   onRestore: (telling: number) => void;
   onRenameTelling: (telling: number, name: string) => void;
   onCompare: (telling: number) => void;
-  onScrub: (generation: number) => HistoryPoint | null;
+  onScrub: (generation: number) => Promise<HistoryPoint | null>;
   /// One generation at the present, while the years pass on their own.
-  onTick: () => boolean;
+  onTick: () => Promise<boolean>;
   /// A frame's worth of generations, committed together.
-  onRun: (generations: number) => boolean;
+  onRun: (generations: number) => Promise<boolean>;
   onRunStart: () => void;
   /// The years stopped passing; a chance to save.
   onStop: () => void;
@@ -154,9 +155,9 @@ export function Stage({
   onFocus: (focus: Focus) => void;
   onSettle: (choice: SettlementChoice, preview: SettlementPreview) => void;
   notes: NotebookNote[];
-  onSaveNote: (note: NotebookNote) => string | null;
-  onRemoveNote: (id: string) => string | null;
-  onReadNote: (note: NotebookNote) => string | null;
+  onSaveNote: (note: NotebookNote) => Promise<string | null>;
+  onRemoveNote: (id: string) => Promise<string | null>;
+  onReadNote: (note: NotebookNote) => Promise<string | null>;
   onReadPoint: (point: HistoryPoint) => void;
   comparisonReturn: number;
   sheetReturn: number;
@@ -221,13 +222,13 @@ export function Stage({
   const settlementOpener = useRef<HTMLElement | null>(null);
   const liftedSettlement = useLiftedValue(settlement, completeLift);
   const desk = liftedSettlement.value;
-  const settlementReading = useMemo(() => desk ? engine.overviewAt(desk.point) : overview, [engine, desk?.point, overview]);
-  const present = useMemo(() => desk ? engine.overview(engine.latest()) : overview, [engine, desk !== null, overview]);
-  const settlementPreview = useMemo(() => {
-    if (!desk) return { preview: null, error: null };
-    try { return { preview: engine.settlement(desk.point, desk.community, desk.intent, desk.share, desk.destination), error: null }; }
-    catch (e) { return { preview: null, error: message(e) }; }
-  }, [engine, desk, overview.mutation]);
+  // The desk reads its own year; until it has, it shows the year on screen.
+  const deskReading = useAnswer(desk ? engine.overviewAt(desk.point) : null);
+  const settlementReading = desk && deskReading ? deskReading : overview;
+  const deskPresent = useAnswer(desk ? engine.overview(overview.latest) : null);
+  const present = desk && deskPresent ? deskPresent : overview;
+  const deskPreview = useAnswer(desk ? attempt(engine.settlement(desk.point, desk.community, desk.intent, desk.share, desk.destination)) : null);
+  const settlementPreview = { preview: deskPreview?.value ?? null, error: deskPreview?.error ?? null };
   const liftThen = (action: () => void, returnTo?: HTMLElement | null) => {
     const caller = returnTo?.closest("details")?.querySelector<HTMLElement>("summary") ?? returnTo;
     const next = () => { caller?.focus({ preventScroll: true }); action(); };
@@ -348,34 +349,29 @@ export function Stage({
     let frame = 0;
     let cancelled = false;
     let current = generation;
-    let chunk = 4;
-    let previousFrame = 0;
-    const advance = (now: number) => {
+    let chunk = 1;
+    const advance = async () => {
       if (cancelled) return;
       const amount = Math.min(chunk, running - current);
-      let elapsed = 0;
-      try {
-        let advanced = false;
-        // Commit this point before the next frame reads its mutation guard.
-        flushSync(() => {
-          const before = performance.now();
-          advanced = run.current(amount);
-          elapsed = performance.now() - before;
-        });
-        if (!advanced) { setRunning(null); return; }
-      } catch (error) {
-        setRunError(message(error)); setRunning(null); return;
+      const before = performance.now();
+      let advanced: boolean;
+      // The app commits the new year before this resolves, so the next chunk
+      // reads its point and mutation guard.
+      try { advanced = await run.current(amount); }
+      catch (error) {
+        if (!cancelled) { setRunError(message(error)); setRunning(null); }
+        return;
       }
       if (cancelled) return;
+      if (!advanced) { setRunning(null); return; }
       current += amount;
-      // Reserve most of a 30 fps frame for React, cartography, and paint.
-      const budget = previousFrame && now - previousFrame > 34 ? 5 : 10;
-      chunk = Math.max(1, Math.min(16, Math.floor(amount * budget / Math.max(1, elapsed))));
-      previousFrame = now;
+      // The years pass on the engine's thread, so the page stays live; size
+      // chunks so the chart is redrawn every sixty milliseconds or so.
+      chunk = Math.max(1, Math.min(16, Math.round(amount * 60 / Math.max(1, performance.now() - before))));
       if (current >= running) setRunning(null);
-      else frame = requestAnimationFrame(advance);
+      else frame = requestAnimationFrame(() => void advance());
     };
-    frame = requestAnimationFrame(advance);
+    frame = requestAnimationFrame(() => void advance());
     return () => { cancelled = true; cancelAnimationFrame(frame); stop.current(); };
   }, [running]);
   const previousYear = useRef(generation);
@@ -391,9 +387,9 @@ export function Stage({
     }
     setTrail(valid.map((visit) => destination(visit.subject)));
   }, [generation]);
-  const scrub = (g: number, subject: Focus = focus.kind === "event" ? { kind: "world" } : focus) => {
+  const scrub = async (g: number, subject: Focus = focus.kind === "event" ? { kind: "world" } : focus) => {
     halt(); setSettlement(null);
-    const point = onScrub(g);
+    const point = await onScrub(g);
     if (point && (point.action !== overview.point.action || point.offset !== overview.point.offset || JSON.stringify(subject) !== JSON.stringify(focus))) {
       leavesByCard.current.set(JSON.stringify(focus), leaf);
       setTrail((t) => cardPath([...t.slice(0, -1), destination(focus)], { subject, reading: { telling: overview.telling, point } }));
@@ -424,12 +420,15 @@ export function Stage({
   };
   useEffect(() => {
     if (!playing) return;
+    // A year that takes longer than the pace skips the ticks it overlaps.
+    let busy = false;
     const timer = window.setInterval(() => {
-      try {
-        let advanced = false;
-        flushSync(() => { advanced = tick.current(); });
-        if (!advanced) setPlaying(false);
-      } catch (error) { setRunError(message(error)); setPlaying(false); }
+      if (busy) return;
+      busy = true;
+      tick.current().then(
+        (advanced) => { if (!advanced) setPlaying(false); },
+        (error: unknown) => { setRunError(message(error)); setPlaying(false); },
+      ).finally(() => { busy = false; });
     }, 1000 / pace);
     return () => {
       window.clearInterval(timer);
@@ -478,15 +477,13 @@ export function Stage({
   const concept = focus.kind === "word" ? focus.concept : null;
   const focusedEvent = focus.kind === "event" ? findAnnal(overview.annals, focus.id) : undefined;
   const law = focus.kind === "law" ? focus.id : focus.kind === "event" ? (focusedEvent?.laws[0] ?? null) : null;
-  const words = useMemo(
-    () => (concept ? engine.wordMap(generation, concept) : null),
-    // `version` changes whenever the history does.
-    [engine, generation, concept, version],
-  );
+  const words = useAnswer(concept ? engine.wordMap(generation, concept) : null) ?? null;
   const chartGeneration = settlement ? settlementReading.generation : generation;
-  const climate = useMemo(() => engine.climate(chartGeneration), [engine, chartGeneration, version]);
-  const riverNames = useMemo(() => map.rivers.map((river) => engine.river(chartGeneration, river.id)), [engine, map, chartGeneration, version]);
-  const lakeNames = useMemo(() => map.lakes.map((lake) => engine.lake(chartGeneration, lake.id)), [engine, map, chartGeneration, version]);
+  // The chart keeps last year's names until this year's arrive; the year on
+  // screen is always ready, since the app opens it with these views.
+  const climate = useAnswer(engine.climate(chartGeneration), true) ?? use(engine.climate(generation));
+  const riverNames = useAnswer(engine.rivers(chartGeneration), true) ?? use(engine.rivers(generation));
+  const lakeNames = useAnswer(engine.lakes(chartGeneration), true) ?? use(engine.lakes(generation));
   const tint: Tint = useMemo(() => {
     if (words) return { kind: "words", words };
     if (law) {

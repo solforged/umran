@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { use, useMemo, useState, type ReactNode } from "react";
 import { Feather } from "lucide-react";
 import type { Annal, HistoryLine, Law, LexiconRow, LoanCause, Overview, ReadEngine, Subject, Variant, Variety, WorldMap } from "../model";
 import { YEARS } from "../model";
@@ -43,7 +43,7 @@ const year = (at: number) => `year ${at * YEARS}`;
 
 export function Position({ variety: v, ctx }: SectionProps) {
   const daughters = ctx.overview.varieties.filter((d) => d.parent === v.id);
-  const kin = useMemo(() => ctx.engine.kin(ctx.generation, v.id).filter((k) => k.score >= 0.05), [ctx.engine, ctx.generation, ctx.version, v.id]);
+  const kin = use(ctx.engine.kin(ctx.generation, v.id)).filter((k) => k.score >= 0.05);
   return <div className="language-section">
     <p>{v.parent === null ? <>A founding language of its family, first spoken in {year(v.born)}.</> : <>Descended from {language(v.parent, ctx)}, parted in {year(v.forkedAt ?? v.born)}.</>} {v.spoken ? "Spoken now." : `Silent${v.silentSince === null ? " now" : ` since ${year(v.silentSince)}`}.`}</p>
     <p>Family: {language(v.family, ctx)}. Daughters: {daughters.length ? daughters.map((d, i) => <span key={d.id}>{i ? ", " : ""}{language(d.id, ctx)}</span>) : "none recorded"}.</p>
@@ -73,19 +73,18 @@ function lawAnnal(v: Variety, law: Law, ctx: ChapterContext): Annal | undefined 
 
 /** Exact forms in a word's recorded ledger, not a browser application of a law. */
 export function LawWords({ variety, law, ctx }: SectionProps & { law: Law }) {
-  const changed = useMemo(() => {
-    const examples: { concept: string; gloss: string; text: string }[] = [];
-    for (const row of ctx.engine.lexicon(ctx.generation, variety.id)) {
-      const detail = ctx.engine.word(ctx.generation, variety.id, row.concept);
-      const seen = new Set<string>();
-      for (const variant of detail.variants) for (const line of variant.history) {
-        if (line.generation !== law.generation || !line.text.startsWith(`${law.label}: /`) || seen.has(line.text)) continue;
-        seen.add(line.text);
-        examples.push({ concept: row.concept, gloss: row.gloss, text: line.text.slice(law.label.length + 2) });
-      }
+  const rows = use(ctx.engine.lexicon(ctx.generation, variety.id));
+  // Ask for every word's ledger before reading any, so they arrive together.
+  const details = rows.map((row) => ctx.engine.word(ctx.generation, variety.id, row.concept));
+  const changed: { concept: string; gloss: string; text: string }[] = [];
+  rows.forEach((row, index) => {
+    const seen = new Set<string>();
+    for (const variant of use(details[index]).variants) for (const line of variant.history) {
+      if (line.generation !== law.generation || !line.text.startsWith(`${law.label}: /`) || seen.has(line.text)) continue;
+      seen.add(line.text);
+      changed.push({ concept: row.concept, gloss: row.gloss, text: line.text.slice(law.label.length + 2) });
     }
-    return examples;
-  }, [ctx.engine, ctx.generation, ctx.version, variety.id, law.id, law.label, law.generation]);
+  });
   return changed.length ? <table className="law-words"><thead><tr><th>Meaning</th><th>Before → after</th></tr></thead><tbody>{changed.map((w, i) => <tr key={i}><td>{ctx.link({ kind: "word", variety: variety.id, concept: w.concept }, w.gloss)}</td><td className="ipa">{w.text}</td></tr>)}</tbody></table> : <p className="muted small">No surviving lexical variant records this law. It may have reached names, grammatical forms, or words that later fell out of use.</p>;
 }
 
@@ -183,7 +182,7 @@ function LexicalEvidence({ row, variety, ctx }: SectionProps & { row: LexiconRow
   const [open, setOpen] = useState(false);
   return <details className="lexical-evidence" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
     <summary>{row.competitors ? `${row.competitors} competing ${row.competitors === 1 ? "word" : "words"} · ` : ""}Origins, senses, and family cognates</summary>
-    {open ? <WordGloss engine={ctx.engine} version={ctx.version} generation={ctx.generation}
+    {open ? <WordGloss engine={ctx.engine} generation={ctx.generation}
       variety={variety.id} concept={row.concept} onScrub={ctx.onYear}
       onOpenVariety={(id) => ctx.open({ kind: "word", variety: id, concept: row.concept })}
       renderCause={(cause) => <LoanCauseText cause={cause} ctx={ctx} />}

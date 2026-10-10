@@ -1,4 +1,4 @@
-import init, { Workbench, ReadView } from "./wasm/umran_web";
+import init, { Workbench } from "./wasm/umran_web";
 import type {
   Naming,
   Action,
@@ -7,6 +7,7 @@ import type {
   FoundingPreview,
   GeographyVersion,
   ReadEngine,
+  Read,
   Comparison,
   ClimateView,
   Forming,
@@ -16,6 +17,7 @@ import type {
   ReadingRef,
   NotebookNote,
   Destination,
+  HistoryPoint,
   Kin,
   LanguageDesign,
   LawChoice,
@@ -23,6 +25,8 @@ import type {
   MapSize,
   Overview,
   Preview,
+  SettlementIntent,
+  Subject,
   WordDetail,
   WordMap,
   WorldMap,
@@ -30,9 +34,12 @@ import type {
   Story,
   DecisionView,
 } from "./model";
+import type { EngineReply, EngineRequest, EngineStatus, Opened, ReadMethod, WriteMethod, Written } from "./engineProtocol";
 
-// One WASM module; the Workbench owns the history and React only holds view
-// selections. Errors from the engine arrive as strings.
+// Worlds live on the engine's own thread (engine.worker.ts), so a long
+// generation never freezes the page. The page keeps a second instance of the
+// module only for the pure helpers below, which hold no world: the catalog,
+// preset designs, and word previews. Errors from the engine arrive as strings.
 let initialized: Promise<unknown> | undefined;
 
 async function ready(): Promise<void> {
@@ -43,140 +50,237 @@ async function ready(): Promise<void> {
   await initialized;
 }
 
-function reader(bench: Workbench | ReadView, save: () => string) {
-  let cached: { generation: number; view: Overview } | undefined;
-  let weather: ClimateView | undefined;
-  let riverYear = -1;
-  const rivers = new Map<number, RiverNamesView>();
-  let lakeYear = -1;
-  const lakes = new Map<number, LakeNamesView>();
-  const clear = () => { cached = undefined; weather = undefined; riverYear = -1; rivers.clear(); lakeYear = -1; lakes.clear(); };
-  const engine: ReadEngine = {
-    decisions: () => JSON.parse(bench.decisions()) as DecisionView[],
-    overviewAt: (point) => JSON.parse(bench.overviewAt(JSON.stringify(point))) as Overview,
-    settlement: (point, community, intent, share, destination) =>
-      JSON.parse(bench.settlement(JSON.stringify(point), community, intent, share, destination ?? -1)) as SettlementPreview,
-    lawChoices: (point, variety) =>
-      JSON.parse(bench.lawChoices(JSON.stringify(point), variety)) as LawChoice[],
-    latest: () => bench.latest(),
-    overview: (generation) => {
-      if (cached?.generation !== generation) cached = { generation, view: JSON.parse(bench.overview(generation)) as Overview };
-      return cached.view;
-    },
-    lexicon: (generation, variety) => JSON.parse(bench.lexicon(generation, variety)) as LexiconRow[],
-    kin: (generation, variety) => JSON.parse(bench.kin(generation, variety)) as Kin[],
-    word: (generation, variety, concept) => JSON.parse(bench.word(generation, variety, concept)) as WordDetail,
-    story: (generation, subject) => JSON.parse(bench.story(generation, JSON.stringify(subject))) as Story,
-    climate: (generation) => {
-      if (weather?.generation !== generation) weather = JSON.parse(bench.climate(generation)) as ClimateView;
-      return weather;
-    },
-    river: (generation, id) => {
-      if (riverYear !== generation) { rivers.clear(); riverYear = generation; }
-      let view = rivers.get(id);
-      if (!view) { view = JSON.parse(bench.river(generation, id)) as RiverNamesView; rivers.set(id, view); }
-      return view;
-    },
-    lake: (generation, id) => {
-      if (lakeYear !== generation) { lakes.clear(); lakeYear = generation; }
-      let view = lakes.get(id);
-      if (!view) { view = JSON.parse(bench.lake(generation, id)) as LakeNamesView; lakes.set(id, view); }
-      return view;
-    },
-    map: () => JSON.parse(bench.map()) as WorldMap,
-    wordMap: (generation, concept) => JSON.parse(bench.wordMap(generation, concept)) as WordMap,
-    save,
-  };
-  return { engine, clear, dispose: () => { clear(); bench.free(); } };
+type Request = EngineRequest extends infer R ? R extends unknown ? Omit<R, "id"> : never : never;
+
+let thread: Worker | undefined;
+const waiting = new Map<number, { resolve: (value: unknown) => void; reject: (error: string) => void }>();
+let nextRequest = 1;
+
+function ask<T>(request: Request): Promise<T> {
+  if (!thread) {
+    thread = new Worker(new URL("./engine.worker.ts", import.meta.url), { type: "module" });
+    thread.onmessage = (event: MessageEvent<EngineReply>) => {
+      const reply = event.data;
+      const pending = waiting.get(reply.id);
+      if (!pending) return;
+      waiting.delete(reply.id);
+      if (reply.ok) pending.resolve(reply.value);
+      else pending.reject(reply.error);
+    };
+    // A thread that cannot start, or dies, fails everything still waiting;
+    // the next request starts a fresh one.
+    thread.onerror = (event) => {
+      event.preventDefault();
+      const reason = event.message || "The engine stopped.";
+      waiting.forEach((pending) => pending.reject(reason));
+      waiting.clear();
+      thread?.terminate();
+      thread = undefined;
+    };
+  }
+  const id = nextRequest++;
+  return new Promise<T>((resolve, reject) => {
+    waiting.set(id, { resolve: resolve as (value: unknown) => void, reject });
+    thread!.postMessage({ ...request, id });
+  });
 }
 
-function wrap(bench: Workbench): Engine {
-  const root = reader(bench, () => bench.save());
-  // The document owns WASM views. Components hold lightweight reading
-  // capabilities, so rendering twice or leaving a card never frees a peer's
-  // world. Three cached scopes cover the active reading and a comparison.
-  const scopes = new Map<string, ReturnType<typeof reader>>();
-  let comparison: { key: string; value: Comparison } | undefined;
-  let disposed = false;
-  const clear = () => {
-    root.clear(); comparison = undefined;
-    scopes.forEach((scope) => scope.dispose()); scopes.clear();
-  };
-  const scope = (telling: number, point: string) => {
-    if (disposed) throw new Error("This world has been closed.");
-    const key = `${telling}:${point}`;
-    let entry = scopes.get(key);
-    if (!entry) {
-      entry = reader(bench.read(telling, point), () => bench.save());
-      if (scopes.size >= 3) {
-        const oldest = scopes.keys().next().value!;
-        scopes.get(oldest)!.dispose(); scopes.delete(oldest);
-      }
+/// Marks a promise with its settled state, the protocol React's `use` reads
+/// so a kept answer renders without suspending.
+function tracked<T>(promise: Promise<T>): Read<T> {
+  const read = Object.assign(promise, { status: "pending" as const }) as Read<T>;
+  promise.then(
+    (value) => Object.assign(read, { status: "fulfilled", value }),
+    (reason: unknown) => Object.assign(read, { status: "rejected", reason }),
+  );
+  return read;
+}
+
+/// Answers kept by key, so re-rendering asks the thread nothing new. Bounded,
+/// oldest first: whole-year views, since scrubbing through the years would
+/// otherwise keep every year's, and a card's many small ones more loosely.
+class Answers {
+  private kept = new Map<string, Read<unknown>>();
+  constructor(private limit: number) {}
+  get<T>(key: string, load: () => Promise<T>): Read<T> {
+    let read = this.kept.get(key);
+    if (read) this.kept.delete(key);
+    else {
+      read = tracked(load());
+      if (this.kept.size >= this.limit) this.kept.delete(this.kept.keys().next().value!);
     }
-    scopes.delete(key); scopes.set(key, entry);
-    return entry.engine;
-  };
-  return {
-    ...root.engine,
-    foundingDraft: () => wrap(bench.foundingDraft()),
-    foundingPreview: () => JSON.parse(bench.foundingPreview()) as FoundingPreview,
-    foundingSites: (region, count) => JSON.parse(bench.foundingSites(region, count)) as number[],
-    foundingTraits: (community) => JSON.parse(bench.foundingTraits(community)) as FoundingTraits,
-    forming: () => {
-      try { return JSON.parse(bench.forming()) as Forming; }
-      catch { return null; }
-    },
-    notebook: () => JSON.parse(bench.notebook()) as NotebookNote[],
-    saveNote: (note) => { bench.saveNote(JSON.stringify(note)); },
-    resolveNote: (id) => JSON.parse(bench.resolveNote(id)) as Destination | null,
-    removeNote: (id) => { bench.removeNote(id); },
-    title: () => bench.title() ?? null,
-    author: () => bench.author() ?? null,
-    setTitle: (title) => { bench.setTitle(title); },
-    setAuthor: (author) => { bench.setAuthor(author); },
-    read: (telling, point) => {
-      const encoded = point ? JSON.stringify(point) : "";
-      const get = () => scope(telling, encoded);
-      return {
-        decisions: () => get().decisions(),
-        latest: () => get().latest(), overview: (g) => get().overview(g), overviewAt: (p) => get().overviewAt(p),
-        settlement: (p, c, intent, share, destination) => get().settlement(p, c, intent, share, destination),
-        lawChoices: (p, v) => get().lawChoices(p, v),
-        lexicon: (g, v) => get().lexicon(g, v), kin: (g, v) => get().kin(g, v), word: (g, v, c) => get().word(g, v, c),
-        story: (g, subject) => get().story(g, subject),
-        climate: (g) => get().climate(g), river: (g, id) => get().river(g, id),
-        lake: (g, id) => get().lake(g, id),
-        wordMap: (g, c) => get().wordMap(g, c), map: () => get().map(), save: () => bench.save(),
-      };
-    },
-    previous: (reading) => JSON.parse(bench.previous(JSON.stringify(reading))) as ReadingRef,
-    compare: (left, right, generation) => {
-      const key = `${left}:${right}:${generation}`;
-      if (comparison?.key !== key) comparison = { key, value: JSON.parse(bench.compare(left, right, generation)) as Comparison };
-      return comparison.value;
-    },
-    rename: (telling, name) => { bench.rename(telling, name); clear(); },
-    actAt: (reading, mutation, action) => { bench.actAt(JSON.stringify(reading), mutation, JSON.stringify(action)); clear(); },
-    untilAt: (reading, mutation, limit) => { const ran = bench.untilAt(JSON.stringify(reading), mutation, limit); clear(); return ran; },
-    act: (action: Action) => { bench.act(JSON.stringify(action)); clear(); },
-    runUntilEvent: (limit) => { const ran = bench.runUntilEvent(limit); clear(); return ran; },
-    branch: (generation) => { bench.branch(generation); clear(); },
-    restore: (telling) => { bench.restore(telling); clear(); },
-    dispose: () => { if (!disposed) { clear(); root.dispose(); disposed = true; } },
-  };
+    this.kept.set(key, read);
+    return read as Read<T>;
+  }
+}
+
+const json = (value: unknown) => JSON.parse(value as string) as unknown;
+
+class Reading implements ReadEngine {
+  private years = new Answers(12);
+  private answers = new Answers(4096);
+  constructor(private world: World, private scope: { telling: number; point: string } | null) {}
+  private ask<T>(method: ReadMethod, ...args: unknown[]): Read<T> {
+    return this.answers.get(`${method}:${JSON.stringify(args)}`, () => this.world.call(method, args, this.scope).then(json) as Promise<T>);
+  }
+  private year<T>(method: ReadMethod, ...args: unknown[]): Read<T> {
+    return this.years.get(`${method}:${JSON.stringify(args)}`, () => this.world.call(method, args, this.scope).then(json) as Promise<T>);
+  }
+  /// One answer per id, asked of the thread at once.
+  private each<T>(method: ReadMethod, generation: number, count: (map: WorldMap) => number): Read<T[]> {
+    return this.years.get(`${method}s:${generation}`, async () => {
+      const ids = Array.from({ length: count(await this.map()) }, (_, id) => [generation, id]);
+      const answers = await this.world.callEach(method, ids, this.scope);
+      return answers.map(json) as T[];
+    });
+  }
+  overviewAt(point: HistoryPoint) { return this.year<Overview>("overviewAt", JSON.stringify(point)); }
+  settlement(point: HistoryPoint, community: number, intent: SettlementIntent, share: number, destination: number | null) {
+    return this.ask<SettlementPreview>("settlement", JSON.stringify(point), community, intent, share, destination ?? -1);
+  }
+  lawChoices(point: HistoryPoint, variety: number) { return this.ask<LawChoice[]>("lawChoices", JSON.stringify(point), variety); }
+  latest() { return this.answers.get("latest", () => this.world.call("latest", [], this.scope) as Promise<number>); }
+  overview(generation: number) { return this.year<Overview>("overview", generation); }
+  lexicon(generation: number, variety: number) { return this.ask<LexiconRow[]>("lexicon", generation, variety); }
+  kin(generation: number, variety: number) { return this.ask<Kin[]>("kin", generation, variety); }
+  word(generation: number, variety: number, concept: string) { return this.ask<WordDetail>("word", generation, variety, concept); }
+  story(generation: number, subject: Subject) { return this.ask<Story>("story", generation, JSON.stringify(subject)); }
+  climate(generation: number) { return this.year<ClimateView>("climate", generation); }
+  river(generation: number, id: number) { return this.ask<RiverNamesView>("river", generation, id); }
+  lake(generation: number, id: number) { return this.ask<LakeNamesView>("lake", generation, id); }
+  rivers(generation: number) { return this.each<RiverNamesView>("river", generation, (map) => map.rivers.length); }
+  lakes(generation: number) { return this.each<LakeNamesView>("lake", generation, (map) => map.lakes.length); }
+  map() { return this.world.map(); }
+  wordMap(generation: number, concept: string) { return this.ask<WordMap>("wordMap", generation, concept); }
+  save() { return this.world.save(); }
+  decisions() { return this.ask<DecisionView[]>("decisions"); }
+}
+
+class World implements Engine {
+  private status!: EngineStatus;
+  private notes!: NotebookNote[];
+  private present!: Reading;
+  private readings = new Map<string, Reading>();
+  private answers = new Answers(256);
+  private drawn: Read<WorldMap> | undefined;
+  private closed = false;
+
+  constructor(private id: number, status: EngineStatus) {
+    this.apply(status);
+  }
+
+  /// A change makes every earlier reading of this world history; new
+  /// readings start from the world as it now stands.
+  private apply(status: EngineStatus) {
+    this.status = status;
+    this.notes = JSON.parse(status.notebook) as NotebookNote[];
+    this.present = new Reading(this, null);
+    this.readings = new Map();
+    this.answers = new Answers(256);
+  }
+
+  call(method: ReadMethod, args: unknown[], scope: { telling: number; point: string } | null): Promise<unknown> {
+    if (this.closed) return Promise.reject("This world has been closed.");
+    return ask({ op: "read", world: this.id, scope, method, args });
+  }
+
+  callEach(method: ReadMethod, calls: unknown[][], scope: { telling: number; point: string } | null): Promise<unknown[]> {
+    if (this.closed) return Promise.reject("This world has been closed.");
+    return ask({ op: "readEach", world: this.id, scope, method, calls });
+  }
+
+  private async write(method: WriteMethod, ...args: unknown[]): Promise<unknown> {
+    if (this.closed) throw "This world has been closed.";
+    const written = await ask<Written>({ op: "write", world: this.id, method, args });
+    this.apply(written.status);
+    return written.value;
+  }
+
+  private own<T>(method: ReadMethod, ...args: unknown[]): Read<T> {
+    return this.answers.get(`${method}:${JSON.stringify(args)}`, () => this.call(method, args, null).then(json) as Promise<T>);
+  }
+
+  latest() { return this.status.latest; }
+  save() { return this.status.save; }
+  title() { return this.status.title; }
+  author() { return this.status.author; }
+  notebook() { return this.notes; }
+  tip(): ReadEngine { return this.present; }
+  read(telling: number, point?: HistoryPoint | null): ReadEngine {
+    const encoded = point ? JSON.stringify(point) : "";
+    const key = `${telling}:${encoded}`;
+    let reading = this.readings.get(key);
+    if (!reading) { reading = new Reading(this, { telling, point: encoded }); this.readings.set(key, reading); }
+    return reading;
+  }
+  /// The land never changes with history, so it is drawn once per world.
+  map() {
+    this.drawn ??= tracked(this.call("map", [], null).then(json) as Promise<WorldMap>);
+    return this.drawn;
+  }
+  async foundingDraft(): Promise<Engine> {
+    if (this.closed) throw "This world has been closed.";
+    const draft = opened(await ask<Opened>({ op: "draft", world: this.id }));
+    // A draft shares its base's geography, so it shares the drawn map too.
+    draft.drawn = this.drawn;
+    return draft;
+  }
+  foundingPreview() { return this.own<FoundingPreview>("foundingPreview"); }
+  foundingSites(region: number, count: number) { return this.own<number[]>("foundingSites", region, count); }
+  foundingTraits(community: number) { return this.own<FoundingTraits>("foundingTraits", community); }
+  forming() {
+    return this.answers.get("forming", () => this.call("forming", [], null).then((value) => json(value) as Forming, () => null));
+  }
+  async saveNote(note: NotebookNote) { await this.write("saveNote", JSON.stringify(note)); }
+  async resolveNote(id: string) { return json(await this.call("resolveNote", [id], null)) as Destination | null; }
+  async removeNote(id: string) { await this.write("removeNote", id); }
+  async setTitle(title: string) { await this.write("setTitle", title); }
+  async setAuthor(author: string) { await this.write("setAuthor", author); }
+  async previous(reading: ReadingRef) { return json(await this.call("previous", [JSON.stringify(reading)], null)) as ReadingRef; }
+  compare(left: number, right: number, generation: number) { return this.own<Comparison>("compare", left, right, generation); }
+  async rename(telling: number, name: string) { await this.write("rename", telling, name); }
+  async actAt(reading: ReadingRef, mutation: number, action: Action) {
+    await this.write("actAt", JSON.stringify(reading), mutation, JSON.stringify(action));
+  }
+  async untilAt(reading: ReadingRef, mutation: number, limit: number) {
+    return await this.write("untilAt", JSON.stringify(reading), mutation, limit) as number;
+  }
+  async act(action: Action) { await this.write("act", JSON.stringify(action)); }
+  async runUntilEvent(limit: number) { return await this.write("runUntilEvent", limit) as number; }
+  async branch(generation: number) { await this.write("branch", generation); }
+  async restore(telling: number) { await this.write("restore", telling); }
+  dispose() {
+    if (this.closed) return;
+    this.closed = true;
+    ask({ op: "free", world: this.id }).catch(() => undefined);
+  }
+}
+
+function opened(world: Opened): World {
+  return new World(world.world, world.status);
+}
+
+/// A read that always settles, for views that show their failure in place.
+export type Outcome<T> = { value: T; error: null } | { value: null; error: string };
+const outcomes = new WeakMap<Read<unknown>, Read<Outcome<unknown>>>();
+export function attempt<T>(read: Read<T>): Read<Outcome<T>> {
+  let outcome = outcomes.get(read);
+  if (!outcome) {
+    outcome = tracked(read.then((value) => ({ value, error: null }), (error: unknown) => ({ value: null, error: message(error) })));
+    outcomes.set(read, outcome);
+  }
+  return outcome as Read<Outcome<T>>;
 }
 
 export async function createEngine(seed: number, size: MapSize): Promise<Engine> {
   if (!Number.isInteger(seed) || seed < 0 || seed > 0xffff_ffff) {
     throw new Error("Choose a whole-number seed between 0 and 4294967295.");
   }
-  await ready();
-  return wrap(new Workbench(seed, size));
+  return opened(await ask<Opened>({ op: "create", seed, size }));
 }
 
-export async function loadEngine(json: string): Promise<Engine> {
-  await ready();
-  return wrap(Workbench.load(json));
+export async function loadEngine(save: string): Promise<Engine> {
+  return opened(await ask<Opened>({ op: "load", json: save }));
 }
 
 // Seed, size and the recipe's geography version determine a map, so the shelf
@@ -187,14 +291,7 @@ export function landMap(seed: number, size: MapSize, geography: GeographyVersion
   const key = `${seed}:${size}:${geography}`;
   let map = maps.get(key);
   if (!map) {
-    map = ready().then(() => {
-      const bench = Workbench.withGeography(seed, size, geography);
-      try {
-        return JSON.parse(bench.map()) as WorldMap;
-      } finally {
-        bench.free();
-      }
-    });
+    map = ask<string>({ op: "geography", seed, size, geography }).then((drawn) => JSON.parse(drawn) as WorldMap);
     maps.set(key, map);
     map.catch(() => maps.delete(key));
   }
@@ -207,7 +304,7 @@ export async function loadCatalog(): Promise<Catalog> {
 }
 
 // Design helpers; call only after `loadCatalog` has resolved, which
-// initializes the module.
+// initializes the page's module.
 export function presetDesign(preset: string, seed: number): LanguageDesign {
   return JSON.parse(Workbench.design(preset, seed)) as LanguageDesign;
 }

@@ -41,7 +41,7 @@ export async function sampleWorld(): Promise<Engine> {
     { kind: "run", generations: 60 },
   ];
   try {
-    for (const action of actions) engine.act(action);
+    for (const action of actions) await engine.act(action);
   } catch (error) {
     engine.dispose();
     throw error;
