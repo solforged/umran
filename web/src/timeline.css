@@ -121,8 +121,13 @@
 :root .timeline .mark-cluster:is(:hover, :focus-visible) {
   transform: translate(-50%, 0);
 }
+/* A short list scrolls in place, so a crowded cluster opens just above its
+   mark rather than as a column the height of the window. */
 .timeline-entries {
   width: min(24rem, calc(100vw - 3rem));
+  max-height: min(22rem, 45vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   touch-action: pan-y;
 }
 :root .timeline-entries button {

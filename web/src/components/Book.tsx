@@ -180,12 +180,34 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
       if (subject.kind === "word") { event.preventDefault(); ctx.open(subject); }
     }}>{label}</a>,
     open: (subject) => {
-      const target = document.getElementById(subjectId(subject, overview));
-      target?.scrollIntoView({ block: "start" });
-      if (subject.kind === "word") {
-        const evidence = target?.querySelector("details");
-        if (evidence) evidence.open = true;
-      }
+      const id = subjectId(subject, overview);
+      const arrive = (target: HTMLElement) => {
+        target.scrollIntoView({ block: "start" });
+        if (subject.kind === "word") {
+          const evidence = target.querySelector("details");
+          if (evidence) evidence.open = true;
+        }
+      };
+      const target = document.getElementById(id);
+      if (target) return arrive(target);
+      if (subject.kind !== "word") return;
+      // A word's row sits in its language's folded lexicon, and a silent
+      // language's whole chapter is folded too: unfold them outermost first,
+      // then scroll once the row has rendered.
+      const unfold = () => {
+        const fold = document.querySelector<HTMLDetailsElement>(`#language-${subject.variety} > details.book-folded:not([open])`)
+          ?? document.querySelector<HTMLDetailsElement>(`#language-${subject.variety}-lexicon > details.book-folded:not([open])`);
+        if (fold) fold.open = true;
+      };
+      const watch = new MutationObserver(() => {
+        const found = document.getElementById(id);
+        if (!found) return unfold();
+        watch.disconnect();
+        arrive(found);
+      });
+      watch.observe(document.body, { childList: true, subtree: true });
+      setTimeout(() => watch.disconnect(), 5000);
+      unfold();
     },
     wordAnchor: (variety, concept) => `word-${variety}-${concept}`,
   };
@@ -267,6 +289,7 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
         {map.landmasses.map((mass) => {
           const continent = overview.continents.find((c) => c.landmass === mass.id);
           const places = overview.places.filter((p) => map.regions[p.region].landmass === mass.id);
+          if (mass.kind === "island" && !places.length) return null;
           return <article className="book-subject" id={`continent-${mass.id}`} key={mass.id}>
             <h3>{lore.continentLabel(overview, map, mass.id)}</h3>
             {continent?.name ? <p>
@@ -280,7 +303,7 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
               const languages = new Set([...place.names.map((n) => n.variety), ...place.exonyms.map((x) => x.variety)]).size;
               return <section className="book-land" id={`land-${place.region}`} key={place.region}>
                 <h4>{lore.landCardLabel(overview, map, place.region)}</h4>
-                <p>{map.regions[place.region].coastal ? "Coastal " : ""}{TERRAIN_NAME[map.regions[place.region].terrain].toLowerCase()}
+                <p>{map.regions[place.region].coastal ? `Coastal ${TERRAIN_NAME[map.regions[place.region].terrain].toLowerCase()}` : TERRAIN_NAME[map.regions[place.region].terrain]}
                   {map.regions[place.region].island ? ", on an island" : ""}.
                   {holders.length ? <> Held by {holders.map((c, i) => <span key={c.id}>{i ? ", " : ""}{ctx.link({ kind: "people", id: c.id }, lore.peopleLabel(overview, c.id))}</span>)}.</> : null}
                 </p>
@@ -308,24 +331,50 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
             })}
           </article>;
         })}
+        {(() => {
+          const islands = map.landmasses.filter((mass) => mass.kind === "island" && !overview.places.some((p) => map.regions[p.region].landmass === mass.id));
+          return islands.length ? <p className="book-unnamed">
+            {islands.map((mass) => <span id={`continent-${mass.id}`} key={mass.id} />)}
+            {lore.capitalized(countWord(islands.length))} {islands.length === 1 ? "island" : "islands"} no people has named,
+            {" "}{islands.reduce((sum, mass) => sum + mass.regions.length, 0).toLocaleString()} lands in all.
+          </p> : null;
+        })()}
         <h3>Climate and rivers</h3>
-        <ul className="roster">{map.rivers.map((river) => {
-          return <li key={river.id} id={`river-${river.id}`}>{lore.waterLabel(rivers, map, "river", river.id)} · {climate.rivers.find((flow) => flow.id === river.id)?.flowing ? "flowing" : "flow has failed"}.</li>;
-        })}</ul>
+        {(() => {
+          const line = (river: WorldMap["rivers"][number], anchor: boolean) => <li key={river.id} id={anchor ? `river-${river.id}` : undefined}>
+            {lore.waterLabel(overview, rivers, map, "river", river.id)} · {climate.rivers.find((flow) => flow.id === river.id)?.flowing ? "flowing" : "flow has failed"}.
+          </li>;
+          const unnamed = map.rivers.filter((river) => !rivers[river.id]?.names.length);
+          return <>
+            <ul className="roster">{map.rivers.filter((river) => rivers[river.id]?.names.length).map((river) => line(river, true))}</ul>
+            {unnamed.length ? <Folded summary={<>{unnamed.map((river) => <span id={`river-${river.id}`} key={river.id} />)}
+              {lore.capitalized(countWord(unnamed.length))} {unnamed.length === 1 ? "river" : "rivers"} no people has named</>}>
+              {() => <ul className="roster">{unnamed.map((river) => line(river, false))}</ul>}
+            </Folded> : null}
+          </>;
+        })()}
         {climate.zones.map((zone) => {
           const seasons = commonestSeasons(climate, zone.id);
           return <p key={zone.id}>Weather zone {zone.id + 1}: {weatherDeparture(zone)}{seasons ? `; usual seasons: ${seasons}` : ""}.</p>;
         })}
         <h3>Lakes</h3>
-        <ul className="roster">{map.lakes.map((lake) => {
-          return <li key={lake.id} id={`lake-${lake.id}`}>
-            {ctx.link({ kind: "lake", id: lake.id }, lore.waterLabel(lakes, map, "lake", lake.id))} ·{" "}
+        {(() => {
+          const line = (lake: WorldMap["lakes"][number], anchor: boolean) => <li key={lake.id} id={anchor ? `lake-${lake.id}` : undefined}>
+            {ctx.link({ kind: "lake", id: lake.id }, lore.waterLabel(overview, lakes, map, "lake", lake.id))} ·{" "}
             {lake.outlet === null ? "no outlet; a closed basin" : <>drains to {ctx.link(
               { kind: "river", id: lake.outlet },
-              lore.waterLabel(rivers, map, "river", lake.outlet),
+              lore.waterLabel(overview, rivers, map, "river", lake.outlet),
             )}</>}.
           </li>;
-        })}</ul>
+          const unnamed = map.lakes.filter((lake) => !lakes[lake.id]?.names.length);
+          return <>
+            <ul className="roster">{map.lakes.filter((lake) => lakes[lake.id]?.names.length).map((lake) => line(lake, true))}</ul>
+            {unnamed.length ? <Folded summary={<>{unnamed.map((lake) => <span id={`lake-${lake.id}`} key={lake.id} />)}
+              {lore.capitalized(countWord(unnamed.length))} {unnamed.length === 1 ? "lake" : "lakes"} no people has named</>}>
+              {() => <ul className="roster">{unnamed.map((lake) => line(lake, false))}</ul>}
+            </Folded> : null}
+          </>;
+        })()}
       </section>
       <section className="book-chapter" id="book-peoples" data-book-chapter="peoples">
         {head(2, peopleLines(overview))}<h2>The peoples</h2>

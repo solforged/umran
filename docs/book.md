@@ -342,31 +342,29 @@ the names; nothing else mints one.
 ## Honest causes
 
 The book states challenge and response only where the engine recorded
-the trigger. Today it does for temper (`temper.cause`), climate, and
-rivers, and for loans (`LoanCause.event`). It does not for migration,
-split, displacement, livelihood, state rise and fall, standard, koine,
-conversion, or conquest, which are exactly the responses the book is
-about.
+the trigger. A response annal carries an optional `cause`: the
+triggering annal's id and a mechanism, set where the engine knows the
+trigger at the decision point (`World::causes`, `causes.rs`) and absent
+otherwise. No facade search or adjacency rule supplies a missing cause.
+`docs/engine.md` lists what each response records; in short:
 
-Engine contract: every response annal carries an optional `cause` with
-the triggering annal's id and a mechanism label, set where the engine
-knows the trigger at the decision point and absent otherwise. The
-mechanisms, from `docs/engine.md`:
-
-| Response | Trigger it can name |
+| Response | Triggers it can name |
 |---|---|
-| migration, split, displaced | hardship, crowding, a stronger co-resident people, a drying climate |
-| livelihood | climate change, a craft learned |
-| rose | hard times, crowding, a stronger neighbouring state |
-| fell | hard times, a conquest |
-| standard, koine | a city standing long enough |
-| conversion | a contact, a pilgrimage road |
-| conquest | an unfaithful holder of a holy land |
+| migration, displacement, a sea colony | a stronger neighbour, climate |
+| livelihood | climate |
+| a people takes to the sea | the craft of seafaring learned |
+| rose, fell | hard times, climate, a stronger neighbour, a conquest |
+| standard, koine | a great city |
+| conversion, a holy-land conquest, doctrine | a contact, a pilgrimage road, an unfaithful holder, a schism |
+| coinage, pronouns, purism, tone | a word needed, a court, foreign prestige, a revival, a purist norm, contact |
 
-The chronicle shows a cause as "after the famine of 1250" linking to its
-entry; a card's fortunes section shows challenge beside response. Where
-`cause` is absent the entry says what happened and nothing more. This
-bumps `ENGINE_REVISION`, since annals change shape.
+Territorial splits, crowding, and ordinary conquest have no recorded
+trigger and say none.
+
+The chronicle shows a cause beneath its entry ("after a conquest in
+3425 ↗"), linking to the triggering entry; `lore.ts` names each
+mechanism. Where `cause` is absent the entry says what happened and
+nothing more.
 
 ## Delivery
 

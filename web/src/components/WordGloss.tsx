@@ -51,7 +51,7 @@ function Gloss({
       </p>
       <h3>{detail.gloss}</h3>
       {detail.variants.map((v, i) => {
-        const extension = v.history.findLast((line) => line.text === `Also came to mean '${detail.gloss}'`);
+        const extension = v.history.findLast((line) => line.text === `Also came to mean “${detail.gloss}”`);
         return (
         <section key={i} className="variant">
           <div className="variant-head">

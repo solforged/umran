@@ -10,7 +10,7 @@ import { attempt, message } from "../engine";
 import { useAnswer } from "./Pending";
 import { SettlementDesk, type SettlementDraft } from "./SettlementDesk";
 import { concerns, findAnnal, individualAnnals, INITIAL_HISTORY } from "../history";
-import { QUIET_KINDS } from "../eras";
+import { latestTold } from "../eras";
 import { AtlasIndex } from "./AtlasIndex";
 import type { DictionaryView } from "./Dictionary";
 import { Told } from "./Told";
@@ -560,12 +560,9 @@ export function Stage({
   }, [focus, overview, map]);
   // Changes to holdings have their own, recorded motion; no decorative pulse.
 
-  // Prefer the latest headline when the year's final entry is bookkeeping.
   const latestAnnal = overview.annals.at(-1) ?? null;
   const thisYear = latestAnnal ? overview.annals.filter((a) => a.generation === latestAnnal.generation) : [];
-  const last = latestAnnal && QUIET_KINDS.has(latestAnnal.kind)
-    ? thisYear.findLast((a) => !QUIET_KINDS.has(a.kind)) ?? latestAnnal
-    : latestAnnal;
+  const last = latestTold(overview.annals) ?? null;
   const sameYear = thisYear.length;
   const LastIcon = last ? EVENT_KIND[last.kind].icon : null;
   const tellingName = overview.tellings.find((t) => t.id === overview.telling)?.name;

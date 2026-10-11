@@ -486,6 +486,11 @@ export function countWord(count: number): string {
   return ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"][count] ?? count.toLocaleString();
 }
 
+/// `text` with its first letter capitalized, to open a sentence.
+export function capitalized(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 export const FAITH_NAME = { action: "Found a faith", kind: "A faith", plural: "Faiths" } as const;
 export const PEOPLE_NAME = "People";
 
@@ -532,16 +537,72 @@ function geographicQualifier(sites: NamedSite[], id: number): string {
   return `${direction} ${site.terrain}${tied.length > 1 ? `, ${tied.findIndex((other) => other.id === id) + 1}` : ""}`;
 }
 
+type Nearest = { name: string; steps: number };
+const NEAREST = new WeakMap<Overview, WeakMap<WorldMap, (Nearest | undefined)[]>>();
+
+/// The nearest named land to every region, over land only, so an unnamed
+/// place is found as a traveller would give directions to it. Computed
+/// once per reading of the world, from every named land at once.
+function nearestNamed(overview: Overview, map: WorldMap): (Nearest | undefined)[] {
+  const cached = NEAREST.get(overview)?.get(map);
+  if (cached) return cached;
+  const nearest: (Nearest | undefined)[] = new Array(map.regions.length);
+  let frontier: number[] = [];
+  for (const place of overview.places) {
+    const name = place.names.at(-1)?.spelled;
+    if (name && map.regions[place.region]) { nearest[place.region] = { name, steps: 0 }; frontier.push(place.region); }
+  }
+  for (let steps = 1; frontier.length; steps++) {
+    const next: number[] = [];
+    for (const region of frontier) {
+      for (const neighbour of map.regions[region].neighbours ?? []) {
+        if (nearest[neighbour] || map.regions[neighbour]?.terrain === "sea") continue;
+        nearest[neighbour] = { name: nearest[region]!.name, steps };
+        next.push(neighbour);
+      }
+    }
+    frontier = next;
+  }
+  const byMap = NEAREST.get(overview) ?? new WeakMap();
+  byMap.set(map, nearest);
+  NEAREST.set(overview, byMap);
+  return nearest;
+}
+
+/// The named land nearest any of `regions`; on a tie, the earlier region.
+function namedNear(nearest: (Nearest | undefined)[], regions: readonly number[]): Nearest | undefined {
+  let best: Nearest | undefined;
+  for (const region of regions) {
+    const found = nearest[region];
+    if (found && (!best || found.steps < best.steps)) best = found;
+  }
+  return best;
+}
+
+/// An unnamed place is placed by the named land nearest it ("Unnamed
+/// river by Īnip", or "near Īnip" when other land lies between); position
+/// tells apart only those placed by the same land.
+function unnamedLabel(name: string, sites: (NamedSite & { near: Nearest | undefined })[], id: number): string {
+  const near = sites.find((site) => site.id === id)!.near;
+  const tied = sites.filter((site) => site.near?.name === near?.name);
+  const label = near ? `${name} ${near.steps > 1 ? "near" : "by"} ${near.name}` : name;
+  return tied.length > 1 ? `${label} (${geographicQualifier(tied, id)})` : label;
+}
+
 /// Reading labels identify subjects without changing their recorded names.
 /// Compare the spellings this reading actually shows, not unrelated old names
 /// or exonyms. A language's own list supplies its namesakes explicitly.
 export function landCardLabel(overview: Overview, map: WorldMap, region: number, name = landLabel(overview, map, region), namesakes?: readonly number[]): string {
+  if (namesakes === undefined && !overview.places.find((place) => place.region === region)?.names.length) {
+    const nearest = nearestNamed(overview, map);
+    const terrain = map.regions[region].terrain;
+    const sites = map.regions.filter((other) => other.terrain === terrain && nearest[other.id]?.steps !== 0).map((other) => ({
+      id: other.id, center: other.center, terrain: TERRAIN_NAME[terrain].toLowerCase(), near: namedNear(nearest, [other.id]),
+    }));
+    return unnamedLabel(name, sites, region);
+  }
   const regions = new Set(namesakes ?? overview.places.filter((place) => place.names.at(-1)?.spelled === name).map((place) => place.region));
   regions.add(region);
-  if (!overview.places.find((place) => place.region === region)?.names.length) {
-    const named = new Set(overview.places.filter((place) => place.names.length).map((place) => place.region));
-    for (const other of map.regions) if (!named.has(other.id) && other.terrain === map.regions[region].terrain) regions.add(other.id);
-  }
   if (regions.size === 1) return name;
   const sites = [...regions].map((id) => ({ id, center: map.regions[id].center, terrain: TERRAIN_NAME[map.regions[id].terrain].toLowerCase() }));
   return `${name} (${geographicQualifier(sites, region)})`;
@@ -587,12 +648,22 @@ export function cityLabel(overview: Overview, map: WorldMap, city: Overview["cit
 
 /// A river's or lake's present name, told apart from namesakes by where it
 /// lies. `names` holds every river's or every lake's names, in map order.
-export function waterLabel(names: { names: { spelled: string }[] }[], map: WorldMap, kind: "river" | "lake", id: number): string {
-  const name = names[id]?.names.at(-1)?.spelled ?? unnamedName(kind);
-  const waters = kind === "river" ? map.rivers.map((river) => ({ id: river.id, region: river.course[0] }))
-    : map.lakes.map((lake) => ({ id: lake.id, region: lake.regions[0] }));
-  const sites = waters.filter((other) => (names[other.id]?.names.at(-1)?.spelled ?? unnamedName(kind)) === name)
-    .map((other) => ({ id: other.id, center: map.regions[other.region].center, terrain: TERRAIN_NAME[map.regions[other.region].terrain].toLowerCase() }));
+/// An unnamed river is placed by the named land nearest its mouth, a lake
+/// by its shores.
+export function waterLabel(overview: Overview, names: { names: { spelled: string }[] }[], map: WorldMap, kind: "river" | "lake", id: number): string {
+  const named = (other: number) => names[other]?.names.at(-1)?.spelled;
+  const name = named(id) ?? unnamedName(kind);
+  const waters = kind === "river"
+    ? map.rivers.map((river) => ({ id: river.id, region: river.course[0], lands: [...river.course].reverse() }))
+    : map.lakes.map((lake) => ({ id: lake.id, region: lake.regions[0], lands: lake.regions }));
+  const site = (water: (typeof waters)[number]) =>
+    ({ id: water.id, center: map.regions[water.region].center, terrain: TERRAIN_NAME[map.regions[water.region].terrain].toLowerCase() });
+  if (named(id) === undefined) {
+    const nearest = nearestNamed(overview, map);
+    return unnamedLabel(name, waters.filter((water) => named(water.id) === undefined)
+      .map((water) => ({ ...site(water), near: namedNear(nearest, water.lands) })), id);
+  }
+  const sites = waters.filter((other) => named(other.id) === name).map(site);
   return sites.length > 1 ? `${name} (${kind === "river" ? "from " : ""}${geographicQualifier(sites, id)})` : name;
 }
 

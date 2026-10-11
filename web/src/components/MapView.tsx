@@ -219,6 +219,11 @@ const ROSE = (
 /// How many peoples a miniature names; the rest only colour their lands.
 const NAMED = 6;
 
+/// Rectangles that share any ink, in the SVG's own units.
+function clash(a: DOMRect, b: DOMRect): boolean {
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
 /// A world drawn small, for the shelf: the chart's dress, each people's
 /// lands in its family's colour, and the largest peoples named in their
 /// hands. A map without regions is a blank sheet of compass lines.
@@ -232,7 +237,22 @@ export function Miniature({ map, peoples = [] }: { map: WorldMap; peoples?: read
     for (const p of peoples) for (const land of p.lands) if (!out.has(land)) out.set(land, p.family);
     return out;
   }, [peoples]);
-  const named = peoples.slice(0, NAMED);
+  // Neighbouring peoples' names would print over one another at this size.
+  // Largest first, a name that would cover one already lettered is left
+  // off, as the full chart does, and the next largest is tried instead.
+  const named = peoples.slice(0, NAMED * 2);
+  const lettering = useRef<SVGGElement>(null);
+  useLayoutEffect(() => {
+    const placed: DOMRect[] = [];
+    // An undrawn miniature (display: none) has no ink to measure.
+    if (!lettering.current?.getClientRects().length) return;
+    for (const text of lettering.current.querySelectorAll("text")) {
+      text.style.visibility = "";
+      const box = text.getBBox();
+      if (placed.length >= NAMED || placed.some((other) => clash(box, other))) text.style.visibility = "hidden";
+      else placed.push(box);
+    }
+  }, [peoples, map]);
   // Shelf lettering occupies the same share of every world's sheet.
   const label = map.width / 9;
   const shape = (r: WorldMap["regions"][number]) => {
@@ -253,7 +273,7 @@ export function Miniature({ map, peoples = [] }: { map: WorldMap; peoples?: read
           {map.regions.filter((r) => r.terrain !== "sea").map(shape)}
         </g>
         {dressOver(dress, cartography)}
-        <g className="peoples">
+        <g className="peoples" ref={lettering}>
           {named.map((p, i) => {
             const [x, y] = cartography.point(map.regions[p.region].site)!;
             const above = named.slice(0, i).filter((q) => q.region === p.region).length;

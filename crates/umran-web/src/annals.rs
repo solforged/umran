@@ -974,7 +974,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     generation,
                     "taboo-replacement",
                     format!(
-                        "Among the {}, {} forbade the old word for '{}', *{}*, and they said *{}* instead.",
+                        "Among the {}, {} forbade the old word for “{}”, *{}*, and they said *{}* instead.",
                         name(community),
                         world.faith_name(religion),
                         concept.gloss,
@@ -1099,14 +1099,14 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     if from.is_some() { "calque" } else { "coinage" },
                     match from {
                         Some(donor) => format!(
-                            "The {} made *{}* for '{}', translating the word of {} part by part.",
+                            "The {} made *{}* for “{}”, translating the word of {} part by part.",
                             name(community),
                             v.spell(word.form_at(generation)),
                             word.first_sense.gloss,
                             world.language_title_at(donor, generation)
                         ),
                         None => format!(
-                            "The {} made a word of their own for '{}': *{}*.",
+                            "The {} made a word of their own for “{}”: *{}*.",
                             name(community),
                             word.first_sense.gloss,
                             v.spell(word.form_at(generation))
@@ -1123,7 +1123,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                         coined
                             .parts
                             .iter()
-                            .map(|p| format!("*{}* '{}'", v.spell(&p.form), p.concept.gloss))
+                            .map(|p| format!("*{}* “{}”", v.spell(&p.form), p.concept.gloss))
                             .collect::<Vec<_>>()
                             .join(" and ")
                     ));
@@ -1226,7 +1226,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     generation,
                     "purist-replacement",
                     format!(
-                        "In written {}, *{}* took the place of the borrowed *{}* for '{}'.",
+                        "In written {}, *{}* took the place of the borrowed *{}* for “{}”.",
                         world.language_title_at(variety, generation),
                         word.native_form,
                         word.loan_form,
@@ -2223,7 +2223,7 @@ fn grammar_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
                             source_form,
                             ..
                         } => format!(
-                            "The word *{}*, '{}', /{}/, acquired a grammatical job while its lexical use remained. This development is called grammaticalization.",
+                            "The word *{}*, “{}”, /{}/, acquired a grammatical job while its lexical use remained. This development is called grammaticalization.",
                             variety.spell(source_form),
                             concept.gloss,
                             source_form.ipa_stressed(variety.stress_at(marker.born))
@@ -2300,7 +2300,7 @@ fn grammar_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
                     let word = variety.lexicon.get(*lexeme);
                     (
                         format!(
-                            "The {category_id} form for '{}' was reshaped among {people}, from *{}* to *{}*, to follow the pattern used for new words.",
+                            "The {category_id} form for “{}” was reshaped among {people}, from *{}* to *{}*, to follow the pattern used for new words.",
                             word.first_sense.gloss,
                             variety.spell(before),
                             variety.spell(after)
@@ -2323,7 +2323,7 @@ fn grammar_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
                     let language = world.language_title_at(*from, generation);
                     (
                         format!(
-                            "The word for '{}' came to {people} from {language} together with its {category_id} form.",
+                            "The word for “{}” came to {people} from {language} together with its {category_id} form.",
                             word.first_sense.gloss
                         ),
                         vec![
@@ -2425,11 +2425,11 @@ fn pronoun_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
                 NoticeKind::Renewed { concept, merger, .. } => (
                     "pronoun-renewed",
                     format!(
-                        "Among {people}, *{after}*, once their word for '{}', took the place of *{before}* for '{meaning}'.",
+                        "Among {people}, *{after}*, once their word for “{}”, took the place of *{before}* for “{meaning}”.",
                         gloss(concept)
                     ),
                     format!(
-                        "{} Languages renew short, worn pronouns from nouns, as Malay saya, 'I', came from a word for 'servant'.",
+                        "{} Languages renew short, worn pronouns from nouns, as Malay saya, “I”, came from a word for “servant”.",
                         if *merger {
                             "The old pronoun had come to sound like another."
                         } else {
@@ -2456,7 +2456,7 @@ fn pronoun_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
                 NoticeKind::Borrowed { from, .. } => (
                     "pronoun-borrowed",
                     format!(
-                        "In those days {people} took *{after}* for '{meaning}' from {}, in place of *{before}*.",
+                        "In those days {people} took *{after}* for “{meaning}” from {}, in place of *{before}*.",
                         world.language_title_at(*from, generation)
                     ),
                     "Pronouns are rarely borrowed; it takes long and intense contact, as English they came from Norse.".into(),
@@ -2647,7 +2647,7 @@ fn class_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
                     (
                         "class-emerged",
                         format!(
-                            "Among {people}, the word for 'this' began to agree with its noun, sorting nouns by {by}: {}.",
+                            "Among {people}, the word for “this” began to agree with its noun, sorting nouns by {by}: {}.",
                             forms.join(", ")
                         ),
                         "Noun classes grow when classifiers or demonstratives become agreement markers (Greenberg, 1978). Agreement is what makes a class visible.",

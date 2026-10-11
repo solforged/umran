@@ -93,8 +93,9 @@ export function LawEvidence({ variety, law, ctx }: SectionProps & { law: Law }) 
   const [expanded, setExpanded] = useState(false);
   const changed = annal?.specimen.filter((w) => w.was !== null || w.wasIpa !== null) ?? [];
   return <div className="law-evidence">
-    {law.from !== null ? <p className="muted small">A wave from {language(law.from, ctx)}.</p> : null}
-    {changed.length ? <><p className="muted small">{annal!.laws.length > 1 ? "Specimen across this year’s recorded laws" : "Before and after in the specimen"}</p><Specimen words={changed} changes onWord={(concept) => ctx.open({ kind: "word", variety: variety.id, concept })} /></> : <p className="muted small">{annal ? "This law did not change a recorded specimen word." : "No before-and-after specimen is recorded for this law here."}</p>}
+    {law.from !== null ? <p className="muted small">A wave from {language(law.from, ctx)}.</p>
+      : annal?.variety !== undefined && annal.variety !== null && annal.variety !== variety.id ? <p className="muted small">Inherited from {language(annal.variety, ctx)}.</p> : null}
+    {changed.length ? <><p className="muted small">{annal!.laws.length > 1 ? "Specimen across this year’s recorded laws" : "Before and after in the specimen"}</p><Specimen words={changed} changes onWord={(concept) => ctx.open({ kind: "word", variety: variety.id, concept })} /></> : null}
     <details open={expanded} onToggle={(e) => setExpanded(e.currentTarget.open)}><summary>Words changed · before and after</summary>{expanded ? <LawWords variety={variety} law={law} ctx={ctx} /> : null}</details>
   </div>;
 }
@@ -171,7 +172,7 @@ export function WordOrigin({ word: { origin, coined }, ctx }: { word: Pick<Varia
   return <span className={`origin origin-${origin.kind}`}>
     {coined ? coined.kind === "calque"
       ? <>Translated part by part from {language(coined.from!, ctx)} in {year(coined.generation)}.</>
-      : <>{coined.kind === "compound" ? "Made" : "Derived"} in {year(coined.generation)} from {coined.parts.map((part, i) => <span key={i}>{i ? " and " : ""}<span className="word">{part.spelled}</span> ‘{part.gloss}’</span>)}.</>
+      : <>{coined.kind === "compound" ? "Made" : "Derived"} in {year(coined.generation)} from {coined.parts.map((part, i) => <span key={i}>{i ? " and " : ""}<span className="word">{part.spelled}</span> “{part.gloss}”</span>)}.</>
       : <>{origin.kind === "borrowed" ? <>Borrowed from {origin.fromVariety !== null ? language(origin.fromVariety, ctx) : origin.from ?? "an unrecorded source"}</> : origin.kind === "kept" ? <>Kept from {origin.fromVariety !== null ? language(origin.fromVariety, ctx) : origin.from ?? "an earlier tongue"}</> : origin.kind === "derived" ? <>Built from “{origin.from}”</> : origin.kind === "coined" ? "Coined" : "Inherited"}, {year(origin.generation)}.</>}
     {coined?.opaqueSince !== null && coined?.opaqueSince !== undefined ? <> Its parts were no longer heard in it after {year(coined.opaqueSince)}.</> : null}
     {origin.cause ? <LoanCauseText cause={origin.cause} ctx={ctx} /> : null}

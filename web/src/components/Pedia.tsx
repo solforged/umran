@@ -29,7 +29,7 @@ import { YEARS } from "../model";
 import { causePhrase, CHRONICLE, CONTACT_NAME, countWord, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, faithTeaching, FAITH_HOW, FAITH_NAME, FALL_NAME, howCame, howNamed, hue, landCardLabel, LEG_BY, LIVELIHOOD_NAME, otherNames, peopleLabel, peoplePhrases, RISE_NAME, SCHISM_CAUSE, seasonalPhrase, stateLabel, STRONG, temperament, TENET_NOUN, TERRAIN_NAME, unnamedName, weatherDeparture } from "../lore";
 import { cityLabel, continentLabel, waterLabel } from "../lore";
 import { filterHistory, findAnnal, individualAnnals, relatedMoments, subjectHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
-import { eraBirths, eras, quietLine, quietRuns, quietSummary, QUIET_KINDS, speechLine, type Era, type EraYear } from "../eras";
+import { eraBirths, eras, latestTold, quietLine, quietRuns, quietSummary, QUIET_KINDS, speechLine, type Era, type EraYear } from "../eras";
 import { bond } from "../words";
 import type { InterventionKind } from "./ActionDialog";
 import { SettlementAccount } from "./SettlementDesk";
@@ -361,9 +361,9 @@ function focusLabel(focus: Focus, context: Context): string {
     case "continent":
       return continentName(focus.landmass, context);
     case "river":
-      return waterLabel(context.rivers, context.map, "river", focus.id);
+      return waterLabel(context.overview, context.rivers, context.map, "river", focus.id);
     case "lake":
-      return waterLabel(context.lakes, context.map, "lake", focus.id);
+      return waterLabel(context.overview, context.lakes, context.map, "lake", focus.id);
     case "zone":
       return zoneName(focus.id, context);
     case "event":
@@ -747,13 +747,13 @@ function ContinentCard({ landmass, context }: { landmass: number; context: Conte
 
 function RiverLink({ id, context }: { id: number; context: Context }) {
   return <button type="button" className="link word" onClick={() => context.go({ kind: "river", id })}>
-    {waterLabel(context.rivers, context.map, "river", id)}
+    {waterLabel(context.overview, context.rivers, context.map, "river", id)}
   </button>;
 }
 
 function LakeLink({ id, context }: { id: number; context: Context }) {
   return <button type="button" className="link word" onClick={() => context.go({ kind: "lake", id })}>
-    {waterLabel(context.lakes, context.map, "lake", id)}
+    {waterLabel(context.overview, context.lakes, context.map, "lake", id)}
   </button>;
 }
 
@@ -805,7 +805,7 @@ function RiverCard({ id, context }: { id: number; context: Context }) {
   const living = overview.communities.filter((c) => c.ended === null && c.lands.some((land) => river.course.includes(land)));
   const flow = climate.rivers.find((flow) => flow.id === id);
   return <>
-    <CardHead icon={Waves} kind="A river" title={waterLabel(context.rivers, context.map, "river", id)}
+    <CardHead icon={Waves} kind="A river" title={waterLabel(context.overview, context.rivers, context.map, "river", id)}
       sub={now ? <span className="ipa">/{now.ipa}/</span> : null} />
     <Facts rows={[
       ["Length", `${Math.round(river.lengthKm).toLocaleString()} km`],
@@ -844,7 +844,7 @@ function LakeCard({ id, context }: { id: number; context: Context }) {
   const lake = map.lakes[id];
   const now = view.names.at(-1);
   return <>
-    <CardHead icon={Waves} kind="A lake" title={waterLabel(context.lakes, context.map, "lake", id)}
+    <CardHead icon={Waves} kind="A lake" title={waterLabel(context.overview, context.lakes, context.map, "lake", id)}
       sub={now ? <span className="ipa">/{now.ipa}/</span> : null} />
     <Facts rows={[
       ["Lies in", <Joined items={lake.regions} link={(region) => <LandLink region={region} context={context} />} />],
@@ -1167,7 +1167,7 @@ function WorldCard({ context }: { context: Context }) {
   const spoken = overview.varieties.filter((v) => v.spoken);
   const crafts = overview.crafts.filter((c) => c.first !== null);
   const continent = overview.continents.find((c) => c.name)?.name?.name ?? context.title ?? "these lands";
-  const last = overview.annals.at(-1);
+  const last = latestTold(overview.annals);
   const writing = context.running ?? null;
   // While the years run, the frontispiece tells the latest turning points.
   const told = writing === null ? [] : overview.annals.filter((annal) => !QUIET_KINDS.has(annal.kind)).slice(-6);

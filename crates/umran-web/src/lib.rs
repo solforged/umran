@@ -2942,14 +2942,14 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
         cause: origin_cause(world, word),
         text: match word.origin {
             Origin::Founding => format!(
-                "A root of the founding language, for '{}'",
+                "A root of the founding language, for “{}”",
                 word.first_sense.gloss
             ),
-            Origin::Expressive => format!("Coined for '{}'", word.first_sense.gloss),
+            Origin::Expressive => format!("Coined for “{}”", word.first_sense.gloss),
             Origin::Compound { modifier, head } => {
                 let v = &world.varieties[variety];
                 format!(
-                    "From {} + {}, for '{}'",
+                    "From {} + {}, for “{}”",
                     v.spell(v.lexicon.get(modifier).form_at(word.born)),
                     v.spell(v.lexicon.get(head).form_at(word.born)),
                     word.first_sense.gloss
@@ -2978,7 +2978,7 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
                         ),
                 };
                 format!(
-                    "Built from '{}' with {how}, for '{}'",
+                    "Built from “{}” with {how}, for “{}”",
                     base.first_sense.gloss, word.first_sense.gloss
                 )
             }
@@ -2988,7 +2988,7 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
                 let worn = v.spell(old.form_at(word.born));
                 match with {
                     Some(with) => format!(
-                        "Compounded from '{}' and the old word {worn}, for '{}'",
+                        "Compounded from “{}” and the old word {worn}, for “{}”",
                         v.lexicon.get(with).first_sense.gloss,
                         word.first_sense.gloss
                     ),
@@ -3001,19 +3001,19 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
                             format!("{written}-")
                         };
                         format!(
-                            "The old word {worn} made fuller with {affix}, for '{}'",
+                            "The old word {worn} made fuller with {affix}, for “{}”",
                             word.first_sense.gloss
                         )
                     }
                 }
             }
             Origin::Borrowed { from, .. } if kept_through_shift(word) => format!(
-                "Kept from {} when its speakers changed language, for '{}'",
+                "Kept from {} when its speakers changed language, for “{}”",
                 world.language_title(from),
                 word.first_sense.gloss
             ),
             Origin::Borrowed { from, .. } => format!(
-                "Borrowed from {} for '{}'",
+                "Borrowed from {} for “{}”",
                 world.language_title(from),
                 word.first_sense.gloss
             ),
@@ -3035,10 +3035,10 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
                     generation: entry.generation,
                     cause: None,
                     text: if times == 1 {
-                        format!("For a few generations also used for '{}'", concept.gloss)
+                        format!("For a few generations also used for “{}”", concept.gloss)
                     } else {
                         format!(
-                            "Now and then used for '{}' too, never for long ({times} times)",
+                            "Now and then used for “{}” too, never for long ({times} times)",
                             concept.gloss
                         )
                     },
@@ -3069,8 +3069,8 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
                         .ipa_stressed(world.varieties[variety].stress_at(entry.generation))
                 )
             }
-            Event::Extended { to } => format!("Also came to mean '{}'", to.gloss),
-            Event::Lost { sense } => format!("No longer used for '{}'", sense.gloss),
+            Event::Extended { to } => format!("Also came to mean “{}”", to.gloss),
+            Event::Lost { sense } => format!("No longer used for “{}”", sense.gloss),
             Event::Obsolete => "Fell out of use".into(),
         };
         out.push(HistoryLine {

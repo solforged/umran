@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { causePhrase, cityLabel, faithTeaching, landCardLabel, otherNames, peopleLabel, seasonalPhrase, stateLabel } from "../web/src/lore";
+import { causePhrase, cityLabel, faithTeaching, landCardLabel, otherNames, peopleLabel, seasonalPhrase, stateLabel, waterLabel } from "../web/src/lore";
 import type { Annal, Overview, PlaceExonym, ReligionView, Seasons, WorldMap } from "../web/src/model";
 
 const entry = (id: string, kind: Annal["kind"], generation: number, fields: Partial<Annal> = {}) => ({
@@ -101,6 +101,23 @@ describe("reading names", () => {
     expect(world.places[0].names[0].spelled).toBe("Poghtz");
     expect(landCardLabel(world, map, 0)).toContain("northern forest");
     expect(landCardLabel(world, map, 1)).toContain("southern forest");
+  });
+
+  test("unnamed lands and rivers are placed by the nearest named land, by position only among those beside the same land", () => {
+    const world = overview({ varieties: [], communities: [], places: [{ region: 0, names: [{ spelled: "Īnip" }], exonyms: [] }, { region: 4, names: [{ spelled: "Tāw" }], exonyms: [] }] as Overview["places"] });
+    const region = (id: number, center: [number, number], neighbours: number[], terrain = "hills") => ({ id, terrain, center, neighbours });
+    const map = {
+      regions: [region(0, [0, 0], [1, 2]), region(1, [0, 10], [0]), region(2, [0, -10], [0]), region(3, [40, 0], [4, 5]), region(4, [50, 0], [3]), region(5, [30, 0], [3], "forest")],
+      rivers: [{ id: 0, course: [1, 0] }, { id: 1, course: [3] }],
+      lakes: [],
+    } as unknown as WorldMap;
+    expect(landCardLabel(world, map, 3)).toBe("Unnamed hills by Tāw");
+    expect(landCardLabel(world, map, 5)).toBe("Unnamed forest near Tāw");
+    expect(landCardLabel(world, map, 1)).toBe("Unnamed hills by Īnip (northern hills)");
+    expect(landCardLabel(world, map, 2)).toBe("Unnamed hills by Īnip (southern hills)");
+    const rivers = [{ names: [] }, { names: [] }];
+    expect(waterLabel(world, rivers, map, "river", 0)).toBe("Unnamed river by Īnip");
+    expect(waterLabel(world, rivers, map, "river", 1)).toBe("Unnamed river by Tāw");
   });
 
   test("namesake peoples are told apart by their heart land, by number only when it does not tell them apart", () => {

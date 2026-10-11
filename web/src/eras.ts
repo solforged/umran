@@ -22,6 +22,15 @@ export type EraYear = {
 };
 export const ERA_OPENERS: ReadonlySet<Annal["kind"]> = new Set(["rose", "fell", "conquest", "faith", "classical"]);
 export const QUIET_KINDS: ReadonlySet<Annal["kind"]> = new Set(["neighbours", "spread", "displaced", "parted", "contact", "climate", "river-flow", "meaning", "respelling", "temper", "law", "grammar", "pronoun-renewed", "pronoun-borrowed", "class-merged", "harmony-gained", "harmony-lost", "tone-gained", "tone-lost", "coinage", "calque", "purist-replacement", "tenet-adopted", "drought", "hard-winter", "flood", "sea-route-opened"]);
+
+/// The entry a caption tells as the world's latest: the latest year's last
+/// headline, or its last entry when that year held only bookkeeping.
+export function latestTold(annals: readonly Annal[]): Annal | undefined {
+  const latest = annals.at(-1);
+  if (!latest || !QUIET_KINDS.has(latest.kind)) return latest;
+  return annals.findLast((annal) => annal.generation === latest.generation && !QUIET_KINDS.has(annal.kind)) ?? latest;
+}
+
 /// Quiet kinds `quietLine` describes in its own words; the rest are named
 /// by their chronicle heading.
 const DESCRIBED: ReadonlySet<Annal["kind"]> = new Set(["neighbours", "spread", "displaced", "parted", "contact", "climate", "river-flow", "temper", "law", "grammar", "meaning", "respelling"]);
