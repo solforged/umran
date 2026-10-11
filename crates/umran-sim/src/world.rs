@@ -3026,11 +3026,19 @@ impl World {
             );
             let foreign =
                 self.map.regions[self.communities[people].home()].landmass != Some(landmass);
+            let taken = |form: &crate::form::Form| {
+                let spelled = speech.title(form);
+                self.continent_names
+                    .iter()
+                    .flatten()
+                    .any(|other| other.spelled == spelled)
+            };
             let Some(name) = continent_name(
                 speech,
                 self.known_place(variety, region).unwrap(),
                 &self.communities[people].name,
                 foreign,
+                taken,
                 &mut rng,
                 self.generation,
             ) else {
@@ -7568,6 +7576,50 @@ mod tests {
         assert_eq!(
             (name.people, name.variety, name.witness, name.since),
             (a, av, earlier, 20)
+        );
+    }
+    #[test]
+    fn one_witness_never_gives_two_continents_the_same_heading() {
+        // A people that hears of several far continents at once could call
+        // each of them "the far land" before headings were checked.
+        let mut checked = 0;
+        for seed in 40..52 {
+            let mut world = cultural_world(seed);
+            let continents: Vec<_> = world
+                .map
+                .landmasses
+                .iter()
+                .filter(|m| m.kind == LandmassKind::Continent)
+                .map(|m| m.regions.clone())
+                .collect();
+            if continents.len() < 3 {
+                continue;
+            }
+            let a = cultural_found(&mut world, seed, continents[0][0]);
+            let v = world.communities[a].variety;
+            for (i, regions) in continents[1..].iter().enumerate() {
+                let name = Naming::Place {
+                    place: crate::names::PLACES[i % crate::names::PLACES.len()].into(),
+                }
+                .coin(&world.varieties[v], None, world.generation)
+                .unwrap();
+                world.varieties[v].exonyms.push((regions[0], name));
+            }
+            world.refresh_places();
+            let spelled: Vec<_> = world
+                .continent_names
+                .iter()
+                .flatten()
+                .map(|name| name.spelled.clone())
+                .collect();
+            assert_eq!(spelled.len(), continents.len(), "seed {seed}");
+            let unique: std::collections::BTreeSet<_> = spelled.iter().collect();
+            assert_eq!(unique.len(), spelled.len(), "seed {seed}: {spelled:?}");
+            checked += 1;
+        }
+        assert!(
+            checked >= 3,
+            "too few worlds with three continents: {checked}"
         );
     }
     #[test]

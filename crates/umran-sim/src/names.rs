@@ -517,11 +517,15 @@ fn water_name(
 
 /// A continent heading in a witness language's own words. Local headings
 /// may name a place or people; foreign headings may call the land far or new.
+/// A heading `taken` by another continent is never offered, so one language
+/// that charts several lands does not call two of them "the far land";
+/// `None` when every heading is taken.
 pub fn continent_name(
     variety: &Variety,
     place: &Name,
     people: &Name,
     foreign: bool,
+    taken: impl Fn(&Form) -> bool,
     rng: &mut impl Rng,
     generation: u32,
 ) -> Option<Name> {
@@ -546,9 +550,20 @@ pub fn continent_name(
             format!("the land of the {}", variety.title(&people.form)),
         ));
     }
-    let (modifier, meaning) = modifiers.swap_remove(index(rng, modifiers.len()));
+    let mut headings: Vec<(Form, String)> = modifiers
+        .into_iter()
+        .map(|(modifier, meaning)| {
+            let form = clipped(variety.morphology.compound(modifier, head), MAX_PLACE_NAME);
+            (form, meaning)
+        })
+        .filter(|(form, _)| !taken(form))
+        .collect();
+    if headings.is_empty() {
+        return None;
+    }
+    let (form, meaning) = headings.swap_remove(index(rng, headings.len()));
     Some(Name {
-        form: clipped(variety.morphology.compound(modifier, head), MAX_PLACE_NAME),
+        form,
         meaning,
         coined: generation,
         log: Vec::new(),
@@ -922,7 +937,9 @@ mod tests {
                 .form;
             for foreign in [false, true] {
                 let mut rng = crate::rng::stream(seed, &[crate::rng::key("continent name")]);
-                let name = continent_name(&speech, &place, &people, foreign, &mut rng, 0).unwrap();
+                let name =
+                    continent_name(&speech, &place, &people, foreign, |_| false, &mut rng, 0)
+                        .unwrap();
                 let mut modifiers: Vec<&Form> = ["wide", "big", "far", "new"]
                     .into_iter()
                     .filter(|id| foreign || !["far", "new"].contains(id))
@@ -940,6 +957,17 @@ mod tests {
                 if !foreign {
                     assert!(!["the far land", "the new land"].contains(&name.meaning.as_str()));
                 }
+                let mut rng = crate::rng::stream(seed, &[crate::rng::key("continent name")]);
+                let other = continent_name(
+                    &speech,
+                    &place,
+                    &people,
+                    foreign,
+                    |form| *form == name.form,
+                    &mut rng,
+                    0,
+                );
+                assert!(other.is_none_or(|other| other.form != name.form));
             }
         }
     }

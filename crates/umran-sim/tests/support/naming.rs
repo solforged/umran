@@ -60,11 +60,11 @@ fn grouped_sites(world: &World, anchor: usize) -> Vec<usize> {
     sites
 }
 
-pub fn world(seed: u64) -> World {
+pub fn world(seed: u64, size: MapSize) -> World {
     let mut world = World::with_geography(
         seed,
         Params::default(),
-        MapSize::Medium,
+        size,
         GeographyVersion::ContinentalV6,
     );
     let profiles = SoundProfile::presets();
@@ -139,11 +139,12 @@ pub fn assert_forms(world: &World) {
     }
 }
 
-pub fn band(seeds: u64, generations: u32, verify: bool) {
+pub fn band(seeds: u64, generations: u32, size: MapSize, verify: bool) {
     let (mut living, mut duplicate, mut epithets, mut stacked, mut daughters, mut occupied) =
         (0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
+    let (mut continents, mut namesakes) = (0usize, 0usize);
     for seed in 0..seeds {
-        let mut world = world(seed);
+        let mut world = world(seed, size);
         if verify {
             assert_forms(&world);
         }
@@ -192,9 +193,20 @@ pub fn band(seeds: u64, generations: u32, verify: bool) {
             lands.extend(world.communities[c].lands.iter().copied());
         }
         occupied += lands.len();
+        let headings: Vec<_> = world.continent_names.iter().flatten().collect();
+        continents += headings.len();
+        namesakes += headings
+            .iter()
+            .enumerate()
+            .filter(|(i, name)| {
+                headings[..*i]
+                    .iter()
+                    .any(|other| other.spelled == name.spelled)
+            })
+            .count();
     }
     println!(
-        "{seeds} seeds x {generations} generations, three-grouped: mean living={:.3}; duplicate-name share={:.3}% ({duplicate}/{living}); epithet share={:.3}% ({epithets}/{living}); stacked={stacked}/{daughters} daughters ({:.3}%); mean occupied={:.3}",
+        "{seeds} seeds x {generations} generations, {size:?}, three-grouped: mean living={:.3}; duplicate-name share={:.3}% ({duplicate}/{living}); epithet share={:.3}% ({epithets}/{living}); stacked={stacked}/{daughters} daughters ({:.3}%); mean occupied={:.3}; continent headings={continents}, repeated={namesakes}",
         living as f64 / seeds as f64,
         duplicate as f64 * 100.0 / living as f64,
         epithets as f64 * 100.0 / living as f64,
@@ -202,6 +214,7 @@ pub fn band(seeds: u64, generations: u32, verify: bool) {
         occupied as f64 / seeds as f64
     );
     if verify {
+        assert_eq!(namesakes, 0, "two continents share a heading");
         assert!(
             stacked * 100 <= daughters,
             "stacked names exceed 1% of daughters"

@@ -620,7 +620,11 @@ This bookkeeping makes no random draws and does not itself change replay.
   land of" a people or place, a quality such as "the wide land", or,
   for a continent known only from across the sea, "the far land". The
   name is fixed once written, as Herodotus kept *Asia* and *Libya*,
-  whatever later becomes of the language that gave it.
+  whatever later becomes of the language that gave it. A name already on
+  the chart is never offered again, so a language that comes to know
+  several continents calls only one of them "the far land"; when every
+  name it could give is taken, the continent stays unnamed until some
+  people can give it a new one.
 - Varieties fork on splits and shifts and keep their lineage (`Fork`);
   `World::cognate` and `root_of` give true descent. The comparative method
   (`compare.rs`) must never read lineage; it is only graded against it.

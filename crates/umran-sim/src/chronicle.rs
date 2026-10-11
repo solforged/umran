@@ -46,7 +46,8 @@ use std::collections::BTreeMap;
 /// Revision 56 lets sparse peoples bud onto empty land and caps fission strain.
 /// Revision 57 gives epithet-named peoples no further epithet and fuses
 /// identical consonants into one long consonant.
-pub const ENGINE_REVISION: u32 = 57;
+/// Revision 58 never gives two continents the same chart heading.
+pub const ENGINE_REVISION: u32 = 58;
 /// Revision 33 replaces flat geography and its region identities with a sphere.
 /// Earlier region-targeted actions cannot be replayed on the spherical mesh.
 pub const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;
