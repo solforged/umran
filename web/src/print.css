@@ -1,0 +1,129 @@
+/* A complete Book is laid out offscreen while its engine reads settle. */
+.edition-host {
+  position: absolute;
+  left: -100000px;
+  top: 0;
+  width: 64rem;
+  pointer-events: none;
+}
+.edition-host .book,
+.book.book-edition {
+  position: static;
+  inset: auto;
+  display: block;
+  min-height: 0;
+  height: auto;
+  overflow: visible;
+  border: 0;
+  box-shadow: none;
+  animation: none;
+}
+.edition-host .book-body,
+.book-edition .book-body,
+.edition-host .book-page,
+.book-edition .book-page {
+  display: block;
+  height: auto;
+  max-height: none;
+  overflow: visible;
+  scroll-behavior: auto;
+}
+.book-edition .book-contents { display: block; }
+.book-edition { padding: 1rem; color: var(--ink); font-family: var(--serif); line-height: 1.45; }
+.book-edition .book-contents { position: static; width: auto; max-height: none; overflow: visible; }
+.book-edition :is(.table-wrap, .book-subject, .book-language-section) { max-height: none; overflow: visible; }
+.edition-host [data-edition-omit] { display: none; }
+.edition-progress {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / .45);
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.edition-progress > div {
+  width: min(28rem, calc(100vw - 2rem));
+  padding: 1.5rem;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  box-shadow: 0 12px 32px rgb(0 0 0 / .3);
+}
+.edition-progress progress { display: block; width: 100%; margin-block: 1rem; accent-color: var(--accent); }
+
+@page { size: auto; margin: 18mm 16mm 20mm; }
+@media print {
+  :root, :root[data-theme] {
+    --paper: white;
+    --paper-raised: white;
+    --ink: #211b14;
+    --ink-soft: #514638;
+    --line: #b3a68f;
+    --accent: #72291e;
+    --sea: #f1eee5;
+    --gold: #927026;
+    --hue-light: 40%;
+    --wash-plains: #e8e5ce;
+    --wash-forest: #d7e0c8;
+    --wash-steppe: #ece2c6;
+    --wash-hills: #e4d9c9;
+    --wash-mountains: #d5cec6;
+    --wash-desert: #eeddbd;
+    color-scheme: light;
+  }
+  .book-body { display: block !important; height: auto !important; min-height: 0 !important; overflow: visible !important; }
+  html, body { height: auto !important; overflow: visible !important; background: white !important; color: var(--ink); }
+  body { margin: 0; font-size: 11pt; }
+  body:has(.edition-host[data-edition-print]) > :not(.edition-host[data-edition-print]) { display: none !important; }
+  .edition-host:not([data-edition-print]) { display: none !important; }
+  .edition-host[data-edition-print] { position: static; inset: auto; width: auto; }
+  body:not(:has(.edition-host[data-edition-print])) :is(.workbench, .app-header, .time-bar, .pedia, .folio-host, .light-switch, .pwa-notice) { display: none !important; }
+  .book,
+  .app > .book {
+    position: static !important;
+    inset: auto !important;
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+    animation: none;
+  }
+  .book-page { display: block !important; overflow: visible !important; height: auto !important; max-height: none !important; padding: 0 !important; }
+  .book :is([data-edition-omit], .book-sheet-head, .book-running-head, .book-copy, .book-close, .filters, .takeout),
+  .edition-progress { display: none !important; }
+  .book-contents { position: static !important; width: auto; max-height: none; overflow: visible; }
+  .book-chapter { break-before: page; max-width: none; margin: 0; padding-top: 0; border: 0; }
+  .book-frontispiece { break-before: auto; }
+  .book :is(h1, h2, h3, h4, h5, h6, summary) { break-after: avoid; }
+  .book :is(p, li) { orphans: 3; widows: 3; }
+  .book :is(figure, .specimen, .chapter-facts > div) { break-inside: avoid; }
+  .book-frontispiece figure { margin: 1.5rem 0; }
+  .book-frontispiece .miniature { width: 100%; max-height: 85mm; aspect-ratio: 2.2; }
+  .book-frontispiece .miniature svg { width: 100%; height: 100%; }
+  .book .miniature { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .book a, .book button.link { color: inherit; text-decoration: none; border: 0; background: none; padding: 0; font: inherit; }
+  .book a::after { content: none !important; }
+  .book details > summary { display: block; list-style: none; }
+  .book details > summary::marker, .book details > summary::-webkit-details-marker { display: none; }
+  .book .table-wrap { overflow: visible; max-height: none; }
+  .book details, .book details::details-content { display: contents; }
+  .book table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  .book thead { display: table-header-group; }
+  .book tr { break-inside: avoid; }
+  .book tr.dictionary-evidence { break-inside: auto; }
+  .book td, .book th { white-space: normal; overflow-wrap: anywhere; }
+  .book th { position: static; }
+  .book .loan-trail-strip { flex-wrap: wrap; overflow: visible; }
+  .book .lexical-evidence .gloss { min-width: 0; }
+  .book .word, .book .ipa { font-size: inherit; }
+}

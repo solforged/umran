@@ -640,6 +640,41 @@ export function continentLabel(overview: Overview, map: WorldMap, landmass: numb
   return sites.length > 1 ? `${name} (${geographicQualifier(sites, landmass)})` : name;
 }
 
+/// A weather zone has no name of its own; call it after its first named
+/// land, as a traveller would, or else by where it lies on its continent.
+export function weatherZoneLabel(id: number, overview: Overview, map: WorldMap): string {
+  const regions = map.climateZones[id]?.regions ?? [];
+  const named = regions.find((r) => overview.places.some((p) => p.region === r && p.names.length > 0));
+  if (named !== undefined) return `The weather around ${landCardLabel(overview, map, named)}`;
+  const first = map.regions[regions[0]];
+  const mass = first?.landmass === null || first === undefined ? undefined : map.landmasses[first.landmass];
+  if (!mass) return "The weather of unnamed lands";
+  const [longitude, latitude] = map.regions[mass.anchor].center;
+  const lon = longitude * Math.PI / 180, lat = latitude * Math.PI / 180;
+  // An area-weighted spherical centroid does not jump across the chart seam.
+  const centroid = regions.reduce(([x, y, z], regionId) => {
+    const region = map.regions[regionId];
+    const l = region.center[0] * Math.PI / 180, p = region.center[1] * Math.PI / 180;
+    return [
+      x + region.areaKm2 * Math.cos(p) * Math.cos(l),
+      y + region.areaKm2 * Math.cos(p) * Math.sin(l),
+      z + region.areaKm2 * Math.sin(p),
+    ];
+  }, [0, 0, 0]);
+  const [x, y, z] = centroid;
+  const east = -x * Math.sin(lon) + y * Math.cos(lon);
+  const north = -x * Math.sin(lat) * Math.cos(lon) - y * Math.sin(lat) * Math.sin(lon) + z * Math.cos(lat);
+  const toward = x * Math.cos(lat) * Math.cos(lon) + y * Math.cos(lat) * Math.sin(lon) + z * Math.sin(lat);
+  const bearingLength = Math.hypot(east, north), centerLength = Math.hypot(x, y, z);
+  const distanceKm = Math.atan2(bearingLength, toward) * map.radiusKm;
+  // Balanced/antipodal districts and a polar anchor have no unique bearing.
+  const side = centerLength < 1e-6 || Math.abs(latitude) > 89.999 || (toward < 0 && bearingLength < centerLength * 1e-9) ? "lands"
+    : distanceKm < 100 ? "heart"
+    : `${north > Math.abs(east) / 2 ? "north" : north < -Math.abs(east) / 2 ? "south" : ""}${Math.abs(east) > Math.abs(north) / 2 ? (east > 0 ? "-east" : "-west") : ""}`.replace(/^-/, "");
+  const continent = overview.continents.find((c) => c.landmass === mass.id)?.name?.name;
+  return continent ? `The weather of ${continent}'s ${side}` : `The weather of an unnamed land's ${side}`;
+}
+
 export function cityLabel(overview: Overview, map: WorldMap, city: Overview["cities"][number]): string {
   const regions = [...new Set(overview.cities.filter((other) => other.name.name === city.name.name).map((other) => other.region))];
   const sites = regions.map((id) => ({ id, center: map.regions[id].center, terrain: TERRAIN_NAME[map.regions[id].terrain].toLowerCase() }));

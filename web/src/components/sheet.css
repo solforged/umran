@@ -12,17 +12,17 @@
 @media (min-width: 600px) and (max-width: 839px) and (orientation: portrait) {
   .workbench { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 45fr) minmax(0, 55fr) auto; grid-template-areas: "notices" "map" "pedia" "time"; }
   .workbench .pedia { border-left: 0; border-top: 1px solid var(--line); }
-  .workbench .folio-host, .workbench .sheet-host { grid-column: 1; grid-row: 2 / 4; }
+  .workbench .folio-host { grid-column: 1; grid-row: 2 / 4; }
 }
 @media (min-width: 600px) and (max-width: 839px) and (orientation: landscape) {
   .workbench { grid-template-columns: minmax(0, 1fr) minmax(20rem, 45%); grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: "notices notices" "map pedia" "time time"; }
-  .workbench .folio-host, .workbench .sheet-host { grid-area: map; }
+  .workbench .folio-host { grid-area: map; }
   .workbench .pedia { border-top: 0; border-left: 1px solid var(--line); }
 }
 
 @media (max-width: 599px) {
   .workbench { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: "notices" "map" "time"; }
-  .workbench .folio-host, .workbench .sheet-host { grid-area: map; z-index: 8; }
+  .workbench .folio-host { grid-area: map; z-index: 8; }
   /* The wrapper anchors the sheet; only the drawn map fits above its detent.
      Drag height is deliberately not used, so fitting happens on snap only. */
   .stage { --map-sheet-peek: 5.5rem; --map-sheet-inset: var(--map-sheet-peek); }

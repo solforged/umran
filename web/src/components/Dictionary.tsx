@@ -1,4 +1,4 @@
-import { use, useEffect, useMemo, useRef, type MouseEvent, type ReactNode } from "react";
+import { Fragment, use, useEffect, useMemo, useRef, type MouseEvent, type ReactNode } from "react";
 import type { ReadEngine, LexiconForm, LexiconRow } from "../model";
 
 type OriginFilter = "all" | "inherited" | "derived" | "coined" | "borrowed" | "kept";
@@ -21,6 +21,7 @@ export function Dictionary({
   onConcept,
   renderOrigin,
   renderEvidence,
+  evidenceBelow = false,
   rowId,
 }: {
   engine: ReadEngine;
@@ -32,6 +33,8 @@ export function Dictionary({
   onConcept: (concept: string) => void;
   renderOrigin?: (form: LexiconForm) => ReactNode;
   renderEvidence?: (row: LexiconRow) => ReactNode;
+  /// Complete editions give the full word history the ledger's whole measure.
+  evidenceBelow?: boolean;
   rowId?: (row: LexiconRow) => string;
 }) {
   const { query, field, origin, concept } = view;
@@ -124,7 +127,7 @@ export function Dictionary({
           </thead>
           <tbody ref={tableRef}>
             {shown.map(({ row, dominantMatched, matchingForms }) => (
-              <Row key={row.concept} id={rowId?.(row)} row={row} dominantMatched={dominantMatched} matchingForms={matchingForms} selected={row.concept === concept} onSelect={() => open(row.concept)} renderOrigin={renderOrigin} renderEvidence={renderEvidence} />
+              <Row key={row.concept} id={rowId?.(row)} row={row} dominantMatched={dominantMatched} matchingForms={matchingForms} selected={row.concept === concept} onSelect={() => open(row.concept)} renderOrigin={renderOrigin} renderEvidence={renderEvidence} evidenceBelow={evidenceBelow} />
             ))}
           </tbody>
         </table>
@@ -134,7 +137,7 @@ export function Dictionary({
   );
 }
 
-function Row({ id, row, dominantMatched, matchingForms, selected, onSelect, renderOrigin, renderEvidence }: {
+function Row({ id, row, dominantMatched, matchingForms, selected, onSelect, renderOrigin, renderEvidence, evidenceBelow }: {
   id?: string;
   row: LexiconRow;
   dominantMatched: boolean;
@@ -143,6 +146,7 @@ function Row({ id, row, dominantMatched, matchingForms, selected, onSelect, rend
   onSelect: () => void;
   renderOrigin?: (form: LexiconForm) => ReactNode;
   renderEvidence?: (row: LexiconRow) => ReactNode;
+  evidenceBelow: boolean;
 }) {
   const select = (e: MouseEvent<HTMLTableRowElement>) => {
     if ((e.target as HTMLElement).closest("button, a, details, input, select")) return;
@@ -151,7 +155,7 @@ function Row({ id, row, dominantMatched, matchingForms, selected, onSelect, rend
   return <>
     {[row, ...matchingForms].map((form, i) => {
       const dominant = i === 0;
-      return <tr key={i} id={dominant ? id : undefined} data-concept={row.concept} data-matched-form={dominant ? undefined : form.spelled} aria-selected={dominant ? selected : undefined} className={selected ? "selected" : ""} onClick={select}>
+      return <Fragment key={i}><tr id={dominant ? id : undefined} data-concept={row.concept} data-matched-form={dominant ? undefined : form.spelled} aria-selected={dominant ? selected : undefined} className={selected ? "selected" : ""} onClick={select}>
         <td>{dominant ? <>
           <button type="button" className="link" onClick={(e) => { e.stopPropagation(); onSelect(); }}>{row.gloss}</button>
           {row.competitors > 0 ? <span className="badge" title="Other words compete for this meaning">+{row.competitors}</span> : null}
@@ -172,10 +176,12 @@ function Row({ id, row, dominantMatched, matchingForms, selected, onSelect, rend
                   ? `from ${form.origin.from}`
                   : form.origin.kind}
           </span>}
-          {dominant ? renderEvidence?.(row) : null}
+          {dominant && !evidenceBelow ? renderEvidence?.(row) : null}
         </td>
         <td className="num">{form.changes || ""}</td>
-      </tr>;
+      </tr>
+      {dominant && evidenceBelow && renderEvidence ? <tr className="dictionary-evidence"><td colSpan={5}>{renderEvidence(row)}</td></tr> : null}
+      </Fragment>;
     })}
   </>;
 }

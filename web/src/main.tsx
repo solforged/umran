@@ -5,6 +5,7 @@ import "./styles.css";
 import "./chart.css";
 import "./workbench.css";
 import "./components/sheet.css";
+import "./print.css";
 import { LightSwitch } from "./components/LightSwitch";
 import { PwaNotice } from "./components/PwaNotice";
 

@@ -99,6 +99,31 @@ export function speechLine(annals: Annal[], overview: Overview, born: number[] =
   return brief ? parts.join(" · ") : `${CHRONICLE.speech}: ${parts.join("; ")}.`;
 }
 
+/** Political eras remain the calendar; this chooses this language's recorded turning point. */
+export function languageEraChange(era: Pick<Era, "start" | "end">, annals: readonly Annal[], variety: number): Annal | null {
+  let chosen: Annal | null = null;
+  let importance = -1;
+  for (const annal of individualAnnals([...annals])) {
+    if (annal.variety !== variety || annal.generation < era.start || annal.generation > era.end) continue;
+    let score = -1;
+    switch (annal.kind) {
+      case "shift": case "koine": score = 60; break;
+      case "tone-gained": case "tone-lost": case "harmony-gained": case "harmony-lost": score = 50; break;
+      case "class-merged": score = 40; break;
+      case "pronoun-renewed": score = 30; break;
+      case "grammar": {
+        // The facade records grammar events structurally; never recognise them from prose.
+        const grammar = (annal as Annal & { grammar?: { event: string } }).grammar;
+        if (grammar?.event === "new-marker" || grammar?.event === "fusion") score = 30;
+        break;
+      }
+      case "law": score = annal.specimen.filter((word) => word.was !== null || word.wasIpa !== null).length; break;
+    }
+    if (score > importance) { chosen = annal; importance = score; }
+  }
+  return chosen;
+}
+
 /// A short heading for an opener, from the subjects it names, in their
 /// current names; the full entry stays the era's title.
 export function heading(annal: Annal, overview: Overview): string {

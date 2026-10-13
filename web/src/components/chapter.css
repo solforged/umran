@@ -24,6 +24,58 @@
 .grammar-category details, .word-paradigm details { margin-top: var(--dense-row); }
 .language-section details > summary { padding: var(--dense-row) 0; font-size: var(--dense-size); line-height: 1.3; }
 .grammar-category .roster { margin-block: var(--dense-row); }
+.law-ledger > li[data-selected] { background: color-mix(in srgb, var(--accent-mute) 45%, transparent); border-inline-start: 2px solid var(--accent); padding-inline: .5rem; }
+.law-ledger-head { flex-wrap: wrap; }
+.law-ledger-head .law-select[aria-pressed="true"] { color: var(--accent); text-decoration: underline; text-underline-offset: .2em; }
+.life-ribbon { margin: 1.1rem 0; min-width: 0; }
+.life-ribbon figcaption { font-family: var(--display); color: var(--ink-soft); font-size: 1.05rem; }
+.life-ribbon > .small { margin-block: .3rem .65rem; }
+.life-ribbon-scroll { padding-block: .2rem; border-block: 1px solid var(--line); scroll-behavior: smooth; }
+.life-ribbon-chart { padding-inline: .5rem; }
+.life-ribbon-axis, .life-ribbon-row { display: grid; grid-template-columns: 4.8rem minmax(0, 1fr); gap: .5rem; }
+.life-ribbon-axis { font-size: var(--dense-size); color: var(--ink-soft); padding-block: .2rem .4rem; }
+.life-ribbon-axis > div { display: flex; justify-content: space-between; }
+.life-ribbon-meaning { padding-top: .2rem; font-size: var(--dense-size); }
+.life-ribbon-track { min-width: 0; border-inline: 1px dotted var(--line); }
+.life-ribbon-lane { position: relative; height: calc(1rem + var(--label-rows) * 1.25rem); min-height: 1rem; }
+.life-ribbon-band { position: absolute; top: .35rem; height: .3rem; background: var(--ink-soft); opacity: .65; }
+.life-ribbon-band[data-holder="1"] { background: var(--gold); }
+.life-ribbon-band.unknown-onset { mask-image: linear-gradient(to right, transparent, black 35%); opacity: .5; }
+.life-ribbon-band.unknown-end { mask-image: linear-gradient(to right, black 70%, transparent); }
+/* A tick stays on its year even when its label moves to fit the lane. */
+:root .life-ribbon-tick { position: absolute; z-index: 1; top: .15rem; transform: translateX(-50%); display: block; width: .65rem; height: .8rem; padding: 0; margin: 0; border: 0; border-radius: 0; background: transparent; color: var(--ink); line-height: 1.15; font-variant: normal; letter-spacing: normal; text-transform: none; font-size: var(--dense-size); }
+.life-ribbon-tick-mark { position: absolute; width: 1px; background: var(--ink-soft); height: .8rem; top: 0; left: 50%; }
+.life-ribbon-tick.labeled .life-ribbon-tick-mark { height: calc(.9rem + var(--tick-row) * 1.25rem); }
+.life-ribbon-tick-form { position: absolute; top: calc(.9rem + var(--tick-row) * 1.25rem); left: calc(50% + var(--label-left)); width: max-content; white-space: nowrap; background: var(--paper); }
+:root .life-ribbon-tick:is(:hover, :focus-visible, .active, .selected) { z-index: 3; color: var(--accent); background: var(--accent-mute); outline: 1px solid var(--accent); outline-offset: 1px; }
+.life-ribbon-tick:is(.selected, .active) .life-ribbon-tick-mark { width: 2px; background: var(--accent); }
+.life-ribbon-tick:is(.selected, .active) .life-ribbon-tick-form { background: var(--accent-mute); }
+.life-ribbon-reading { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--dense-gap); min-height: 3rem; padding-top: .5rem; font-size: var(--dense-size); line-height: 1.4; }
+.life-ribbon-reading > p { grid-column: 1 / -1; margin: 0; }
+.life-ribbon-unknown { padding-left: 1.2rem; line-height: 1.35; }
+.life-ribbon.compact .life-ribbon-axis, .life-ribbon.compact .life-ribbon-row { grid-template-columns: 5rem minmax(0, 1fr) 4rem; }
+.life-ribbon.compact .life-ribbon-axis > div { grid-column: 2 / -1; }
+.life-ribbon.compact .life-ribbon-row { padding-block: .2rem; align-items: center; }
+.life-ribbon.compact .life-ribbon-meaning { padding-top: 0; }
+.life-ribbon-current { text-align: end; font-size: var(--dense-size); overflow-wrap: anywhere; }
+.builder-example { margin: .25rem 0 .4rem; font-size: var(--dense-size); font-family: var(--serif); }
+.grammar-category h6 { font-family: var(--display); font-size: var(--dense-size); font-weight: 500; color: var(--ink-soft); margin: .75rem 0 .3rem; }
+.grammar-story { border-inline-start: 1px solid var(--line); padding-inline-start: .65rem; }
+.grammar-appendix { margin-top: .75rem; color: var(--ink-soft); }
+.language-fortunes { list-style: none; padding: 0; margin: .5rem 0; font-size: var(--dense-size); line-height: 1.4; }
+.language-fortunes > li { display: grid; grid-template-columns: 5rem minmax(0, 1fr); gap: var(--dense-gap); padding: .4rem 0; border-bottom: 1px solid var(--line); }
+.language-fortunes strong { font-family: var(--display); font-weight: 500; }
+.language-fortunes p { margin: .15rem 0 0; }
+.loan-trail { min-width: 0; margin: .8rem 0 1rem; border-block: 1px solid var(--line); padding-block: .4rem; }
+.loan-trail-strip { display: flex; align-items: stretch; gap: .6rem; list-style: none; padding: .25rem 0 .6rem; margin: 0; overflow-x: auto; overscroll-behavior-inline: contain; }
+.loan-trail-strip > li { position: relative; flex: 0 0 auto; display: flex; flex-direction: column; gap: .2rem; max-width: 13rem; padding-inline-end: 1.3rem; font-size: var(--dense-size); line-height: 1.35; }
+.loan-trail-strip > li:not(:last-child)::after { content: "→"; position: absolute; inset-inline-end: 0; top: 1.5rem; color: var(--ink-soft); }
+.loan-trail-label { color: var(--ink-soft); font-family: var(--display); }
+.loan-trail-companions { margin: .3rem 0; line-height: 1.4; }
+@media (prefers-reduced-motion: reduce) {
+  .life-ribbon-scroll { scroll-behavior: auto; }
+  .life-ribbon *, .loan-trail * { transition: none !important; animation: none !important; }
+}
 @media (max-width: 599px) {
   .law-evidence { margin-left: 0; }
   .chapter-facts > div { grid-template-columns: 6rem minmax(0, 1fr); }

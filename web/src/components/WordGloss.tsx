@@ -1,8 +1,10 @@
 import { use, type ReactNode } from "react";
-import type { LoanCause, Overview, ReadEngine, Variant } from "../model";
+import type { LoanCause, LoanTrail, Overview, ReadEngine, Subject, Variant } from "../model";
 import { YEARS } from "../model";
 import type { ParadigmView } from "./LanguageChapter";
 import { Pending } from "./Pending";
+import { ChangeCauseText, EvidenceForm } from "./LifeRibbon";
+import { EditionContext } from "../edition";
 
 interface GlossProps {
   engine: ReadEngine;
@@ -14,8 +16,9 @@ interface GlossProps {
   /// How the loan on this line came, drawn by the card that knows the world.
   renderCause?: (cause: LoanCause, generation: number) => ReactNode;
   renderOrigin?: (variant: Variant) => ReactNode;
+  renderLink: (subject: Subject, label: ReactNode) => ReactNode;
   family?: number;
-  overview?: Overview;
+  overview: Overview;
 }
 
 /// A marginal note on one word: its forms, how it came to be, and its kin
@@ -34,10 +37,21 @@ function Gloss({
   onOpenVariety,
   renderCause,
   renderOrigin,
+  renderLink,
   family,
   overview,
 }: GlossProps) {
-  const detail = concept ? use(engine.word(generation, variety, concept)) : null;
+  // Start the independent evidence together rather than one Suspense retry
+  // per request, especially when every lexical entry is opened for an edition.
+  const reads = concept ? [
+    engine.word(generation, variety, concept),
+    engine.loanTrail(generation, variety, concept),
+    engine.wordLife(generation, variety, concept),
+  ] as const : null;
+  const detail = reads ? use(reads[0]) : null;
+  const trail = reads ? use(reads[1]) : null;
+  const life = reads ? use(reads[2]) : null;
+  const { complete } = use(EditionContext);
   if (!detail) {
     return <p className="muted gloss-hint">Choose a word, and its chronicle will be noted here.</p>;
   }
@@ -50,8 +64,9 @@ function Gloss({
         {detail.rank !== null ? ` · core meaning #${detail.rank}` : ""}
       </p>
       <h3>{detail.gloss}</h3>
+      {trail ? <LoanRoad trail={trail} variety={variety} overview={overview} renderLink={renderLink} /> : null}
       {detail.variants.map((v, i) => {
-        const extension = v.history.findLast((line) => line.text === `Also came to mean “${detail.gloss}”`);
+        const extensions = i === 0 ? life?.holders.at(-1)?.forms.filter((point) => point.cause.kind === "extended") ?? [] : [];
         return (
         <section key={i} className="variant">
           <div className="variant-head">
@@ -63,30 +78,36 @@ function Gloss({
             ) : null}
           </div>
           {renderOrigin ? <p>{renderOrigin(v)}</p> : null}
-          {extension ? <p className="word-extension">
-            Stretched to “{detail.gloss}” in year {extension.generation * YEARS}. The word’s root origin is recorded above.
-          </p> : null}
+          {extensions.map((point, j) => <p className="word-extension" key={j}>
+            Stretched to “{detail.gloss}” in year {point.generation * YEARS}. <ChangeCauseText cause={point.cause} ctx={{ overview, link: renderLink }} />.
+          </p>)}
           {(v as Variant & { paradigms?: ParadigmView[] }).paradigms?.map((p) => (
             <section className="word-paradigm" key={p.category}>
               <h4>{p.label}</h4>
               <ul className="roster">
-                {p.realizations.map((form, k) => <li key={k}>
+                {p.realizations.filter((form) => form.retired === null).map((form, k) => <li key={k}>
                   <span className="word">{form.spelled || "∅"}</span>
                   {form.said !== null ? <> · said <span className="word">{form.said}</span></> : null}
-                  {" "}<span className="ipa">/{form.ipa}/</span> · {Math.round(form.share * 100)}% of uses
-                  {form.retired !== null ? `; retired in year ${form.retired * YEARS}` : ""}.
-                  <details><summary>Recorded changes</summary><ol className="history">
+                  {" "}<span className="ipa">/{form.ipa}/</span> · {Math.round(form.share * 100)}% of uses.
+                  <details open={complete || undefined}><summary>Recorded changes</summary><ol className="history">
                     {form.history.map((line, j) => <li key={j}><span className="gen">{line.generation * YEARS}</span><span>{line.text}</span></li>)}
                   </ol></details>
                 </li>)}
               </ul>
+              {p.realizations.some((form) => form.retired !== null) ? <details className="grammar-appendix" open={complete || undefined}>
+                <summary>Retired realizations · dated appendix</summary>
+                <ul className="roster">{p.realizations.filter((form) => form.retired !== null).sort((a, b) => a.retired! - b.retired!).map((form, k) => <li key={k}>
+                  <span className="gen">{form.retired! * YEARS}</span> <span className="word">{form.spelled || "∅"}</span> <span className="ipa">/{form.ipa}/</span> · retired.
+                  <ol className="history">{form.history.map((line, j) => <li key={j}><span className="gen">{line.generation * YEARS}</span><span>{line.text}</span></li>)}</ol>
+                </li>)}</ul>
+              </details> : null}
             </section>
           ))}
           {v.senses.length > 1 ? (
             <p className="muted">Also means: {v.senses.filter((s) => s !== detail.gloss).join(", ")}</p>
           ) : null}
           <ol className="history">
-            {v.history.map((line, j) => (
+            {v.history.filter((line, j) => !(renderOrigin && v.origin.cause && (j === 0 || (i === 0 && trail && line.cause)))).map((line, j) => (
               <li key={j}>
                 {onScrub ? <button
                   type="button"
@@ -129,4 +150,28 @@ function Gloss({
       ) : null}
     </article>
   );
+}
+
+function LoanRoad({ trail, variety, overview, renderLink }: { trail: LoanTrail; variety: number; overview: Overview; renderLink: GlossProps["renderLink"] }) {
+  const event = trail.cause.kind === "unrecorded" ? null : trail.cause.event;
+  return <section className="loan-trail" aria-label="The road of the loan">
+    <h4>The road of the loan</h4>
+    <ol className="loan-trail-strip">
+      <li><span className="loan-trail-label">Donor</span>
+        {renderLink({ kind: "language", variety: trail.donor.variety }, overview.varieties[trail.donor.variety]?.name ?? "An unrecorded language")}
+        <span><EvidenceForm form={trail.donor.form} /></span>
+      </li>
+      <li><span className="loan-trail-label">Meeting · year {trail.since * YEARS}</span>
+        {event ? renderLink({ kind: "event", id: event }, "Read the meeting") : <span className="muted">Meeting not recorded</span>}
+      </li>
+      <li><span className="loan-trail-label">Heard</span><EvidenceForm form={trail.heard} /></li>
+      <li><span className="loan-trail-label">First said here</span><EvidenceForm form={trail.adapted} /></li>
+      {trail.after.map((point, i) => <li key={i}>
+        <span className="loan-trail-label">Year {point.generation * YEARS}</span>
+        <EvidenceForm form={point.form} />
+        <span><ChangeCauseText cause={point.cause} ctx={{ overview, link: renderLink }} /></span>
+      </li>)}
+    </ol>
+    {trail.sameMeeting.length ? <p className="small loan-trail-companions">Other words from this meeting: {trail.sameMeeting.map((word, i) => <span key={word.concept}>{i ? "; " : ""}{renderLink({ kind: "word", variety, concept: word.concept }, <EvidenceForm form={word.form} />)} “{word.gloss}”</span>)}.</p> : <p className="muted small">No other surviving word records this same meeting.</p>}
+  </section>;
 }

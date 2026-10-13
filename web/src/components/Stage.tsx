@@ -94,7 +94,7 @@ export function Stage({
   overview,
   title,
   notices,
-  sheet,
+  hidden = false,
   canUndo,
   undoDestination,
   selected,
@@ -137,8 +137,8 @@ export function Stage({
   overview: Overview;
   title: string;
   notices: ReactNode;
-  /// A sheet laid over the map: the export page.
-  sheet?: ReactNode;
+  /// Keep the workshop mounted while its book is being read.
+  hidden?: boolean;
   canUndo: boolean;
   undoDestination: UndoDestination | null;
   selected: number;
@@ -365,7 +365,7 @@ export function Stage({
     closeDecisions((generation + 1) * YEARS); setRunning(null); setPlaying(true);
   };
   const halt = () => { setPlaying(false); setRunning(null); };
-  useEffect(() => { if (sheet) halt(); }, [!!sheet]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (hidden) halt(); }, [hidden]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (running !== null || playing) return;
     setRunYear((value) => Number.isFinite(value) && value <= latest * YEARS ? nextRunYear(latest) : value);
@@ -499,6 +499,7 @@ export function Stage({
 
   // Shortcuts never steal keys from a form, a dialog, or a focused control.
   useEffect(() => {
+    if (hidden) return;
     const shortcut = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
       if (target.closest("input, select, textarea, [contenteditable=true], dialog[open]")) return;
@@ -510,7 +511,7 @@ export function Stage({
     };
     window.addEventListener("keydown", shortcut);
     return () => window.removeEventListener("keydown", shortcut);
-  }, []);
+  }, [hidden]);
 
   // What happened in the year in view.
   const fresh = useMemo(
@@ -641,7 +642,7 @@ export function Stage({
     : tint.kind === "words" ? `Words for “${concept?.replaceAll("_", " ")}”` : "Sound change";
 
   return (
-    <div className="stage workbench" data-detent={detent} data-settlement={desk !== null}
+    <div className="stage workbench" hidden={hidden} inert={hidden} data-detent={detent} data-settlement={desk !== null}
       onClickCapture={(event) => { keyboardActivation.current = event.detail === 0; }}
       onKeyDownCapture={(event) => { if (event.key === "Enter" || event.key === " ") keyboardActivation.current = true; }}>
       <div className="stage-notices">{notices}{runError ? <p className="notice error" role="alert">{runError}</p> : null}{followed ? <p className="following-note">Following {followed.label}. Study pauses when this subject appears in the chronicle. <button type="button" className="link" onClick={() => setFollowed(null)}>Stop following</button></p> : null}</div>
@@ -824,7 +825,6 @@ export function Stage({
         </div> : null}
       </section>
       <div className="folio-host" ref={setFolioHost} />
-      {sheet ? <div className="sheet-host">{sheet}</div> : null}
 
       {desk ? <SettlementDesk draft={desk} closing={liftedSettlement.closing} preview={settlementPreview.preview} error={settlementPreview.error}
         overview={settlementReading} map={map} catalog={catalog} latest={present} onChange={setSettlement}

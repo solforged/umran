@@ -102,6 +102,12 @@ the engine, not a second source. Blank where the engine has nothing yet.
      which state, faith, or city made it so.
    The sound laws, grammar, lexicon, and names, each hundreds of rows
    for a long-lived language, open beneath a one-line summary.
+   The six-meaning ribbon labels only spelling changes; sound-only ticks
+   keep their IPA before and after on hover and keyboard focus. Each
+   recorded holder has a separate band ending at its recorded end, with
+   unknown onsets kept visibly uncertain. The language card opens with a
+   compact ribbon and current forms, linking to the labelled Sound laws
+   reading; those labels fit within their lanes without overlapping.
 5. **The states, faiths, crafts, cities.** Short sections; their effect on
    speech is the point (court speech, sacred language, koine, the words a
    craft brings) (`StateView`, `ReligionView`, `crafts`, `cities`).
@@ -303,6 +309,19 @@ A first-class page, reached from the workshop's cartouche, laid out to
 be read in the order above, with the chart as frontispiece. Reuses the
 card sections rather than restating them. *As a save file* and *As text*
 are its last page, not its reason for existing.
+
+The seal, contents, and frontispiece appear before the engine finishes
+reading the chapters. Lands, each people, and each language section wait
+independently; a route or bookmark keeps its anchor as later sections
+arrive. Boxed initials do not decorate the book's headings.
+
+Print, the self-contained web page, and Markdown are editions of this same
+book, with every disclosure open. Editions keep their own read promises
+until completion, beyond the workshop's bounded card cache, and open
+languages in small batches so the progress counts completed chapters.
+Full word histories span the lexicon ledger's measure in an edition;
+printed evidence can continue across pages instead of trapping a whole
+history in a narrow, unbroken origin cell.
 
 ### At every size
 

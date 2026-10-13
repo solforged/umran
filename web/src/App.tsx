@@ -139,10 +139,14 @@ export default function App() {
   const keepPlace = useCallback(() => {
     const id = openedBook.current?.id;
     const { frame: reading, focus: subject } = placeRef.current;
-    if (id && readyId.current === id && reading) savePlace(id, {
-      telling: reading.telling, point: reading.point, viewing: reading.viewing, focus: subject,
-      ...(runToRef.current === null ? {} : { runTo: runToRef.current }),
-    });
+    if (id && readyId.current === id && reading) {
+      const book = readPlace(id)?.book;
+      savePlace(id, {
+        telling: reading.telling, point: reading.point, viewing: reading.viewing, focus: subject,
+        ...(runToRef.current === null ? {} : { runTo: runToRef.current }),
+        ...(book ? { book } : {}),
+      });
+    }
   }, []);
   const persist = useCallback(() => {
     const world = engine.current;
@@ -900,6 +904,7 @@ export default function App() {
       <Pending reading={frame.reading}>
       <Stage
         key={`${view.id}:${tellingVersion}`}
+        hidden={page === "book"}
         engine={frame.reading}
         catalog={catalog}
         map={worldMap}
@@ -908,27 +913,6 @@ export default function App() {
         overview={overview}
         title={title}
         notices={notices}
-        sheet={page === "book" ? (
-          <Pending reading={frame.reading}>
-          <Book
-            worldId={view.id}
-            chapter={bookChapter}
-            onChapter={(chapter) => navigate({ kind: "world", id: view.id, page: "book", ...(chapter ? { chapter } : {}) }, "replace")}
-            engine={frame.reading}
-            author={engine.current.author()}
-            decisionsFor={(telling) => engine.current!.read(telling).decisions()}
-            notes={notebook}
-            onReadNote={openNote}
-            catalog={catalog}
-            version={version}
-            generation={generation}
-            overview={overview}
-            title={title}
-            map={worldMap}
-            onBack={() => navigate({ kind: "world", id: view.id, page: "stage" })}
-          />
-          </Pending>
-        ) : null}
         initialFocus={initialFocus}
         onFocus={setFocus}
         onSettle={settle}
@@ -964,6 +948,43 @@ export default function App() {
         onRunOpened={() => setFirstRun(null)}
       />
       </Pending>
+      {page === "book" ? <Pending reading={frame.reading}>
+        <Book
+          key={`${view.id}:${tellingVersion}`}
+          worldId={view.id}
+          chapter={bookChapter}
+          onChapter={(chapter) => navigate({ kind: "world", id: view.id, page: "book", ...(chapter ? { chapter } : {}) }, "replace")}
+          engine={frame.reading}
+          author={engine.current.author()}
+          decisionsFor={(telling) => engine.current!.read(telling).decisions()}
+          notes={notebook}
+          onReadNote={openNote}
+          onEditTitlePage={async (nextTitle, nextAuthor) => {
+            const world = engine.current;
+            const saved = openedBook.current;
+            if (!world || saved?.id !== view.id) return "This world is no longer open.";
+            pendingWrites.current++;
+            try {
+              await world.setTitle(nextTitle);
+              await world.setAuthor(nextAuthor);
+              if (world !== engine.current || saved !== openedBook.current) return "This world is no longer open.";
+              saved.keptTitle = undefined;
+              setVersion((value) => value + 1);
+              return persist() ? null : "The title page is kept in this open world, but browser storage failed. Export a save file before closing.";
+            } catch (failure) { return message(failure); }
+            finally { pendingWrites.current--; }
+          }}
+          onReadTelling={(telling) => void readTelling(telling)}
+          onCompare={setCompareWith}
+          catalog={catalog}
+          version={version}
+          generation={generation}
+          overview={overview}
+          title={title}
+          map={worldMap}
+          onBack={() => navigate({ kind: "world", id: view.id, page: "stage" })}
+        />
+      </Pending> : null}
       <Pending reading={frame.reading}>{dialogs}</Pending>
       {liftedComparison.value !== null ? <Pending reading={frame.reading}><TellingComparison open={compareWith !== null} engine={engine.current} overview={overview} map={worldMap} other={liftedComparison.value}
         onClose={() => setCompareWith(null)} onRead={readTelling} onContinue={(from) => { setCompareWith(null); void run({ kind: "run", generations: 1 }, from); }} /></Pending> : null}

@@ -376,6 +376,8 @@ export interface ReadingPlace {
   focus: Focus;
   /// A writing session's intended year; reopening offers it, never runs it.
   runTo?: number;
+  /// The chapter, subject, offset from it, and open apparatus in the book.
+  book?: { chapter: string; anchor: string | null; scroll: number; open: string[] };
 }
 const placeKey = (id: string) => `langgen.place.${id}`;
 

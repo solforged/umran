@@ -1,15 +1,18 @@
-import { use, useMemo, useState, type ReactNode } from "react";
+import { use, useState, type ReactNode } from "react";
 import { Feather } from "lucide-react";
-import type { Annal, HistoryLine, Law, LexiconRow, LoanCause, Overview, ReadEngine, Subject, Variant, Variety, WorldMap } from "../model";
+import type { GrammarMarker, HistoryLine, LawOccurrence, LawOccurrenceRef, LexiconRow, LoanCause, Overview, ReadEngine, Subject, Variant, Variety, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { CONTACT_NAME, landCardLabel, MARKING_PHRASE, peopleLabel, POSSESSOR_PHRASE, stateLabel, STRESS_RULE, WORD_ORDER_PHRASE } from "../lore";
 import { individualAnnals, findAnnal } from "../history";
 import { Dictionary, INITIAL_DICTIONARY, type DictionaryView } from "./Dictionary";
 import { FamilyTree } from "./FamilyTree";
-import { Specimen } from "./Specimen";
 import { Sample } from "./Sample";
 import { WordGloss } from "./WordGloss";
 import { Explained } from "./Explained";
+import { ChangeCauseText, EvidenceForm, LifeRibbon, lawSubject, occurrenceAnchor, occurrenceKey, sameOccurrence } from "./LifeRibbon";
+import { Pending } from "./Pending";
+import { EditionContext } from "../edition";
+import { eras, languageEraChange } from "../eras";
 import "./chapter.css";
 
 /** Read-only evidence and navigation shared by a card and the book. */
@@ -60,10 +63,25 @@ export function Position({ variety: v, ctx }: SectionProps) {
     <h4>Core-word sound similarity</h4>
     <p className="muted small">This compares the current forms for the same core meanings, corrects for chance, and is not a count of shared roots.</p>
     {kin.length ? <ul className="roster">{kin.map((k) => <li key={k.other} className="meter-row">{language(k.other, ctx)} <meter min={0} max={1} value={k.score} /> <span>{Math.round(k.score * 100)}%</span></li>)}</ul> : <p className="muted">No other spoken language has a core-word sound similarity of at least 5%.</p>}
+    <h4>The language’s fortunes</h4>
+    <LanguageFortunes variety={v} ctx={ctx} />
   </div>;
 }
 
-export function Sounds({ variety: v }: SectionProps) {
+export function LanguageFortunes({ variety, ctx }: SectionProps) {
+  const calendar = eras(ctx.overview.annals, ctx.generation, ctx.overview).filter((era) => era.end >= variety.born);
+  return <ol className="language-fortunes">
+    {calendar.map((era) => {
+      const change = languageEraChange(era, ctx.overview.annals, variety.id);
+      return <li key={era.start}>
+        <span className="gen">{era.start * YEARS}–{era.end * YEARS}</span>
+        <div><strong>{era.heading}</strong><p>{change ? <><span className="gen">{change.generation * YEARS}</span> {ctx.link({ kind: "event", id: change.id }, change.text.replaceAll("*", ""))}</> : <span className="muted">No recorded turning point for this language in the era.</span>}</p></div>
+      </li>;
+    })}
+  </ol>;
+}
+
+export function Sounds({ variety: v, ctx }: SectionProps) {
   return <div className="language-section">
     <h4>{v.consonants.length === 1 ? "Consonant" : "Consonants"} · {v.consonants.length}</h4><p className="segments">{v.consonants.join(" ")}</p>
     <h4>{v.vowels.length === 1 ? "Vowel" : "Vowels"} · {v.vowels.length}</h4><p className="segments">{v.vowels.join(" ")}</p>
@@ -71,56 +89,81 @@ export function Sounds({ variety: v }: SectionProps) {
     {v.tonal ? <p>{v.tonal.lost === null ? <>Tone: {v.tones} pitch {v.tones === 1 ? "pattern tells" : "patterns tell"} words apart, since {year(v.tonal.since)}. Spelling marks tones with vowel diacritics; IPA uses Chao tone letters after the vowel.</> : <>Tonal from {year(v.tonal.since)} until {year(v.tonal.lost)}.</>}</p> : null}
     <dl className="chapter-facts"><div><dt><Explained term="minimal word">Minimal word</Explained></dt><dd>{v.minimalWord.includes("heavy") ? <Explained term="heavy syllable">{v.minimalWord}</Explained> : v.minimalWord}; words founded short or borrowed may sit below it, but sound change never wears a word below it or further below it.</dd></div><div><dt><Explained term="stress">Stress</Explained></dt><dd>{v.stress === "weight" ? <>on a <Explained term="heavy syllable">heavy</Explained> next-to-last syllable, otherwise the syllable before it; on the first syllable in a two-syllable word</> : STRESS_RULE[v.stress]}.</dd></div><div><dt><Explained term="geminate">Geminates</Explained></dt><dd>{v.geminates ? "Long consonants occur in living words." : "No long consonants in living words."}</dd></div></dl>
     <p className="muted small"><Explained term="IPA">IPA</Explained>: International Phonetic Alphabet, symbols for speech sounds.</p>
+    <LifeRibbon variety={v.id} ctx={ctx} />
   </div>;
 }
 
-function lawAnnal(v: Variety, law: Law, ctx: ChapterContext): Annal | undefined {
-  const ancestors = new Set<number>();
-  let ancestor: Variety | undefined = v;
-  while (ancestor) { ancestors.add(ancestor.id); ancestor = ancestor.parent === null ? undefined : ctx.overview.varieties[ancestor.parent]; }
-  return individualAnnals(ctx.overview.annals).find((a) => a.generation === law.generation && a.laws.includes(law.id) && a.variety !== null && ancestors.has(a.variety));
-}
-
-/** Exact forms in a word's recorded ledger, not a browser application of a law. */
-export function LawWords({ variety, law, ctx }: SectionProps & { law: Law }) {
-  const rows = use(ctx.engine.lexicon(ctx.generation, variety.id));
-  // Ask for every word's ledger before reading any, so they arrive together.
-  const details = rows.map((row) => ctx.engine.word(ctx.generation, variety.id, row.concept));
-  const changed: { concept: string; gloss: string; text: string }[] = [];
-  rows.forEach((row, index) => {
-    const seen = new Set<string>();
-    for (const variant of use(details[index]).variants) for (const line of variant.history) {
-      if (line.generation !== law.generation || !line.text.startsWith(`${law.label}: /`) || seen.has(line.text)) continue;
-      seen.add(line.text);
-      changed.push({ concept: row.concept, gloss: row.gloss, text: line.text.slice(law.label.length + 2) });
-    }
-  });
-  return changed.length ? <table className="law-words"><thead><tr><th>Meaning</th><th>Before → after</th></tr></thead><tbody>{changed.map((w, i) => <tr key={i}><td>{ctx.link({ kind: "word", variety: variety.id, concept: w.concept }, w.gloss)}</td><td className="ipa">{w.text}</td></tr>)}</tbody></table> : <p className="muted small">No surviving lexical variant records this law. It may have reached names, grammatical forms, or words that later fell out of use.</p>;
-}
-
-export function LawEvidence({ variety, law, ctx }: SectionProps & { law: Law }) {
-  const annal = lawAnnal(variety, law, ctx);
+/** Exact evidence for one application, supplied together by the engine. */
+export function LawEvidence({ variety, occurrence, ctx }: SectionProps & { occurrence: LawOccurrence }) {
   const [expanded, setExpanded] = useState(false);
-  const changed = annal?.specimen.filter((w) => w.was !== null || w.wasIpa !== null) ?? [];
+  const { complete } = use(EditionContext);
+  const arrival = occurrence.arrival;
   return <div className="law-evidence">
-    {law.from !== null ? <p className="muted small">A wave from {language(law.from, ctx)}.</p>
-      : annal?.variety !== undefined && annal.variety !== null && annal.variety !== variety.id ? <p className="muted small">Inherited from {language(annal.variety, ctx)}.</p> : null}
-    {changed.length ? <><p className="muted small">{annal!.laws.length > 1 ? "Specimen across this year’s recorded laws" : "Before and after in the specimen"}</p><Specimen words={changed} changes onWord={(concept) => ctx.open({ kind: "word", variety: variety.id, concept })} /></> : null}
-    <details open={expanded} onToggle={(e) => setExpanded(e.currentTarget.open)}><summary>Words changed · before and after</summary>{expanded ? <LawWords variety={variety} law={law} ctx={ctx} /> : null}</details>
+    <p className="muted small">{arrival.kind === "wave" ? <>A <Explained term="wave">wave</Explained> from {language(arrival.from, ctx)}.</>
+      : arrival.kind === "inherited" ? <>Inherited from {language(arrival.ancestor, ctx)}.</>
+      : arrival.kind === "authored" ? <>The author’s decision {arrival.decision + 1}.</>
+      : arrival.kind === "substrate" ? <><Explained term="substrate">Substrate</Explained>: traces of the speakers’ earlier tongue.</>
+      : arrival.kind === "unrecorded" ? "How it arrived is not recorded."
+      : "This language’s own change."}
+      {occurrence.annal ? <> {ctx.link({ kind: "event", id: occurrence.annal }, "Read its chronicle entry")}.</> : null}
+    </p>
+    <details open={complete || expanded} onToggle={(event) => setExpanded(event.currentTarget.open)}>
+      <summary>{occurrence.words.length} {occurrence.words.length === 1 ? "word" : "words"}, {occurrence.markers.length} grammatical {occurrence.markers.length === 1 ? "form" : "forms"}, {occurrence.names.length} {occurrence.names.length === 1 ? "name" : "names"} · before and after</summary>
+      {complete || expanded ? <>
+        {occurrence.words.length ? <div className="table-wrap"><table className="law-words">
+          <thead><tr><th>Meaning</th><th>Before → after</th></tr></thead>
+          <tbody>{occurrence.words.map((word, i) => <tr key={i}>
+            <td>{ctx.link({ kind: "word", variety: variety.id, concept: word.concept }, word.gloss)}{!word.dominant ? <span className="muted"> · competing word</span> : null}</td>
+            <td><EvidenceForm form={word.before} /> → <EvidenceForm form={word.after} /></td>
+          </tr>)}</tbody>
+        </table></div> : <p className="muted small">No word records a changed form in this application.</p>}
+        {occurrence.markers.length ? <><h5>Grammatical forms</h5><ul className="roster">{occurrence.markers.map((marker, i) => <li key={i}>{marker.category} · marker {marker.marker}: <EvidenceForm form={marker.before} /> → <EvidenceForm form={marker.after} /></li>)}</ul></> : null}
+        {occurrence.names.length ? <><h5>Names</h5><ul className="roster">{occurrence.names.map((name, i) => <li key={i}>{ctx.link(name.subject, <><span className="word">{name.before}</span> → <span className="word">{name.after}</span></>)}</li>)}</ul></> : null}
+      </> : null}
+    </details>
   </div>;
 }
 
 export function SoundLaws({ variety, ctx }: SectionProps) {
+  return <Pending reading={ctx.engine}><LawLedger variety={variety} ctx={ctx} /></Pending>;
+}
+
+function LawLedger({ variety, ctx }: SectionProps) {
+  const [selected, setSelected] = useState<LawOccurrenceRef | null>(null);
+  const ids = [...new Set(variety.laws.map((law) => law.id))];
+  const reads = ids.map((id) => ctx.engine.lawOccurrences(ctx.generation, variety.id, id));
+  const occurrences = reads.flatMap((read) => use(read)).sort((a, b) => a.ref.generation - b.ref.generation || a.ref.index - b.ref.index || a.ref.law.localeCompare(b.ref.law));
   return <div className="language-section">
-    <p className="muted small">A dated ledger of regular changes, from earliest to latest. Forms are the engine’s recorded evidence, not reconstructed here.</p>
-    {variety.laws.length ? <ol className="law-ledger">{variety.laws.map((law, i) => <li key={`${law.id}:${law.generation}:${i}`} data-law={law.id}><div className="law-ledger-head"><span className="gen">{law.generation * YEARS}</span> {law.decision != null ? <span className="pen" title="The author's decision"><Feather size={12} aria-hidden="true" /></span> : null}{ctx.link({ kind: "law", id: law.id }, law.label)}</div><LawEvidence variety={variety} law={law} ctx={ctx} /></li>)}</ol> : <p className="muted">No sound laws yet.</p>}
+    <LifeRibbon variety={variety.id} ctx={ctx} selected={selected} />
+    <p className="muted small">A dated ledger of regular changes, from earliest to latest. Choose an application to highlight its ticks above. Forms are the engine’s recorded evidence, not reconstructed here.</p>
+    {occurrences.length ? <ol className="law-ledger">{occurrences.map((occurrence) => <li key={occurrenceKey(occurrence.ref)} id={occurrence.ref.variety === variety.id ? occurrenceAnchor(occurrence.ref) : undefined} data-law={occurrence.ref.law} data-selected={sameOccurrence(selected, occurrence.ref) || undefined}>
+      <div className="law-ledger-head">
+        <span className="gen">{occurrence.ref.generation * YEARS}</span>
+        {occurrence.arrival.kind === "authored" ? <span className="pen" title="The author’s decision"><Feather size={12} aria-hidden="true" /></span> : null}
+        <button type="button" className="link law-select" aria-pressed={sameOccurrence(selected, occurrence.ref)} onClick={() => setSelected(sameOccurrence(selected, occurrence.ref) ? null : occurrence.ref)}>{occurrence.label}</button>
+        {ctx.link(lawSubject(occurrence.ref), "Read this application")}
+      </div>
+      <LawEvidence variety={variety} occurrence={occurrence} ctx={ctx} />
+    </li>)}</ol> : <p className="muted">No sound laws yet.</p>}
   </div>;
 }
 
-export function WordBuilding({ variety: v }: SectionProps) {
+export function WordBuilding({ variety: v, ctx }: SectionProps) {
+  const examples = use(ctx.engine.builderExamples(ctx.generation, v.id));
+  const patterns = v.wordBuilding.toLowerCase().includes("pattern");
   return <div className="language-section">
-    <p>Words are built with <Explained term={v.wordBuilding.toLowerCase().includes("pattern") ? "root and pattern" : "affix"}>{v.wordBuilding}</Explained>.</p>
-    <dl className="builders">{v.builders.map((b) => <div key={b.relation}><dt>{b.relation}</dt><dd className="ipa">{b.shape}</dd></div>)}</dl>
+    <p>Words are built with <Explained term={patterns ? "root and pattern" : "affix"}>{v.wordBuilding}</Explained>.</p>
+    {patterns ? <p className="muted small">C1, C2, and C3 are the root’s first, second, and third consonants; the pattern fits vowels and other sounds around them.</p> : null}
+    <dl className="builders">{v.builders.map((builder) => {
+      const worked = examples.filter((example) => example.builder === builder.relation);
+      return <div key={builder.relation}><dt>{builder.relation}</dt><dd><span className="ipa">{builder.shape}</span>
+        {worked.map((example, i) => <p className="builder-example" key={i}>
+          {ctx.link({ kind: "word", variety: v.id, concept: example.base.concept }, <EvidenceForm form={example.base.form} />)} “{example.base.gloss}”
+          {" "}→ {ctx.link({ kind: "word", variety: v.id, concept: example.built.concept }, <EvidenceForm form={example.built.form} />)} “{example.built.gloss}”
+        </p>)}
+        {!worked.length ? <p className="muted small">No surviving built word records an example of this pattern.</p> : null}
+      </dd></div>;
+    })}</dl>
   </div>;
 }
 
@@ -142,24 +185,64 @@ export function GrammarSketch({ variety: v, ctx }: SectionProps) {
       <Sample rendering={grammar.sample.future} label="Sample future" />
     </> : null}
     <p className="muted small">Grammatical forms can change through <Explained term="grammaticalization">grammaticalization</Explained>, <Explained term="fusion">fusion</Explained>, and <Explained term="analogy">analogy</Explained>.</p>
-    {grammar.categories.map((category) => <section key={category.category} className="grammar-category">
-      <h5>{category.label}</h5>
-      <p>{category.description} {category.eligible} {category.eligible === 1 ? "word" : "words"} can take this category. In {Math.round(category.howSynthetic * 100)}% of uses, it is distinguished within one word; in {Math.round(category.contrastRetention * 100)}% of uses, it remains <Explained term="grammatical contrast">audibly distinct</Explained>, including separate grammatical words.</p>
-      <ul className="roster">{grammar.markers.filter((m) => m.category === category.category).map((m) => {
-        const alternants = [...new Set(m.alternants?.map((a) => a.spelled).filter((spelled) => spelled !== m.spelled))];
-        return <li key={m.id}>
-        <span className="word">{m.spelled || "∅"}</span>{m.said !== null ? <> · said <span className="word">{m.said}</span></> : null} <span className="ipa">/{m.ipa}/</span>
-        {alternants.length ? <> · by vowel harmony also {alternants.join(", ")}</> : null} · {m.kind === "pattern" ? <>vowel pattern <span className="ipa">{m.template}</span></> : m.kind === "none" ? "no overt marker" : m.kind === "particle" ? <Explained term="particle">separate word {m.side === "prefix" ? "before" : "after"} the stem</Explained> : <Explained term="affix">{m.side === "prefix" ? "prefix" : "suffix"}</Explained>}, {Math.round(m.share * 100)}% of uses; <Explained term="productive">{m.productive ? "used to form new words in this category" : "not used to form new words in this category"}</Explained>
-        {m.retired !== null ? `; retired in ${year(m.retired)}` : `; since ${year(m.born)}`}.
-        {m.origin.kind === "grammaticalized" ? <> Through <Explained term="grammaticalization">grammaticalization</Explained>, from the word “{m.origin.gloss}”.</> : m.origin.kind === "imported" ? <> Imported from {language(m.origin.from, ctx)}.</> : m.origin.kind === "fused" ? <> Through <Explained term="fusion">fusion</Explained> from a <Explained term="particle">particle</Explained>.</> : " Founding marker."}
-        <details><summary>Recorded changes</summary><ol className="history">{m.history.map((line, i) => <li key={i}><span className="gen">{line.generation * YEARS}</span><span>{line.text}</span></li>)}</ol></details>
-      </li>; })}</ul>
-    </section>)}
+    {grammar.categories.map((category) => <GrammarCategory key={category.category} category={category} variety={v} ctx={ctx} />)}
     {v.pronouns.length ? <section className="grammar-category"><h5>Pronouns</h5><ul className="roster">{v.pronouns.map((p) => <li key={p.cell}><span className="word">{p.spelled}</span> <span className="ipa">/{p.ipa}/</span> · {PERSON[p.person]} person {p.number === "sg" ? "singular" : "plural"}{p.clusivity ? <>, <Explained term="clusivity">{p.clusivity}</Explained></> : null}{p.polite ? `, respectful address since ${year(p.since)}` : p.origin === "renewed" ? `; renewed in ${year(p.since)}` : p.origin === "borrowed" ? `; borrowed in ${year(p.since)}` : ""}.</li>)}</ul></section> : null}
     {grammar.classes.some((c) => c.mergedInto === null && c.members > 0) ? <section className="grammar-category"><h5>Noun classes</h5><p>Every noun belongs to a class, and the word for “this” agrees with it.</p><ul className="roster">{grammar.classes.filter((c) => c.mergedInto === null && c.members > 0).map((c) => <li key={c.id}>{c.marker ? <><span className="word">{c.marker.spelled}</span> <span className="ipa">/{c.marker.ipa}/</span> · </> : null}{CLASS_BASIS[c.basis]}, {c.members} {c.members === 1 ? "noun" : "nouns"}; since {year(c.born)}.</li>)}</ul></section> : null}
     <h4>Not yet modelled</h4>
     <p className="muted">Agreement beyond the word for “this”, and tenses beyond past and future.</p>
   </div>;
+}
+
+function GrammarCategory({ category, variety, ctx }: SectionProps & { category: Variety["grammar"]["categories"][number] }) {
+  const { complete } = use(EditionContext);
+  const markers = variety.grammar.markers.filter((marker) => marker.category === category.category);
+  const current = markers.filter((marker) => marker.retired === null);
+  const retired = markers.filter((marker) => marker.retired !== null).sort((a, b) => a.retired! - b.retired!);
+  return <section className="grammar-category">
+    <h5>{category.label}</h5>
+    <p>{category.description} {category.eligible} {category.eligible === 1 ? "word" : "words"} can take this category. In {Math.round(category.howSynthetic * 100)}% of uses, it is distinguished within one word; in {Math.round(category.contrastRetention * 100)}% of uses, it remains <Explained term="grammatical contrast">audibly distinct</Explained>, including separate grammatical words.</p>
+    <h6 className="grammar-story-heading">How the marking changed</h6>
+    <Pending reading={ctx.engine}><GrammarStoryList category={category} variety={variety} ctx={ctx} /></Pending>
+    <h6>Current inventory</h6>
+    {current.length ? <ul className="roster">{current.map((marker) => <GrammarInventoryMarker key={marker.id} marker={marker} variety={variety.id} ctx={ctx} />)}</ul> : <p className="muted small">No current marker is recorded.</p>}
+    {retired.length ? <details className="grammar-appendix" open={complete || undefined}>
+      <summary>Retired markers · dated appendix ({retired.length})</summary>
+      <ul className="roster">{retired.map((marker) => <GrammarInventoryMarker key={marker.id} marker={marker} variety={variety.id} ctx={ctx} />)}</ul>
+    </details> : null}
+  </section>;
+}
+
+function GrammarStoryList({ category, variety, ctx }: SectionProps & { category: Variety["grammar"]["categories"][number] }) {
+  const story = use(ctx.engine.grammarStory(ctx.generation, variety.id, category.category));
+  const events: { generation: number; key: string; text: ReactNode }[] = [];
+  for (const marker of story.markers) {
+    const first = marker.forms[0];
+    events.push({ generation: marker.born, key: `${marker.marker}:born`, text: <>
+      {marker.source ? <>{ctx.link({ kind: "word", variety: variety.id, concept: marker.source.concept }, <EvidenceForm form={marker.source.form} />)} “{marker.source.gloss}” → </> : null}
+      {first ? <EvidenceForm form={first.form} /> : <span>Marker {marker.marker}</span>}, {marker.kind === "none" ? "no overt marker" : marker.kind === "particle" ? "a separate grammatical word" : marker.kind === "pattern" ? "a vowel pattern" : "a bound marker"}.
+      {first ? <> <ChangeCauseText cause={first.cause} ctx={ctx} />.</> : null}
+    </> });
+    marker.forms.slice(1).forEach((point, i) => events.push({ generation: point.generation, key: `${marker.marker}:form:${i}`, text: <>
+      <EvidenceForm form={marker.forms[i].form} /> → <EvidenceForm form={point.form} />. <ChangeCauseText cause={point.cause} ctx={ctx} />.
+    </> }));
+    marker.shares.forEach((point, i) => events.push({ generation: point.generation, key: `${marker.marker}:share:${i}`, text: <>
+      Marker {marker.marker}{first ? <> (<EvidenceForm form={first.form} />)</> : null}: {Math.round(point.share * 100)}% of uses in this category.
+    </> }));
+    if (marker.retired !== null) events.push({ generation: marker.retired, key: `${marker.marker}:retired`, text: <>Marker {marker.marker}{first ? <> (<EvidenceForm form={first.form} />)</> : null} retired; its dated forms are kept in the appendix.</> });
+  }
+  events.sort((a, b) => a.generation - b.generation);
+  return events.length ? <ol className="history grammar-story">{events.map((event) => <li key={event.key}><span className="gen">{event.generation * YEARS}</span><span>{event.text}</span></li>)}</ol> : <p className="muted small">No dated marker story is recorded.</p>;
+}
+
+function GrammarInventoryMarker({ marker: m, variety, ctx }: { marker: GrammarMarker; variety: number; ctx: ChapterContext }) {
+  const alternants = [...new Set(m.alternants?.map((form) => form.spelled).filter((spelled) => spelled !== m.spelled))];
+  return <li>
+    <span className="word">{m.spelled || "∅"}</span>{m.said !== null ? <> · said <span className="word">{m.said}</span></> : null} <span className="ipa">/{m.ipa}/</span>
+    {alternants.length ? <> · by vowel harmony also {alternants.join(", ")}</> : null} · {m.kind === "pattern" ? <>vowel pattern <span className="ipa">{m.template}</span></> : m.kind === "none" ? "no overt marker" : m.kind === "particle" ? <Explained term="particle">separate word {m.side === "prefix" ? "before" : "after"} the stem</Explained> : <Explained term="affix">{m.side === "prefix" ? "prefix" : "suffix"}</Explained>}, {Math.round(m.share * 100)}% of uses; <Explained term="productive">{m.productive ? "used to form new words in this category" : "not used to form new words in this category"}</Explained>.
+    {" "}Since {year(m.born)}{m.retired !== null ? `; retired in ${year(m.retired)}` : ""}.
+    {m.origin.kind === "grammaticalized" ? <> From {ctx.link({ kind: "word", variety, concept: m.origin.concept }, `“${m.origin.gloss}”`)} through <Explained term="grammaticalization">grammaticalization</Explained>.</> : m.origin.kind === "imported" ? <> Imported from {language(m.origin.from, ctx)}.</> : m.origin.kind === "fused" ? <> Through <Explained term="fusion">fusion</Explained> from a <Explained term="particle">particle</Explained>.</> : " Founding marker."}
+    {m.retired !== null ? <ol className="history">{m.history.map((line, i) => <li key={i}><span className="gen">{line.generation * YEARS}</span><span>{line.text}</span></li>)}</ol> : null}
+  </li>;
 }
 
 export function LoanCauseText({ cause, ctx }: { cause: LoanCause; ctx: ChapterContext }) {
@@ -175,7 +258,7 @@ export function LoanCauseText({ cause, ctx }: { cause: LoanCause; ctx: ChapterCo
     case "classical": text = <>learning from {language(cause.classical, ctx)} by {people(cause.recipient, ctx)}</>; break;
   }
   const event = cause.event ? findAnnal(ctx.overview.annals, cause.event) : undefined;
-  return <span className="loan-cause"> Through {text}.{event ? <> After {ctx.link({ kind: "event", id: event.id }, <>{event.kind} in {year(event.generation)}</>)}.</> : null}</span>;
+  return <span className="loan-cause"> Through {text}{event ? <> ({ctx.link({ kind: "event", id: event.id }, year(event.generation))})</> : null}.</span>;
 }
 
 export function WordOrigin({ word: { origin, coined }, ctx }: { word: Pick<Variant, "origin" | "coined">; ctx: ChapterContext }) {
@@ -191,26 +274,30 @@ export function WordOrigin({ word: { origin, coined }, ctx }: { word: Pick<Varia
 
 function LexicalEvidence({ row, variety, ctx }: SectionProps & { row: LexiconRow }) {
   const [open, setOpen] = useState(false);
-  return <details className="lexical-evidence" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+  const { complete } = use(EditionContext);
+  return <details className="lexical-evidence" open={complete || open} onToggle={(e) => setOpen(e.currentTarget.open)}>
     <summary>{row.competitors ? `${row.competitors} competing ${row.competitors === 1 ? "word" : "words"} · ` : ""}Origins, senses, and family cognates</summary>
-    {open ? <WordGloss engine={ctx.engine} generation={ctx.generation}
+    {complete || open ? <WordGloss engine={ctx.engine} generation={ctx.generation}
       variety={variety.id} concept={row.concept} onScrub={ctx.onYear}
       onOpenVariety={(id) => ctx.open({ kind: "word", variety: id, concept: row.concept })}
       renderCause={(cause) => <LoanCauseText cause={cause} ctx={ctx} />}
       renderOrigin={(word) => <WordOrigin word={word} ctx={ctx} />}
+      renderLink={ctx.link}
       family={variety.family} overview={ctx.overview} /> : null}
   </details>;
 }
 
 export function Lexicon({ variety, ctx }: SectionProps) {
   const [view, setView] = useState(INITIAL_DICTIONARY);
+  const { complete } = use(EditionContext);
   return <div className="language-section">
     <p className="muted small">Every current meaning, with spelling, speech, and origin. Search and origin filters include every current competing word; matching forms appear beneath their meaning. Open a word’s evidence for competitors, stretched senses, <Explained term="paradigm">paradigms</Explained>, and family cognates.</p>
     <Dictionary engine={ctx.engine} version={ctx.version} generation={ctx.generation} variety={variety.id}
-      view={ctx.dictionaryView ?? view} onView={ctx.onDictionaryView ?? setView}
+      view={complete ? INITIAL_DICTIONARY : ctx.dictionaryView ?? view} onView={ctx.onDictionaryView ?? setView}
       onConcept={(concept) => ctx.open({ kind: "word", variety: variety.id, concept })}
       renderOrigin={(word) => <WordOrigin word={word} ctx={ctx} />}
       renderEvidence={(row) => <LexicalEvidence row={row} variety={variety} ctx={ctx} />}
+      evidenceBelow={complete}
       rowId={ctx.wordAnchor ? (row) => ctx.wordAnchor!(variety.id, row.concept) : undefined} />
   </div>;
 }

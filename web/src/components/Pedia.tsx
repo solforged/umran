@@ -23,12 +23,12 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, Catalog, CityView, Community, Craft, CraftView, DecisionView, ReadEngine, Ethos, HistoryPoint, HolyLand, LakeNamesView, NotebookNote, Overview, ReligionView, RenderingRow, RiverNamesView, ShrineKind, StateView, Subject, Variety, WordMap, WorldMap } from "../model";
+import type { Annal, Catalog, CityView, Community, Craft, CraftView, DecisionView, ReadEngine, Ethos, HistoryPoint, HolyLand, LakeNamesView, LawOccurrenceRef, NotebookNote, Overview, ReligionView, RenderingRow, RiverNamesView, ShrineKind, StateView, Subject, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { causePhrase, CHRONICLE, CONTACT_NAME, countWord, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, faithTeaching, FAITH_HOW, FAITH_NAME, FALL_NAME, howCame, howNamed, hue, landCardLabel, LEG_BY, LIVELIHOOD_NAME, otherNames, peopleLabel, peoplePhrases, RISE_NAME, SCHISM_CAUSE, seasonalPhrase, stateLabel, STRONG, temperament, TENET_NOUN, TERRAIN_NAME, unnamedName, weatherDeparture } from "../lore";
-import { cityLabel, continentLabel, waterLabel } from "../lore";
+import { cityLabel, continentLabel, waterLabel, weatherZoneLabel } from "../lore";
 import { filterHistory, findAnnal, individualAnnals, relatedMoments, searchText, subjectHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
-import { eraBirths, eras, isQuiet, quietLine, quietRuns, quietSummary, speechLine, type Era, type EraYear } from "../eras";
+import { eraBirths, eras, isQuiet, languageEraChange, quietLine, quietRuns, quietSummary, speechLine, type Era, type EraYear } from "../eras";
 import { bond } from "../words";
 import type { InterventionKind } from "./ActionDialog";
 import { SettlementAccount } from "./SettlementDesk";
@@ -37,6 +37,7 @@ import { Explained } from "./Explained";
 import { INITIAL_DICTIONARY, type DictionaryView } from "./Dictionary";
 import { peoplesByRegion } from "./MapView";
 import { Specimen } from "./Specimen";
+import { LifeRibbon, occurrenceKey, sameOccurrence } from "./LifeRibbon";
 import { DescentChart, FamilyForest, type Lineage } from "./FamilyTree";
 import { WordGloss } from "./WordGloss";
 import { Renderings } from "./Renderings";
@@ -366,7 +367,7 @@ function focusLabel(focus: Focus, context: Context): string {
     case "lake":
       return waterLabel(context.overview, context.lakes, context.map, "lake", focus.id);
     case "zone":
-      return zoneName(focus.id, context);
+      return weatherZoneLabel(focus.id, context.overview, context.map);
     case "event":
       return `Year ${(findAnnal(overview.annals, focus.id)?.generation ?? context.generation) * YEARS}`;
     case "history":
@@ -411,7 +412,7 @@ function Card({ focus, context }: { focus: Focus; context: Context }) {
       return overview.varieties[focus.variety] ? <WordCard variety={focus.variety} concept={focus.concept} context={context} />
         : <p className="muted">This language has not yet arisen in this year.</p>;
     case "law":
-      return <LawCard id={focus.id} context={context} />;
+      return <LawCard subject={focus} context={context} />;
     case "land":
       return <LandCard region={focus.region} context={context} />;
     case "continent":
@@ -760,43 +761,9 @@ function LakeLink({ id, context }: { id: number; context: Context }) {
 }
 
 function ZoneLink({ id, context }: { id: number; context: Context }) {
-  return <button type="button" className="link" onClick={() => context.go({ kind: "zone", id })}>{zoneName(id, context)}</button>;
+  return <button type="button" className="link" onClick={() => context.go({ kind: "zone", id })}>{weatherZoneLabel(id, context.overview, context.map)}</button>;
 }
 
-/// A weather zone has no name of its own; call it after its first named
-/// land, as a traveller would, or else by where it lies on its continent.
-function zoneName(id: number, context: Context): string {
-  const regions = context.map.climateZones[id]?.regions ?? [];
-  const named = regions.find((r) => context.overview.places.some((p) => p.region === r && p.names.length > 0));
-  if (named !== undefined) return `The weather around ${landName(named, context)}`;
-  const first = context.map.regions[regions[0]];
-  const mass = first?.landmass === null || first === undefined ? undefined : context.map.landmasses[first.landmass];
-  if (!mass) return "The weather of unnamed lands";
-  const [longitude, latitude] = context.map.regions[mass.anchor].center;
-  const lon = longitude * Math.PI / 180, lat = latitude * Math.PI / 180;
-  // An area-weighted spherical centroid does not jump across the chart seam.
-  const centroid = regions.reduce(([x, y, z], id) => {
-    const region = context.map.regions[id];
-    const l = region.center[0] * Math.PI / 180, p = region.center[1] * Math.PI / 180;
-    return [
-      x + region.areaKm2 * Math.cos(p) * Math.cos(l),
-      y + region.areaKm2 * Math.cos(p) * Math.sin(l),
-      z + region.areaKm2 * Math.sin(p),
-    ];
-  }, [0, 0, 0]);
-  const [x, y, z] = centroid;
-  const east = -x * Math.sin(lon) + y * Math.cos(lon);
-  const north = -x * Math.sin(lat) * Math.cos(lon) - y * Math.sin(lat) * Math.sin(lon) + z * Math.cos(lat);
-  const toward = x * Math.cos(lat) * Math.cos(lon) + y * Math.cos(lat) * Math.sin(lon) + z * Math.sin(lat);
-  const bearingLength = Math.hypot(east, north), centerLength = Math.hypot(x, y, z);
-  const distanceKm = Math.atan2(bearingLength, toward) * context.map.radiusKm;
-  // Balanced/antipodal districts and a polar anchor have no unique bearing.
-  const side = centerLength < 1e-6 || Math.abs(latitude) > 89.999 || (toward < 0 && bearingLength < centerLength * 1e-9) ? "lands"
-    : distanceKm < 100 ? "heart"
-    : `${north > Math.abs(east) / 2 ? "north" : north < -Math.abs(east) / 2 ? "south" : ""}${Math.abs(east) > Math.abs(north) / 2 ? (east > 0 ? "-east" : "-west") : ""}`.replace(/^-/, "");
-  const continent = context.overview.continents.find((c) => c.landmass === mass.id)?.name?.name;
-  return continent ? `The weather of ${continent}'s ${side}` : `The weather of an unnamed land's ${side}`;
-}
 
 function RiverCard({ id, context }: { id: number; context: Context }) {
   const { engine, generation, map, overview } = context;
@@ -882,7 +849,7 @@ function ZoneCard({ id, context }: { id: number; context: Context }) {
   const zone = climate.zones.find((zone) => zone.id === id)!;
   const lands = map.climateZones[id].regions;
   return <>
-    <CardHead icon={CloudSunRain} kind="A weather zone" title={zoneName(id, context)} />
+    <CardHead icon={CloudSunRain} kind="A weather zone" title={weatherZoneLabel(id, overview, map)} />
     <Facts rows={[
       ["Weather", weatherDeparture(zone)],
       ["Lands", <Joined items={lands} link={(region) => <LandLink region={region} context={context} />} />],
@@ -1037,7 +1004,7 @@ function chronicleRows(annals: Annal[], decisions: DecisionView[], order: Histor
 /// Something's story in the folio, read in the world's eras, with its
 /// latest turning on the card: the latest headline, or the latest entry of
 /// any kind when the story holds nothing louder.
-function StoryLeaf({ title, annals, people, context }: { title: string; annals: Annal[]; people?: number[]; context: Context }) {
+function StoryLeaf({ title, annals, people, language, context }: { title: string; annals: Annal[]; people?: number[]; language?: number; context: Context }) {
   const { overview } = context;
   const recorded = people ? use(context.engine.decisions()) : [];
   const decisions = untoldDecisions(annals, recorded.filter((decision) => decision.people.some((id) => people?.includes(id))), context.generation);
@@ -1061,7 +1028,7 @@ function StoryLeaf({ title, annals, people, context }: { title: string; annals: 
         </p>
       }
     >
-      <SubjectTimeline annals={annals} decisions={decisions} contents={contents} context={context} />
+      <SubjectTimeline annals={annals} decisions={decisions} contents={contents} language={language} context={context} />
     </Leaf>
   );
 }
@@ -1084,7 +1051,7 @@ function ChronicleFilters({ view, update, overview, sounds = false }: {
   </div>;
 }
 
-function SubjectTimeline({ annals, decisions, contents, context }: { annals: Annal[]; decisions: DecisionView[]; contents: Era[]; context: Context }) {
+function SubjectTimeline({ annals, decisions, contents, language, context }: { annals: Annal[]; decisions: DecisionView[]; contents: Era[]; language?: number; context: Context }) {
   const view = context.storyView;
   const update = (patch: Partial<HistoryView>) => context.onStoryView({ ...view, limit: 100, ...patch });
   const lines = filterHistory(annals, context.overview.varieties, view);
@@ -1093,7 +1060,7 @@ function SubjectTimeline({ annals, decisions, contents, context }: { annals: Ann
   return <div className="subject-timeline">
     <ChronicleFilters view={view} update={update} overview={context.overview} />
     <p className="muted small" role="status">{count.toLocaleString()} recorded {count === 1 ? "entry" : "entries"}, read in the world’s eras. Names are written as they were known then.</p>
-    <EraReading contents={contents} lines={lines} decisions={choices} view={view} update={update} context={context} />
+    <EraReading contents={contents} lines={lines} decisions={choices} view={view} update={update} language={language} context={context} />
     {!count ? <p className="muted">No recorded entries match these filters.</p> : null}
   </div>;
 }
@@ -1104,8 +1071,8 @@ function SubjectTimeline({ annals, decisions, contents, context }: { annals: Ann
 /// folded into one line. A filter or search unfolds what it matches. A
 /// page of entries never splits a year. `births` names the languages that
 /// arose in each era, which only the whole world's reading tells.
-function EraReading({ contents, lines, decisions = [], view, update, births = false, revealGeneration, context }: {
-  contents: Era[]; lines: Annal[]; decisions?: DecisionView[]; view: HistoryView; update: (patch: Partial<HistoryView>) => void; births?: boolean; revealGeneration?: number; context: Context;
+function EraReading({ contents, lines, decisions = [], view, update, births = false, revealGeneration, language, context }: {
+  contents: Era[]; lines: Annal[]; decisions?: DecisionView[]; view: HistoryView; update: (patch: Partial<HistoryView>) => void; births?: boolean; revealGeneration?: number; language?: number; context: Context;
 }) {
   const { overview } = context;
   const rows = chronicleRows(lines, decisions, view.order);
@@ -1134,10 +1101,12 @@ function EraReading({ contents, lines, decisions = [], view, update, births = fa
           }
         }
         if (!years.length) return null;
-        const speech = speechLine(lines.filter(within), overview, births ? eraBirths(era, overview) : []);
+        const speech = language === undefined ? speechLine(lines.filter(within), overview, births ? eraBirths(era, overview) : []) : null;
+        const change = language === undefined ? null : languageEraChange(era, overview.annals, language);
         return <section className="chronicle-era" key={era.start}>
           <h3 className="chronicle-era-head" data-chronicle-era={era.start} tabIndex={-1}>{era.opening ? <>Year {era.start * YEARS} · <Told text={era.opening.text} names={era.opening.names} go={context.go} /></> : era.title}</h3>
           {speech ? <p className="chronicle-era-speech">{speech}</p> : null}
+          {language !== undefined ? <p className="chronicle-era-speech">{change ? <><span className="gen">{change.generation * YEARS}</span> <Told text={change.text} names={change.names} go={context.go} /></> : "No recorded turning point for this language in the era."}</p> : null}
           {quietRuns(years, (year) => decisionsByYear.has(year.generation) || year.generation === revealGeneration).map((year) => <section className="chronicle-year-group" key={year.generation} data-chronicle-year={year.generation}>
             <h4 tabIndex={-1}><button type="button" className="link" title="See the world in this year" onClick={() => context.onScrub(year.generation)}>
               {year.through === undefined ? `Year ${year.generation * YEARS}` : `Years ${Math.min(year.generation, year.through) * YEARS}–${Math.max(year.generation, year.through) * YEARS}`}
@@ -1919,8 +1888,9 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
   const speakers = context.overview.communities.filter((c) => c.ended === null && c.variety === variety);
   const openingSpeakers = speakers.length ? speakers : context.overview.communities.filter((c) => c.variety === variety);
   const speakerIds = new Set(openingSpeakers.map((c) => c.id));
-  const fortunes = individualAnnals(context.overview.annals).filter((annal) => annal.peoples.some((id) => speakerIds.has(id)));
+  const fortunes = individualAnnals(context.overview.annals).filter((annal) => annal.variety === variety || annal.peoples.some((id) => speakerIds.has(id)));
   const ctx = languageChapterContext(context, variety);
+  const folio = useContext(FolioContext)!;
   return <div className="language-card">
     <CardHead icon={Languages} kind="A language" title={v.name} tone={hue(v.family)} sub={v.meaning ? `“${v.meaning}”` : null} />
     <Decisions community={speakers[0]?.id ?? -1} context={context} choices={[["law", "A sound change"]]} disabled={!speakers.length} label="Decide for this language" />
@@ -1933,9 +1903,10 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
           <p>The <PeopleLink c={c} context={context} /> {c.ended === null ? "are" : "were"} <Explained term="way of life">{LIVELIHOOD_NAME[c.livelihood].toLowerCase()}</Explained>.</p>
         </section>;
       })}
-      <StoryLeaf title="Their fortunes" annals={fortunes} people={[...speakerIds]} context={context} />
+      <StoryLeaf title="Their fortunes" annals={fortunes} people={[...speakerIds]} language={variety} context={context} />
     </div>
     <LanguageSpecimen variety={variety} context={context} />
+    <LifeRibbon variety={variety} ctx={ctx} compact onExpand={() => folio.show("laws")} />
     <Facts rows={[
       ["Spoken by", speakers.length ? <Joined items={speakers} link={(c) => <PeopleLink c={c} context={context} />} /> : "no one now"],
       ["Standard of", v.standardOf === null ? null : <StateLink state={context.overview.states[v.standardOf]} context={context} />],
@@ -2003,6 +1974,8 @@ function WordCard({ variety, concept, context }: { variety: number; concept: str
         onOpenVariety={(other) => context.go({ kind: "word", variety: other, concept })}
         renderCause={(cause) => <LoanCauseText cause={cause} ctx={languageChapterContext(context, variety)} />}
         renderOrigin={(word) => <WordOrigin word={word} ctx={languageChapterContext(context, variety)} />}
+        renderLink={(subject, label) => <button type="button" className="link" onClick={() => context.go(subject)}>{label}</button>}
+        overview={overview}
       />
       {groups.length > 1 ? (
         <>
@@ -2027,82 +2000,56 @@ function WordCard({ variety, concept, context }: { variety: number; concept: str
 }
 
 
-function LawCard({ id, context }: { id: string; context: Context }) {
+function LawCard(props: { subject: Extract<Subject, { kind: "law" }>; context: Context }) {
+  return <Pending reading={props.context.engine}><LawCardReading {...props} /></Pending>;
+}
+
+function LawCardReading({ subject, context }: { subject: Extract<Subject, { kind: "law" }>; context: Context }) {
   const { overview } = context;
-  const peoples = overview.communities.filter((c) => c.ended === null);
-  const had = peoples.flatMap((c) => {
-    const law = overview.varieties[c.variety].laws.find((l) => l.id === id);
-    return law ? [{ c, law }] : [];
-  });
-  const label =
-    had[0]?.law.label ?? overview.varieties.flatMap((v) => v.laws).find((l) => l.id === id)?.label ?? id;
-  const without = peoples.filter((c) => !had.some((h) => h.c.id === c.id));
-  const told = subjectHistory({ kind: "law", id }, overview, context.map);
-  const waves = had.filter(({ law }) => law.from !== null).length;
-  const living = overview.varieties.filter((v) => v.spoken);
-  const livingHad = living.filter((v) => v.laws.some((law) => law.id === id));
-  const silentHad = overview.varieties.filter((v) => !v.spoken && v.laws.some((law) => law.id === id));
-  return (
-    <>
-      <CardHead icon={AudioLines} kind="A sound change" title={label} />
-      <Facts
-        rows={[
-          ["Undergone by", `${had.length} of ${peoples.length} peoples`],
-          ["First heard", told.length > 0 ? `year ${told[0].generation * YEARS}` : null],
-          ["Spread", waves > 0 ? `to ${waves} by neighbours’ speech` : null],
-        ]}
-      />
-      <p className="muted small">
-        A <Explained term="sound law">sound law</Explained>. On the chart, orange land underwent it and grey land did not;
-        red lines are <Explained term="isogloss">isoglosses</Explained>, where it stopped.
-      </p>
-      {overview.varieties.filter((v) => v.laws.some((law) => law.id === id)).map((v) => (
-        <Leaf key={v.id} id={`evidence-${v.id}`} title={`Words changed in ${v.name}`} summary={<p>Recorded before and after forms, in year {v.laws.find((law) => law.id === id)!.generation * YEARS}.</p>}>
-          <LawEvidence variety={v} law={v.laws.find((law) => law.id === id)!} ctx={languageChapterContext(context, v.id)} />
-        </Leaf>
-      ))}
-      {living.length > 0 && livingHad.length === living.length ? (
-        <p className="muted small">Every living language has undergone this change.</p>
-      ) : null}
-      {had.length > 0 ? (
-        <Leaf
-          id="who"
-          title="Who has it"
-          summary={
-            <p>
-              <Few items={had} link={({ c }) => <PeopleLink c={c} context={context} />} leaf="who" />.
-            </p>
-          }
-        >
-          <ul className="roster">
-            {had.map(({ c, law }) => (
-              <li key={c.id}>
-                <PeopleLink c={c} context={context} /> <span className="muted">{howCame(law, c, overview)}</span>
-              </li>
-            ))}
-          </ul>
-          {without.length > 0 ? (
-            <>
-              <h3>Not undergone by</h3>
-              <p>
-                <Joined items={without} link={(c) => <PeopleLink c={c} context={context} />} />
-              </p>
-            </>
-          ) : null}
-        </Leaf>
-      ) : (
-        <>
-          <h3>Who has it</h3>
-          <p className="muted small">
-            No living language has undergone it{silentHad.length > 0 ? (
-              <>; it is known from <Joined items={silentHad} link={(v) => <LanguageLink variety={v.id} context={context} />} /></>
-            ) : null}.
-          </p>
-        </>
-      )}
-      <StoryLeaf title="As it happened" annals={told} context={context} />
-    </>
-  );
+  const candidates = overview.varieties.filter((variety) => subject.variety === undefined
+    ? variety.laws.some((law) => law.id === subject.id) : variety.id === subject.variety);
+  const reads = candidates.map((variety) => context.engine.lawOccurrences(context.generation, variety.id, subject.id));
+  const selected: LawOccurrenceRef | null = subject.variety !== undefined && subject.generation !== undefined && subject.index !== undefined
+    ? { variety: subject.variety, generation: subject.generation, law: subject.id, index: subject.index } : null;
+  const groups = candidates.map((variety, i) => ({
+    variety,
+    occurrences: use(reads[i]).filter((occurrence) => selected ? sameOccurrence(selected, occurrence.ref)
+      : (subject.generation === undefined || occurrence.ref.generation === subject.generation) &&
+        (subject.index === undefined || occurrence.ref.index === subject.index)),
+  }));
+  const occurrences = groups.flatMap((group) => group.occurrences);
+  const label = occurrences[0]?.label ?? subject.id;
+  const annals = new Set(occurrences.flatMap((occurrence) => occurrence.annal ? [occurrence.annal] : []));
+  const told = individualAnnals(overview.annals).filter((annal) => annals.has(annal.id));
+  const peoples = overview.communities.filter((people) => people.ended === null);
+  const had = peoples.filter((people) => overview.varieties[people.variety].laws.some((law) => law.id === subject.id));
+  const without = peoples.filter((people) => !had.includes(people));
+  const recorded = [...new Map(occurrences.map((occurrence) => [occurrenceKey(occurrence.ref), occurrence])).values()].sort((a, b) => a.ref.generation - b.ref.generation || a.ref.index - b.ref.index);
+  const waves = recorded.filter((occurrence) => occurrence.arrival.kind === "wave").length;
+  return <>
+    <CardHead icon={AudioLines} kind={selected ? "One application of a sound change" : "A sound change"} title={label}
+      sub={selected ? <>In <LanguageLink variety={selected.variety} context={context} /> · year {selected.generation * YEARS} · application {selected.index + 1}</> : null} />
+    <Facts rows={[
+      ["Recorded applications", recorded.length],
+      ["First recorded here", recorded.length ? `year ${recorded[0].ref.generation * YEARS}` : null],
+      ["Waves", waves || null],
+    ]} />
+    <p className="muted small">A <Explained term="sound law">sound law</Explained>. On the chart, orange land underwent the law and grey land did not; red lines are <Explained term="isogloss">isoglosses</Explained>, where it stopped. Each dated application below has its own evidence.</p>
+    {groups.flatMap(({ variety, occurrences: applied }) => applied.map((occurrence) => <Leaf
+      key={`${variety.id}:${occurrenceKey(occurrence.ref)}`}
+      id={`evidence-${variety.id}-${occurrence.ref.generation}-${occurrence.ref.index}`}
+      title={`${variety.name} · year ${occurrence.ref.generation * YEARS}${occurrence.ref.index > 0 ? ` · application ${occurrence.ref.index + 1}` : ""}`}
+      summary={<p>{occurrence.words.length} {occurrence.words.length === 1 ? "word" : "words"}, {occurrence.markers.length} grammatical {occurrence.markers.length === 1 ? "form" : "forms"}, {occurrence.names.length} {occurrence.names.length === 1 ? "name" : "names"}.</p>}>
+      <LifeRibbon variety={variety.id} selected={occurrence.ref} ctx={languageChapterContext(context, variety.id)} />
+      <LawEvidence variety={variety} occurrence={occurrence} ctx={languageChapterContext(context, variety.id)} />
+    </Leaf>))}
+    {!recorded.length ? <p className="muted">No application of this law is recorded at this point in the telling.</p> : null}
+    <Leaf id="who" title="Where the law is known" summary={<p>{had.length} of {peoples.length} living peoples speak a language that has undergone the law.</p>}>
+      {had.length ? <ul className="roster">{had.map((people) => <li key={people.id}><PeopleLink c={people} context={context} /> · <LanguageLink variety={people.variety} context={context} /></li>)}</ul> : <p className="muted small">No living people speaks a language that has undergone it.</p>}
+      {without.length ? <><h3>Not undergone by</h3><p><Joined items={without} link={(people) => <PeopleLink c={people} context={context} />} /></p></> : null}
+    </Leaf>
+    <StoryLeaf title="As it happened" annals={told} context={context} />
+  </>;
 }
 
 function LandCard({ region, context }: { region: number; context: Context }) {
