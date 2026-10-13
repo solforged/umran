@@ -23,8 +23,8 @@ pub struct Settings {
     pub min_support: u32,
     /// ...and account for this share of either segment's occurrences.
     pub min_share: f32,
-    /// Share of a pair's aligned positions that must be regular for the
-    /// pair to be judged cognate.
+    /// Share of a pair's segment-to-segment aligned positions that must be
+    /// regular for the pair to be judged cognate; gap positions do not vote.
     pub cognate_threshold: f32,
     /// Rounds of re-estimating correspondences from presumed cognates.
     pub rounds: usize,
@@ -142,7 +142,8 @@ pub struct Row {
     pub a: Form,
     pub b: Form,
     pub alignment: Vec<Pair>,
-    /// Share of aligned positions that are regular correspondences.
+    /// Share of segment-to-segment aligned positions that are regular
+    /// correspondences. Gaps supply neither evidence nor a denominator vote.
     pub regularity: f32,
     pub cognate: bool,
 }
@@ -152,9 +153,12 @@ pub struct Comparison {
     /// Regular correspondences with their support, most frequent first.
     pub regular: Vec<(Pair, u32)>,
     pub rows: Vec<Row>,
+    /// Current grammatical contrasts inspected by the final inference round.
+    pub grammar: Vec<GrammarObservation>,
 }
 
-/// Correspondences that recur often enough among `alignments` to be regular.
+/// Segment-to-segment correspondences that recur often enough among
+/// `alignments` to be regular. A gap records unequal length, not a sound pair.
 pub fn regular_correspondences<'a>(
     alignments: impl Iterator<Item = &'a [Pair]>,
     settings: &Settings,
@@ -164,6 +168,9 @@ pub fn regular_correspondences<'a>(
     let mut by_b: HashMap<Option<PhonemeId>, u32> = HashMap::new();
     for alignment in alignments {
         for &pair in alignment {
+            if pair.0.is_none() || pair.1.is_none() {
+                continue;
+            }
             *counts.entry(pair).or_default() += 1;
             *by_a.entry(pair.0).or_default() += 1;
             *by_b.entry(pair.1).or_default() += 1;
@@ -224,9 +231,15 @@ pub fn compare_varieties_with(
     )
 }
 
-struct GrammarObservation {
-    row: usize,
-    alignment: Vec<Pair>,
+#[derive(Clone, Debug, PartialEq)]
+pub struct GrammarObservation {
+    /// The lexical row whose dominant realization supplied this contrast.
+    pub row: usize,
+    pub category: Category,
+    pub alignment: Vec<Pair>,
+    /// Contributed recurring support in the final inference round. This is
+    /// evidence from current forms, not a judgment about marker ancestry.
+    pub regular: bool,
 }
 
 fn dominant_realization(word: &Lexeme, category: Category) -> Option<&Realization> {
@@ -287,14 +300,20 @@ fn current_contrast<'a>(
 /// Each recurring correspondence contributes once per marker-pair/category,
 /// irrespective of its frequency within a form or across hundreds of words.
 /// Two distinct word pairs must attest it among the presumed cognates.
-fn grammatical_correspondences(groups: &[Vec<GrammarObservation>], rows: &[Row]) -> Vec<Vec<Pair>> {
+fn grammatical_correspondences(
+    groups: &mut [Vec<GrammarObservation>],
+    rows: &[Row],
+) -> Vec<Vec<Pair>> {
     groups
-        .iter()
+        .iter_mut()
         .filter_map(|observations| {
             let mut counts: HashMap<Pair, u32> = HashMap::new();
             for observation in observations.iter().filter(|o| rows[o.row].cognate) {
                 for (i, &pair) in observation.alignment.iter().enumerate() {
-                    if !observation.alignment[..i].contains(&pair) {
+                    if pair.0.is_some()
+                        && pair.1.is_some()
+                        && !observation.alignment[..i].contains(&pair)
+                    {
                         *counts.entry(pair).or_default() += 1;
                     }
                 }
@@ -303,6 +322,13 @@ fn grammatical_correspondences(groups: &[Vec<GrammarObservation>], rows: &[Row])
                 .into_iter()
                 .filter_map(|(pair, n)| (n >= 2).then_some(pair))
                 .collect();
+            for observation in observations {
+                observation.regular = rows[observation.row].cognate
+                    && observation
+                        .alignment
+                        .iter()
+                        .any(|pair| recurring.contains(pair));
+            }
             (!recurring.is_empty()).then_some(recurring)
         })
         .collect()
@@ -353,7 +379,9 @@ fn compare_current(
                 });
             groups[group].push(GrammarObservation {
                 row,
+                category,
                 alignment: align_segments(ca, cb).0,
+                regular: false,
             });
         }
         rows.push(Row {
@@ -367,7 +395,7 @@ fn compare_current(
     }
     let mut regular = Vec::new();
     for _ in 0..settings.rounds {
-        let grammar = grammatical_correspondences(&groups, &rows);
+        let grammar = grammatical_correspondences(&mut groups, &rows);
         regular = regular_correspondences(
             rows.iter()
                 .filter(|r| r.cognate)
@@ -377,12 +405,22 @@ fn compare_current(
         );
         let set: HashMap<Pair, u32> = regular.iter().copied().collect();
         for row in &mut rows {
-            let hits = row.alignment.iter().filter(|p| set.contains_key(p)).count();
-            row.regularity = hits as f32 / row.alignment.len().max(1) as f32;
+            let (hits, positions) = row
+                .alignment
+                .iter()
+                .filter(|pair| pair.0.is_some() && pair.1.is_some())
+                .fold((0usize, 0usize), |(hits, positions), pair| {
+                    (hits + usize::from(set.contains_key(pair)), positions + 1)
+                });
+            row.regularity = hits as f32 / positions.max(1) as f32;
             row.cognate = row.regularity >= settings.cognate_threshold;
         }
     }
-    Comparison { regular, rows }
+    Comparison {
+        regular,
+        rows,
+        grammar: groups.into_iter().flatten().collect(),
+    }
 }
 
 #[cfg(test)]
@@ -492,6 +530,62 @@ mod tests {
             .regular
             .iter()
             .find_map(|&(p, n)| (p == pair).then_some(n))
+    }
+
+    #[test]
+    fn repeated_length_differences_are_not_sound_correspondences() {
+        let concepts = nouns(4);
+        let a = with_endings(&concepts, &["ka", "ta", "ta", "ta"], "");
+        let b = with_endings(&concepts, &["tatata"], "");
+        let comparison = compare(&a, &b, &concepts);
+        let target = &comparison.rows[0];
+        assert_eq!(
+            target
+                .alignment
+                .iter()
+                .filter(|p| p.0.is_none() || p.1.is_none())
+                .count(),
+            4,
+        );
+        // Four recurring gap pairs formerly supplied four positive votes:
+        // 5/6 looked cognate. Only a:a recurs among the two audible pairs.
+        assert_eq!(target.regularity, 0.5);
+        assert!(!target.cognate);
+        assert!(
+            comparison
+                .regular
+                .iter()
+                .all(|(pair, _)| pair.0.is_some() && pair.1.is_some())
+        );
+        // Do not penalize length alone either: all actual segment pairs in the
+        // remaining rows recur, even though these alignments also contain gaps.
+        assert!(
+            comparison.rows[1..]
+                .iter()
+                .all(|row| row.regularity == 1.0 && row.cognate)
+        );
+    }
+
+    #[test]
+    fn gap_only_alignments_supply_no_lexical_or_grammatical_evidence() {
+        let concepts = nouns(3);
+        let a = with_endings(&concepts, &["p"], "p");
+        let b = with_endings(&concepts, &["a"], "a");
+        let comparison = compare(&a, &b, &concepts);
+        assert!(comparison.regular.is_empty());
+        assert!(
+            comparison
+                .rows
+                .iter()
+                .all(|row| row.regularity == 0.0 && !row.cognate)
+        );
+        assert!(!comparison.grammar.is_empty());
+        assert!(
+            comparison
+                .grammar
+                .iter()
+                .all(|observation| !observation.regular)
+        );
     }
 
     #[test]
