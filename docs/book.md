@@ -206,10 +206,10 @@ turns above the same sentence.
 
 ### Founding
 
-Founding is a sequence of steps, always opened at the first. A rail
-across the top names them, and any step whose prerequisites hold can be
-reopened; the chart stays behind every step. All steps edit one draft on
-the real engine.
+Founding begins at the first step, or resumes a saved draft at its kept
+step. A rail across the top names them, and any step whose prerequisites
+hold can be reopened; the chart stays behind every step. All steps edit
+one draft on the real engine, saved on the shelf with *Resume*.
 
 1. **The world.** For worlds drawn from moving plates, the coasts form
    first: the supercontinent, the engine's ten drift steps, then the
@@ -360,10 +360,11 @@ The chart, the cards, the chronicle, and the time bar. What changes:
 
 ### The book
 
-A first-class page, reached from the workshop's cartouche, laid out to
-be read in the order above, with the chart as frontispiece. Reuses the
-card sections rather than restating them. *As a save file* and *As text*
-are its last page, not its reason for existing.
+A full-window screen, reached from the workshop's cartouche, laid out to
+be read in the order above, with the chart as frontispiece. A contents
+rail follows the chapter; a saved bookmark keeps the anchor, scroll offset,
+and open sections. It reuses the card sections rather than restating them.
+The last page offers the save file and editions, not a separate export book.
 
 The seal, contents, and frontispiece appear before the engine finishes
 reading the chapters. Lands, each people, and each language section wait
@@ -385,8 +386,8 @@ desktop, arranged by Android's window size classes and no other
 breakpoints: compact below 600 px wide, medium to 840, expanded beyond,
 and a short class below 480 px tall for phones on their side.
 
-On compact screens the map fills the window and the card is a sheet over
-it, with three detents: a peek that shows the title and the time bar, a
+In the workshop on compact screens the map fills the window and the card
+is a sheet over it, with three detents: a peek that shows the title and the time bar, a
 half that shares the screen with the chart, and the full card. Opening a
 subject raises the sheet to half; a decision on the chart lowers it.
 Founding keeps its panel in the same sheet and folds the rail into one
@@ -443,10 +444,8 @@ nothing more.
 
 ## Delivery
 
-Branch `book` off `main`. New screen components beside the old ones;
-`model.ts`, `engine.ts`, `shelf.ts`, `takeout.ts`, `lore.ts`, `MapView`,
-`Timeline`, `Popover`, `styles.css`, and `chart.css` are kept and
-extended. Lanes in worktrees per `umran-ui-lanes-worktrees`; the engine
-cause contract is one Astra lane. Cut over when found → run → read →
-book works end to end on the branch; the old shell is deleted in the
-same commit. The README and `docs/images/` follow the cutover.
+The four-screen cutover is delivered on `main`. Screen components share
+the engine views, card sections, chart, timeline, and one look; the old
+shell is gone. `route.ts` keeps the chart room, founding draft, world, and
+book chapter addressable through hash routes. The README and
+`docs/images/` describe the delivered workbench.

@@ -22,19 +22,18 @@ Umran writes the book of a world: its peoples, their fortunes, and the
 languages that grew out of both. The simulation is how the book gets
 written. You found the world, run its years, read what came of it, and
 decide where a history should turn; each decision opens another telling
-of the same world. Later visits resume the world left open. On the stage
-the chart fills the window: a cartouche in its top-left corner names the
-world, its telling, and the year, and opens the world's menu (other
-tellings, notes, the book, day or lamplight, and the way back to the
-chart room). Find and the map's layers sit top-right, the chronicle's
-latest line is a caption over the map's foot, and the time bar beneath
-runs the years to a date and draws every turning point on a timeline,
-with sound changes as a quieter track below it. The chronicle reads in
-eras, from the beginning, with headline entries at full weight, a line on
-what happened to speech in each era, and the year's quieter bookkeeping
-folded into one line; its card is a table of contents. A people's or a
-language's fortunes read in the same eras, and so does the book, which
-keeps its long ledgers folded beneath one-line summaries.
+of the same world. Later visits resume the world left open. In the workshop
+the chart fills the window and opens on its peoples, not empty seas. A
+cartouche in its top-left corner names the world, its telling, and the year,
+and opens the world's menu (other tellings, notes, the book, day or lamplight,
+and the way back to the chart room). Find and the map's layers sit top-right;
+a legend explains the ink. The chronicle's latest line is a caption over
+the map's foot, and the time bar beneath runs the years to a date and draws
+every turning point on a timeline, with sound changes as a quieter track
+below it. The chronicle reads in eras, from the beginning, with headline
+entries at full weight, a line on what happened to speech in each era, and
+the year's quieter bookkeeping folded into one line; its card is a table
+of contents. A people's or a language's fortunes read in the same eras.
 Where the engine recorded why something happened, the chronicle says so:
 "after hard times", "as the city grew", each phrase a link to the entry
 that caused it. The author can also choose a sound change for a language
@@ -65,7 +64,7 @@ recovery. Their old flat-map land IDs cannot be replayed on the new sphere.
 Spherical saves retain their recorded geography when opened, exported, or
 branched; a new terrain generator does not redraw an existing world.
 
-![The workbench after 4,000 years: the inked globe turned toward the sample's peoples, a state's card pinned over it, beside the world's card, with its chronicle caption and timeline below](docs/images/stage.jpg)
+![The workshop after 4,000 years: the chart opened on the sample's peoples, with its language-family legend, the world's card, and the chronicle caption and timeline below](docs/images/stage.jpg)
 
 ## What happens in a world
 
@@ -160,15 +159,19 @@ travel routes, crowding and any capital lost. Applying the choice opens its
 historical account; **Return before this choice** lets you try another way,
 keeping the first telling even when both decisions happened in the same year.
 
-![A settlement account beside the chart, showing the people remaining and departing and the routes from their inhabited lands](docs/images/settlement.jpg)
+![A choice of homeland beside the chart: a territorial division preview, with the lands and people remaining and parting, and a new heart chosen for the departing people](docs/images/settlement.jpg)
 
-**Two tellings, one year** lays alternate histories side by side. Their charts
-pan and zoom together; follow a shared people to compare its holdings,
-population, language family and words. Each link opens the right account,
-and either can be continued from the year in view. Returning before an action
-only moves your reading: the first new choice starts another telling.
+**Two tellings, one year** lays alternate histories side by side. Return to
+a past year and choose **Continue in another telling** to run from there,
+keeping the first future. Their charts pan and zoom together; follow a
+shared people to compare its holdings, population, language family and words.
+**What changed in speech** shows sound laws found only in one telling,
+changed specimen words, loans by donor, and the languages descended in each.
+Each link opens the right account, and either telling can be continued from
+the year in view. Returning before an action only moves your reading:
+the first new choice starts another telling.
 
-![A named undivided history compared with a territorial division at year 4000, with linked charts and shared peoples](docs/images/tellings.jpg)
+![Two tellings compared at year 4000 after continuing from year 1750: What changed in speech shows Iflon's different sound laws, loans by donor, and descendant counts](docs/images/tellings.jpg)
 
 The **atlas index** finds peoples, languages, lands, states, faiths, and crafts
 by name, older name, or meaning. Accents are optional when searching. Open it
@@ -176,19 +179,22 @@ with Find on the chart, or press `/` or `⌘/Ctrl K`.
 
 The **chronicle** can be searched, read from either end, and filtered to the
 journeys of peoples, the fortunes of states, faiths, language, or livelihood.
-Sound changes can follow one language and its ancestors. Open a moment to
-follow its people and words, then step back to the same reading. Dictionaries
-also keep their search and selected word when returning from a word's history.
+Sound changes can follow one language and its ancestors. Names in the
+entries link to their cards. **Follow their fortunes** takes a people through
+its turning points, with the chart and words at each moment, then returns to
+the reading you left. Dictionaries also keep their search and selected word
+when returning from a word's history.
 On a phone, the [map fills the screen](docs/images/phone-sheet.jpg) and the card
 rises over it as a sheet: a peek, half the screen, or the whole page. The
 engine runs on its own thread, so the chart and Stop stay responsive while
 the years pass.
 
 The **chart** shows rivers in the ink of the coast, bending through the
-lands they cross. Failed flows fade to a
-dashed line. Lakes are sea-filled insets on the chart and globe; their
-extent is not modelled. Close in to read local land, river, and lake names,
-or open their cards for names across languages, shore lands, and outlets.
+lands they cross. Failed flows fade to a dashed line. Lakes are sea-filled
+insets on the chart and globe; their extent is not modelled. Lettering grows
+as you zoom: broad names give way to peoples, then local land, river, and
+lake names. Choose the author's names or one people's viewpoint explicitly.
+Place cards keep names across languages, shore lands, and outlets.
 **Weather** colours lands by their zone's departure from usual conditions.
 Climate annals lead to the zone's card and history. A kilometre scale
 follows the zoom.
@@ -200,14 +206,32 @@ links leave focus alone. A single 25-year advance or intervention briefly
 marks changed holdings and new state borders, while playback keeps the chart
 quiet. The system's reduced-motion setting makes all these changes immediate.
 
-![The chronicle laid over the chart, read in eras from the beginning: an era opened by a conquest, its line on speech, and headline entries at full weight, beside the contents card listing each era with its speech in counts](docs/images/chronicle.jpg)
+![The chronicle read from the beginning: the first peoples and their linked names, a line on speech, and the quieter years folded below, beside the contents card listing each era](docs/images/chronicle.jpg)
+
+The **book** is its own screen, with a contents rail and a bookmark that
+keeps your place. Read the lands, peoples, languages, and chronicle in chapter
+order; long ledgers stay folded until wanted. **Take it elsewhere** makes an
+edition with every chapter opened: print just the book, save a self-contained
+web page with its fonts, chart, and chapter links, or take the complete text
+as Markdown. A save file keeps the world, its tellings, and the author's notes
+for further work.
+
+![The book on its own screen: the contents rail beside the sample's frontispiece, its chart, the year read, and the seed and engine revision](docs/images/book.jpg)
+
+The **philologist's desk** begins blind. Align words from two languages,
+choose meanings, and study recurring sound pairs without family names,
+family colours, or descent. Keep a hypothesis in the margin, then **Reveal
+the record** to read their common ancestry and the recorded roots beside
+the method's evidence. The comparative method never reads that history.
+
+![The philologist's desk after Reveal the record: Iflon and Ēfwfīlon's recurring sound pairs and aligned words beside their common ancestor, the year they parted, and recorded shared roots](docs/images/desk.jpg)
 
 | | |
 |---|---|
 | ![Founding, their speech: three kin peoples on a new world's chart, and beside it every sound preset as a card of the words this people would have](docs/images/setup.png) | ![Words compared: a table of basic words across related languages, shaded by shared root](docs/images/cognates.png) |
 | **Founding a world.** Five steps over the chart. The coasts form from the engine's own plate-drift history; then a homeland; then one people, kin who parted with shared ancestral speech, or neighbours with languages of their own; then their speech, where every sound preset is a card of this people's own words; then the title page. Writing the chronicle runs the years at once. | **Words compared.** Basic words across the living languages, shaded alike when they come from one root (cognates). |
-| ![Language families branching through four thousand years, including ended and classical languages](docs/images/family.png) | ![A sound law's card: the peoples who have it and where it spread, with the isogloss drawn on the map](docs/images/law.png) |
-| **Family trees.** The world's languages branch as peoples part; ended languages and classical forms keep their places in the record. Each language also has a card for its sounds, grammar, and word-building patterns. | **A sound law.** Who has a change, whether it arose among them or spread from a neighbour, and on the map, where it stopped. |
+| ![Language families branching through four thousand years, including ended and classical languages](docs/images/family.png) | ![Ēfwfīlon's sound laws opened wide: bands of meanings through the years above a dated law ledger, with an inherited change's recorded words before and after](docs/images/law.png) |
+| **Family trees.** The world's languages branch as peoples part; ended languages and classical forms keep their places in the record. Each language also has a card for its sounds, grammar, and word-building patterns. | **A language's evidence.** Six meanings through the years trace the words that held them and their changing forms. The dated law ledger links each application to its recorded words, grammar, and names before and after, and to the chronicle entry behind it. |
 
 ## How it is built
 
@@ -238,9 +262,8 @@ A few decisions do most of the work:
 
 [`docs/engine.md`](docs/engine.md) describes the model module by module,
 and [`docs/history.md`](docs/history.md) covers replay, branching, and
-saving. [`docs/backlog.md`](docs/backlog.md) sets out the interaction direction:
-spatial interventions, connected histories, comparisons between tellings,
-guided founding, believable geography, and motion suited to charts and books.
+saving. [`docs/book.md`](docs/book.md) describes the book, the four screens,
+and the loop of founding, running, reading, and revising.
 
 ## Install and use offline
 
@@ -253,11 +276,13 @@ WebAssembly engine can reopen and run without a connection.
   Screen.
 - **Safari on Mac:** choose File → Add to Dock.
 
-Worlds stay in local browser storage; installing does not upload or sync
-them. Some browsers keep an installed app's storage separate from its
-browser tab, so export a recipe and import it in the app if needed. Keep
-exported backups; clearing site data can remove both worlds and offline
-files.
+Worlds and unfinished founding drafts stay in local browser storage.
+Resume a draft from the chart room; runs keep checkpoints of completed
+years across reloads. If two tabs save the same world, both versions are
+kept rather than one overwriting the other. Installing does not upload or
+sync them. Some browsers keep an installed app's storage separate from its
+browser tab, so export a save file and open it in the app if needed. Keep
+exported backups; clearing site data can remove both worlds and offline files.
 
 New editions offer "Save and reload" rather than interrupting playback.
 Reloading first saves the latest generation; if saving fails, the update
@@ -292,7 +317,7 @@ are listed in [`docs/engine.md`](docs/engine.md#studying-one-mechanism).
 ```
 crates/umran-sim   the engine: world, map, sounds, words, names, history
 crates/umran-web   the WebAssembly facade and its JSON views
-web/src            the React workbench: chart room, founding, stage, cards, the book
+web/src            the React workbench: chart room, founding, workshop, cards, the book
 docs/              the engine model and the history format
 brand/             the astrolabe mark; `bun run brand` redraws icons and logos
 AGENTS.md          architecture notes and the rules every change keeps

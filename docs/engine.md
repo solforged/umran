@@ -1095,6 +1095,33 @@ This bookkeeping makes no random draws and does not itself change replay.
 - Every random draw comes from a ChaCha8 stream keyed by purpose
   (`rng.rs`), so adding a process never shifts existing draws.
 
+## Language evidence
+
+The facade's reading-scoped `evidence.rs` reads expose word lives, dated
+law occurrences, loan trails, grammar stories, and word-building examples.
+They read the selected telling and point without changing history or
+engine revision. The book and language cards share these records.
+
+Word lives retain attested forms and witnessed holders: founding,
+explicit replacements, and the current holder. Historical competition
+weights and dominance onset are not stored. Unknown dominance dates stay
+null, and a current share is not a historical curve. IPA uses historical
+stress; spelling uses the reading's orthography.
+
+Law occurrences link changed words, markers, and names to their recorded
+before and after forms, with wave, inheritance, or authorship where
+recorded. No-op law applications are not logged per word, so absence from
+an occurrence's examples does not prove that a word was absent or exempt.
+Repeated authorship of the same language/year/law keeps only the latest
+decision attribution, not a separate mark for each application.
+
+Loan trails show the donor, heard and adapted forms, recorded contact
+cause where available, and later changes. Grammar stories retain marker
+origins, forms, and retirement, but usage shares are current only.
+The majority-generation counter is not a dated history of dominance.
+Word-building examples use recorded parts and origins, never invented
+historical forms.
+
 ## Worldview
 
 `ethos.rs` gives each people six heritable axes in [-1, 1]: `martial`
@@ -1427,7 +1454,7 @@ shipbuilding are not modelled.
 
 Default effort-km parameters are founding separation saturation 800,
 migration 600, colony 1,200, trade 1,800, conquest 800, pilgrimage 1,200,
-and cohesion reach 300 before mobility. Pilgrimage rate is 0.02.
+and cohesion reach 150 before mobility. Pilgrimage rate is 0.02.
 Founding is independent settlement and needs no ships. Spread remains
 land-adjacent and uncapped. Cohesion and territorial partition use exact
 walking distances without a cache ceiling. Distance preferences use
@@ -1448,10 +1475,11 @@ landmass, and the nearest other founder accompany the pairs; nearest means
 the smallest finite walking or voyage effort, breaking ties by community ID.
 This preview does not predict later territorial spread or consume draws.
 
-The map stores sparse walking and voyage rows out to 1,800 effort-km.
-Walking rows retain separate allocations so a changed river edge rebuilds
-only rows whose old reachable set includes either endpoint; untouched rows
-are neither searched again nor copied. This also covers newly shorter paths:
+The map bounds sparse walking and voyage rows at 1,800 effort-km.
+Walking rows materialize only when read and retain separate allocations.
+A changed river edge invalidates only materialized rows whose old reachable
+set includes either endpoint; untouched rows are neither searched again
+nor copied. This also covers newly shorter paths:
 their first changed edge must be reachable through an unchanged prefix.
 Missing cached destinations are outside a bounded query, not necessarily
 unreachable. Exact pair queries use Dijkstra beyond the cache, and uncapped
@@ -2153,7 +2181,7 @@ rules to lake names. The first settled shore speakers coin a water-name;
 nearby speakers remember their own forms. Lakes have separate identities
 from rivers even when a river carries their overflow. Dedicated lake-name,
 succession, exonym, and memory-shift streams leave earlier draws untouched.
-The facade exposes static lakes, river topology, V4/V5 channels, and zone ids in `map()`,
+The facade exposes static lakes, river topology, V4–V6 channels, and zone ids in `map()`,
 historical conditions and literal feeding capacities in `climate(generation)`,
 and name histories with local alternatives in `river(generation, id)` and
 `lake(generation, id)`.
@@ -2289,7 +2317,6 @@ can refuse this fixed recipe; the report counts those refusals separately.
 ## Not yet modelled
 
 Subregional river meanders, changing lake extents, lake salinity, resolved travel times,
-globe wrapping,
 purism in speech rather than writing, spelling reform as a purist act,
 inflection beyond count noun plural and object marking, the genitive, and verb
 past, future, and progressive, agreement beyond the determiner, combined
@@ -2297,5 +2324,5 @@ tense–aspect forms, modal readings and clitic stages, pronoun case forms,
 tone beyond the word (sandhi), vowel harmony beyond the word, syllabic
 consonants and productive cluster repair, prenasalized stops, syntax beyond fixed word
 and possessor order, alignment beyond this object contrast, and doctrine
-beyond six tenets, with images, pilgrimage, and monasticism recorded but not
-yet acting on the world.
+beyond six tenets, with images and monasticism recorded but not yet acting
+on the world. Pilgrimage acts through recorded roads and contacts.

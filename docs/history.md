@@ -71,12 +71,11 @@ it produced, including decisions that produced no entries. Event cards can
 return to `before` for any decision; settlements reopen their account,
 while other decisions return the reading to that exact point.
 
-The world's title and author are metadata in the engine save, independent
-of its tellings. Founding sets both; the frontispiece names the author and
-the chart room keeps that byline with the title. Exporting and importing a
-save preserves both. The browser also remembers the last author name in
-`umran.author` as a convenience for the next founding, not as the save's
-source of authorship.
+The world's title and author are save metadata, independent of its
+tellings; their document fields and setters are described below. Founding
+sets both, and the chart room keeps the byline with the title. The browser
+also remembers the last author name in `umran.author` for the next founding,
+not as the save's source of authorship.
 
 Settlement previews use the Rust census, food budgets and physical travel
 graph. A territorial boundary propagates through held lands only, with each
@@ -188,7 +187,9 @@ metaphor. The named-telling schema replaces the former active-log/set-aside-log
 shape; incompatible recipes open recovery with their original text intact. The
 single-world save `langgen.sim.v1` is copied onto the shelf once as "An
 earlier history" and left in place, as is the older `langgen.workbench.v2`.
-Worlds leave the shelf only when the reader removes one and confirms.
+*Put away* keeps a world's save and reading place off the main shelf;
+*Bring back* restores it. Permanent removal requires putting it away first
+and confirming.
 Unreadable saves or an unreadable shelf open recovery without being
 overwritten; save failures stay visible and export still works. Storage is
 local to the browser, not synced. The sample world (`web/src/sample.ts`)
@@ -199,6 +200,13 @@ A world is titled by the author at founding, or else named after its
 earliest-named continent (`worldName` in `shelf.ts`); a continent's name
 is fixed once given, so the title never drifts as a people's name wears.
 An authored title is marked `named` on the entry and kept on every save.
+
+The shelf also keeps founding drafts under `langgen.draft.<id>`, with their
+step and choices for *Resume*. Beginning the chronicle saves the world
+before removing its draft. Each world save advances its shelf revision;
+a tab with an older base revision cannot overwrite a newer save and must
+reload or keep its work as another world. Storage events notify open tabs.
+Saving an open world that another tab put away does not bring it back.
 
 Founding keeps one account open beside the chart, with independent
 homeland, livelihood, temper, speech, grammar, and identity choices; the others
@@ -213,13 +221,17 @@ and does not change replay.
 The first visit opens the chart room, even when it is empty; founding
 and the sample are explicit choices there. Later visits resume the world
 left open, including one reopened without making changes. Returning to
-the chart room clears that resume choice, so reloading stays there. The
-world's cartouche on the stage opens a menu with the way back; the brand
-mark in founding is the same link. The book is a sheet laid over the
-map, so the stage keeps its cards, layers, and pace while it is open;
-its last chapter holds the save file and the text export. Leaving the
-stage during a run saves the latest generation before recording the
-chart room as the next launch destination.
+the chart room clears that resume choice, so reloading stays there. Hash
+routes (`web/src/route.ts`) name the chart room, a founding draft, a world,
+and a book chapter; an explicit route takes precedence over resume.
+The world's cartouche on the stage opens the way back; the brand mark in
+founding is the same link. The book is a full-window screen with a contents
+rail. Its bookmark keeps the chapter, anchor, scroll offset, and open
+sections in the reading place, without replacing the workshop's cards,
+layers, or camera. Editions read its own chapters.
+Runs save their unfinished target and latest completed chunks. Leaving
+the stage saves the latest generation before recording the chart room as
+the next launch destination; a resumed unfinished run offers continuation.
 
 The production workbench is also an installable offline app. Its service
 worker caches the app shell and WebAssembly engine, not worlds; saved

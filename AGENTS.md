@@ -35,11 +35,14 @@ Read further when the task touches it:
   take with React's `use` inside `<Pending>` or with `useAnswer`
   (`components/Pending.tsx`), and a write starts a new reading of the
   tip while old readings keep their answers; `shelf.ts` stores the saved
-  worlds (still keyed as books, so old saves open) and names a world
-  after its earliest-named continent unless the author titled it;
-  `takeout.ts` formats exports; `lore.ts` holds shared names, the
-  mechanism phrases for recorded causes, and the glossary of linguistic
-  terms; `App.tsx` holds view state and actions. `styles.css` and
+  worlds (still keyed as books, so old saves open), founding drafts,
+  put-away worlds, and save revisions for cross-tab safety, and names a
+  world after its earliest-named continent unless the author titled it;
+  `route.ts` names hash routes for the chart room, founding drafts, worlds,
+  and book chapters; `edition.ts` and `print.css` render editions from the
+  book's own chapters; `takeout.ts` downloads files; `lore.ts` holds shared
+  names, mechanism phrases for recorded causes, and the linguistic glossary;
+  `App.tsx` holds view state and actions. `styles.css` and
   `chart.css` hold the one look, an explorer's chart of strange lands,
   by day or by lamplight (`LightSwitch`). `components/` holds the four
   screens of `docs/book.md`: the chart room (`ChartRoom`: the author's
@@ -60,8 +63,10 @@ Read further when the task touches it:
   zoom, and the `lens` that draws the chart as one people knew it; the
   world's cartouche and menu top-left, Find and the layers top-right,
   the gazetteer (`gazetteer.ts` arranges the facade's native names and
-  exonyms; `MapInspector` shows one hover or pinned place card);
-  the chronicle's latest line as a caption over the foot, and a time bar
+  exonyms; `MapInspector` reads a place and pins it before opening its card);
+  `FortunesTour` follows a people's recorded entries and journeys, restoring
+  the prior reading and camera when done; the chronicle's latest line as a
+  caption over the foot, and a time bar
   whose primary verb runs to a year in chunked frames, with play and
   step in a study drawer, and whose `Timeline` clusters turning points
   over a quiet density of sound changes; the cards in `Pedia`, the
@@ -73,9 +78,12 @@ Read further when the task touches it:
   language, with each year's bookkeeping folded into one quiet line;
   apparatus (facts boxes, rosters, ledgers) sits at the dense scale
   set by the `--dense-*` properties while prose keeps its measure;
-  `LanguageChapter` holds the language sections
-  the card and the book share); and the book (`Book`: the world read in
-  chapter order, laid over the map like a wide card, with the author
+  `LanguageChapter` holds the language sections the card and book share,
+  with `LifeRibbon`, law ledgers, loan roads, grammar stories, and
+  word-building examples from the facade's `evidence.rs` reads;
+  `Desk` reads blind correspondences from `desk.rs`, with recorded truth
+  kept a separate read); and the book (`Book`: a full-window reading in
+  chapter order, with a contents rail, saved bookmark, and the author
   named on the frontispiece). Every menu is a `Popover`: one open at a
   time, closed by an outside click or Escape. Layout follows Android's
   window size classes only (compact below 600 px, medium to 840,
