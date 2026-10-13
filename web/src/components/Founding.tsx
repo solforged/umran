@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowRight, ChevronDown, Feather, LocateFixed, Plus, Refresh
 import { attempt, createEngine, message, presetDesign, preview } from "../engine";
 import type { Action, Catalog, Craft, Engine, EthosAxis, Forming, FoundingPreview, FoundingTraits, GrammarChoice, GrammarDesign, LakeNamesView, Livelihood, MapSize, Naming, Overview, PossessorOrder, RiverNamesView, Variety, WordOrder, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { countWord, ETHOS_AXES, ETHOS_DRIVES, ETHOS_POLES, hue, LIVELIHOOD_DRIVES, LIVELIHOOD_NAME, MARKING_PHRASE, MILD, OPENNESS, OPENNESS_DRIVES, POSSESSOR_PHRASE, STANDING, STANDING_DRIVES, STRONG, TERRAIN_NAME, WORD_ORDER_PHRASE } from "../lore";
+import { countWord, ETHOS_AXES, ETHOS_DRIVES, ETHOS_POLES, hue, landCardLabel, LIVELIHOOD_DRIVES, LIVELIHOOD_NAME, MARKING_PHRASE, MILD, OPENNESS, OPENNESS_DRIVES, peopleLabel, POSSESSOR_PHRASE, STANDING, STANDING_DRIVES, STRONG, TERRAIN_NAME, WORD_ORDER_PHRASE } from "../lore";
 import { worldName } from "../shelf";
 import { Designer, randomSeed, type Founding as FoundingDesign } from "./Designer";
 import { FormingChart } from "./FormingChart";
@@ -276,7 +276,11 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
   const forming = step === "world" && chartReady && built.forming && formed !== worldKey && formed !== "always" ? built.forming : null;
   const riverNames = built?.riverNames ?? [];
   const lakeNames = built?.lakeNames ?? [];
-  const landName = (region: number) => overview?.places.find((place) => place.region === region)?.names.at(-1)?.spelled ?? "unnamed land";
+  const nameOf = (id: number) => overview ? peopleLabel(overview, id) : "Settling…";
+  const landName = (region: number) => {
+    const named = overview?.places.find((place) => place.region === region)?.names.at(-1)?.spelled;
+    return named && overview && map ? landCardLabel(overview, map, region, named) : named ?? "unnamed land";
+  };
   const landTitle = (region: number) => {
     const named = landName(region);
     const r = map?.regions[region];
@@ -290,14 +294,15 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
 
   const update = (key: number, patch: Partial<Founder>) => setFounders((all) => all.map((founder) => founder.key === key ? { ...founder, ...patch } : founder));
   const movingFounder = founders.find((founder) => founder.key === moving);
-  const movingName = movingFounder ? overview?.communities[founders.indexOf(movingFounder)]?.name : undefined;
+  const movingName = movingFounder && overview?.communities[founders.indexOf(movingFounder)]
+    ? nameOf(founders.indexOf(movingFounder)) : undefined;
   const homeTo = (region: number, except?: Founder) => overview?.communities
     .filter((community, i) => founders[i] !== except && community.lands.includes(region)) ?? [];
   const settle = (region: number) => {
     if ((!movingFounder && !adding) || !map || !overview) return;
     const others = homeTo(region, movingFounder);
     if (others.length) {
-      setMoveNotice(`${landName(region)} is home to the ${others.map((community) => community.name).join(" and ")}. Choose another land.`);
+      setMoveNotice(`${landName(region)} is home to ${others.map((community) => `the ${nameOf(community.id)}`).join(" and ")}. Choose another land.`);
       return;
     }
     if (adding) {
@@ -418,7 +423,7 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
       return <button type="button" key={founder.key} aria-pressed={selected === founder.key} onClick={() => choose(founder.key)}
         style={{ "--tone": variety ? hue(variety.family) : undefined } as CSSProperties}>
         <span className="founding-roster-number">{String(index + 1).padStart(2, "0")}</span>
-        <span className="founding-roster-name">{entry?.name ?? "Settling…"}</span>
+        <span className="founding-roster-name">{entry ? nameOf(entry.id) : "Settling…"}</span>
         <span className="founding-roster-place">{step === "speech" ? (variety?.name ?? "") : entry ? landName(entry.region) : ""}</span>
       </button>;
     })}
@@ -464,11 +469,11 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
         <h3>{landTitle(land.id)}</h3>
         <p>{landName(land.id) !== "unnamed land" ? `${TERRAIN_NAME[land.terrain]}, ${land.coastal ? "coastal" : "inland"}. ` : ""}
           {Math.round(land.areaKm2).toLocaleString()} km²{map?.rivers.some((river) => river.course.includes(land.id)) ? " · a river runs through it" : ""}.</p>
-        {occupied ? <p className="muted">Home to {homeTo(land.id).map((community) => community.name).join(", ")}.</p> : null}
+        {occupied ? <p className="muted">Home to {homeTo(land.id).map((community) => `the ${nameOf(community.id)}`).join(", ")}.</p> : null}
         {founders.length ? <div className="founding-land-actions">
           <button type="button" disabled={!currentBuild || available < 1 || occupied} onClick={addHere}><Plus size={13} aria-hidden="true" /> Found another people here</button>
           {current && people && current.region !== land.id && !occupied ? <button type="button" className="link founding-move" disabled={!currentBuild}
-            onClick={() => update(current.key, { region: land.id })}><LocateFixed size={13} aria-hidden="true" /> Move the {people.name} here</button> : null}
+            onClick={() => update(current.key, { region: land.id })}><LocateFixed size={13} aria-hidden="true" /> Move the {nameOf(people.id)} here</button> : null}
         </div> : null}
       </section> : <p className="founding-invitation">Select a land on the chart.</p>}
     </>;
@@ -477,8 +482,8 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
       {head(founders.length === 1 ? "One people at the beginning" : `${countWord(founders.length).replace(/^./, (c) => c.toUpperCase())} peoples at the beginning`)}
       {rosterNav}
       <div className="founding-pages" ref={pages}>
-        {current && people && speech && traits ? <article className="founding-portrait" key={current.key} aria-label={`The ${people.name}`}>
-          <header><h3>{people.name}</h3><span>{people.meaning}</span>
+        {current && people && speech && traits ? <article className="founding-portrait" key={current.key} aria-label={`The ${nameOf(people.id)}`}>
+          <header><h3>{nameOf(people.id)}</h3><span>{people.meaning}</span>
             <button type="button" className="link founding-move-start" aria-pressed={moving === current.key} disabled={!currentBuild}
               onClick={() => { setAdding(false); setMoving(moving === current.key ? null : current.key); setMoveNotice(null); }}><LocateFixed size={13} aria-hidden="true" /> Move</button></header>
           <p>They live in <button type="button" className="link" onClick={() => { setInspected(people.region); setFocus(people.region); }}>{landName(people.region)}</button>.
@@ -536,7 +541,7 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
           <section className="founding-trait" aria-labelledby="founding-standing">
             <h4 id="founding-standing">Among other peoples</h4>
             {inherited && speechOwner ? <p className="founding-drive">Their standing and openness are their kin's: <button type="button" className="link"
-              onClick={() => choose(speechOwner.key)}>{overview?.communities[founders.indexOf(speechOwner)]?.name}</button>.</p> : null}
+              onClick={() => choose(speechOwner.key)}>{nameOf(founders.indexOf(speechOwner))}</button>.</p> : null}
             {([["Standing", STANDING, "power", STANDING_DRIVES], ["Foreign words", OPENNESS, "openness", OPENNESS_DRIVES]] as const).map(([label, stops, field, drives]) => {
               const owner = speechOwner ?? current;
               const nearest = stops.reduce((best, stop) => Math.abs(stop.value - owner[field]) < Math.abs(best.value - owner[field]) ? stop : best);
@@ -616,13 +621,13 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
     </>;
   } else if (step === "speech") {
     plate = <>
-      {head(people ? `How do the ${people.name} speak?` : "How do they speak?",
+      {head(people ? `How do the ${nameOf(people.id)} speak?` : "How do they speak?",
         "Each voice is a set of sound preferences. Every card shows the words this people would have.")}
       {founders.length > 1 ? rosterNav : null}
       <div className="founding-pages" ref={pages}>
         {current && people && speech && speechOwner ? <>
-          {inherited ? <p className="founding-inheritance">The {people.name} speak a branch of the speech of the{" "}
-            <button type="button" className="link" onClick={() => choose(speechOwner.key)}>{overview?.communities[founders.indexOf(speechOwner)]?.name}</button>.
+          {inherited ? <p className="founding-inheritance">The {nameOf(people.id)} speak a branch of the speech of the{" "}
+            <button type="button" className="link" onClick={() => choose(speechOwner.key)}>{nameOf(founders.indexOf(speechOwner))}</button>.
             {" "}Their kin share these choices.</p> : null}
           <div className="founding-voices" role="radiogroup" aria-label="Voices">
             {speechOwner.preset === null ? <button type="button" role="radio" aria-checked className="founding-voice">
@@ -664,13 +669,22 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
     </>;
   } else {
     const peoples = overview?.communities ?? [];
+    const homelands = new Map<number, typeof peoples>();
+    for (const people of peoples) {
+      const residents = homelands.get(people.region) ?? [];
+      residents.push(people);
+      homelands.set(people.region, residents);
+    }
     plate = <section className="founding-title-page" aria-label="The title page">
       <p className="founding-title-kicker">The book of a world</p>
       <input className="founding-title" aria-label="World name" value={title ?? defaultTitle ?? ""}
         placeholder="An unnamed world" onChange={(event) => setTitle(event.target.value)} />
       <p className="founding-byline">by <input aria-label="Author" placeholder="your name" value={author} onChange={(event) => setAuthor(event.target.value)} /></p>
-      <p className="founding-title-peoples">{peoples.map((c, i) => <span key={c.id} style={{ "--tone": hue(overview?.varieties[c.variety]?.family ?? 0) } as CSSProperties}>
-        {i === 0 ? "" : i < peoples.length - 1 ? ", " : peoples.length > 2 ? ", and " : " and "}the <b>{c.name}</b></span>)}{peoples.length ? `, in ${landName(peoples[0].region)}` : ""}.</p>
+      <p className="founding-title-peoples">{[...homelands].map(([region, residents], group) => <span key={region}>
+        {group ? "; " : ""}{residents.map((c, i) => <span key={c.id} style={{ "--tone": hue(overview?.varieties[c.variety]?.family ?? 0) } as CSSProperties}>
+          {i === 0 ? "" : i < residents.length - 1 ? ", " : residents.length > 2 ? ", and " : " and "}the <b>{nameOf(c.id)}</b>
+        </span>)} in {landTitle(region)}
+      </span>)}.</p>
       <p className="founding-title-years"><label>Their chronicle runs to year <input type="number" aria-label="Years to write" min={YEARS} step={YEARS} value={Number.isNaN(years) ? "" : years}
         onChange={(event) => setYears(event.currentTarget.valueAsNumber)} /></label></p>
       <p className="founding-seed">Seed <code>{worldSeed}</code> · {catalog.mapSizes.find((choice) => choice.id === size)?.name} world</p>

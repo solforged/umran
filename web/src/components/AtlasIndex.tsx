@@ -3,7 +3,7 @@ import { flushSync } from "react-dom";
 import { ArrowUpRight, Earth, Hammer, Landmark, Languages, MapPin, Search, Sparkles, Users, Waves, type LucideIcon } from "lucide-react";
 import type { LakeNamesView, Overview, RiverNamesView, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { hue, TERRAIN_NAME, unnamedName } from "../lore";
+import { continentLabel, hue, landCardLabel, peopleLabel, stateLabel, TERRAIN_NAME, waterLabel } from "../lore";
 import type { Focus } from "./Pedia";
 import { searchText } from "../history";
 import { Modal } from "./Modal";
@@ -37,12 +37,12 @@ export function AtlasIndex({ open, overview, map, riverNames, lakeNames, onClose
   const results = useRef<HTMLUListElement>(null);
   const entries = useMemo<Entry[]>(() => [
     ...overview.continents.map((c): Entry => ({
-      key: `continent-${c.landmass}`, kind: "Lands", name: c.name?.name ?? unnamedName(map.landmasses[c.landmass].kind),
+      key: `continent-${c.landmass}`, kind: "Lands", name: continentLabel(overview, map, c.landmass),
       detail: `Continent · ${map.landmasses[c.landmass].regions.length} lands`, aliases: c.name?.meaning,
       icon: Earth, focus: { kind: "continent", landmass: c.landmass },
     })),
     ...overview.communities.map((c): Entry => ({
-      key: `people-${c.id}`, kind: "Peoples", name: c.name,
+      key: `people-${c.id}`, kind: "Peoples", name: peopleLabel(overview, c.id),
       detail: c.ended === null ? `${Math.round(c.size).toLocaleString()} souls · ${overview.varieties[c.variety].name}` : `Ended in year ${c.ended * YEARS}`,
       aliases: [c.meaning, c.once, ...c.exonyms.map((n) => n.name)].join(" "),
       icon: Users, tone: hue(overview.varieties[c.variety].family), past: c.ended !== null,
@@ -55,7 +55,7 @@ export function AtlasIndex({ open, overview, map, riverNames, lakeNames, onClose
       focus: { kind: "language", variety: v.id },
     })),
     ...overview.states.map((s): Entry => ({
-      key: `state-${s.id}`, kind: "States", name: s.name,
+      key: `state-${s.id}`, kind: "States", name: stateLabel(overview, s.id),
       detail: s.fell === null ? `Standing · ${s.lands.length} lands` : `Fell in year ${s.fell * YEARS}`,
       aliases: s.meaning, icon: Landmark, past: s.fell !== null, focus: { kind: "state", id: s.id },
     })),
@@ -70,20 +70,20 @@ export function AtlasIndex({ open, overview, map, riverNames, lakeNames, onClose
     ...overview.places.flatMap((p): Entry[] => {
       const name = p.names.at(-1);
       return name ? [{
-        key: `land-${p.region}`, kind: "Lands", name: name.spelled,
+        key: `land-${p.region}`, kind: "Lands", name: landCardLabel(overview, map, p.region, name.spelled),
         detail: `${TERRAIN_NAME[map.regions[p.region].terrain]} · ${name.meaning}`,
         aliases: [...p.names.map((n) => n.spelled), ...p.exonyms.map((n) => n.spelled)].join(" "),
         icon: MapPin, focus: { kind: "land", region: p.region },
       }] : [];
     }),
     ...riverNames.map((view): Entry => ({
-      key: `river-${view.river}`, kind: "Lands", name: view.names.at(-1)?.spelled ?? unnamedName("river"),
+      key: `river-${view.river}`, kind: "Lands", name: waterLabel(overview, riverNames, map, "river", view.river),
       detail: `River · ${map.rivers[view.river].course.length} lands`,
       aliases: [...view.names.map((n) => `${n.spelled} ${n.meaning}`), ...view.exonyms.map((n) => n.spelled)].join(" "),
       icon: Waves, focus: { kind: "river", id: view.river },
     })),
     ...lakeNames.map((view): Entry => ({
-      key: `lake-${view.lake}`, kind: "Lands", name: view.names.at(-1)?.spelled ?? unnamedName("lake"),
+      key: `lake-${view.lake}`, kind: "Lands", name: waterLabel(overview, lakeNames, map, "lake", view.lake),
       detail: `Lake · ${map.lakes[view.lake].regions.length} lands`,
       aliases: [...view.names.map((n) => `${n.spelled} ${n.meaning}`), ...view.exonyms.map((n) => n.spelled)].join(" "),
       icon: Waves, focus: { kind: "lake", id: view.lake },
@@ -108,6 +108,7 @@ export function AtlasIndex({ open, overview, map, riverNames, lakeNames, onClose
         <input autoFocus type="search" aria-label="Search this world" placeholder="A name, an older name, or a meaning…"
           value={query} onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
+            if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); return; }
             if (e.key === "ArrowDown") { e.preventDefault(); results.current?.querySelector("button")?.focus(); }
             if (e.key === "Enter" && matches.length === 1) navigate(matches[0].focus);
           }} />

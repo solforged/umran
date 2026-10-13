@@ -431,8 +431,8 @@ export interface Variety {
   sacredOf: number | null;
   /// The state whose classical form it is, if it is one.
   classicalOf: number | null;
-  /// The classical form its speakers write, or wrote before writing their
-  /// own speech.
+  /// The high written register (sacred, classical, or court standard) its
+  /// speakers write, or wrote before writing their own speech.
   high: number | null;
   /// When its speakers began to write their own speech in place of `high`.
   vernacular: number | null;
@@ -465,7 +465,8 @@ export interface SpecimenWord {
   wasIpa: string | null;
 }
 
-/// Another spoken language and the share of core words it shares with one.
+/// Another spoken language and its chance-corrected sound similarity for
+/// current forms expressing the same core meanings, not a count of roots.
 export interface Kin {
   other: number;
   score: number;
@@ -717,18 +718,23 @@ export interface Coined {
   opaqueSince: number | null;
 }
 
-export interface LexiconRow {
-  concept: string;
-  gloss: string;
-  field: string;
-  rank: number | null;
-  class?: number;
+export interface LexiconForm {
   spelled: string;
   said: string | null;
   ipa: string;
   origin: Origin;
   coined?: Coined;
   changes: number;
+}
+
+export interface LexiconRow extends LexiconForm {
+  concept: string;
+  gloss: string;
+  field: string;
+  rank: number | null;
+  class?: number;
+  /// Current competing forms other than the dominant word above.
+  competingForms: LexiconForm[];
   competitors: number;
 }
 

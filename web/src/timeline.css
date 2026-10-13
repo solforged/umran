@@ -123,9 +123,14 @@
 }
 /* A short list scrolls in place, so a crowded cluster opens just above its
    mark rather than as a column the height of the window. */
+.popover-panel:has(> .timeline-entries) {
+  width: min(24rem, calc(100vw - 1rem));
+  overflow-x: hidden;
+}
 .timeline-entries {
-  width: min(24rem, calc(100vw - 3rem));
+  width: 100%;
   max-height: min(22rem, 45vh);
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   touch-action: pan-y;
@@ -136,6 +141,7 @@
   min-height: 24px;
   text-align: left;
   white-space: normal;
+  overflow-wrap: anywhere;
 }
 .timeline-entries button > span {
   display: block;
@@ -145,7 +151,8 @@
   font-size: var(--dense-size);
 }
 
-.timeline .ahead {
+.timeline .ahead,
+.timeline-entries .ahead {
   opacity: 0.35;
 }
 .timeline .mark-cluster.ahead {
@@ -205,6 +212,21 @@
   height: 5px;
   background: var(--accent);
   clip-path: polygon(0 0, 100% 0, 70% 50%, 100% 100%, 0 100%);
+}
+
+@media (max-width: 599px) {
+  .timeline .mark-cluster small,
+  .timeline-tick small,
+  :root .timeline .mark-more {
+    font-size: max(12px, .75rem);
+  }
+  :root .timeline .mark-more {
+    height: max(12px, .75rem);
+    line-height: 1;
+  }
+  .timeline-ruler {
+    height: calc(max(12px, .75rem) + 3px);
+  }
 }
 
 @media (pointer: coarse) {

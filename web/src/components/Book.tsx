@@ -4,7 +4,7 @@ import { YEARS } from "../model";
 import * as lore from "../lore";
 import { CONTACT_NAME, countWord, faithTeaching, LIVELIHOOD_NAME, seasonalPhrase, TENET_NOUN, TERRAIN_NAME, temperament, weatherDeparture } from "../lore";
 import { findAnnal, individualAnnals } from "../history";
-import { eraBirths, eras, listed, quietLine, quietRuns, QUIET_KINDS, speechLine, type Era } from "../eras";
+import { eraBirths, eras, isQuiet, listed, quietLine, quietRuns, speechLine, type Era } from "../eras";
 import { bookMarkdown, craftLines, download, fileName, givenNameLines, peopleLines, religionLines, renderingLines, stateLines } from "../takeout";
 import { CHAPTER, ChapterSummary, type ChapterContext } from "./LanguageChapter";
 import { Miniature } from "./MapView";
@@ -104,8 +104,8 @@ function Fortunes({ annals, eras, overview }: { annals: Annal[]; eras: Era[]; ov
   return <>{eras.map((era) => {
     const within = annals.filter((a) => a.generation >= era.start && a.generation <= era.end);
     if (!within.length) return null;
-    const headlines = within.filter((a) => !QUIET_KINDS.has(a.kind));
-    const quiet = within.filter((a) => QUIET_KINDS.has(a.kind));
+    const headlines = within.filter((a) => !isQuiet(a, overview.annals));
+    const quiet = within.filter((a) => isQuiet(a, overview.annals));
     return <section className="book-fortune-era" key={era.start}>
       <h5><span className="book-era-span">{era.start * YEARS}–{era.end * YEARS}</span> {era.heading}</h5>
       {headlines.length ? <ol className="book-chronicle">{headlines.map((a) => <ChronicleEntry key={a.id} annal={a} overview={overview} />)}</ol> : null}
@@ -157,13 +157,15 @@ function PeopleChapter({ community: c, eras, ctx }: { community: Community; eras
   </article>;
 }
 
-export function Book({ engine, catalog, version, generation, overview, map, title, author, decisionsFor, notes, onBack }: {
+export function Book({ engine, catalog, version, generation, overview, map, title, author, decisionsFor, notes, onReadNote, onBack }: {
   engine: ReadEngine; catalog: Catalog; version: number; generation: number;
   overview: Overview; map: WorldMap; title: string; author: string | null;
   decisionsFor: (telling: number) => Read<DecisionView[]>; notes: NotebookNote[]; onBack: () => void;
+  onReadNote: (note: NotebookNote) => Promise<string | null>;
 }) {
   const [copied, setCopied] = useState<string | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
+  const [noteError, setNoteError] = useState<string | null>(null);
   const close = useRef<HTMLButtonElement>(null);
   useEffect(() => { close.current?.focus(); }, []);
   useEffect(() => {
@@ -282,7 +284,7 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
         <p>Seed {overview.seed} · engine revision {overview.revision}
           {overview.savedRevision !== null && overview.savedRevision !== overview.revision ? ` · saved under revision ${overview.savedRevision}` : ""}
         </p>
-        {telling?.parent ? <p>Telling: {telling.name}</p> : null}
+        {overview.tellings.length > 1 && telling ? <p>Telling: {telling.name}</p> : null}
       </section>
       <section className="book-chapter" id="book-lands" data-book-chapter="lands">
         {head(1)}<h2>The lands</h2>
@@ -490,16 +492,26 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
       </section>
       <section className="book-chapter" id="book-notes" data-book-chapter="notes">
         {head(6)}<h2>Notes</h2>
-        {notes.length ? [...notes].sort((a, b) => a.generation - b.generation).map((note) => (
-          <article className="book-subject book-note" key={note.id}>
+        {notes.length ? [...notes].sort((a, b) => a.generation - b.generation).map((note) => {
+          const target = note.target;
+          const tellingName = target ? overview.tellings.find((t) => t.id === target.reading.telling)?.name ?? "An unavailable telling" : null;
+          const local = target !== null && target.reading.telling === overview.telling
+            && target.reading.point.action === overview.point.action && target.reading.point.offset === overview.point.offset;
+          return <article className="book-subject book-note" key={note.id}>
             <h3>{note.title}</h3>
             <p className="muted">Year {note.generation * YEARS}{note.archived ? " · archived" : ""}
-              {note.target ? ` · ${overview.tellings.find((t) => t.id === note.target!.reading.telling)?.name ?? "An unavailable telling"}` : ""}
+              {tellingName ? ` · ${tellingName}` : ""}
             </p>
-            {note.target ? <p>Subject: {ctx.link(note.target.subject, note.label)}.</p> : null}
+            {target ? <p>Subject: {local ? ctx.link(target.subject, note.label)
+              : <button type="button" className="link" onClick={async () => {
+                const failure = await onReadNote(note);
+                setNoteError(failure);
+                if (failure === null) onBack();
+              }}>{note.label} (from {tellingName}, year {note.generation * YEARS})</button>}.</p> : null}
             {note.body.split(/\n\s*\n/).filter((paragraph) => paragraph.trim()).map((paragraph, index) => <p key={index}>{paragraph}</p>)}
-          </article>
-        )) : <p className="muted">No notes written yet.</p>}
+          </article>;
+        }) : <p className="muted">No notes written yet.</p>}
+        {noteError ? <p role="status">{noteError}</p> : null}
       </section>
       <section className="book-chapter" id="book-tellings" data-book-chapter="tellings">
         {head(7)}<h2>Other tellings</h2>

@@ -1,10 +1,11 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type RefObject, type SetStateAction } from "react";
+import { geoAzimuthalEquidistant } from "d3-geo";
 import { LocateFixed, Maximize, Minus, Plus } from "lucide-react";
 import type { ClimateView, Community, Craft, EthosAxis, FoundingPreview, Lake, LakeNamesView, Overview, River, RiverNamesView, SettlementPreview, WordMap, WorldMap } from "../model";
 import type { ShelfPeople } from "../shelf";
 import { reducedMotion } from "../motion";
 import { YEARS } from "../model";
-import { continentLabel, hue, landLabel, LEG_BY, TERRAIN_NAME } from "../lore";
+import { continentLabel, hue, landCardLabel, landLabel, LEG_BY, TERRAIN_NAME } from "../lore";
 import { chartPoint, createCartography, geographicPoint, lakeOutline, riverPoints, riverRoutePoints, sharedBorder, type Cartography, type GlobeRotation, type MapPoint, type MapProjection } from "../cartography";
 import { MapProjectionSwitch } from "./MapProjectionSwitch";
 import type { MapFeature } from "../gazetteer";
@@ -30,6 +31,7 @@ const DRAG_START = 4;
 /// Physical scale keeps the policy steady across maps of different sizes.
 const LAND_KM_PER_PIXEL = 6;
 const TONGUE_KM_PER_PIXEL = 1.5;
+const LAND_LETTERING_LAYER = 8;
 /// Breathing room between the measured, screen-space lettering boxes.
 const LABEL_GAP = 2;
 
@@ -373,7 +375,7 @@ export function MapView({
   reach?: { preview: FoundingPreview; people: number };
   onPeople: (community: number) => void;
   onLand: (region: number) => void;
-  /// Founding gives the chart one keyboard homeland cursor, not a tab stop per land.
+  /// Founding clears its chosen homeland alongside the map's roving land cursor.
   onClearLand?: () => void;
   onContinent?: (landmass: number) => void;
   onState?: (state: number) => void;
@@ -410,6 +412,8 @@ export function MapView({
   let box = view.current;
   const root = useRef<HTMLDivElement>(null);
   const [landCursor, setLandCursor] = useState<number | null>(null);
+  const [landFocused, setLandFocused] = useState(false);
+  const landNavigation = zoomable || onClearLand !== undefined;
   const scaleText = useRef<HTMLSpanElement>(null);
   const scaleRule = useRef<HTMLSpanElement>(null);
   const zoomIn = useRef<HTMLButtonElement>(null);
@@ -427,12 +431,12 @@ export function MapView({
   const projectedAnchors = useRef(new Map<SVGElement, {
     site: MapPoint; translation?: SVGTransform; visible: boolean; revision: number;
   }>());
-  // The same semantic zoom policy as workbench.css, classified once per
-  // render rather than asking the DOM for visibility on every globe turn.
+  // Geometry follows the relative zoom classes; small lettering follows its
+  // physical screen-space scale, both for visibility and projection updates.
   const projectionLayers = useRef<{ mask: number; paths: typeof paths.current; anchors: typeof projectedAnchors.current; labels: SVGElement[] }[]>([]);
   const layerMask = (node: SVGElement): number => {
-    if (node.closest(".place-names, .river-names, .lake-names") ||
-      node.closest(".chart-marks") && node.querySelector(".mark-tree, .mark-grass, .mark-field, .mark-sand")) return 4;
+    if (node.closest(".place-names, .river-names, .lake-names")) return LAND_LETTERING_LAYER;
+    if (node.closest(".chart-marks") && node.querySelector(".mark-tree, .mark-grass, .mark-field, .mark-sand")) return 4;
     if (node.closest(".chart-river:not(.river-tier-3), .routes, .dealings, .pilgrim-roads, .founding-markers")) return 6;
     if (node.closest(".continent-names")) return 3;
     return 7;
@@ -493,7 +497,9 @@ export function MapView({
     const pixelsPerUnit = (element.getScreenCTM()?.a ?? 1) * element.viewBox.baseVal.width / value[2];
     const nextBox = value.join(" ");
     if (element.getAttribute("viewBox") !== nextBox) element.setAttribute("viewBox", nextBox);
-    const visibleMask = ratio > 0.6 ? 1 : ratio < 0.25 ? 4 : 2;
+    const kmPerPixel = (projection === "globe" ? 2 * map.radiusKm / height : map.kmPerUnit) / pixelsPerUnit;
+    const landLettering = kmPerPixel < LAND_KM_PER_PIXEL;
+    const visibleMask = (ratio > 0.6 ? 1 : ratio < 0.25 ? 4 : 2) | (landLettering ? LAND_LETTERING_LAYER : 0);
     if (pendingTurn.current) {
       cartography.rotate(turning.current);
       ++drawRevision.current;
@@ -572,13 +578,34 @@ export function MapView({
         if (hidden !== item.hidden) { item.node.style.display = hidden ? "none" : ""; item.hidden = hidden; }
       }
     }
-    const kmPerPixel = (projection === "globe" ? 2 * map.radiusKm / height : map.kmPerUnit) / pixelsPerUnit;
     stateBorders.current?.style.setProperty("--state-weight", String(1 + 2 * Math.min(1, (1 - ratio) / 0.6)));
     const named = new Set<string>();
+    const chartBounds = chart.getBoundingClientRect();
+    const matrix = element.getScreenCTM()!;
+    // Namesakes belong to this reading: use the spellings and land anchors
+    // in the viewport, not historical names or another tongue's exonyms.
+    const landNamesakes = new Map<string, number[]>();
+    if (landLettering) for (const text of lettering.current) {
+      const name = text.dataset.landName;
+      if (!name || text.style.display === "none") continue;
+      const x = matrix.a * Number(text.getAttribute("x")) + matrix.e;
+      const y = matrix.d * Number(text.getAttribute("y")) + matrix.f;
+      if (x < chartBounds.left || x > chartBounds.right || y < chartBounds.top || y > chartBounds.bottom) continue;
+      const peers = landNamesakes.get(name);
+      if (peers) peers.push(Number(text.dataset.region));
+      else landNamesakes.set(name, [Number(text.dataset.region)]);
+    }
     // Keep names at their geographic anchors. Priority decides which fit;
     // zoom reveals the rest without sending leaders across the chart.
     for (const text of lettering.current) {
       text.style.visibility = "";
+      const name = text.dataset.landName;
+      if (name !== undefined) {
+        const peers = landNamesakes.get(name);
+        const reading = peers && peers.length > 1
+          ? landCardLabel(overview, map, Number(text.dataset.region), name, peers) : name;
+        if (text.textContent !== reading) text.textContent = reading;
+      }
       if (text.dataset.labelKind === "river") text.setAttribute("dy", String(-0.06 * label));
     }
     const measured = lettering.current.map((text) => ({ text, rect: text.getBoundingClientRect() }));
@@ -598,13 +625,11 @@ export function MapView({
       item.text.setAttribute("y", String(y));
       item.rect = item.text.getBoundingClientRect();
     }
-    const chartBounds = chart.getBoundingClientRect();
     // Overlaid furniture (the cartouche, tools, caption, scale) holds its
     // ground too: the map's own and its container's direct children.
     const occupied: DOMRect[] = [...chart.children, ...chart.parentElement?.children ?? []]
       .filter((node) => node.hasAttribute("data-map-furniture"))
       .map((node) => node.getBoundingClientRect()).filter((rect) => rect.width > 0);
-    const matrix = element.getScreenCTM()!;
     const surface = new DOMRect(matrix.e, matrix.f, width * pixelsPerUnit, height * pixelsPerUnit);
     const overlaps = (rect: DOMRect) => occupied.some((other) =>
       other.left < rect.right + LABEL_GAP && rect.left < other.right + LABEL_GAP &&
@@ -718,7 +743,7 @@ export function MapView({
       const people = text.dataset.people;
       const allowed = kind === "tongue"
         ? tint.kind === "peoples" && kmPerPixel < TONGUE_KM_PER_PIXEL && named.has(people!)
-        : kind === "land" || kind === "river" || kind === "lake" ? kmPerPixel < LAND_KM_PER_PIXEL : true;
+        : kind === "land" || kind === "river" || kind === "lake" ? landLettering : true;
       const inView = rect.right > chartBounds.left && rect.left < chartBounds.right &&
         rect.bottom > chartBounds.top && rect.top < chartBounds.bottom;
       const visible = allowed && inView && rect.width > 0 && fits(rect);
@@ -909,17 +934,29 @@ export function MapView({
     const current = map.regions[landCursor];
     const dx = key === "ArrowLeft" ? -1 : key === "ArrowRight" ? 1 : 0;
     const dy = key === "ArrowUp" ? -1 : key === "ArrowDown" ? 1 : 0;
-    let next = current.id, best = 0;
-    for (const id of current.neighbours) {
-      const neighbour = map.regions[id];
-      if (neighbour.terrain === "sea") continue;
-      // Wrap longitude at the chart seam; north stays north on the globe.
-      let x = neighbour.site[0] - current.site[0];
-      x -= Math.round(x / map.width) * map.width;
-      const y = neighbour.site[1] - current.site[1];
-      const score = (x * dx + y * dy) / Math.hypot(x, y);
-      if (score > best) { best = score; next = id; }
+    // A cursor-centred tangent chart keeps the globe's screen directions,
+    // but can also reach land beyond the horizon of an isolated island.
+    const around = projection === "globe"
+      ? geoAzimuthalEquidistant().rotate([-current.center[0], -current.center[1]]).scale(1).translate([0, 0])
+      : null;
+    let next = current.id, best = Infinity;
+    let across = current.id, acrossBest = Infinity;
+    for (const region of map.regions) {
+      if (region.id === current.id || region.terrain === "sea") continue;
+      const point = around?.(region.center);
+      let x = point ? point[0] : region.site[0] - current.site[0];
+      const y = point ? point[1] : region.site[1] - current.site[1];
+      if (!around) x -= Math.round(x / map.width) * map.width;
+      const along = x * dx + y * dy;
+      if (along <= 1e-9) continue;
+      const distance = x * x + y * y;
+      if (distance < acrossBest) { acrossBest = distance; across = region.id; }
+      const sideways = Math.abs(x * dy - y * dx);
+      if (along >= sideways && distance < best) { best = distance; next = region.id; }
     }
+    // At a coast or on an island, use the nearest forward land even when
+    // none lies within the arrow's 90-degree cone.
+    if (next === current.id) next = across;
     if (next !== current.id) showLandCursor(next);
   };
 
@@ -1261,6 +1298,25 @@ export function MapView({
   const inspectionCallback = useRef(onInspect);
   inspectionCallback.current = onInspect;
   useEffect(() => () => cancelAnimationFrame(inspectionFrame.current), []);
+  useLayoutEffect(() => {
+    if (!landFocused || !svg.current) return;
+    if (landCursor === null) {
+      inspectionCallback.current?.(null, [0, 0]);
+      return;
+    }
+    const point = cartography.point(map.regions[landCursor].site);
+    const matrix = svg.current.getScreenCTM();
+    const bounds = svg.current.getBoundingClientRect();
+    const at: [number, number] = point && matrix
+      ? [matrix.a * point[0] + matrix.e, matrix.d * point[1] + matrix.f]
+      : [bounds.x + bounds.width / 2, bounds.y + bounds.height / 2];
+    inspectionCallback.current?.({ kind: "land", region: landCursor }, at);
+  }, [landCursor, landFocused, map, cartography]);
+  const selectLand = (region: number) => {
+    if (dragged()) return;
+    if (landNavigation) setLandCursor(region);
+    onLand(region);
+  };
   const inspectEvents = (feature: MapFeature) => ({
     "data-map-feature": JSON.stringify(feature),
     onPointerEnter: (event: PointerEvent<SVGElement>) => {
@@ -1298,11 +1354,7 @@ export function MapView({
     const veiled = !sea && hidden(r.id);
     const colour = veiled ? null : colourOf(r.id);
     return (
-      <g key={r.id} data-chart-region={r.id} onClick={sea ? undefined : () => {
-        if (dragged()) return;
-        if (onClearLand) setLandCursor(r.id);
-        onLand(r.id);
-      }}
+      <g key={r.id} data-chart-region={r.id} onClick={sea ? undefined : () => selectLand(r.id)}
         {...inspectEvents({ kind: "land", region: r.id })}
         aria-label={sea ? "Sea" : veiled ? "Unknown land" : (nameOf(r.id) ?? `Unnamed ${TERRAIN_NAME[r.terrain].toLowerCase()}`)}>
         <path
@@ -1393,31 +1445,42 @@ export function MapView({
       <svg
         ref={svg}
         viewBox={box.join(" ")}
-        role={onClearLand ? "application" : "group"}
-        tabIndex={zoomable || onClearLand ? 0 : undefined}
+        role={landNavigation ? "application" : "group"}
+        tabIndex={landNavigation ? 0 : undefined}
         onFocus={(event) => {
-          if (!onClearLand || event.target !== event.currentTarget) return;
+          if (!landNavigation || event.target !== event.currentTarget) return;
+          setLandFocused(true);
           const region = landCursor ?? initialLand();
           if (region !== null) showLandCursor(region);
         }}
+        onBlur={(event) => {
+          if (event.target !== event.currentTarget) return;
+          setLandFocused(false);
+          inspectionCallback.current?.(null, [0, 0]);
+        }}
         onKeyDown={(e) => {
-          if (!zoomable || e.target !== e.currentTarget) return;
-          if (onClearLand) {
-            if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
+          if (!landNavigation || e.target !== e.currentTarget) return;
+          if (landNavigation) {
+            if (!e.altKey && landCursor !== null && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
               e.preventDefault(); stepLandCursor(e.key); return;
             }
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
               if (landCursor !== null) onLand(landCursor);
+              else {
+                const region = initialLand();
+                if (region !== null) showLandCursor(region);
+              }
               return;
             }
             if (e.key === "Escape") {
-              e.preventDefault(); setLandCursor(null); onClearLand(); return;
+              e.preventDefault(); setLandCursor(null); onClearLand?.(); return;
             }
           }
           const [x, y, w, h] = view.current;
           if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
             e.preventDefault(); cancelAnimationFrame(glide.current); glide.current = 0;
+            if (landCursor !== null) setLandCursor(null);
             if (projection === "globe") {
               turn([turning.current[0] + (e.key === "ArrowLeft" ? -15 : e.key === "ArrowRight" ? 15 : 0),
                 turning.current[1] + (e.key === "ArrowUp" ? 15 : e.key === "ArrowDown" ? -15 : 0)]);
@@ -1434,8 +1497,8 @@ export function MapView({
             else zoom(e.key === "-" ? 1 / 0.7 : 0.7, [x + w / 2, y + h / 2]);
           }
         }}
-        aria-label={onClearLand ? `${projection === "globe" ? "Globe" : "Chart"}: ${cursorName || "Choose a homeland"}` : `${projection === "globe" ? "Globe" : "Chart"} of the world in year ${generation * YEARS}`}
-        aria-description={onClearLand ? "Arrow keys move between neighbouring lands. Enter selects a homeland. Escape clears the selection." : undefined}
+        aria-label={`${projection === "globe" ? "Globe" : "Chart"}${cursorName ? `: ${cursorName}` : onClearLand ? ": Choose a homeland" : ` of the world in year ${generation * YEARS}`}`}
+        aria-description={landNavigation ? `Arrow keys read nearby lands, across water too. Enter ${onClearLand ? "selects a homeland" : "opens the land's card"}. Escape clears the land cursor. Alt and arrow keys pan; after Escape, arrows pan and Enter reads lands again.` : undefined}
         onPointerDown={down}
         onPointerMove={move}
         onPointerUp={up}
@@ -1578,6 +1641,9 @@ export function MapView({
                 <text key={p.region} x={x} y={top} className={here > 0 ? "place-name" : "place-name left"}
                   ref={bindAnchor(map.regions[p.region].site)}
                   data-region={p.region}
+                  data-land-name={nameOf(p.region) ?? undefined}
+                  {...inspectEvents({ kind: "land", region: p.region })}
+                  onClick={() => selectLand(p.region)}
                   data-label-x={x} data-label-y={y} data-label-dy={here > 0 ? -(here / 2) * LINE - 0.06 : 0}
                   data-label-kind="land" data-label-priority={2}>
                   {nameOf(p.region)}
@@ -1870,7 +1936,7 @@ export function MapView({
             );
           }) : null}
         </g>
-        {onClearLand && landCursor !== null ? <path className="land-cursor" data-cursor-region={landCursor}
+        {landNavigation && landFocused && landCursor !== null ? <path className="land-cursor" data-cursor-region={landCursor}
           {...bindPath((view) => view.region(map.regions[landCursor]))} pointerEvents="none" /> : null}
         </g>
         {projection === "globe" ? <path className="globe-limb" d={cartography.sphere} aria-hidden="true" /> : null}
@@ -1883,7 +1949,7 @@ export function MapView({
           }).join("")} />
         </g> : null}
       </svg>
-      {onClearLand ? <span className="sr-only" role="status">{cursorName}</span> : null}
+      {landNavigation && landFocused ? <span className="sr-only" role="status">{cursorName}</span> : null}
       {zoomable ? (
         <div className="map-zoom" role="group" data-map-furniture aria-label={projection === "globe" ? "Globe controls" : "Chart controls"}>
           {selectedRegions.length > 0 ? <button type="button" title="Fit the selected lands (F)" aria-label="Fit the selected lands" onClick={fitSelection}><LocateFixed size={16} /></button> : null}
@@ -1907,7 +1973,7 @@ export function MapView({
       </div> : null}
       {zoomable ? <div className="chart-scale" data-map-furniture>
         <span ref={scaleRule} className="scale-rule"><span ref={scaleText} /></span>
-        <span className="chart-help">{projection === "globe" ? "Drag to turn · scroll to zoom" : "Scroll to zoom · drag to explore"}</span>
+        <span className="chart-help">{landFocused ? "Arrows read lands · Alt + arrows pan" : projection === "globe" ? "Drag to turn · scroll to zoom" : "Scroll to zoom · drag to explore"}</span>
       </div> : null}
       {ROSE}
     </div>

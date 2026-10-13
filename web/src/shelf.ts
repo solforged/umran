@@ -49,14 +49,41 @@ function get(key: string): string | null {
   }
 }
 
+/// The shelf index is untrusted saved data, including its optional chart.
+/// Reject the whole index rather than quietly losing an unreadable entry.
+export function isBookEntry(value: unknown): value is BookEntry {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const entry = value as Record<string, unknown>;
+  const index = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+  return typeof entry.id === "string" && entry.id.length > 0
+    && typeof entry.title === "string" && typeof entry.subtitle === "string"
+    && index(entry.generation) && index(entry.updated)
+    && (entry.author === undefined || typeof entry.author === "string")
+    && (entry.named === undefined || typeof entry.named === "boolean")
+    && (entry.peoples === undefined || (Array.isArray(entry.peoples) && entry.peoples.every((value: unknown) => {
+      if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+      const people = value as Record<string, unknown>;
+      return typeof people.name === "string" && index(people.family) && index(people.region)
+        && Array.isArray(people.lands) && people.lands.every(index);
+    })));
+}
+
 /// The shelf as saved, or an empty one. Throws only when the index exists
 /// but cannot be read, so the caller can offer recovery.
 export function loadShelf(): Shelf {
   const raw = get(INDEX);
   if (raw !== null) {
-    const parsed = JSON.parse(raw) as Partial<Shelf>;
-    if (!Array.isArray(parsed.books)) throw new Error("The list of saved worlds is not a list.");
-    return { books: parsed.books, last: parsed.last ?? null };
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("The list of saved worlds could not be read.");
+    }
+    const index = parsed as Record<string, unknown>;
+    if (!Array.isArray(index.books)) throw new Error("The list of saved worlds is not a list.");
+    if (!index.books.every(isBookEntry)) throw new Error("A saved world's shelf entry could not be read.");
+    if (index.last !== undefined && index.last !== null && typeof index.last !== "string") {
+      throw new Error("The last saved world could not be read.");
+    }
+    return { books: index.books, last: index.last ?? null };
   }
   const legacy = get(LEGACY);
   if (legacy === null) return { books: [], last: null };

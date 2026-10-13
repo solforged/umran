@@ -331,16 +331,15 @@ export default function App() {
   const tick = useCallback(() => runYears(1), [runYears]);
 
   const nextEvent = useCallback(
-    async (limit: number) => {
+    async (limit: number): Promise<boolean> => {
       const current = engine.current;
-      if (!current || !overview) return;
+      if (!current || !overview) return false;
       try {
         const ran = await current.untilAt({ telling: overview.telling, point: overview.point }, overview.mutation, limit);
-        await changed(overview, () => setInfo(ran >= limit ? `${limit * YEARS} years passed, and nothing of note befell.` : null));
-        persist();
-      } catch (e) { setError(message(e)); }
+        return await changed(overview, () => setInfo(ran >= limit ? `${limit * YEARS} years passed, and nothing of note befell.` : null)) !== null;
+      } catch (e) { setError(message(e)); return false; }
     },
-    [overview, changed, persist],
+    [overview, changed],
   );
 
   const begin = useCallback(async (next: Engine, title: string | null, author: string | null, years: number) => {
@@ -415,6 +414,7 @@ export default function App() {
           onBegin={() => setView({ kind: "setup" })}
           onSample={sample}
           onImport={(f) => void importFile(f)}
+          onFailure={(failure) => setView({ kind: "recovery", what: "The shelf", raw: rawShelf() ?? "", error: message(failure) })}
           onRemove={(id) => {
             try {
               setShelf((current) => removeBook(current, id));
@@ -529,6 +529,7 @@ export default function App() {
             author={engine.current.author()}
             decisionsFor={(telling) => engine.current!.read(telling).decisions()}
             notes={notebook}
+            onReadNote={openNote}
             catalog={catalog}
             version={version}
             generation={generation}

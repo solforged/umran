@@ -59,6 +59,8 @@
   .bottom-sheet .pedia { flex: 1; width: 100%; min-height: 0; border: 0; margin: 0; }
   .bottom-sheet[data-detent="peek"] .pedia { overflow: clip; }
   .workbench .bottom-sheet[data-detent="peek"] :is(.pedia-nav, .trail, .card-kind, .card-sub) { display: none; }
+  .workbench .bottom-sheet[data-detent="peek"] .pedia > .card { padding-top: 0; }
+  .workbench .bottom-sheet[data-detent="peek"] .card-title { min-height: 2.75rem; }
   .workbench .bottom-sheet[data-detent="peek"] .card-head { margin: 0; padding: 0; border: 0; }
   .workbench .bottom-sheet[data-detent="peek"] .card-head h2 { margin: 0; font-size: 1.6rem; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .workbench .bottom-sheet[data-detent="peek"] .card-head ~ * { display: none; }
@@ -91,7 +93,8 @@
 }
 
 @media (pointer: coarse) {
-  :root :is(.timebar, .map-tools, .map-zoom, .founding-rail, .setup-foot, .popover-panel) :is(button, select, input[type="number"], [role="menuitem"], [role="menuitemradio"]),
+  :root :is(.timebar, .map-tools, .map-zoom, .founding-rail, .setup-foot, .popover-panel, .pedia-nav, .card-reading-tools, .folio-head, .map-caption) :is(button, select, input[type="number"], [role="menuitem"], [role="menuitemradio"]),
+  :root .pedia .decide,
   :root .sheet-handle, :root .map-projection-switch span {
     min-height: 2.75rem;
     min-width: 2.75rem;
@@ -100,7 +103,18 @@
   :root .map-tool .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
   :root .map-tool > .lucide-chevron-down { display: none; }
   :root .sheet-handle { height: 2.75rem; }
-  :root .pedia .link { padding-block: .35rem; margin-block: -.35rem; line-height: max(1.3em, 2rem); }
+  /* Inline names keep their prose measure; the hit area grows around it. */
+  :root :is(.pedia, .folio-page) button:is(.link, .gen, .term) { position: relative; }
+  :root :is(.pedia, .folio-page) button:is(.link, .gen, .term)::after {
+    content: "";
+    position: absolute;
+    inset: 50% auto auto 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+  :root .map-caption { align-items: center; }
+  :root .chronicle-latest { align-items: center; }
   :root .popover-panel label { min-height: 2.75rem; min-width: 2.75rem; }
   :root button.light-switch { min-height: 2.75rem; min-width: 2.75rem; }
 }

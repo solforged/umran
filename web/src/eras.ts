@@ -23,12 +23,22 @@ export type EraYear = {
 export const ERA_OPENERS: ReadonlySet<Annal["kind"]> = new Set(["rose", "fell", "conquest", "faith", "classical"]);
 export const QUIET_KINDS: ReadonlySet<Annal["kind"]> = new Set(["neighbours", "spread", "displaced", "parted", "contact", "climate", "river-flow", "meaning", "respelling", "temper", "law", "grammar", "pronoun-renewed", "pronoun-borrowed", "class-merged", "harmony-gained", "harmony-lost", "tone-gained", "tone-lost", "coinage", "calque", "purist-replacement", "tenet-adopted", "drought", "hard-winter", "flood", "sea-route-opened"]);
 
+/// A fleet put to sea by learning Seafaring is the craft's follow-on, not
+/// a second headline for the same people in the same year.
+export function isQuiet(annal: Annal, annals: readonly Annal[]): boolean {
+  if (QUIET_KINDS.has(annal.kind)) return true;
+  if (annal.kind !== "fleet-built" || annal.cause?.mechanism !== "craft") return false;
+  const craft = annals.find((entry) => entry.id === `world:${annal.cause!.event}`);
+  return craft?.kind === "craft" && craft.generation === annal.generation &&
+    craft.crafts.includes("seafaring") && craft.peoples[0] === annal.peoples[0];
+}
+
 /// The entry a caption tells as the world's latest: the latest year's last
 /// headline, or its last entry when that year held only bookkeeping.
 export function latestTold(annals: readonly Annal[]): Annal | undefined {
   const latest = annals.at(-1);
-  if (!latest || !QUIET_KINDS.has(latest.kind)) return latest;
-  return annals.findLast((annal) => annal.generation === latest.generation && !QUIET_KINDS.has(annal.kind)) ?? latest;
+  if (!latest || !isQuiet(latest, annals)) return latest;
+  return annals.findLast((annal) => annal.generation === latest.generation && !isQuiet(annal, annals)) ?? latest;
 }
 
 /// Quiet kinds `quietLine` describes in its own words; the rest are named
@@ -121,8 +131,9 @@ export function eras(annals: Annal[], latest: number, overview: Overview): Era[]
     result.length = 0;
     for (let start = 0; start < latest; start += 20) {
       const boundary = Math.min(start + 20, latest);
-      const title = `Years ${start * YEARS}–${boundary * YEARS}`;
-      result.push({ opening: null, start, end: boundary === latest ? latest : boundary - 1, title, heading: title, years: [] });
+      const end = boundary === latest ? latest : boundary - 1;
+      const title = `Years ${start * YEARS}–${end * YEARS}`;
+      result.push({ opening: null, start, end, title, heading: title, years: [] });
     }
   }
   let index = 0;
@@ -135,7 +146,7 @@ export function eras(annals: Annal[], latest: number, overview: Overview): Era[]
       year = { generation: annal.generation, headlines: [], quiet: [] };
       era.years.push(year);
     }
-    (QUIET_KINDS.has(annal.kind) ? year.quiet : year.headlines).push(annal);
+    (isQuiet(annal, annals) ? year.quiet : year.headlines).push(annal);
   }
   return result;
 }

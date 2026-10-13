@@ -9,19 +9,23 @@ export function Explained({ term, children }: { term: Term; children: ReactNode 
     if (!at) return;
     const close = () => setAt(null);
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      close();
+      button.current?.focus({ preventScroll: true });
     };
     const press = (e: PointerEvent) => {
       if (!button.current?.contains(e.target as Node)) close();
     };
     window.addEventListener("scroll", close, true);
     window.addEventListener("resize", close);
-    window.addEventListener("keydown", key);
+    window.addEventListener("keydown", key, true);
     window.addEventListener("pointerdown", press);
     return () => {
       window.removeEventListener("scroll", close, true);
       window.removeEventListener("resize", close);
-      window.removeEventListener("keydown", key);
+      window.removeEventListener("keydown", key, true);
       window.removeEventListener("pointerdown", press);
     };
   }, [at]);

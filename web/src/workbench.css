@@ -260,8 +260,10 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .comparison-words { padding-top: 1rem; margin-top: 1rem; border-top: 1px solid var(--line); }
 .comparison-form { font-size: 1.6rem; }
 
-.card-reading-tools { display: flex; gap: .7rem; flex-wrap: wrap; padding-bottom: .7rem; margin-bottom: .7rem; border-bottom: 1px solid var(--line); }
-.card-reading-tools button { display: inline-flex; align-items: center; gap: .25rem; font-size: .75rem; color: var(--ink-soft); }
+.card-title { display: flex; align-items: center; gap: .7rem; }
+.card-title h2 { flex: 1; min-width: 0; }
+.card-reading-tools { display: flex; flex: none; gap: .7rem; }
+.card-reading-tools button { display: inline-flex; align-items: center; gap: .25rem; font-size: .75rem; color: var(--ink-soft); white-space: nowrap; }
 .following-note { margin: 0; padding: .4rem 1rem; font-size: .85rem; border-bottom: 1px solid var(--line); background: var(--paper-raised); }
 .following-note .link { margin-left: .5rem; }
 .subject-timeline .chronicle-tools { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -347,7 +349,7 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .frontispiece-writing li { display: grid; grid-template-columns: 3.2rem minmax(0, 1fr); gap: .5rem; padding: .25rem 0; border-bottom: 1px solid var(--line); line-height: 1.35; animation: writing-in .5s ease-out both; }
 .frontispiece-when { color: var(--ink-soft); font-variant-numeric: tabular-nums; text-align: right; }
 .frontispiece-writing button { display: inline-flex; align-items: center; gap: .4rem; }
-@keyframes writing-in { from { opacity: 0; translate: 0 .3rem; } }
+@keyframes writing-in { from { translate: 0 .3rem; } }
 @media (prefers-reduced-motion: reduce) { .frontispiece-writing li { animation: none; } }
 .trail .trail-year { color: var(--ink); white-space: nowrap; }
 .folio-head h2.folio-of { font: 1.6rem var(--serif); margin: .25rem 0 .6rem; }
@@ -379,6 +381,7 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
   .study-open svg { display: none; }
 }
 .author-decision { color: var(--accent); font-size: .8em; font-variant: small-caps; }
+.chronicle-decision > div > p { margin: .1rem 0; }
 /* The author's pen before an entry a decision produced. */
 .pen { display: inline-block; margin-right: .3em; color: var(--accent); vertical-align: -1px; }
 

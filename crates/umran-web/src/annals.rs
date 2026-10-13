@@ -447,7 +447,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
             WorldEvent::FleetBuilt { community } => entry(
                 generation,
                 "fleet-built",
-                format!("The *{}* built ships and took to the sea.", name(community)),
+                format!("The *{}* put a fleet to sea.", name(community)),
                 &[community],
                 &[],
             ),
@@ -1619,7 +1619,7 @@ fn came_upon(craft: Craft) -> &'static [&'static str] {
     match craft {
         Craft::Metalworking => &["The {p} learnt to work metal."],
         Craft::Riding => &["The {p} broke horses and began to ride."],
-        Craft::Seafaring => &["The {p} built ships and put out to sea."],
+        Craft::Seafaring => &["The {p} learnt to build ships and sail."],
         Craft::Writing => &["Among the {p}, words were first set down in signs."],
     }
 }

@@ -24,12 +24,12 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, Catalog, CityView, Community, Craft, CraftView, ReadEngine, Ethos, HistoryPoint, HolyLand, LakeNamesView, NotebookNote, Overview, ReligionView, RenderingRow, RiverNamesView, ShrineKind, StateView, Variety, WordMap, WorldMap } from "../model";
+import type { Annal, Catalog, CityView, Community, Craft, CraftView, DecisionView, ReadEngine, Ethos, HistoryPoint, HolyLand, LakeNamesView, NotebookNote, Overview, ReligionView, RenderingRow, RiverNamesView, ShrineKind, StateView, Variety, WordMap, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { causePhrase, CHRONICLE, CONTACT_NAME, countWord, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, faithTeaching, FAITH_HOW, FAITH_NAME, FALL_NAME, howCame, howNamed, hue, landCardLabel, LEG_BY, LIVELIHOOD_NAME, otherNames, peopleLabel, peoplePhrases, RISE_NAME, SCHISM_CAUSE, seasonalPhrase, stateLabel, STRONG, temperament, TENET_NOUN, TERRAIN_NAME, unnamedName, weatherDeparture } from "../lore";
 import { cityLabel, continentLabel, waterLabel } from "../lore";
-import { filterHistory, findAnnal, individualAnnals, relatedMoments, subjectHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
-import { eraBirths, eras, latestTold, quietLine, quietRuns, quietSummary, QUIET_KINDS, speechLine, type Era, type EraYear } from "../eras";
+import { filterHistory, findAnnal, individualAnnals, relatedMoments, searchText, subjectHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
+import { eraBirths, eras, isQuiet, latestTold, quietLine, quietRuns, quietSummary, speechLine, type Era, type EraYear } from "../eras";
 import { bond } from "../words";
 import type { InterventionKind } from "./ActionDialog";
 import { SettlementAccount } from "./SettlementDesk";
@@ -119,6 +119,7 @@ interface Folio {
 }
 
 const FolioContext = createContext<Folio | null>(null);
+const CardToolsContext = createContext<ReactNode>(null);
 
 /// Most cards the trail names before the one open.
 const TRAIL_SHOWN = 3;
@@ -240,7 +241,7 @@ export function Pedia({
   useEffect(() => {
     if (!shown) return;
     const close = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !document.querySelector("dialog:modal")) onLeaf(null);
+      if (e.key === "Escape" && !e.defaultPrevented && !document.querySelector("dialog:modal")) onLeaf(null);
     };
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
@@ -284,10 +285,11 @@ export function Pedia({
           </ol>
       <FolioContext.Provider value={folio}>
         <article className="card" key={cardKey}>
-          {!["world", "history", "event", "word"].includes(focus.kind) ? <div className="card-reading-tools">
+          <CardToolsContext.Provider value={!["world", "history", "event", "word"].includes(focus.kind) ? <div className="card-reading-tools">
             <button type="button" className="link" onClick={() => context.onFollow(focus, focusLabel(focus, context))}><Eye size={14} aria-hidden="true" /> Follow</button>
-          </div> : null}
-          <Pending reading={context.engine}><Card focus={focus} context={context} /></Pending>
+          </div> : null}>
+            <Pending reading={context.engine}><Card focus={focus} context={context} /></Pending>
+          </CardToolsContext.Provider>
           <Margin notes={context.notes} overview={context.overview} subject={focus}
             label={`${focusLabel(focus, context)}${focus.kind === "word" ? ` in ${context.overview.varieties[focus.variety]?.name ?? "its language"}` : ""}`}
             onSave={context.onSaveNote} onRemove={context.onRemoveNote} onRead={context.onReadNote} onStart={context.onStartNote} />
@@ -446,12 +448,13 @@ function CardHead({
   sub?: ReactNode;
   tone?: string;
 }) {
+  const tools = useContext(CardToolsContext);
   return (
     <header className="card-head" style={tone ? ({ "--tone": tone } as CSSProperties) : undefined}>
       <p className="card-kind">
         <Icon size={14} aria-hidden="true" /> {kind}
       </p>
-      <h2 tabIndex={-1}>{title}</h2>
+      <div className="card-title"><h2 tabIndex={-1}>{title}</h2>{tools}</div>
       {sub ? <p className="card-sub">{sub}</p> : null}
     </header>
   );
@@ -984,28 +987,83 @@ function Few<T>({ items, link, leaf, max = 3 }: { items: T[]; link: (item: T) =>
   );
 }
 
+/// Decisions stay separate evidence: only those without an entry in this
+/// reading need their own row, including actions with no threshold annal.
+function untoldDecisions(annals: Annal[], decisions: DecisionView[], generation: number): DecisionView[] {
+  const entries = [...annals, ...individualAnnals(annals)];
+  const ids = new Set(entries.map((annal) => annal.id));
+  const recorded = new Set(entries.flatMap((annal) => annal.decision === undefined ? [] : [annal.decision]));
+  return decisions.filter((decision) => decision.generation <= generation &&
+    !recorded.has(decision.index) && !decision.annals.some((id) => ids.has(id)));
+}
+
+const DECISION_GROUP: Record<DecisionView["kind"], HistoryView["group"]> = {
+  settle: "Peoples & journeys", found: "Peoples & journeys", "found-related": "Peoples & journeys",
+  connect: "Peoples & journeys", shift: "Languages & words", state: "Rule & cities",
+  religion: "Faith & ideas", craft: "Faith & ideas", temper: "Land & livelihood", law: "Languages & words",
+};
+
+function filterDecisions(decisions: DecisionView[], overview: Overview, view: HistoryView): DecisionView[] {
+  const lineage = new Map<number, number>();
+  if (typeof view.sounds === "number") {
+    for (let id: number | null = view.sounds, until = Infinity; id !== null && overview.varieties[id] && !lineage.has(id); ) {
+      lineage.set(id, until);
+      until = Math.min(until, overview.varieties[id].forkedAt ?? 0);
+      id = overview.varieties[id].parent;
+    }
+  }
+  const terms = searchText(view.query.trim()).split(/\s+/).filter(Boolean);
+  return decisions.filter((decision) => {
+    if (view.group !== "All events" && DECISION_GROUP[decision.kind] !== view.group) return false;
+    if (decision.kind === "law" && view.sounds !== "all" &&
+      (view.sounds === "none" || decision.variety === null || decision.generation > (lineage.get(decision.variety) ?? -1))) return false;
+    const text = searchText(decision.text);
+    return terms.every((term) => text.includes(term));
+  });
+}
+
+type ChronicleRow = { generation: number; annal: Annal } | { generation: number; decision: DecisionView };
+
+/// Keep a year's entries together and its otherwise untold decisions after
+/// its annals, as the book does. Decisions retain the engine's action order.
+function chronicleRows(annals: Annal[], decisions: DecisionView[], order: HistoryView["order"]): ChronicleRow[] {
+  const rows: ChronicleRow[] = [
+    ...annals.map((annal) => ({ generation: annal.generation, annal })),
+    ...decisions.map((decision) => ({ generation: decision.generation, decision })),
+  ];
+  return rows.sort((a, b) => (order === "newest" ? b.generation - a.generation : a.generation - b.generation) ||
+    Number("decision" in a) - Number("decision" in b) ||
+    ("decision" in a && "decision" in b ? a.decision.index - b.decision.index : 0));
+}
+
 /// Something's story in the folio, read in the world's eras, with its
 /// latest turning on the card: the latest headline, or the latest entry of
 /// any kind when the story holds nothing louder.
-function StoryLeaf({ title, annals, context }: { title: string; annals: Annal[]; context: Context }) {
+function StoryLeaf({ title, annals, people, context }: { title: string; annals: Annal[]; people?: number[]; context: Context }) {
   const { overview } = context;
+  const recorded = people ? use(context.engine.decisions()) : [];
+  const decisions = untoldDecisions(annals, recorded.filter((decision) => decision.people.some((id) => people?.includes(id))), context.generation);
   const contents = useMemo(() => eras(overview.annals, overview.generation, overview), [overview]);
-  const last = annals.findLast((annal) => !QUIET_KINDS.has(annal.kind)) ?? annals.at(-1);
+  const lastAnnal = annals.findLast((annal) => !isQuiet(annal, overview.annals)) ?? annals.at(-1);
+  const lastDecision = decisions.at(-1);
+  const last = lastDecision && (!lastAnnal || lastDecision.generation >= lastAnnal.generation) ? lastDecision : lastAnnal;
   if (!last) return null;
-  const spanned = contents.filter((era) => annals.some((a) => a.generation >= era.start && a.generation <= era.end)).length;
+  const count = annals.length + decisions.length;
+  const spanned = contents.filter((era) => annals.some((entry) => entry.generation >= era.start && entry.generation <= era.end) ||
+    decisions.some((entry) => entry.generation >= era.start && entry.generation <= era.end)).length;
   return (
     <Leaf
       id="story"
       title={title}
       summary={
         <p>
-          {annals.length.toLocaleString()} {annals.length === 1 ? "entry" : "entries"} across {countWord(spanned)} {spanned === 1 ? "era" : "eras"}.
+          {count.toLocaleString()} {count === 1 ? "entry" : "entries"} across {countWord(spanned)} {spanned === 1 ? "era" : "eras"}.
           {" "}Last turning, in year <Year generation={last.generation} context={context} />: <Told text={last.text} />
-          <EntryAnnotations annal={last} context={context} />
+          {"id" in last ? <EntryAnnotations annal={last} context={context} /> : <span className="author-decision"> The author’s decision</span>}
         </p>
       }
     >
-      <SubjectTimeline annals={annals} contents={contents} context={context} />
+      <SubjectTimeline annals={annals} decisions={decisions} contents={contents} context={context} />
     </Leaf>
   );
 }
@@ -1028,15 +1086,17 @@ function ChronicleFilters({ view, update, overview, sounds = false }: {
   </div>;
 }
 
-function SubjectTimeline({ annals, contents, context }: { annals: Annal[]; contents: Era[]; context: Context }) {
+function SubjectTimeline({ annals, decisions, contents, context }: { annals: Annal[]; decisions: DecisionView[]; contents: Era[]; context: Context }) {
   const view = context.storyView;
   const update = (patch: Partial<HistoryView>) => context.onStoryView({ ...view, limit: 100, ...patch });
   const lines = filterHistory(annals, context.overview.varieties, view);
+  const choices = filterDecisions(decisions, context.overview, view);
+  const count = lines.length + choices.length;
   return <div className="subject-timeline">
     <ChronicleFilters view={view} update={update} overview={context.overview} />
-    <p className="muted small" role="status">{lines.length.toLocaleString()} recorded {lines.length === 1 ? "entry" : "entries"}, read in the world’s eras. Names are written as they were known then.</p>
-    <EraReading contents={contents} lines={lines} view={view} update={update} context={context} />
-    {!lines.length ? <p className="muted">No recorded entries match these filters.</p> : null}
+    <p className="muted small" role="status">{count.toLocaleString()} recorded {count === 1 ? "entry" : "entries"}, read in the world’s eras. Names are written as they were known then.</p>
+    <EraReading contents={contents} lines={lines} decisions={choices} view={view} update={update} context={context} />
+    {!count ? <p className="muted">No recorded entries match these filters.</p> : null}
   </div>;
 }
 
@@ -1046,48 +1106,57 @@ function SubjectTimeline({ annals, contents, context }: { annals: Annal[]; conte
 /// folded into one line. A filter or search unfolds what it matches. A
 /// page of entries never splits a year. `births` names the languages that
 /// arose in each era, which only the whole world's reading tells.
-function EraReading({ contents, lines, view, update, births = false, context }: {
-  contents: Era[]; lines: Annal[]; view: HistoryView; update: (patch: Partial<HistoryView>) => void; births?: boolean; context: Context;
+function EraReading({ contents, lines, decisions = [], view, update, births = false, context }: {
+  contents: Era[]; lines: Annal[]; decisions?: DecisionView[]; view: HistoryView; update: (patch: Partial<HistoryView>) => void; births?: boolean; context: Context;
 }) {
   const { overview } = context;
-  const boundary = lines[view.limit - 1]?.generation;
-  const nextYear = boundary === undefined ? -1 : lines.findIndex((annal, index) => index >= view.limit && annal.generation !== boundary);
-  const shown = lines.slice(0, nextYear < 0 ? lines.length : nextYear);
+  const rows = chronicleRows(lines, decisions, view.order);
+  const boundary = rows[view.limit - 1]?.generation;
+  const nextYear = boundary === undefined ? -1 : rows.findIndex((row, index) => index >= view.limit && row.generation !== boundary);
+  const shown = rows.slice(0, nextYear < 0 ? rows.length : nextYear);
   const unfold = view.group !== "All events" || view.query.trim() !== "" || view.sounds !== "all";
   const ordered = view.order === "newest" ? [...contents].reverse() : contents;
   return <>
     <div className="chronicle-years">
       {ordered.map((era) => {
-        const within = (annal: Annal) => annal.generation >= era.start && annal.generation <= era.end;
+        const within = (entry: { generation: number }) => entry.generation >= era.start && entry.generation <= era.end;
         const years: EraYear[] = [];
-        for (const annal of shown) {
-          if (!within(annal)) continue;
+        const decisionsByYear = new Map<number, DecisionView[]>();
+        for (const row of shown) {
+          if (!within(row)) continue;
           let year = years.at(-1);
-          if (year?.generation !== annal.generation) years.push(year = { generation: annal.generation, headlines: [], quiet: [] });
-          (!unfold && QUIET_KINDS.has(annal.kind) ? year.quiet : year.headlines).push(annal);
+          if (year?.generation !== row.generation) years.push(year = { generation: row.generation, headlines: [], quiet: [] });
+          if ("annal" in row) {
+            const annal = row.annal;
+            (!unfold && isQuiet(annal, overview.annals) ? year.quiet : year.headlines).push(annal);
+          } else {
+            const choices = decisionsByYear.get(row.generation) ?? [];
+            choices.push(row.decision);
+            decisionsByYear.set(row.generation, choices);
+          }
         }
         if (!years.length) return null;
         const speech = speechLine(lines.filter(within), overview, births ? eraBirths(era, overview) : []);
         return <section className="chronicle-era" key={era.start}>
           <h3 className="chronicle-era-head" data-chronicle-era={era.start} tabIndex={-1}>{era.opening ? <>Year {era.start * YEARS} · <Told text={era.opening.text} /></> : era.title}</h3>
           {speech ? <p className="chronicle-era-speech">{speech}</p> : null}
-          {quietRuns(years).map((year) => <section className="chronicle-year-group" key={year.generation}>
+          {quietRuns(years, (year) => decisionsByYear.has(year.generation)).map((year) => <section className="chronicle-year-group" key={year.generation}>
             <h4><button type="button" className="link" title="See the world in this year" onClick={() => context.onScrub(year.generation)}>
               {year.through === undefined ? `Year ${year.generation * YEARS}` : `Years ${Math.min(year.generation, year.through) * YEARS}–${Math.max(year.generation, year.through) * YEARS}`}
             </button></h4>
             <div>
-              {year.headlines.length ? <ChronicleEvents annals={year.headlines} context={context} /> : null}
+              {year.headlines.length || decisionsByYear.has(year.generation) ? <ChronicleEvents annals={year.headlines} decisions={decisionsByYear.get(year.generation)} order={view.order} context={context} /> : null}
               {year.quiet.length ? <details className="chronicle-quiet" key={`${view.order}:${year.generation}`}>
                 <summary><span>{quietSummary(year)}</span></summary>
                 <p className="chronicle-quiet-detail">{quietLine(year, overview, year.through === undefined ? CHRONICLE.also : CHRONICLE.alsoEra)}</p>
-                <ChronicleEvents annals={year.quiet} context={context} />
+                <ChronicleEvents annals={year.quiet} order={view.order} context={context} />
               </details> : null}
             </div>
           </section>)}
         </section>;
       })}
     </div>
-    {lines.length > shown.length ? <button type="button" className="chronicle-load" onClick={() => update({ limit: view.limit + 100 })}>Read another {Math.min(100, lines.length - shown.length)} entries</button> : null}
+    {rows.length > shown.length ? <button type="button" className="chronicle-load" onClick={() => update({ limit: view.limit + 100 })}>Read another {Math.min(100, rows.length - shown.length)} entries</button> : null}
   </>;
 }
 
@@ -1170,7 +1239,7 @@ function WorldCard({ context }: { context: Context }) {
   const last = latestTold(overview.annals);
   const writing = context.running ?? null;
   // While the years run, the frontispiece tells the latest turning points.
-  const told = writing === null ? [] : overview.annals.filter((annal) => !QUIET_KINDS.has(annal.kind)).slice(-6);
+  const told = writing === null ? [] : overview.annals.filter((annal) => !isQuiet(annal, overview.annals)).slice(-6);
   return <>
     <CardHead icon={Globe} kind="A chart of" title={context.title ?? continent} />
     {writing === null ? <p className="frontispiece-caption">{overview.generation === 0 ? `${peoples.length === 1 ? "One people settles" : `${peoples.length} peoples settle`} ${continent}.`
@@ -1181,7 +1250,7 @@ function WorldCard({ context }: { context: Context }) {
       : <section className="frontispiece-writing" aria-label="The chronicle being written">
         <p className="frontispiece-year">The chronicle is being written <span>year {(overview.generation * YEARS).toLocaleString()} <small>of {(writing * YEARS).toLocaleString()}</small></span></p>
         <progress max={writing} value={overview.generation} aria-label="Years written" />
-        <ol aria-live="polite">{told.map((annal) => <li key={annal.id}><span className="frontispiece-when">{annal.generation * YEARS}</span> <Told text={annal.text} /></li>)}</ol>
+        <ol aria-live="polite">{told.map((annal) => <li key={annal.id}><span className="frontispiece-when">{annal.generation * YEARS}</span><span><Told text={annal.text} /></span></li>)}</ol>
         <button type="button" onClick={context.onStopRun}><Square size={13} aria-hidden="true" /> Stop here</button>
       </section>}
     {overview.generation > 0 ? <p><button type="button" className="link" onClick={() => context.go({ kind: "history" })}>The chronicle</button></p> : null}
@@ -1227,8 +1296,22 @@ function FamilyTrees({ context }: { context: Context }) {
 }
 
 /// Entries keep their evidence and links whether full-weight or unfolded.
-function ChronicleEvents({ annals, context }: { annals: Annal[]; context: Context }) {
-  return <ol className="chronicle-events">{annals.map((annal) => {
+function ChronicleEvents({ annals, decisions = [], order = "oldest", context }: { annals: Annal[]; decisions?: DecisionView[]; order?: HistoryView["order"]; context: Context }) {
+  return <ol className="chronicle-events">{chronicleRows(annals, decisions, order).map((row) => {
+    if ("decision" in row) {
+      const decision = row.decision;
+      return <li className="chronicle-decision" key={`decision-${decision.index}`}>
+        <Feather size={17} aria-hidden="true" />
+        <div><span className="event-kind">The author’s decision</span>
+          <p><Told text={decision.text} /></p>
+          <span className="annal-states"><Joined items={decision.people.filter((id) => context.overview.communities[id])}
+            link={(id) => <PeopleLink c={context.overview.communities[id]} context={context} />} />
+            {decision.variety !== null ? <> · <LanguageLink variety={decision.variety} context={context} /></> : null}
+          </span>
+        </div>
+      </li>;
+    }
+    const annal = row.annal;
     const kind = EVENT_KIND[annal.kind];
     return <li key={annal.id}>
       <kind.icon size={17} aria-hidden="true" />
@@ -1262,10 +1345,14 @@ function HistoryCard({ context }: { context: Context }) {
   const [destination, setDestination] = useState<number | null>(null);
   const update = (patch: Partial<HistoryView>) => onHistoryView({ ...view, limit: 100, ...patch });
   const contents = useMemo(() => eras(overview.annals, overview.generation, overview), [overview]);
+  const recorded = use(context.engine.decisions());
+  const decisions = useMemo(() => untoldDecisions(overview.annals, recorded, context.generation), [overview, recorded, context.generation]);
+  const choices = useMemo(() => filterDecisions(decisions, overview, view), [decisions, overview, view]);
   const speech = useMemo(() => contents.map((era) => speechLine(era.years.flatMap((year) => [...year.headlines, ...year.quiet]), overview, eraBirths(era, overview), true)), [contents, overview]);
   const lines = useMemo(() => filterHistory(overview.annals, overview.varieties, view), [overview, view]);
+  const count = lines.length + choices.length;
   const unfold = view.group !== "All events" || view.query.trim() !== "" || view.sounds !== "all";
-  const headlineCount = contents.reduce((sum, era) => sum + era.years.reduce((n, year) => n + year.headlines.length, 0), 0);
+  const headlineCount = decisions.length + contents.reduce((sum, era) => sum + era.years.reduce((n, year) => n + year.headlines.length, 0), 0);
   const quietYears = contents.reduce((sum, era) => sum + era.years.filter((year) => year.quiet.length).length, 0);
   const missingLanguage = typeof view.sounds === "number" && !overview.varieties[view.sounds];
   useEffect(() => {
@@ -1282,8 +1369,8 @@ function HistoryCard({ context }: { context: Context }) {
     return () => cancelAnimationFrame(frame);
   }, [destination, folio.open, folio.page, view.limit]);
   const openEra = (era: Era) => {
-    const all = filterHistory(overview.annals, overview.varieties, { ...INITIAL_HISTORY, order: view.order });
-    const last = all.reduce((index, annal, i) => annal.generation >= era.start && annal.generation <= era.end ? i : index, -1);
+    const all = chronicleRows(filterHistory(overview.annals, overview.varieties, { ...INITIAL_HISTORY, order: view.order }), decisions, view.order);
+    const last = all.reduce((index, row, i) => row.generation >= era.start && row.generation <= era.end ? i : index, -1);
     onHistoryView({ ...INITIAL_HISTORY, order: view.order, limit: Math.max(100, last + 1) });
     setDestination(era.start);
     folio.show("history");
@@ -1303,12 +1390,12 @@ function HistoryCard({ context }: { context: Context }) {
         <p>{headlineCount.toLocaleString()} headline {headlineCount === 1 ? "entry" : "entries"} and {quietYears.toLocaleString()} quiet {quietYears === 1 ? "year" : "years"}.</p>
       }>
         <ChronicleFilters view={view} update={update} overview={overview} sounds />
-        <div className="chronicle-count"><span role="status">{lines.length.toLocaleString()} {lines.length === 1 ? "entry" : "entries"}{unfold ? " matching these filters" : " in this telling"}</span>
+        <div className="chronicle-count"><span role="status">{count.toLocaleString()} {count === 1 ? "entry" : "entries"}{unfold ? " matching these filters" : " in this telling"}</span>
           <button type="button" className="link" onClick={() => onHistoryView(INITIAL_HISTORY)}>Reset filters</button>
         </div>
         {missingLanguage ? <p className="muted small">The selected language has not arisen in this year. Its sound changes will appear when you return to its time.</p> : null}
-        {lines.length === 0 ? <p className="index-empty">No entries match these filters. Try a different name or broaden the filters.</p> : null}
-        <EraReading contents={contents} lines={lines} view={view} update={update} births context={context} />
+        {count === 0 ? <p className="index-empty">No entries match these filters. Try a different name or broaden the filters.</p> : null}
+        <EraReading contents={contents} lines={lines} decisions={choices} view={view} update={update} births context={context} />
       </Leaf>
       <Leaf id="tellings" title="Other tellings" summary={<p>{overview.tellings.length} {overview.tellings.length === 1 ? "telling" : "tellings"} kept. Name them, read them, or compare the same year.</p>}>
         <section className="other-tellings">
@@ -1432,7 +1519,7 @@ function PeopleCard({ c, context }: { c: Community; context: Context }) {
       </section>
       <p className="people-temper"><Explained term="temper">{temperament(c.ethos).join(", ").replace(/^./, (first) => first.toUpperCase()) || "Even-tempered"}</Explained>.</p>
       <TemperLeaf c={c} told={told} context={context} />
-      <StoryLeaf title="Their fortunes" annals={told} context={context} />
+      <StoryLeaf title="Their fortunes" annals={told} people={[c.id]} context={context} />
       <section>
         <h3>{phrases.speech}</h3>
         <p>{phrases.lastSpeech}<LanguageLink variety={c.variety} context={context} /></p>
@@ -1595,16 +1682,21 @@ function StateCard({ state, context }: { state: StateView; context: Context }) {
 function GreatCity({ state, context }: { state: StateView; context: Context }) {
   const { overview } = context;
   const city = overview.cities.findLast((c) => c.state === state.id);
-  const souls = `${Math.round(city?.size ?? state.city).toLocaleString()} souls`;
-  if (!city) return <>{souls}</>;
+  const ended = state.fell !== null;
+  const souls = `${Math.max(0, Math.round(city?.size ?? state.city)).toLocaleString()} souls`;
+  if (!city) return <>{ended ? "no longer a court city" : souls}</>;
   const townsfolk = city.townsfolk === null ? null : overview.communities[city.townsfolk];
   return (
     <>
-      <span className="word">{cityLabel(context.overview, context.map, city)}</span>, “{city.name.meaning}”, {souls}, great since year{" "}
-      <Year generation={city.since} context={context} />; its people speak{" "}
-      <Joined items={city.makeup.slice(0, 3)}
-        link={(m) => <><LanguageLink variety={m.variety} context={context} /> {Math.round(m.share * 100)}%</>} />
-      {townsfolk ? <>; its townsfolk, the <PeopleLink c={townsfolk} context={context} />, speak a{" "}
+      <span className="word">{cityLabel(context.overview, context.map, city)}</span>, “{city.name.meaning}”,
+      {ended ? " a great court city from year " : ` ${souls}, great since year `}
+      <Year generation={city.since} context={context} />
+      {ended ? <> until the state fell in year <Year generation={state.fell!} context={context} /></> : null}
+      {city.makeup.length ? <>; its people {ended ? "spoke" : "speak"}{" "}
+        <Joined items={city.makeup.slice(0, 3)}
+          link={(m) => <><LanguageLink variety={m.variety} context={context} /> {Math.round(m.share * 100)}%</>} />
+      </> : null}
+      {townsfolk ? <>; its townsfolk, the <PeopleLink c={townsfolk} context={context} />, {ended || townsfolk.ended !== null ? "spoke" : "speak"} a{" "}
         <Explained term="koiné">koiné</Explained> of their own</> : null}
     </>
   );
@@ -1806,7 +1898,7 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
           <p>The <PeopleLink c={c} context={context} /> {c.ended === null ? "are" : "were"} <Explained term="way of life">{LIVELIHOOD_NAME[c.livelihood].toLowerCase()}</Explained>.</p>
         </section>;
       })}
-      <StoryLeaf title="Their fortunes" annals={fortunes} context={context} />
+      <StoryLeaf title="Their fortunes" annals={fortunes} people={[...speakerIds]} context={context} />
     </div>
     <LanguageSpecimen variety={variety} context={context} />
     <Facts rows={[

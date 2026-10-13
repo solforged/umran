@@ -148,7 +148,7 @@ export function Stage({
   onRunStart: () => void;
   /// The years stopped passing; a chance to save.
   onStop: () => void;
-  onNextEvent: () => void;
+  onNextEvent: () => Promise<boolean>;
   onUndo: () => void;
   onDialog: (kind: DialogKind) => void;
   initialFocus: Focus | null;
@@ -247,7 +247,7 @@ export function Stage({
     setLeaf("tellings");
   }, [comparisonReturn]);
   // A reader's next choice supersedes any return queued by a lifted sheet.
-  const go = (next: Focus) => {
+  const go = (next: Focus, point: HistoryPoint = overview.point) => {
     afterLift.current = null; suspendedLeaf.current = null; comparing.current = false;
     if (liftedSettlement.closing) liftedSettlement.finishLift();
     setFolioFromCard(JSON.stringify(focus) !== JSON.stringify(next));
@@ -264,7 +264,7 @@ export function Stage({
     // The history card is the whole history, so it opens in the folio.
     setLeaf(next.kind === "history" ? "history" : null);
     // Revisiting a card returns to that point in the path, at this reading.
-    setTrail((t) => cardPath([...t.slice(0, -1), destination(t.at(-1)!.subject)], destination(next)));
+    setTrail((t) => cardPath([...t.slice(0, -1), destination(t.at(-1)!.subject)], { subject: next, reading: { telling: overview.telling, point } }));
   };
   const returnTo = (index: number) => {
     halt();
@@ -326,6 +326,10 @@ export function Stage({
       return current.kind === "event" ? cardPath(subjects, destination({ kind: "world" })) : subjects;
     });
     if (focus.kind === "event") setLeaf(null);
+  };
+  const finishStudy = async (advance: () => Promise<boolean>) => {
+    closeDecisions();
+    if (await advance()) stop.current();
   };
   const startRun = () => {
     if (!atPresent || running !== null || !Number.isFinite(runYear) || runYear <= generation * YEARS) return;
@@ -566,7 +570,17 @@ export function Stage({
   const sameYear = thisYear.length;
   const LastIcon = last ? EVENT_KIND[last.kind].icon : null;
   const tellingName = overview.tellings.find((t) => t.id === overview.telling)?.name;
-  const { marks, sounds } = useMemo(() => marksFromAnnals(overview.annals), [overview.annals]);
+  // The ruler spans this telling's retained tip, even at an exact past point.
+  // Keep its last complete reading while the worker opens that tip.
+  const tellingTip = overview.tellings.find((telling) => telling.id === overview.telling)?.tip;
+  const retained = useAnswer(!atPresent && tellingTip ? engine.overviewAt(tellingTip) : null, true);
+  const timelineOverview = useRef(overview);
+  if (atPresent) timelineOverview.current = overview;
+  else if (tellingTip && retained?.telling === overview.telling && retained.point.action === tellingTip.action && retained.point.offset === tellingTip.offset) {
+    timelineOverview.current = retained;
+  }
+  const timelineAnnals = timelineOverview.current.telling === overview.telling ? timelineOverview.current.annals : overview.annals;
+  const { marks, sounds } = useMemo(() => marksFromAnnals(timelineAnnals), [timelineAnnals]);
 
   const layerName = tint.kind === "peoples" ? "Language families"
     : tint.kind === "faiths" ? "Faiths" : tint.kind === "crafts" ? catalog.crafts.find((c) => c.id === tint.craft)?.name
@@ -840,8 +854,8 @@ export function Stage({
               <button type="button" disabled={!atPresent} onClick={() => { close(); if (playing) setPlaying(false); else startStudy(); }}>
                 {playing ? <Pause size={15} aria-hidden="true" /> : <Play size={15} aria-hidden="true" />}{playing ? "Pause" : "Play"}
               </button>
-              <button type="button" disabled={playing} onClick={() => { close(); closeDecisions(); onTick(); onStop(); }}><StepForward size={15} aria-hidden="true" /> Step {YEARS} years</button>
-              <button type="button" disabled={playing} onClick={() => { close(); closeDecisions(); onNextEvent(); }}><SkipForward size={15} aria-hidden="true" /> Until something happens</button>
+              <button type="button" disabled={playing} onClick={() => { close(); void finishStudy(onTick); }}><StepForward size={15} aria-hidden="true" /> Step {YEARS} years</button>
+              <button type="button" disabled={playing} onClick={() => { close(); void finishStudy(onNextEvent); }}><SkipForward size={15} aria-hidden="true" /> Until something happens</button>
             </div>
             <fieldset><legend>Pace</legend>{PACES.map(([value, name]) => <label key={value}><input type="radio" name="pace" checked={pace === value} onChange={() => setPace(value)} /> {name}</label>)}</fieldset>
             <fieldset><legend>Pause on</legend>{PAUSE_ON.map(([value, name]) => <label key={value}><input type="radio" name="pause" checked={pauseOn === value} onChange={() => setPauseOn(value)} /> {name}</label>)}</fieldset>
@@ -850,7 +864,11 @@ export function Stage({
           </div>}
         </Popover>
         <Timeline marks={marks} sounds={sounds} latest={running ?? latest} viewed={generation}
-          onScrub={(g) => scrub(Math.min(g, latest))} onOpen={(mark) => { scrub(mark.generation); go({ kind: "event", id: mark.annal.id }); }} />
+          onScrub={(g) => scrub(Math.min(g, latest))} onOpen={async (mark) => {
+            halt(); setSettlement(null);
+            const point = await onScrub(mark.generation);
+            if (point) go({ kind: "event", id: mark.annal.id }, point);
+          }} />
         <span className={`stage-year${atPresent ? "" : " in-past"}`}>Year {generation * YEARS}{atPresent ? null : <> · <button type="button" className="link" onClick={() => scrub(latest)}>to the present</button></>}</span>
         <button type="button" className="icon strike-out" disabled={!canUndo || running !== null || playing} title="Return before the last decision" aria-label="Return before the last decision" onClick={onUndo}><Undo2 size={16} aria-hidden="true" /></button>
       </footer>

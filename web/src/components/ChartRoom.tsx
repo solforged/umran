@@ -3,7 +3,7 @@ import { ArrowRight, FileUp, X } from "lucide-react";
 import { landMap } from "../engine";
 import { YEARS, type WorldMap } from "../model";
 import { SAMPLE_LAND } from "../sample";
-import { bookLand, type BookEntry, type BookLand, type ShelfPeople } from "../shelf";
+import { bookLand, isBookEntry, type BookEntry, type BookLand, type ShelfPeople } from "../shelf";
 import { Miniature } from "./MapView";
 import { Modal } from "./Modal";
 import { Told } from "./Told";
@@ -31,7 +31,7 @@ function Chart({ land, peoples }: { land: BookLand | null; peoples?: ShelfPeople
 /// An author's worlds, with the last-opened chart leading and founding
 /// tools kept below the worlds rather than offered as their peers. With no
 /// worlds yet, it is a title page: what Umran writes, and two ways in.
-export function ChartRoom({ revision, books, onOpen, onBegin, onSample, onImport, onRemove }: {
+export function ChartRoom({ revision, books, onOpen, onBegin, onSample, onImport, onRemove, onFailure }: {
   revision: number;
   books: BookEntry[];
   onOpen: (id: string) => void;
@@ -39,13 +39,19 @@ export function ChartRoom({ revision, books, onOpen, onBegin, onSample, onImport
   onSample: () => Promise<void>;
   onImport: (file: File) => void;
   onRemove: (id: string) => void;
+  onFailure: (error: Error) => void;
 }) {
   const [removing, setRemoving] = useState<BookEntry | null>(null);
   const [sampling, setSampling] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
-  const worlds = useMemo(() => [...books].sort((a, b) => b.updated - a.updated)
-    .map((book) => ({ book, land: bookLand(book.id, revision) })), [books, revision]);
-  const [leading, ...others] = worlds;
+  const worlds = useMemo(() => books.every(isBookEntry)
+    ? [...books].sort((a, b) => b.updated - a.updated)
+      .map((book) => ({ book, land: bookLand(book.id, revision) }))
+    : null, [books, revision]);
+  useEffect(() => {
+    if (worlds === null) onFailure(new Error("A saved world's shelf entry could not be read."));
+  }, [worlds, onFailure]);
+  const [leading, ...others] = worlds ?? [];
   // Writing the sample holds the page for a few seconds; say so first.
   const sample = () => {
     setSampling(true);
@@ -61,7 +67,7 @@ export function ChartRoom({ revision, books, onOpen, onBegin, onSample, onImport
     }} />
   </>;
 
-  function world({ book, land }: typeof worlds[number], lead: boolean) {
+  function world({ book, land }: NonNullable<typeof worlds>[number], lead: boolean) {
     return <article key={book.id} className={`room-world${lead ? " room-world-leading" : ""}`}>
       <Chart land={land} peoples={book.peoples} />
       <button type="button" className="room-world-open" onClick={() => onOpen(book.id)} aria-label={`${lead ? "Continue" : "Open"} ${book.title}`}>
@@ -78,6 +84,10 @@ export function ChartRoom({ revision, books, onOpen, onBegin, onSample, onImport
       </button>
     </article>;
   }
+
+  if (worlds === null) return <main className="chart-room">
+    <p role="alert">The shelf could not be read. Its saved data has not been changed or deleted.</p>
+  </main>;
 
   if (!leading) return <main className="chart-room chart-room-empty" data-engine-revision={revision}>
     <section className="room-title-page">

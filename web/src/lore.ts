@@ -379,7 +379,7 @@ export const TERMS = {
     "Writing can keep an older form after speech changes. English knight still writes sounds that are no longer said; respelling brings writing closer to speech again.",
   "meaning extension by livelihood":
     "A familiar word taking on a meaning shaped by how people live. Herders may count wealth in cattle: Latin pecunia, “money”, comes from pecus, “cattle”.",
-  "minimal word": "The shortest independent word a language permits. Here sound change cannot reduce a word below that size.",
+  "minimal word": "The size sound change never wears a word below. Words founded short or borrowed may already sit below it; sound change cannot wear those words further below it.",
   "heavy syllable": "A syllable with two units of weight, or moras: here a long vowel or a short vowel followed by a closing consonant.",
   affix: "A meaningful piece attached to a word: a prefix before the stem or a suffix after it.",
   "root and pattern": "Words built by fitting a consonant root into a pattern of vowels and, sometimes, other sounds.",

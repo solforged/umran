@@ -21,9 +21,7 @@ export function useMapProjection(container: RefObject<HTMLElement | null>): [Map
       if (chosen.current) return;
       const { width, height } = element.getBoundingClientRect();
       if (!width || !height) return;
-      chosen.current = true;
       setProjection(height > width ? "globe" : "chart");
-      observer.disconnect();
     };
     const observer = new ResizeObserver(measure);
     observer.observe(element);

@@ -109,7 +109,9 @@ export function MapInspector({ container, inspection, map, overview, generation,
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Enter" || event.key === " ") { pin(event); return; }
       if (event.key !== "Escape" || !shownRef.current) return;
-      event.preventDefault(); event.stopPropagation(); close();
+      event.preventDefault();
+      if (!(event.target instanceof Element && event.target.matches('svg[role="application"]'))) event.stopPropagation();
+      close();
     };
     document.addEventListener("pointerdown", outside, true);
     document.addEventListener("click", pin, true);

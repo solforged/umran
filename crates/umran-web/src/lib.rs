@@ -1900,8 +1900,8 @@ impl Bench {
         to_json(&view)
     }
 
-    /// How much of its core vocabulary `variety` shares with each other
-    /// spoken language at `generation`, the closest first. One language's
+    /// Chance-corrected sound similarity of current same-meaning core words
+    /// with each other spoken language, closest first. One language's
     /// row rather than the whole table, which grows with the square of the
     /// languages and would slow every year of a long history.
     pub fn kin(&mut self, generation: u32, variety: usize) -> Result<String, String> {
@@ -1935,24 +1935,21 @@ impl Bench {
             .slots
             .iter()
             .filter_map(|slot| {
-                let word = v.lexicon.get(slot.dominant()?);
-                let (spelled, said) = written_and_said(v, word);
+                let dominant = slot.dominant()?;
+                let word = v.lexicon.get(dominant);
                 Some(LexiconRow {
                     concept: slot.concept.id,
                     gloss: slot.concept.gloss,
                     field: slot.concept.field.label(),
                     rank: slot.concept.stability,
                     class: v.gender.class_of(word.id),
-                    spelled,
-                    said,
-                    ipa: word.form.ipa_stressed(v.stress()),
-                    origin: origin_view(world, variety, word),
-                    coined: coined_view(v, word),
-                    changes: word
-                        .log
+                    form: lexicon_form(world, variety, word),
+                    competing_forms: slot
+                        .variants
                         .iter()
-                        .filter(|e| matches!(e.event, Event::SoundLaw { .. }))
-                        .count(),
+                        .filter(|variant| variant.lexeme != dominant)
+                        .map(|variant| lexicon_form(world, variety, v.lexicon.get(variant.lexeme)))
+                        .collect(),
                     competitors: slot.variants.len() - 1,
                 })
             })
@@ -3650,8 +3647,8 @@ struct VarietyView {
     /// The state whose classical form it is, if it is one.
     classical_of: Option<usize>,
     purism: Vec<PurismView>,
-    /// The classical form its speakers write, or wrote before writing
-    /// their own speech.
+    /// The high written register (sacred, classical, or court standard) its
+    /// speakers write, or wrote before writing their own speech.
     high: Option<usize>,
     /// When its speakers began to write their own speech in place of
     /// `high`.
@@ -4575,6 +4572,23 @@ fn written_and_said(variety: &Variety, word: &Lexeme) -> (String, Option<String>
     (written, differs.then_some(said))
 }
 
+fn lexicon_form(world: &World, variety: usize, word: &Lexeme) -> LexiconForm {
+    let v = &world.varieties[variety];
+    let (spelled, said) = written_and_said(v, word);
+    LexiconForm {
+        spelled,
+        said,
+        ipa: word.form.ipa_stressed(v.stress()),
+        origin: origin_view(world, variety, word),
+        coined: coined_view(v, word),
+        changes: word
+            .log
+            .iter()
+            .filter(|entry| matches!(entry.event, Event::SoundLaw { .. }))
+            .count(),
+    }
+}
+
 /// How `variety` came by its word for `concept`: borrowed, stretched from
 /// another meaning, built from a word it had, coined, or inherited.
 fn rendering(world: &World, variety: usize, concept: &'static Concept) -> Option<Rendering> {
@@ -4758,7 +4772,8 @@ fn own_words(world: &World, variety: usize) -> OwnWords {
     out
 }
 
-/// Another language and the share of core words it shares with one.
+/// Another language and its chance-corrected sound similarity for current
+/// same-meaning core words, not a count of shared roots.
 #[derive(Serialize)]
 struct KinView {
     other: usize,
@@ -4776,6 +4791,7 @@ struct OriginView {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct LexiconRow {
     concept: &'static str,
     gloss: &'static str,
@@ -4783,6 +4799,16 @@ struct LexiconRow {
     rank: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     class: Option<u32>,
+    #[serde(flatten)]
+    form: LexiconForm,
+    /// Current competing forms other than the dominant word above.
+    competing_forms: Vec<LexiconForm>,
+    competitors: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LexiconForm {
     /// As written: as it sounded when the language was first written.
     spelled: String,
     /// As said now, spelled the same way, if writing has fallen behind.
@@ -4792,7 +4818,6 @@ struct LexiconRow {
     #[serde(skip_serializing_if = "Option::is_none")]
     coined: Option<CoinedView>,
     changes: usize,
-    competitors: usize,
 }
 
 #[derive(Serialize)]

@@ -208,6 +208,7 @@ export function Timeline({ marks, sounds, latest, viewed, onScrub, onOpen }: {
             </button>}>
             {(close) => <div className="timeline-entries" onPointerDown={(event) => event.stopPropagation()}>
               {group.map((mark) => <button type="button" key={mark.annal.id}
+                className={mark.generation > viewed ? "ahead" : undefined}
                 onClick={(event) => { event.stopPropagation(); close(); onOpen(mark); }}>
                 <span>{mark.label}</span>
                 <span>{mark.annal.text.replace(/\*/g, "")}</span>
@@ -219,7 +220,7 @@ export function Timeline({ marks, sounds, latest, viewed, onScrub, onOpen }: {
           {visible.map((mark, stack) => <button
             type="button"
             key={stack}
-            className={`mark mark-${mark.kind}${ahead}`}
+            className={`mark mark-${mark.kind}${mark.generation > viewed ? " ahead" : ""}`}
             style={{ left: left(generation), "--stack": stack } as CSSProperties}
             title={mark.label}
             aria-label={mark.label}

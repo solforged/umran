@@ -80,8 +80,9 @@ the engine, not a second source. Blank where the engine has nothing yet.
 4. **The languages.** The centre of the book and the reason for it. One
    chapter per language, living or silent, grouped by family; a silent
    language keeps its specimen with its chapter folded:
-   - *Position*: parent, daughters, the family tree, kin by shared core
-     words (`Variety.parent/fork/family`, `kin`).
+   - *Position*: parent, daughters, the family tree, kin by core-word
+     sound similarity, chance-corrected and not a count of shared roots
+     (`Variety.parent/fork/family`, `kin`).
    - *Sounds*: the inventories, the minimal word, stress, geminates.
    - *Sound laws*: a dated ledger, each law with the words it changed,
      before and after, and where it came from if it spread as a wave

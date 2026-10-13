@@ -1080,10 +1080,14 @@ table.preview tr {
   stroke: color-mix(in srgb, var(--paper) 70%, transparent);
   stroke-width: calc(0.035px * var(--label, 1));
   stroke-linejoin: round;
-  pointer-events: none;
+  pointer-events: visiblePainted;
+  cursor: pointer;
 }
 .place-names text.left {
   fill: color-mix(in srgb, var(--ink) 50%, var(--paper));
+}
+.place-names text:hover {
+  fill: color-mix(in srgb, var(--accent) 75%, var(--paper));
 }
 
 .route {
