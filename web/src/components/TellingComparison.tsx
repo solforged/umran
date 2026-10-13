@@ -56,7 +56,7 @@ export function TellingComparison({ open, engine, overview, map, other, onClose,
   const title = (side: Overview) => side.tellings.find((t) => t.id === side.telling)!.name;
   const state = (side: Overview, c: Community) => side.states.find((s) => s.fell === null && (s.rulers === c.id || s.members.some((m) => m.community === c.id && m.left === null)))?.name ?? "Independent";
   const heading = speech
-    ? `Diverged in year ${speech.diverged * YEARS}: ${speech.decision?.text ?? "no decision recorded"}`
+    ? `Diverged in year ${speech.diverged * YEARS}: ${speech.decision?.text.replace(/\*/g, "") ?? "no decision recorded"}`
     : comparison ? `Diverged in year ${comparison.diverged * YEARS}` : "Two tellings, one year";
   return <Modal open={open} wide title={heading} onClose={onClose}>
     <div className="telling-comparison">
