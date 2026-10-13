@@ -1,11 +1,11 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type RefObject, type SetStateAction } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react";
 import { geoAzimuthalEquidistant } from "d3-geo";
 import { LocateFixed, Maximize, Minus, Plus } from "lucide-react";
 import type { ClimateView, Community, Craft, EthosAxis, FoundingPreview, Lake, LakeNamesView, Overview, River, RiverNamesView, SettlementPreview, WordMap, WorldMap } from "../model";
 import type { ShelfPeople } from "../shelf";
 import { reducedMotion } from "../motion";
 import { YEARS } from "../model";
-import { continentLabel, hue, landCardLabel, landLabel, LEG_BY, TERRAIN_NAME } from "../lore";
+import { continentLabel, ETHOS_POLES, hue, landCardLabel, landLabel, LEG_BY, TERRAIN_NAME } from "../lore";
 import { chartPoint, createCartography, geographicPoint, lakeOutline, riverPoints, riverRoutePoints, sharedBorder, type Cartography, type GlobeRotation, type MapPoint, type MapProjection } from "../cartography";
 import { MapProjectionSwitch } from "./MapProjectionSwitch";
 import type { MapFeature } from "../gazetteer";
@@ -19,6 +19,8 @@ export interface MapMotionReading {
 const LINE = 0.3;
 /// Generations over which a route fades to its faintest.
 const ROUTE_FADE = 40;
+/// A passage keeps regional context even when it names only one small land.
+const STORY_SPAN_KM = 1800;
 /// Colours of the isogloss view: land whose people underwent the change,
 /// and peopled land that did not.
 const CHANGED = "hsl(24 75% 50%)";
@@ -27,11 +29,22 @@ const UNCHANGED = "hsl(210 12% 55%)";
 const GLIDE = 450;
 /// Pointer travel, in pixels, before a press becomes a drag.
 const DRAG_START = 4;
-/// Land lettering is legible below 6 km/pixel; tongues need below 1.5.
-/// Physical scale keeps the policy steady across maps of different sizes.
+/// One physical scale governs lettering, geometry layers, and projection work.
+const WORLD_KM_PER_PIXEL = 20;
 const LAND_KM_PER_PIXEL = 6;
 const TONGUE_KM_PER_PIXEL = 1.5;
 const LAND_LETTERING_LAYER = 8;
+function chartScale(kmPerPixel: number) {
+  const land = kmPerPixel < LAND_KM_PER_PIXEL;
+  const level = kmPerPixel >= WORLD_KM_PER_PIXEL ? "zoom-far" : land ? "zoom-close" : "zoom-mid";
+  return {
+    level,
+    land,
+    tongues: kmPerPixel < TONGUE_KM_PER_PIXEL,
+    mask: (level === "zoom-far" ? 1 : land ? 4 : 2) | (land ? LAND_LETTERING_LAYER : 0),
+    landPixels: Math.min(20, 13 + 3 * Math.max(0, Math.log2(LAND_KM_PER_PIXEL / Math.max(0.01, kmPerPixel)))),
+  };
+}
 /// Breathing room between the measured, screen-space lettering boxes.
 const LABEL_GAP = 2;
 
@@ -57,6 +70,12 @@ function leaning(value: number): string {
 /// The part of the map in view: left, top, width, height, in map units.
 export type MapCamera = [number, number, number, number];
 type Box = MapCamera;
+
+export interface MapStory {
+  regions: number[];
+  route: { from: number; to: number; generation: number }[];
+  label?: string;
+}
 
 /// Use a real attested form in the selected speech, then the mouth's speech.
 export function riverName(view: Pick<RiverNamesView, "names" | "exonyms">, variety: number | undefined) {
@@ -181,6 +200,9 @@ function dressOver(dress: ChartDress, cartography: Cartography, bind?: (site: Ma
         const at = cartography.point(site);
         if (!at && !bind) return null;
         return <g key={i} ref={bind?.(site, size)} style={{ display: at ? undefined : "none" }}
+          data-mark-size={size}
+          data-mark-extent={kind === "mountains" ? 2 : kind === "hills" ? 0.22 : kind === "forest" ? 0.09 : kind === "desert" ? 0.016 : 0.12}
+          data-mark-pixels={kind === "mountains" ? 14 : kind === "desert" ? 1.5 : 5}
           transform={`translate(${(at ?? [0, 0]).join(" ")}) scale(${size})`}>
           {kind === "mountains" ? <g>
             <path className="mark-peak" d="M-1,0L0,-1.5L1,0" />
@@ -316,14 +338,19 @@ export function MapView({
   focus = null,
   known = null,
   lens = null,
+  story = null,
   zoomable = false,
   settlement = null,
   animateChanges = false,
   motionMemory,
   camera,
+  globeCamera,
+  frameOnOpen = false,
+  onView,
   onCamera,
   projection = "chart",
   onProjection,
+  viewpointControl,
   rotation,
   onRotation,
   reach,
@@ -360,16 +387,24 @@ export function MapView({
   /// Lands one language knows by name; the rest of the land is veiled,
   /// with the peoples and names on it.
   known?: Set<number> | null;
-  /// Read the chart in a people's tongue and within its known lands.
-  lens?: { people: number } | null;
+  /// A chosen people, with names and known lands as independent readings.
+  lens?: { people: number; names?: boolean; known?: boolean } | null;
+  /// A recorded passage, framed temporarily without losing the reader's view.
+  story?: MapStory | null;
   zoomable?: boolean;
   settlement?: SettlementPreview | null;
   animateChanges?: boolean;
   motionMemory?: RefObject<MapMotionReading | null>;
   camera?: MapCamera;
   onCamera?: (camera: MapCamera) => void;
+  globeCamera?: MapCamera;
+  /// Frame living peoples once on each projection when no camera was saved.
+  frameOnOpen?: boolean;
+  /// A settled reader camera, never the temporary story camera.
+  onView?: (camera: MapCamera, projection: MapProjection, rotation: GlobeRotation) => void;
   projection?: MapProjection;
   onProjection?: (projection: MapProjection) => void;
+  viewpointControl?: ReactNode;
   rotation?: GlobeRotation;
   onRotation?: (rotation: GlobeRotation) => void;
   reach?: { preview: FoundingPreview; people: number };
@@ -390,9 +425,10 @@ export function MapView({
   const climateRivers = useMemo(() => new Map(climate?.rivers.map((river) => [river.id, river])), [climate]);
   const reader = lens ? overview.communities.find((c) => c.id === lens.people) : undefined;
   const readerVariety = reader ? overview.varieties[reader.variety] : undefined;
-  selectedVariety = readerVariety?.id ?? selectedVariety;
-  const readerLands = useMemo(() => readerVariety
-    ? new Set(readerVariety.knownLands.map((land) => land.region)) : null, [readerVariety]);
+  const namesVariety = lens?.names === false ? undefined : readerVariety;
+  selectedVariety = namesVariety?.id ?? selectedVariety;
+  const readerLands = useMemo(() => readerVariety && lens?.known !== false
+    ? new Set(readerVariety.knownLands.map((land) => land.region)) : null, [readerVariety, lens?.known]);
   known = readerLands ?? known;
   const turning = useRef<GlobeRotation>(rotation ?? [0, 20]);
   const cartography = useMemo(() => createCartography(map, projection, turning.current), [map, projection]);
@@ -401,13 +437,18 @@ export function MapView({
   const closest = Math.min(1, 3 * Math.sqrt((projection === "globe" ? Math.PI : 1 / Math.PI) / Math.max(1, map.regions.length)));
   const full: Box = useMemo(() => [0, 0, width, height], [width, height]);
   const chartView = useRef<Box>(camera ?? [0, 0, map.width, map.height]);
-  const globeView = useRef<Box>([0, 0, map.height, map.height]);
+  const globeView = useRef<Box>(globeCamera ?? [0, 0, map.height, map.height]);
   const view = projection === "chart" ? chartView : globeView;
+  const readerCamera = useRef<{ chart: Box; globe: Box; rotation: GlobeRotation } | null>(null);
+  const followingStory = useRef(story !== null);
+  followingStory.current = story !== null;
+  const framed = useRef({ chart: camera !== undefined, globe: globeCamera !== undefined });
   const drawnMap = useRef(map);
   if (drawnMap.current !== map) {
     drawnMap.current = map;
     chartView.current = camera ?? [0, 0, map.width, map.height];
-    globeView.current = [0, 0, map.height, map.height];
+    globeView.current = globeCamera ?? [0, 0, map.height, map.height];
+    framed.current = { chart: camera !== undefined, globe: globeCamera !== undefined };
   }
   let box = view.current;
   const root = useRef<HTMLDivElement>(null);
@@ -419,9 +460,11 @@ export function MapView({
   const zoomIn = useRef<HTMLButtonElement>(null);
   const zoomOut = useRef<HTMLButtonElement>(null);
   const labelLayers = useRef<SVGElement[]>([]);
-  const stateBorders = useRef<SVGGElement>(null);
   const labelAnchors = useRef<SVGElement[]>([]);
   const lettering = useRef<SVGTextElement[]>([]);
+  const terrainMarks = useRef<{ scale: SVGTransform; size: number; extent: number; pixels: number }[]>([]);
+  const largestPeoples = useMemo(() => new Set(overview.communities.filter((people) => people.ended === null)
+    .sort((a, b) => b.size - a.size).slice(0, NAMED).map((people) => String(people.id))), [overview.communities]);
   /// Region sites by map-unit cell, for asking which region holds a point,
   /// and each continent's candidate sites for its name; a chart's only.
   const siteGrid = useRef<{ cartography: Cartography; cells: Map<number, [number, number, number][]>; candidates: Map<number, [number, number, number][]> } | null>(null);
@@ -431,8 +474,7 @@ export function MapView({
   const projectedAnchors = useRef(new Map<SVGElement, {
     site: MapPoint; translation?: SVGTransform; visible: boolean; revision: number;
   }>());
-  // Geometry follows the relative zoom classes; small lettering follows its
-  // physical screen-space scale, both for visibility and projection updates.
+  // The same physical scale controls visible ink and hidden projection work.
   const projectionLayers = useRef<{ mask: number; paths: typeof paths.current; anchors: typeof projectedAnchors.current; labels: SVGElement[] }[]>([]);
   const layerMask = (node: SVGElement): number => {
     if (node.closest(".place-names, .river-names, .lake-names")) return LAND_LETTERING_LAYER;
@@ -445,8 +487,8 @@ export function MapView({
   const moving = useRef(false);
   const settleTimer = useRef(0);
   const rotationChanged = useRef(false);
-  const callbacks = useRef({ onRotation, onCamera });
-  callbacks.current = { onRotation, onCamera };
+  const callbacks = useRef({ onRotation, onCamera, onView });
+  callbacks.current = { onRotation, onCamera, onView };
   const bindPath: PathBinder = (draw, hide) => {
     let drawn = drawnPaths.get(draw);
     if (!drawn || drawn.revision !== drawRevision.current) {
@@ -498,8 +540,14 @@ export function MapView({
     const nextBox = value.join(" ");
     if (element.getAttribute("viewBox") !== nextBox) element.setAttribute("viewBox", nextBox);
     const kmPerPixel = (projection === "globe" ? 2 * map.radiusKm / height : map.kmPerUnit) / pixelsPerUnit;
-    const landLettering = kmPerPixel < LAND_KM_PER_PIXEL;
-    const visibleMask = (ratio > 0.6 ? 1 : ratio < 0.25 ? 4 : 2) | (landLettering ? LAND_LETTERING_LAYER : 0);
+    const policy = chartScale(kmPerPixel);
+    const landLettering = policy.land, visibleMask = policy.mask;
+    chart.dataset.kmPerPixel = String(kmPerPixel);
+    chart.style.setProperty("--small-label-min", `${policy.landPixels / pixelsPerUnit}px`);
+    for (const mark of terrainMarks.current) {
+      const size = Math.min(mark.size, mark.pixels / (mark.extent * pixelsPerUnit));
+      mark.scale.setScale(size, size);
+    }
     if (pendingTurn.current) {
       cartography.rotate(turning.current);
       ++drawRevision.current;
@@ -547,7 +595,7 @@ export function MapView({
     const label = Math.max(Math.sqrt(ratio), 14 / (pixelsPerUnit * 0.24));
     for (const layer of labelLayers.current) {
       layer.style.setProperty("--label", String(label));
-      layer.style.setProperty("--small-label-min", `${10 / pixelsPerUnit}px`);
+      layer.style.setProperty("--small-label-min", `${policy.landPixels / pixelsPerUnit}px`);
       if (layer.classList.contains("peoples")) layer.style.setProperty("--people-label-min", `${14 / pixelsPerUnit}px`);
     }
     // Camera frames need only relayout lettering, not rerender mesh geometry.
@@ -564,7 +612,7 @@ export function MapView({
         }
       }
     }
-    const level = ratio > 0.6 ? "zoom-far" : ratio < 0.25 ? "zoom-close" : "zoom-mid";
+    const level = policy.level;
     if (!chart.classList.contains(level)) {
       chart.classList.remove("zoom-far", "zoom-mid", "zoom-close");
       chart.classList.add(level);
@@ -578,7 +626,6 @@ export function MapView({
         if (hidden !== item.hidden) { item.node.style.display = hidden ? "none" : ""; item.hidden = hidden; }
       }
     }
-    stateBorders.current?.style.setProperty("--state-weight", String(1 + 2 * Math.min(1, (1 - ratio) / 0.6)));
     const named = new Set<string>();
     const chartBounds = chart.getBoundingClientRect();
     const matrix = element.getScreenCTM()!;
@@ -742,8 +789,10 @@ export function MapView({
       }
       const people = text.dataset.people;
       const allowed = kind === "tongue"
-        ? tint.kind === "peoples" && kmPerPixel < TONGUE_KM_PER_PIXEL && named.has(people!)
-        : kind === "land" || kind === "river" || kind === "lake" ? landLettering : true;
+        ? tint.kind === "peoples" && policy.tongues && named.has(people!)
+        : kind === "land" || kind === "river" || kind === "lake" ? policy.land
+        : kind === "people" ? level !== "zoom-far" || largestPeoples.has(people!)
+        : kind === "state" ? level !== "zoom-far" : true;
       const inView = rect.right > chartBounds.left && rect.left < chartBounds.right &&
         rect.bottom > chartBounds.top && rect.top < chartBounds.bottom;
       const visible = allowed && inView && rect.width > 0 && fits(rect);
@@ -780,8 +829,9 @@ export function MapView({
     scheduleDraw();
     if (rotationChanged.current) {
       rotationChanged.current = false;
-      callbacks.current.onRotation?.([...turning.current]);
+      if (!followingStory.current) callbacks.current.onRotation?.([...turning.current]);
     }
+    if (!followingStory.current) callbacks.current.onView?.([...view.current], projection, [...turning.current]);
   };
   const moveCamera = () => {
     moving.current = true;
@@ -795,10 +845,19 @@ export function MapView({
     box = typeof next === "function" ? next(view.current) : next;
     view.current = box;
     moveCamera();
-    if (projection === "chart") callbacks.current.onCamera?.(box);
+    if (projection === "chart" && !followingStory.current) callbacks.current.onCamera?.(box);
   };
   useLayoutEffect(() => {
-    if (projection === "chart" && camera) view.current = camera;
+    if (followingStory.current) return;
+    if (camera) chartView.current = camera;
+    if (globeCamera) globeView.current = globeCamera;
+    scheduleDraw();
+  }, [camera, globeCamera, projection]);
+  useLayoutEffect(() => {
+    terrainMarks.current = [...(root.current?.querySelectorAll<SVGGElement>("[data-mark-size]") ?? [])].map((node) => ({
+      scale: node.transform.baseVal.getItem(1), size: Number(node.dataset.markSize),
+      extent: Number(node.dataset.markExtent), pixels: Number(node.dataset.markPixels),
+    }));
     culled.current = [...(root.current?.querySelectorAll<SVGElement>("[data-chart-region]") ?? [])].map((node) => ({
       node, bounds: bounds[Number(node.dataset.chartRegion)], hidden: node.style.display === "none",
     }));
@@ -831,7 +890,7 @@ export function MapView({
     };
   }, [map, projection]);
   useLayoutEffect(() => {
-    if (!rotation || (rotation[0] === turning.current[0] && rotation[1] === turning.current[1])) return;
+    if (followingStory.current || !rotation || (rotation[0] === turning.current[0] && rotation[1] === turning.current[1])) return;
     turning.current = [...rotation];
     pendingTurn.current = true;
     scheduleDraw();
@@ -962,8 +1021,13 @@ export function MapView({
 
   // Bring the focus into view if it lies outside the middle of the view.
   const [fx, fy] = focus ?? [NaN, NaN];
+  const firstFocus = useRef(true);
   useEffect(() => {
-    if (!zoomable || Number.isNaN(fx)) return;
+    if (firstFocus.current) {
+      firstFocus.current = false;
+      if (frameOnOpen) return;
+    }
+    if (!zoomable || story || Number.isNaN(fx)) return;
     const [x, y, w, h] = view.current;
     if (projection === "globe") {
       turnTo(geographicPoint(map, [fx, fy]), [(width - w) / 2, (height - h) / 2, w, h]);
@@ -972,7 +1036,7 @@ export function MapView({
     const inside = fx > x + w * 0.2 && fx < x + w * 0.8 && fy > y + h * 0.2 && fy < y + h * 0.8;
     if (!inside) glideTo(clamp([fx - w / 2, fy - h / 2, w, h]));
     // Only a new focus or map moves the view, never the view itself.
-  }, [fx, fy, zoomable, projection, map]);
+  }, [fx, fy, zoomable, map]);
 
   useEffect(() => {
     pointers.current.clear();
@@ -1073,8 +1137,8 @@ export function MapView({
   };
   const dragged = () => suppressClick.current;
   const selectedRegions = lands.size > 0 ? [...lands] : [...new Set(overview.communities.filter((c) => chosen.has(c.id)).flatMap((c) => c.lands))];
-  const fitSelection = () => {
-    const regions = selectedRegions.map((id) => map.regions[id]).filter((region) => region !== undefined);
+  const fitRegions = (ids: readonly number[], immediate = false, minimumSpanKm = 0) => {
+    const regions = ids.map((id) => map.regions[id]).filter((region) => region !== undefined);
     if (regions.length === 0) return;
     if (projection === "globe") {
       const vectors = regions.map(({ center: [longitude, latitude] }) => {
@@ -1091,9 +1155,12 @@ export function MapView({
         const dot = normal[0] * Math.cos(lat) * Math.cos(lon) + normal[1] * Math.cos(lat) * Math.sin(lon) + normal[2] * Math.sin(lat);
         angle = Math.max(angle, Math.acos(Math.max(-1, Math.min(1, dot))));
       }
-      const scale = Math.min(1, Math.max(closest, angle >= Math.PI / 2 ? 1 : Math.sin(angle) * 1.3));
+      const minimumScale = Math.sin(Math.min(Math.PI / 2, minimumSpanKm / (2 * map.radiusKm)));
+      const scale = Math.min(1, Math.max(closest, minimumScale, angle >= Math.PI / 2 ? 1 : Math.sin(angle) * 1.3));
       const w = width * scale, h = height * scale;
-      turnTo(target, [(width - w) / 2, (height - h) / 2, w, h]);
+      const targetBox: Box = [(width - w) / 2, (height - h) / 2, w, h];
+      if (immediate) { turn(target); setBox(targetBox); drawCurrent.current(); settle(); }
+      else turnTo(target, targetBox);
       return;
     }
     const points = regions.flatMap((region) => region.boundary.map((point) => {
@@ -1104,10 +1171,37 @@ export function MapView({
     const xs = points.map((p) => p[0]), ys = points.map((p) => p[1]);
     const left = Math.min(...xs), right = Math.max(...xs), top = Math.min(...ys), bottom = Math.max(...ys);
     const scale = Math.max((right - left) / map.width, (bottom - top) / map.height) * 1.3;
-    const w = map.width * Math.min(1, Math.max(closest, scale));
+    const minimumScale = minimumSpanKm / (map.width * map.kmPerUnit);
+    const w = map.width * Math.min(1, Math.max(closest, minimumScale, scale));
     const h = w * map.height / map.width;
-    glideTo(clamp([(left + right - w) / 2, (top + bottom - h) / 2, w, h]));
+    const targetBox = clamp([(left + right - w) / 2, (top + bottom - h) / 2, w, h]);
+    if (immediate) { setBox(targetBox); drawCurrent.current(); settle(); }
+    else glideTo(targetBox);
   };
+  useLayoutEffect(() => {
+    if (!frameOnOpen || framed.current[projection] || story) return;
+    framed.current[projection] = true;
+    fitRegions([...new Set(overview.communities.filter((people) => people.ended === null).flatMap((people) => people.lands))], true);
+  }, [map, projection, frameOnOpen]);
+  const storyKey = story ? JSON.stringify(story) : null;
+  useEffect(() => {
+    if (story) {
+      readerCamera.current ??= { chart: [...chartView.current], globe: [...globeView.current], rotation: [...turning.current] };
+      fitRegions(story.regions, false, STORY_SPAN_KM);
+    } else if (readerCamera.current) {
+      const saved = readerCamera.current;
+      readerCamera.current = null;
+      chartView.current = saved.chart;
+      globeView.current = saved.globe;
+      if (projection === "globe") turnTo(saved.rotation, saved.globe);
+      else {
+        turning.current = saved.rotation;
+        pendingTurn.current = true;
+        glideTo(saved.chart);
+      }
+    }
+    // The passage, not a new overview or a camera frame, moves the chart.
+  }, [storyKey, projection, map]);
 
   const byRegion = useMemo(() => peoplesByRegion(overview), [overview]);
   const dress = useMemo(() => chartDress(map), [map]);
@@ -1179,7 +1273,7 @@ export function MapView({
     return out;
   }, [hearts, map]);
   const placeOf = useMemo(() => new Map(overview.places.map((p) => [p.region, p])), [overview.places]);
-  const speechLands = useMemo(() => new Map((readerVariety?.knownLands ?? []).map((land) => [land.region, land.spelled])), [readerVariety]);
+  const speechLands = useMemo(() => new Map((namesVariety?.knownLands ?? []).map((land) => [land.region, land.spelled])), [namesVariety]);
   const nameOf = (region: number): string | null => {
     const place = placeOf.get(region);
     return speechLands.get(region) ?? place?.exonyms.find((name) => name.variety === selectedVariety)?.spelled ??
@@ -1190,6 +1284,48 @@ export function MapView({
     () => new Map(tint.kind === "words" ? tint.words.words.map((w) => [w.community, w]) : []),
     [tint],
   );
+  const key = useMemo((): { title: string; entries: { label: string; colour: string }[]; note?: string } => {
+    switch (tint.kind) {
+      case "peoples": {
+        const families = [...new Set(overview.communities.filter((people) => people.ended === null)
+          .map((people) => overview.varieties[people.variety].family))];
+        return { title: "Language families", entries: families.map((id) => ({
+          label: `${overview.varieties.find((variety) => variety.id === id)?.name ?? "Unnamed"} family`,
+          colour: hue(id),
+        })) };
+      }
+      case "faiths":
+        return { title: "Faiths", entries: [
+          ...overview.religions.filter((religion) => religion.followers.length > 0).map((religion) => ({ label: religion.name, colour: hue(religion.id) })),
+          { label: "Their own gods", colour: UNCHANGED },
+        ] };
+      case "crafts":
+        return { title: overview.crafts.find((craft) => craft.id === tint.craft)?.name ?? tint.craft, entries: [
+          { label: "Hold this craft", colour: CHANGED }, { label: "Without it", colour: UNCHANGED },
+        ], note: "Squares mark its inventors." };
+      case "temper":
+        return { title: "Temper", entries: [
+          { label: ETHOS_POLES[tint.axis][0], colour: leaning(-0.5) },
+          { label: "Between", colour: leaning(0) },
+          { label: ETHOS_POLES[tint.axis][1], colour: leaning(0.5) },
+        ], note: "Deeper colour means a stronger leaning." };
+      case "weather":
+        return { title: "Weather", entries: [
+          { label: "Drier / warmer", colour: "#b28a43" }, { label: "Wetter", colour: "#658174" },
+          { label: "Colder", colour: "#667f96" }, { label: "Near usual", colour: "var(--paper)" },
+        ] };
+      case "change":
+        return { title: "Sound change", entries: [
+          { label: "Underwent it", colour: CHANGED }, { label: "Did not", colour: UNCHANGED },
+        ], note: "The heavy line marks where it stopped." };
+      case "words": {
+        const roots = new Map<number, string>();
+        for (const word of tint.words.words) if (!roots.has(word.group)) roots.set(word.group, word.spelled);
+        return { title: `Words for “${tint.words.gloss}”`, entries: [...roots].map(([id, label]) => ({ label, colour: hue(id) })),
+          note: "Words in one colour descend from one root." };
+      }
+    }
+  }, [tint, overview.communities, overview.varieties, overview.religions, overview.crafts]);
 
   // The edge two bordering lands share, for drawing isoglosses on.
   const borders = useMemo(() => {
@@ -1440,13 +1576,14 @@ export function MapView({
   const cursorName = landCursor === null ? "" : `${landLabel(overview, map, landCursor)}, land ${landCursor + 1}`;
 
   return (
-    <div ref={root} className={`mapview projection-${projection}${zoomable ? " zoomable" : ""} ${box[2] / width > 0.6 ? "zoom-far" : box[2] / width < 0.25 ? "zoom-close" : "zoom-mid"}`}
+    <div ref={root} className={`mapview projection-${projection}${zoomable ? " zoomable" : ""}`}
       data-longitude={turning.current[0]} data-latitude={turning.current[1]}>
       <svg
         ref={svg}
         viewBox={box.join(" ")}
         role={landNavigation ? "application" : "group"}
         tabIndex={landNavigation ? 0 : undefined}
+        data-map-feature={!landFocused || landCursor === null ? undefined : JSON.stringify({ kind: "land", region: landCursor })}
         onFocus={(event) => {
           if (!landNavigation || event.target !== event.currentTarget) return;
           setLandFocused(true);
@@ -1493,7 +1630,7 @@ export function MapView({
             if (e.key === "Home") {
               if (projection === "globe") turnTo([0, 20], full);
               else glideTo(full);
-            } else if (e.key.toLowerCase() === "f") fitSelection();
+            } else if (e.key.toLowerCase() === "f") fitRegions(selectedRegions);
             else zoom(e.key === "-" ? 1 / 0.7 : 0.7, [x + w / 2, y + h / 2]);
           }
         }}
@@ -1624,7 +1761,7 @@ export function MapView({
             <path key={`${a}-${b}`} className="isogloss" {...bindPath((view) => view.line(ends))} />
           ))}
         </g>
-        <g className="state-borders" ref={stateBorders} aria-hidden="true">
+        <g className="state-borders" aria-hidden="true">
           {realms.map(({ state, edges }) => (
             <path key={state.id} data-state={state.id} {...bindPath((view) => edges.map((ends) => view.line(ends)).join(""))} style={{ stroke: hue(state.id) }} />
           ))}
@@ -1709,6 +1846,23 @@ export function MapView({
             })}
           </g>
         ) : null}
+        {story ? <g className="story-routes" role="group" aria-label={story.label ?? "Recorded journey"}>
+          {story.route.map((leg, i) => {
+            const from = map.regions[leg.from], to = map.regions[leg.to];
+            if (!from || !to) return null;
+            const points = [from.site, to.site];
+            return <g key={`${leg.from}:${leg.to}:${leg.generation}:${i}`}>
+              <path className="story-route" {...bindPath((view) => view.line(points))}>
+                <title>{`Year ${leg.generation * YEARS} · ${story.label ?? "Recorded journey"}`}</title>
+              </path>
+              <path className="route-terminal" {...bindPath((view) => view.endLine(points))}
+                markerEnd={`url(#${routeHead})`} fill="none" stroke="transparent" vectorEffect="non-scaling-stroke" />
+              <text ref={bindAnchor(to.site)} x={pointFor(to.site)[0]} y={pointFor(to.site)[1]}
+                data-label-x={pointFor(to.site)[0]} data-label-y={pointFor(to.site)[1]} data-label-dy={0.4}
+                className="story-route-date" data-label-kind="story" data-label-priority={1e13}>{leg.generation * YEARS}</text>
+            </g>;
+          })}
+        </g> : null}
         {settlement?.plan ? <g className="settlement-journeys" aria-hidden="true">
           {settlement.plan.routes.map((r, i) => <g key={r.from}>
             <path className={r.by_sea ? "sea-journey" : ""} {...bindPath((view) => view.line(settlementRoutes[i]))} />
@@ -1952,7 +2106,7 @@ export function MapView({
       {landNavigation && landFocused ? <span className="sr-only" role="status">{cursorName}</span> : null}
       {zoomable ? (
         <div className="map-zoom" role="group" data-map-furniture aria-label={projection === "globe" ? "Globe controls" : "Chart controls"}>
-          {selectedRegions.length > 0 ? <button type="button" title="Fit the selected lands (F)" aria-label="Fit the selected lands" onClick={fitSelection}><LocateFixed size={16} /></button> : null}
+          {selectedRegions.length > 0 ? <button type="button" title="Fit the selected lands (F)" aria-label="Fit the selected lands" onClick={() => fitRegions(selectedRegions)}><LocateFixed size={16} /></button> : null}
           {/* drawCamera owns disabled state alongside the imperative camera.
               Stale React disabled props would suppress a re-enabled button. */}
           <button ref={zoomIn} type="button" title="Closer (+)" aria-label="Zoom in" onClick={() => zoom(0.7, [view.current[0] + view.current[2] / 2, view.current[1] + view.current[3] / 2])}>
@@ -1968,9 +2122,32 @@ export function MapView({
           </button>
         </div>
       ) : null}
-      {onProjection ? <div className="map-projection-control" data-map-furniture>
-        <MapProjectionSwitch value={projection} onChange={onProjection} />
+      {onProjection || viewpointControl ? <div className="map-projection-control" data-map-furniture>
+        {onProjection ? <MapProjectionSwitch value={projection} onChange={onProjection} /> : null}
+        {viewpointControl}
       </div> : null}
+      {zoomable ? <aside className="chart-legend" data-map-furniture aria-label="Chart key">
+        <h3>{key.title}</h3>
+        <ul className="chart-legend-colours">
+          {key.entries.map((entry, index) => <li key={index}>
+            <span className="legend-wash" style={{ background: entry.colour }} aria-hidden="true" />
+            <span>{entry.label}</span>
+          </li>)}
+        </ul>
+        {key.note ? <p>{key.note}</p> : null}
+        <ul className="chart-legend-overlays">
+          {names ? <li><span className="legend-letter" aria-hidden="true">Aa</span> Land and water names</li> : null}
+          {routes ? <li><span className="legend-road" aria-hidden="true" /> Roads · dashed at sea</li> : null}
+          {contacts ? <li><span className="legend-dealing" aria-hidden="true" /> Rule and chosen dealings</li> : null}
+          {states ? <li><span className="legend-border" aria-hidden="true" /> State borders</li> : null}
+          {faiths ? <li><span className="legend-shrine" aria-hidden="true">◇</span> Holy places and pilgrims' roads</li> : null}
+          {known ? <li><span className="legend-veil" aria-hidden="true" /> Unknown lands veiled</li> : null}
+          {story ? <li><span className="legend-story" aria-hidden="true" /> Recorded journey · years</li> : null}
+          {reach ? <li><span className="legend-road" aria-hidden="true" /> Reach on foot or by sea</li> : null}
+          {settlement ? <li><span className="legend-border" aria-hidden="true" /> Proposed settlement</li> : null}
+        </ul>
+        <p className="chart-legend-zoom">Closer views add the smaller lettering and marks.</p>
+      </aside> : null}
       {zoomable ? <div className="chart-scale" data-map-furniture>
         <span ref={scaleRule} className="scale-rule"><span ref={scaleText} /></span>
         <span className="chart-help">{landFocused ? "Arrows read lands · Alt + arrows pan" : projection === "globe" ? "Drag to turn · scroll to zoom" : "Scroll to zoom · drag to explore"}</span>

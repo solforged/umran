@@ -1,5 +1,5 @@
 import { use, useDeferredValue, useMemo, useState } from "react";
-import type { Community, Engine, Overview, WorldMap } from "../model";
+import type { Community, Engine, Overview, Read, SpeechDelta, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { attempt } from "../engine";
 import { LIVELIHOOD_NAME } from "../lore";
@@ -8,6 +8,7 @@ import { MapView, type MapCamera } from "./MapView";
 import { Specimen } from "./Specimen";
 import { FamilyTree } from "./FamilyTree";
 import type { Focus } from "./Pedia";
+import { Pending, useAnswer } from "./Pending";
 
 const souls = (n: number) => Math.round(n).toLocaleString();
 
@@ -35,6 +36,8 @@ export function TellingComparison({ open, engine, overview, map, other, onClose,
   // people is read, the comparison keeps showing the last one.
   const reading = useDeferredValue(useMemo(() => ({ rightId, generation, person }), [rightId, generation, person]));
   const result = use(attempt(engine.compare(leftId, reading.rightId, reading.generation)));
+  const speechRead = engine.speechDelta(leftId, reading.rightId, reading.generation);
+  const speech = useAnswer(attempt(speechRead))?.value;
   const readings = [engine.read(leftId), engine.read(reading.rightId)] as const;
   const comparison = result.value;
   const shared = comparison?.sharedPeoples ?? [];
@@ -49,10 +52,13 @@ export function TellingComparison({ open, engine, overview, map, other, onClose,
   const lexicons = asked.map((side) => side.lexicon ? use(side.lexicon) : []);
   const geography = asked.map((side) => ({ climate: use(side.climate), names: use(side.names) }));
   const concepts = [...new Map(lexicons.flat().map((w) => [w.concept, w.gloss])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
-  const read = (side: Overview, focus?: Focus) => onRead(side.telling, generation, focus);
+  const read = (side: Overview, focus?: Focus) => onRead(side.telling, reading.generation, focus);
   const title = (side: Overview) => side.tellings.find((t) => t.id === side.telling)!.name;
   const state = (side: Overview, c: Community) => side.states.find((s) => s.fell === null && (s.rulers === c.id || s.members.some((m) => m.community === c.id && m.left === null)))?.name ?? "Independent";
-  return <Modal open={open} wide title="Two tellings, one year" onClose={onClose}>
+  const heading = speech
+    ? `Diverged in year ${speech.diverged * YEARS}: ${speech.decision?.text ?? "no decision recorded"}`
+    : comparison ? `Diverged in year ${comparison.diverged * YEARS}` : "Two tellings, one year";
+  return <Modal open={open} wide title={heading} onClose={onClose}>
     <div className="telling-comparison">
       <div className="comparison-tools">
         <p><strong>{leftTitle.name}</strong><span className="muted"> compared with</span></p>
@@ -64,6 +70,12 @@ export function TellingComparison({ open, engine, overview, map, other, onClose,
       <p className="muted small">Both tellings are read at the same year. The shorter reaches year {through * YEARS}; continuing either telling is a separate decision.</p>
       {result.error ? <p className="notice error" role="alert">{result.error} Both saved tellings are still kept.</p> : null}
       {comparison ? <>
+        <section className="comparison-investigation comparison-speech">
+          <h3>What changed in speech</h3>
+          <Pending reading={speechRead} label="Reading what changed in speech…">
+            <SpeechChanges reading={speechRead} left={comparison.left} right={comparison.right} onRead={read} />
+          </Pending>
+        </section>
         <div className="comparison-maps">
           {sides.map((side, index) => <section key={side.telling} aria-label={`${title(side)} chart`}>
             <h3>{title(side)}</h3>
@@ -122,4 +134,69 @@ export function TellingComparison({ open, engine, overview, map, other, onClose,
       </> : null}
     </div>
   </Modal>;
+}
+
+function SpeechChanges({ reading, left, right, onRead }: {
+  reading: Read<SpeechDelta>;
+  left: Overview;
+  right: Overview;
+  onRead: (side: Overview, focus?: Focus) => void;
+}) {
+  const delta = use(reading);
+  const title = (side: Overview) => side.tellings.find((telling) => telling.id === side.telling)!.name;
+  const languages = delta.languages.filter((language) => {
+    const rightLoans = new Map(language.loansRight.map((loan) => [loan.donor, loan.count]));
+    return language.onlyLeft.length > 0 || language.onlyRight.length > 0 || language.changedWords.length > 0
+      || language.left.descendants !== language.right.descendants || language.left.alive !== language.right.alive
+      || language.loansLeft.length !== language.loansRight.length
+      || language.loansLeft.some((loan) => rightLoans.get(loan.donor) !== loan.count);
+  });
+  if (languages.length === 0) return <p>The tellings speak alike so far.</p>;
+  return <>
+    <p className="muted small">Languages shared before year {delta.diverged * YEARS}, read in year {delta.generation * YEARS}. Later descendants are counted in their own telling, not paired by their numbers.</p>
+    {languages.map((language) => <article className="comparison-speech-language" key={language.variety}>
+      <h4><button type="button" className="link word" onClick={() => onRead(left, { kind: "language", variety: language.variety })}>{left.varieties[language.variety].name}</button>
+        {left.varieties[language.variety].name !== right.varieties[language.variety].name ? <> / <button type="button" className="link word" onClick={() => onRead(right, { kind: "language", variety: language.variety })}>{right.varieties[language.variety].name}</button></> : null}
+      </h4>
+      <div className="comparison-accounts">
+        {([left, right] as const).map((side, index) => {
+          const speech = index === 0 ? language.left : language.right;
+          const only = index === 0 ? language.onlyLeft : language.onlyRight;
+          const loans = index === 0 ? language.loansLeft : language.loansRight;
+          return <article key={side.telling}>
+            <p className="comparison-caption">{title(side)}</p>
+            <p className="small"><button type="button" className="link word" onClick={() => onRead(side, { kind: "language", variety: language.variety })}>{side.varieties[language.variety].name}</button>
+              {" "}is {speech.alive ? "spoken" : "silent"} · {speech.descendants} descendant {speech.descendants === 1 ? "language" : "languages"}.</p>
+            <h5>Sound laws only here</h5>
+            {only.length ? <ul className="comparison-speech-laws">{only.map((id) => {
+              const law = speech.laws.find((entry) => entry.id === id)!;
+              return <li key={id}><span className="gen">{law.generation * YEARS}</span>{" "}
+                <button type="button" className="link" onClick={() => onRead(side, { kind: "law", id })}>{law.label}</button>
+              </li>;
+            })}</ul> : <p className="small muted">No sound law only in this telling.</p>}
+            <h5>Loans since they parted</h5>
+            {loans.length ? <ul className="comparison-speech-loans">{loans.map((loan) => <li key={loan.donor}>
+              {loan.count} {loan.count === 1 ? "word" : "words"} from{" "}
+              <button type="button" className="link word" onClick={() => onRead(side, { kind: "language", variety: loan.donor })}>{side.varieties[loan.donor].name}</button>
+            </li>)}</ul> : <p className="small muted">No loans recorded.</p>}
+          </article>;
+        })}
+      </div>
+      <h5>Changed specimen words</h5>
+      {language.changedWords.length ? <ul className="comparison-speech-words">
+        {language.changedWords.map((word) => <li key={word.concept}>
+          <span className="comparison-speech-gloss">{word.gloss}</span>
+          {word.left ? <span className="comparison-speech-form">
+            <button type="button" className="link word" title={`Read in ${title(left)}`} onClick={() => onRead(left, { kind: "word", variety: language.variety, concept: word.concept })}>{word.left.spelled}</button>
+            <span className="ipa">/{word.left.ipa}/</span>
+          </span> : <span className="muted">No form</span>}
+          <span aria-hidden="true">→</span><span className="sr-only">to</span>
+          {word.right ? <span className="comparison-speech-form">
+            <button type="button" className="link word" title={`Read in ${title(right)}`} onClick={() => onRead(right, { kind: "word", variety: language.variety, concept: word.concept })}>{word.right.spelled}</button>
+            <span className="ipa">/{word.right.ipa}/</span>
+          </span> : <span className="muted">No form</span>}
+        </li>)}
+      </ul> : <p className="small muted">The specimen words have not changed between these tellings.</p>}
+    </article>)}
+  </>;
 }

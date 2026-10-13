@@ -69,7 +69,6 @@
   .founding .bottom-sheet { --sheet-peek: 9rem; --sheet-ceiling: 0rem; }
   :root .founding .bottom-sheet .founding-plate { flex: 1; min-height: 0; }
   .workbench .map-caption { bottom: 5.8rem; }
-  .workbench .map-perspective { bottom: 8.5rem; }
   :root .stage:not(.setup) .mapview svg.chart-rose { bottom: 8.5rem; }
   :root .stage:not(.setup)[data-detent="half"] .mapview svg.chart-rose { left: .8rem; right: auto; bottom: .5rem; }
   :root .stage:not(.setup) .mapview .chart-scale { display: none; }

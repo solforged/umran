@@ -94,6 +94,7 @@ export default function App() {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [shelf, setShelf] = useState<ShelfIndex>({ books: [], last: null, drafts: [], putAway: [] });
   const mapMotion = useRef<MapMotionReading | null>(null);
+  const chartPlace = useRef<ReadingPlace["chart"]>(undefined);
   const engine = useRef<Engine | null>(null);
   const [version, setVersion] = useState(0);
   // Entity IDs belong to one telling. Replacing it starts a fresh reading
@@ -145,6 +146,7 @@ export default function App() {
         telling: reading.telling, point: reading.point, viewing: reading.viewing, focus: subject,
         ...(runToRef.current === null ? {} : { runTo: runToRef.current }),
         ...(book ? { book } : {}),
+        ...(chartPlace.current ? { chart: chartPlace.current } : {}),
       });
     }
   }, []);
@@ -299,6 +301,7 @@ export default function App() {
     if (!opened) await show(PRESENT);
     if (previous !== next) previous?.dispose();
     if (request !== openingRequest.current || engine.current !== next) return false;
+    chartPlace.current = place?.chart;
     readyId.current = id;
     setNotebook(next.notebook());
     setWorldMap(map);
@@ -613,6 +616,29 @@ export default function App() {
   }, [overview, changed]);
   const tick = useCallback(() => runYears(1), [runYears]);
 
+  const continueTelling = useCallback(async (targetYear: number): Promise<boolean> => {
+    const current = engine.current;
+    if (!current || !overview || overview.atTip || pendingWrites.current > 0 || !Number.isFinite(targetYear) || targetYear <= overview.generation * YEARS) return false;
+    const target = Math.ceil(targetYear / YEARS) * YEARS;
+    pendingWrites.current++;
+    startWriting(target);
+    try {
+      // The first chunk forks at the exact reading point atomically. The
+      // remounted workshop writes the rest through its usual run loop.
+      await current.actAt({ telling: overview.telling, point: overview.point }, overview.mutation, { kind: "run", generations: 1 });
+      const next = await changed(overview, (after) => {
+        if (after.overview.generation * YEARS < target) setFirstRun(target);
+      });
+      persist();
+      if (!next || next.overview.generation * YEARS >= target) stopWriting();
+      return next !== null;
+    } catch (e) {
+      setError(message(e));
+      stopWriting();
+      return false;
+    } finally { pendingWrites.current--; }
+  }, [overview, changed, persist, startWriting, stopWriting]);
+
   const nextEvent = useCallback(
     async (limit: number): Promise<boolean> => {
       const current = engine.current;
@@ -915,6 +941,8 @@ export default function App() {
         notices={notices}
         initialFocus={initialFocus}
         onFocus={setFocus}
+        initialChart={chartPlace.current}
+        onChart={(chart) => { chartPlace.current = chart; keepPlace(); }}
         onSettle={settle}
         comparisonReturn={comparisonReturn}
         sheetReturn={sheetReturn}
@@ -936,6 +964,7 @@ export default function App() {
         onScrub={scrub}
         onTick={tick}
         onRun={runYears}
+        onContinueTelling={continueTelling}
         onRunStart={startWriting}
         onRunTarget={writingTarget}
         onStop={stopWriting}

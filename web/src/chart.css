@@ -301,6 +301,14 @@
   fill: var(--ink);
   stroke: none;
 }
+.mapview .chart-marks path {
+  stroke-width: .65;
+  vector-effect: non-scaling-stroke;
+}
+.mapview .veil path {
+  stroke-width: .65;
+  vector-effect: non-scaling-stroke;
+}
 
 /* Sized here, over the map's own full-size svg rule. */
 .mapview svg.chart-rose {
@@ -462,11 +470,7 @@
   letter-spacing: 0.15em;
 }
 
-/* Chart lettering is chosen in screen space by MapView, not by the
-   relative zoom classes: a fitted small continent can still name lands. */
-:root .mapview :is(.place-names, .river-names, .lake-names) {
-  display: block;
-}
+/* Lettering and the zoom classes share MapView's kilometre-per-pixel policy. */
 :root .mapview :is(.place-names, .river-names, .lake-names) text {
   font-size: max(calc(.17px * var(--label, 1)), var(--small-label-min, 0px));
 }
@@ -482,7 +486,7 @@
   display: block;
 }
 :root .mapview .state-borders path {
-  stroke-width: var(--state-weight, 1);
+  stroke-width: 1;
 }
 :root .mapview .land.lens-heart {
   stroke: var(--accent);
@@ -524,7 +528,9 @@
   z-index: 8;
   width: 280px;
   max-width: calc(100% - 16px);
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: var(--dense-pad);
   border: 3px double var(--ink-soft);
   background: var(--paper-raised);
@@ -539,7 +545,11 @@
 :root .map-inspector h3 { flex: 1; margin: 0; font-size: 1.15em; overflow-wrap: anywhere; }
 :root .map-inspector .inspector-close { color: var(--ink-soft); font-size: 1.2em; line-height: 1; min-width: 1.2em; }
 .inspector-subtitle { margin: var(--dense-row) 0 0.3rem; font-style: italic; color: var(--ink-soft); }
-.inspector-sayings { list-style: none; padding: 0; margin: 0.3rem 0; max-height: min(18rem, 40dvh); overflow-y: auto; }
+.inspector-body { min-height: 0; overflow-y: auto; }
+.inspector-pronunciation { margin: var(--dense-row) 0; color: var(--ink-soft); }
+.inspector-chronicle { margin: 0.4rem 0; }
+.inspector-chronicle .inspector-language { display: inline; }
+.inspector-sayings { list-style: none; padding: 0; margin: 0.3rem 0; }
 .inspector-sayings li { padding: var(--dense-row) 0; border-bottom: 1px dotted var(--line); }
 .inspector-sayings li:last-child { border: 0; }
 .map-inspector .inspector-more { color: var(--ink-soft); font-size: 0.9em; }
@@ -552,7 +562,7 @@
 .inspector-facts > div { display: grid; grid-template-columns: max-content 1fr; gap: var(--dense-gap); padding: var(--dense-row) 0; }
 .inspector-facts dt { color: var(--ink-soft); font-variant: small-caps; }
 .inspector-facts dd { margin: 0; overflow-wrap: anywhere; }
-.map-inspector footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.3rem; padding-top: var(--dense-row); }
+.map-inspector footer { flex-shrink: 0; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.3rem; padding-top: var(--dense-row); border-top: 1px solid var(--line); background: var(--paper-raised); }
 .map-inspector footer small { color: var(--ink-soft); font-style: italic; }
 
 /* The same inked world, opened flat or turned on its axis. */
@@ -604,6 +614,12 @@
   top: 0.6rem;
   right: 3.5rem;
   z-index: 2;
+  display: flex;
+  align-items: start;
+  justify-content: end;
+  flex-wrap: wrap;
+  gap: .35rem;
+  max-width: calc(100% - 4.5rem);
 }
 :root .map-projection-control svg {
   width: 14px;
@@ -662,6 +678,25 @@
 .projection-globe svg.chart-rose {
   display: none;
 }
+.mapview .story-route {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 5 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+.mapview .story-route-date {
+  font-family: var(--serif);
+  font-size: var(--small-label-min, .17px);
+  text-anchor: middle;
+  fill: var(--accent);
+  paint-order: stroke;
+  stroke: var(--paper);
+  stroke-width: 2.5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
 :root .projection-globe .chart-scale {
   left: 50%;
   right: auto;
@@ -677,4 +712,74 @@
 .projection-globe .scale-rule::before,
 .projection-globe .scale-rule::after {
   display: none;
+}
+
+.map-viewpoint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .4rem;
+  min-height: 1.8rem;
+  max-width: 18rem;
+  padding: .2rem .55rem;
+  font-size: .82rem;
+  line-height: 1.2;
+  text-align: left;
+  color: var(--ink-soft);
+}
+:root .map-viewpoint {
+  border-color: var(--line);
+  background: var(--paper);
+}
+.map-viewpoint span { min-width: 0; overflow-wrap: anywhere; }
+.map-viewpoint svg { flex: none; }
+.viewpoint-menu { width: min(18rem, calc(100vw - 2rem)); padding: .75rem; }
+.viewpoint-menu label { display: flex; align-items: center; gap: .5rem; margin-bottom: .6rem; font-size: .9rem; }
+.viewpoint-menu label:first-child { display: grid; gap: .35rem; }
+.viewpoint-menu select { width: 100%; min-width: 0; }
+.viewpoint-menu input { accent-color: var(--accent); }
+.viewpoint-menu p { margin: .6rem 0 0; line-height: 1.35; }
+
+.chart-legend {
+  position: absolute;
+  left: .75rem;
+  bottom: 3.5rem;
+  width: min(19rem, calc(100% - 8rem));
+  padding: .45rem .6rem;
+  border-block: 1px solid var(--ink-soft);
+  background: color-mix(in srgb, var(--paper) 94%, transparent);
+  font-size: .76rem;
+  line-height: 1.2;
+  color: var(--ink-soft);
+}
+:root .chart-legend h3 { margin: 0 0 .3rem; font-size: inherit; font-weight: 600; color: var(--ink); }
+.chart-legend ul { list-style: none; padding: 0; margin: 0; }
+.chart-legend li { display: flex; align-items: center; gap: .35rem; min-width: 0; }
+.chart-legend li > span:last-child { overflow-wrap: anywhere; }
+.chart-legend-colours { display: flex; flex-wrap: wrap; gap: .2rem .65rem; max-height: 4.5rem; overflow: auto; scrollbar-width: thin; }
+.chart-legend-overlays { display: flex; flex-wrap: wrap; gap: .25rem .7rem; border-top: 1px solid var(--line); padding-top: .35rem !important; margin-top: .35rem !important; }
+.chart-legend p { margin: .3rem 0 0; font-size: .95em; }
+.chart-legend li > span:first-child { display: inline-block; flex: none; width: 1.1rem; }
+.legend-wash { height: .65rem; border: 1px solid var(--line); background-clip: padding-box; }
+.legend-road { border-top: 1.5px solid var(--ink-soft); }
+.legend-dealing { border-top: 1px dotted var(--ink); }
+.legend-border { border-top: 1px solid var(--accent); }
+.legend-story { border-top: 2px dashed var(--accent); }
+.legend-letter { font-style: italic; color: var(--ink); }
+.legend-shrine { color: var(--ink); font-size: 1.1em; text-align: center; }
+.legend-veil { height: .65rem; background: var(--paper-raised); border: 1px dashed var(--ink-soft); }
+.chart-legend-zoom { display: none; }
+.zoom-far .chart-legend-zoom { display: block; }
+@media (max-width: 599px) {
+  .chart-legend { left: .5rem; bottom: .5rem; width: min(19rem, calc(100% - 4rem)); font-size: .7rem; padding: .35rem .45rem; }
+  .chart-legend-colours { max-height: 2.5rem; }
+  .map-viewpoint { max-width: 100%; }
+}
+@media (max-height: 479px) {
+  .chart-legend { font-size: .7rem; }
+  .chart-legend-colours { max-height: 1.5rem; }
+}
+@media (pointer: coarse) {
+  .map-viewpoint { min-height: 2.75rem; }
+  .viewpoint-menu label:not(:first-child) { min-height: 2.75rem; margin-bottom: .2rem; }
 }

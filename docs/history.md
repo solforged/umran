@@ -29,6 +29,14 @@ account. Any past generation is recovered by replaying, with checkpoints every
 10 generations; the timeline needs no separate data. Running to a year
 applies one `run` action per animation frame at the present; a step or
 "until something happens" can continue a past reading as a new telling.
+The past-reading panel **Continue in another telling** shows its last
+recorded decision and a year to write through. Confirmation uses `act_at`
+at the exact reading point for the first generation, preserving the
+original telling atomically, then the workshop runs the new telling to
+that year through the same chunked run loop. The new telling and its
+unfinished target are saved as soon as the first chunk succeeds.
+The panel explains that without a new decision the years repeat as told;
+deciding something in the past also begins a new telling.
 
 An exact `HistoryPoint` names an action position and an offset into a run, so
 two choices in the same year remain distinguishable. A run's endpoint uses its
@@ -106,6 +114,15 @@ equal numeric IDs born after divergence do not establish identity. The two
 charts share a camera, while their populations, holdings, language families and
 word forms come from their own views. Following a link opens that telling;
 continuing either panel is an explicit intervention.
+The comparison opens with its divergence year and recorded decision.
+Its speech reading lists laws unique to either side, changed specimen
+forms, loans by donor, and descendant-language counts for languages
+shared before divergence. Each law, word, and donor link opens that
+side's evidence at the comparison year. Speech reads wait independently
+of the comparison's charts and accounts.
+Only shared languages with differing evidence are shown. Equal loan
+counts by donor do not make a difference; an empty comparison keeps only
+the line “The tellings speak alike so far.”
 
 The workbench shows one overlaid sheet at a time. Opening Find or a
 decision lifts the current wide card before the dialog settles, then

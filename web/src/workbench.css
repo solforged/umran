@@ -52,7 +52,7 @@
 .settlement-journeys { pointer-events: none; fill: none; stroke: var(--ink); stroke-width: 1.7; }
 .settlement-journeys path { vector-effect: non-scaling-stroke; stroke-linejoin: round; }
 .settlement-journeys .sea-journey { stroke-dasharray: 4 3; }
-.stage[data-settlement=true] .map-tools, .stage[data-settlement=true] .map-perspective { display: none; }
+.stage[data-settlement=true] .map-tools { display: none; }
 .stage[data-settlement=true] .stage-bar { opacity: .5; }
 .reconsider { margin-bottom: 1rem; border-color: var(--accent); color: var(--accent); width: 100%; }
 kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(--line); padding: 0 .3em; border-radius: 2px; }
@@ -78,7 +78,6 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .map-zoom { gap: .3rem; }
 .map-zoom button { background: var(--paper-raised); border-color: var(--line); width: 2.15rem; height: 2.15rem; }
 .workbench .map-zoom { top: 3.4rem; }
-.map-perspective { position: absolute; left: .6rem; bottom: 5rem; display: flex; align-items: center; gap: .5rem; background: var(--paper-raised); border: 1px solid var(--line); padding: .2rem .5rem; font-size: .9rem; max-width: calc(100% - 6rem); }
 .chart-help { position: absolute; left: .7rem; bottom: 3rem; margin: 0; color: var(--ink-soft); background: color-mix(in srgb, var(--paper) 88%, transparent); padding: .1rem .4rem; font-size: .8rem; pointer-events: none; }
 .mapview > svg:focus-visible { outline-offset: -3px; }
 .stage-year.in-past { color: var(--accent); }
@@ -402,3 +401,37 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .law-choice small { display: block; margin-top: .3rem; }
 
 .form .contact-choice small { display: block; margin-top: .3rem; }
+
+/* The revision desk keeps both drafts and sends evidence links to their side. */
+.continue-telling-panel { width: min(22rem, calc(100vw - 3rem)); white-space: normal; }
+.continue-telling-panel h3 { margin: 0 0 .7rem; }
+.continue-telling-panel p { margin: 0 0 .7rem; }
+.continue-telling-panel label { display: grid; gap: .35rem; color: var(--ink-soft); }
+.continue-telling-panel input { width: 100%; font-variant-numeric: tabular-nums; }
+.continue-telling-panel > button { width: 100%; }
+.continue-telling-open { white-space: normal; max-width: 15rem; }
+.comparison-speech { margin-top: .9rem; margin-bottom: 1.4rem; }
+.comparison-speech-language { padding-block: .8rem; border-top: 1px solid var(--line); }
+.comparison-speech-language h4 { margin: 0; }
+.comparison-speech-language h5 { font-size: var(--dense-size); font-weight: normal; color: var(--ink-soft); margin: .8rem 0 .3rem; }
+.comparison-speech-language .comparison-accounts { margin-top: .5rem; }
+.comparison-speech-language .comparison-accounts > article { border-top: 0; padding-top: 0; }
+.comparison-speech-laws, .comparison-speech-loans, .comparison-speech-words { list-style: none; padding: 0; margin: .3rem 0; font-size: var(--dense-size); }
+.comparison-speech-laws li, .comparison-speech-loans li { margin-block: .25rem; }
+.comparison-speech-words li { display: grid; grid-template-columns: minmax(5rem, .8fr) minmax(0, 1fr) auto minmax(0, 1fr); align-items: start; gap: .5rem; padding-block: .4rem; border-bottom: 1px solid var(--line); }
+.comparison-speech-gloss { color: var(--ink-soft); }
+.comparison-speech-form { display: grid; justify-items: start; min-width: 0; overflow-wrap: anywhere; }
+.comparison-speech-form .link { text-align: left; }
+.comparison-speech-form .ipa { color: var(--ink-soft); font-size: .9em; }
+@media (max-width: 599px) {
+  .stage-bar:has(.continue-telling-open) { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .stage-bar:has(.continue-telling-open) .run-control { grid-column: 1 / -1; grid-row: 1; }
+  .stage-bar:has(.continue-telling-open) .continue-telling-open { flex: 1; max-width: none; }
+  .stage-bar:has(.continue-telling-open) .study-open { grid-column: 1; grid-row: 2; justify-self: start; }
+  .stage-bar:has(.continue-telling-open) .stage-year { grid-column: 2; grid-row: 2; }
+  .stage-bar:has(.continue-telling-open) .strike-out { grid-column: 3; grid-row: 2; }
+  .stage-bar:has(.continue-telling-open) .timeline { grid-column: 1 / -1; grid-row: 3; }
+  .comparison-speech-language .comparison-accounts { grid-template-columns: minmax(0, 1fr); }
+  .comparison-speech-words li { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+  .comparison-speech-gloss { grid-column: 1 / -1; }
+}

@@ -4,9 +4,10 @@ import type { MapProjection } from "../cartography";
 
 const KEY = "umran.projection";
 
-// A reading preference, independent of the world's seed and history.
-export function useMapProjection(container: RefObject<HTMLElement | null>): [MapProjection, (projection: MapProjection) => void] {
+// A world's reading place wins over the older, general preference.
+export function useMapProjection(container: RefObject<HTMLElement | null>, initial?: MapProjection): [MapProjection, (projection: MapProjection) => void] {
   const [saved] = useState<MapProjection | null>(() => {
+    if (initial) return initial;
     try {
       const choice = localStorage.getItem(KEY);
       return choice === "globe" || choice === "chart" ? choice : null;

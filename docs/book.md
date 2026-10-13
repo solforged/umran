@@ -142,6 +142,14 @@ the engine, not a second source. Blank where the engine has nothing yet.
 7. **Notes.** The author's own, dated, with the subjects they refer to.
 8. **Other tellings.** Each draft's name, the year and decision it
    diverged on, and what it kept.
+   Comparing two drafts opens with the year and recorded decision they
+   diverged on. **What changed in speech** reads each shared language:
+   sound laws only in one telling, changed specimen words from left to
+   right, loans counted by donor, and descendant-language counts. Law,
+   word, and donor links open the evidence in that telling at the
+   comparison year; descendants born after divergence are never paired
+   by their numbers. Only languages whose evidence differs are shown;
+   when none differ, the section says the tellings speak alike so far.
 
 Namesakes keep their recorded names. Place links add terrain when needed,
 then a compass direction among namesakes on like terrain. A local ordinal
@@ -164,6 +172,12 @@ portrait screen better than a strip of chart. Once the author picks
 one, that choice holds. Founding, lands, journeys, names, and cards refer
 to the same world in both views.
 A projection is a way of reading, not a decision in the world's history.
+Each world opens padded around all living peoples' lands on either view,
+unless its reading place already keeps a camera. The chart room remembers
+each world's chart camera, globe camera and turn, and chosen projection.
+Home always returns to the whole chart or globe. A recorded passage can
+temporarily frame other lands and draw its dated route; ending that reading
+returns to the reader's camera rather than replacing it.
 
 The world is spherical from its founding. A people's known-world lens can
 show how its geographic knowledge grows on either view; it does not change
@@ -263,6 +277,15 @@ The chart, the cards, the chronicle, and the time bar. What changes:
   bar for whoever wants to watch one law spread. The timeline track
   bins by century at wide spans and draws turning points over a quiet
   density of sound changes; a cluster opens on hover.
+- Reading the past keeps **Run** disabled. Beside it, **Continue in
+  another telling** opens a small panel with the exact reading year's
+  last decision and “Your telling is kept”. Choose the year to write
+  through, defaulting to the present's year (or five hundred years beyond
+  a same-year reading). Confirming creates a telling from that reading
+  point and runs it in the usual stoppable chunks; Escape or an outside
+  click closes the panel without changing either telling.
+  The panel explains that without a new decision the years repeat as
+  told, and that deciding something in the past also begins a new telling.
 - At year 0 the open card is the frontispiece: the name, the peoples,
   *Run*. No tutorial, no stat box. The one-line caption at the foot of
   the chart does the teaching: "Year 0 · eight peoples settle Hūhupam".
@@ -276,27 +299,59 @@ The chart, the cards, the chronicle, and the time bar. What changes:
 - The language card is the primary card; the people card is "who speaks
   it and what happened to them". Both open with the derivation order:
   land, people, fortunes, speech.
+- The philologist's desk opens wide from *Compare with another language…*
+  on a language card, or *Open in the desk* beside a pair in the world's
+  *Words compared*. Choose a living language and a meaning set. It begins
+  with the record covered: neutral names, aligned sounds in two rows,
+  gaps shown as a dash, and recurring sound pairs with their word support.
+  Selecting pairs highlights their segments; *Note a hypothesis* carries
+  the selected pairs into an editable, dated note kept in the first
+  language's margin. *Reveal the record* separately reads each word's
+  shared root and borrowing, with the contact's chronicle link, and the
+  languages' common ancestor and parting year. Differences between
+  recurring support and root history are explained, never graded.
+  *Words compared* chooses its meaning set, living-language subset, and
+  reference language; its shading is labelled *Recorded roots*.
 - A decision is taken from a card (*Decide…*), dated, and marked in the
   chronicle as the author's. It opens another telling if it is not at
   the tip.
-- Labels on the chart follow a policy by zoom and layer. Names sit at
-  their places, never pushed aside on leader lines; where two would
-  collide, states and the larger ruling peoples win, and the rest keep
-  their dot until a closer zoom makes room. Tongue names show only when
-  they differ from the people's and the layer is families; land names
-  when zoomed in; state outlines only on that layer or when a state card
-  is open. Eight peoples is where cartography starts to matter.
-- Hover or focus a place on either map to read its gazetteer: native names,
-  a few of other languages' names with the rest on the full card,
-  pronunciations, and the land beneath a city. Click to keep the place
-  card open, then Open to read its full card.
+- Labels and layer detail follow one physical scale in kilometres per
+  pixel, not a fraction of the world's drawing. At world scale only
+  continents and the six largest living peoples are lettered. Below
+  6 km per pixel, land and water names begin at 13 screen pixels and grow
+  to 20 as the reader comes closer; tongue names join below 1.5 km per
+  pixel when they differ from the people's and the layer is families.
+  Terrain glyphs have screen-size caps, while borders keep their fine
+  strokes. Names sit at their places, never pushed aside on leader lines;
+  where two collide, states and the larger ruling peoples win, and the
+  rest keep their dot until a closer zoom makes room.
+- A compact ruled key stays on the chart, naming the active colouring
+  and the overlays that are on. At world scale it explains that smaller
+  lettering, roads, dealings and marks appear in closer views.
+- Hover or focus a place on either map to read its gazetteer. A land
+  shows its name and pronunciation, at most two other names and how many
+  remain, its holders, and one recorded chronicle entry. Clicking a
+  printed name or land pins the inspector; only Open in its fixed footer
+  navigates to the full card.
+- *Follow their fortunes* on a people card reads their recorded journeys
+  and headline entries, from the beginning through the telling's retained
+  tip. Previous and Next scrub to each entry's year and frame the involved
+  lands on either projection; dated routes use recorded travel legs only.
+  The people card stays visible beside the chart. The chart's key folds away
+  during the tour, and the panel keeps clear of the time bar and compact compass.
+  Entries without named lands use their participants' holdings in that
+  recorded year, never their present-day holdings. Done or Escape restores
+  the exact prior reading point, card, and camera. No journey or annal is
+  invented when the record has none.
 - Lakes are drawn over the lands they cover, with a shore only where
   water meets land. The chart's top and bottom are a ruled frame, the
   edge of the drawing rather than a coast.
-- Reading as a people: *as the Kakimi knew it* is a lens on the chart
-  (their known lands, their names for them, their neighbours as they
-  called them), chosen from a people's card. That is the explorer frame,
-  kept as a way of reading rather than a mechanic.
+- The viewpoint control beside Chart and Globe starts at *The author's
+  names*. Choose *As the … knew it* and a people, then independently
+  choose *Their names* and *Only lands they knew*. Opening a different
+  card never changes this choice. The known-lands action on a language
+  card explicitly keeps the author's names when it narrows the lands.
+  This is the explorer's lens, a way of reading rather than a mechanic.
 - Two scales on a card. Prose (the head, a section's sentence, an
   entry's text) keeps the reading measure. Apparatus (a facts box, a
   roster, a ledger, a leaf's title row, the chronicle's contents) sits

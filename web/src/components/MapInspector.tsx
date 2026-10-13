@@ -3,13 +3,14 @@ import { createPortal } from "react-dom";
 import type { ClimateView, LakeNamesView, Overview, RiverNamesView, Subject, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { featureKey, gazette, type MapFeature } from "../gazetteer";
+import { Told } from "./Told";
 
 export interface MapInspection { feature: MapFeature; at: [number, number] }
 
 const RELATION = { selected: "Selected speech", holders: "Holders", exonym: "Elsewhere", former: "Former holders", city: "The city" };
 
-/// One HTML apparatus card, shared by chart and globe. The map's existing
-/// clicks still open cards; this independent capture keeps the place pinned.
+/// One lean gazetteer card, shared by chart and globe. A map click pins it;
+/// only its footer opens the complete subject card.
 export function MapInspector({ container, inspection, map, overview, generation, selectedVariety, riverNames, lakeNames, climate, known, onOpen, pinnable = true }: {
   container: RefObject<HTMLElement | null>;
   inspection: MapInspection | null;
@@ -97,6 +98,8 @@ export function MapInspector({ container, inspection, map, overview, generation,
       if (!element || !host?.contains(element)) return;
       if (!pinnableRef.current) { close(); return; }
       if (event instanceof MouseEvent && event.detail !== 0 && press && Math.hypot(event.clientX - press[0], event.clientY - press[1]) >= 4) return;
+      event.preventDefault();
+      event.stopPropagation();
       const feature = JSON.parse(element.getAttribute("data-map-feature")!) as MapFeature;
       const box = element.getBoundingClientRect();
       const reading: MapInspection = { feature, at: event instanceof MouseEvent && event.detail !== 0 ? [event.clientX, event.clientY] : [box.x + box.width / 2, box.y + box.height / 2] };
@@ -127,11 +130,11 @@ export function MapInspector({ container, inspection, map, overview, generation,
 
   const reading = shown ? gazette(shown.feature, map, overview, generation, { selectedVariety, riverNames, lakeNames, climate, known }) : null;
   if (reading && !onOpen) reading.open = null;
-  // The people's card already holds the complete "Called by others" section.
-  const exonyms = reading?.feature.kind === "people" && reading.open
-    ? reading.sayings.filter((saying) => saying.relation === "exonym") : [];
-  const hiddenExonyms = new Set(exonyms.slice(2));
-  const sayings = reading?.sayings.filter((saying) => !hiddenExonyms.has(saying)) ?? [];
+  const principal = reading?.sayings[0];
+  const others = reading?.sayings.slice(1).filter((saying, index, all) =>
+    all.findIndex((other) => other.spelled === saying.spelled && other.ipa === saying.ipa) === index) ?? [];
+  const sayings = others.slice(0, 2);
+  const hiddenNames = Math.max(0, others.length - sayings.length);
   const openCard = () => {
     if (!reading?.open) return;
     onOpen?.(reading.open.subject);
@@ -165,14 +168,17 @@ export function MapInspector({ container, inspection, map, overview, generation,
     <header><h3 id={id}>{reading.title}</h3><button type="button" className="link inspector-close" aria-label="Close place inspector"
       onClick={() => { pinnedRef.current = false; shownRef.current = null; setPinned(false); setShown(null); }}>×</button></header>
     {reading.subtitle ? <p className="inspector-subtitle">{reading.subtitle}</p> : null}
+    <div className="inspector-body">
+    {principal?.ipa ? <p className="ipa inspector-pronunciation">/{principal.ipa}/</p> : null}
     {sayings.length ? <ul className="inspector-sayings">{sayings.map((saying, index) => <li key={`${saying.variety}:${saying.relation}:${index}`} data-relation={saying.relation}>
       <div className="inspector-language">{saying.language}<small>{RELATION[saying.relation]}{saying.relation === "former" && saying.since !== undefined ? ` · ${saying.since * YEARS}` : ""}</small></div>
       <span className="inspector-spelled">{saying.spelled}</span>{saying.ipa ? <> <span className="ipa">/{saying.ipa}/</span></> : null}
       {saying.meaning ? <span className="inspector-meaning">“{saying.meaning}”</span> : null}
     </li>)}</ul> : null}
-    {hiddenExonyms.size ? <button type="button" className="link inspector-more" onClick={openCard}
-      aria-label={`Open people's card for ${hiddenExonyms.size} more names`}>and {hiddenExonyms.size} more →</button> : null}
+    {hiddenNames ? <p className="inspector-more">and {hiddenNames} more</p> : null}
     {reading.facts.length ? <dl className="inspector-facts">{reading.facts.map((fact) => <div key={fact.label}><dt>{fact.label}</dt><dd>{fact.value}</dd></div>)}</dl> : null}
+    {reading.chronicle ? <p className="inspector-chronicle"><span className="inspector-language">Year {reading.chronicle.generation * YEARS}</span> <Told text={reading.chronicle.text} /></p> : null}
+    </div>
     <footer>{reading.open ? <button type="button" className="link" onClick={openCard}>{reading.open.label} →</button> : null}
       {!pinned && pinnable ? <small>Click the place to keep it open</small> : null}</footer>
   </div>, host);

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   bookLand, bringBack, discardDraft, loadShelf, onShelfChange, putAway, readBook, readDraft,
   readPlace, rebuildShelf, removeForGood, saveBook, saveDraft, savePlace, scanBooks, setLast, StaleSave,
-  type BookEntry, type DraftEntry,
+  type BookEntry, type DraftEntry, type ReadingPlace,
 } from "../web/src/shelf";
 
 let stored: Map<string, string>;
@@ -355,5 +355,37 @@ describe("manuscript recovery", () => {
       if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
       else Reflect.deleteProperty(globalThis, "window");
     }
+  });
+});
+
+describe("the chart reading place", () => {
+  test("keeps both cameras, the globe's turn and a world's projection beside its reading", () => {
+    const place: ReadingPlace = {
+      telling: 2, point: { action: 3, offset: 4 }, viewing: 40, focus: { kind: "world" },
+      chart: { camera: [12, 4, 40, 20], globeCamera: [5, 5, 10, 10], projection: "globe", rotation: [-80, 30] },
+      book: { chapter: "lands", anchor: null, scroll: 12, open: ["lands"] },
+    };
+    savePlace("a", place);
+    savePlace("b", { ...place, chart: { camera: [0, 0, 80, 40], projection: "chart" } });
+    expect(readPlace("a")).toEqual(place);
+    expect(readPlace("b")?.chart).toEqual({ camera: [0, 0, 80, 40], projection: "chart" });
+  });
+
+  test("older reading places retain their exact reading without a chart preference", () => {
+    const place: ReadingPlace = { telling: null, point: null, viewing: 4, focus: { kind: "world" } };
+    savePlace("old", place);
+    expect(readPlace("old")).toEqual(place);
+  });
+
+  test("bad optional camera fields do not lose or rewrite the reading or original", () => {
+    const raw = JSON.stringify({
+      telling: 1, point: { action: 2, offset: 0 }, viewing: 20, focus: { kind: "world" },
+      chart: { camera: [0, 0, 0, 10], globeCamera: [0, "5", 10, 10], projection: "unknown", rotation: [0, 91] },
+    });
+    stored.set("langgen.place.bad", raw);
+    expect(readPlace("bad")).toEqual({
+      telling: 1, point: { action: 2, offset: 0 }, viewing: 20, focus: { kind: "world" }, chart: {},
+    });
+    expect(stored.get("langgen.place.bad")).toBe(raw);
   });
 });

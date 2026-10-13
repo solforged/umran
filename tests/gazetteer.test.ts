@@ -25,14 +25,19 @@ const overview = {
   states: [{ id: 2, name: "Realm", ipa: "relm", meaning: "valley realm", rulers: 0, standard: 1, capital: 0, rose: 3, fell: null }],
   continents: [{ landmass: 0, name: { name: "Maina", ipa: "maina", meaning: "great land", variety: 0, people: 0, witness: 0, since: 2 }, peoples: [0, 1], religions: [] }],
   religions: [{ id: 1, name: "Light", ipa: "lit", meaning: "the light", sacred: 0, land: 0, founded: 1, shrines: [{ region: 2, name: { name: "Summit", ipa: "sumit", meaning: "high light" }, kind: "mountain" }] }],
+  annals: [
+    { generation: 4, text: "Nara settled the valley.", lands: [0], members: [] },
+    { generation: 8, text: "Two encounters.", lands: [], members: [{ generation: 8, text: "Luma met Nara in the valley.", lands: [0], members: [] }, { generation: 8, text: "Luma fished.", lands: [2], members: [] }] },
+    { generation: 12, text: "Nara left the valley.", lands: [0], members: [] },
+  ],
 } as Overview;
 const land: MapFeature = { kind: "land", region: 0 };
 
 describe("map gazetteer", () => {
-  test("selected exonym, current holders, alphabetic living exonyms, then three newest former holders", () => {
+  test("selected exonym, current holders, alphabetic living exonyms, then former holders newest first", () => {
     const card = gazette(land, map, overview, 10, { selectedVariety: 5 });
     expect(card.title).toBe("Z");
-    expect(card.sayings.map((s) => [s.spelled, s.relation])).toEqual([["Z", "selected"], ["E", "holders"], ["Y", "exonym"], ["D", "former"], ["C", "former"], ["B", "former"]]);
+    expect(card.sayings.map((s) => [s.spelled, s.relation])).toEqual([["Z", "selected"], ["E", "holders"], ["Y", "exonym"], ["D", "former"], ["C", "former"], ["B", "former"], ["A", "former"]]);
     expect(card.sayings[0].ipa).toBe("Zi");
     expect(card.open?.subject).toEqual(land);
   });
@@ -60,11 +65,12 @@ describe("map gazetteer", () => {
     expect(gazette({ kind: "land", region: 1 }, map, overview, 10, { known: new Set() }).title).toBe("Sea");
     expect(gazette(land, map, overview, 10, { known: new Set([2]) })).toMatchObject({ title: "Unknown land", sayings: [], facts: [], open: null });
   });
-  test("land facts use facade area, living peoples and the zone's weather", () => {
-    const climate = { regions: [{ id: 0, zone: 0 }], zones: [{ id: 0, wetness: -0.1, warmth: 0, severity: 3 }] } as unknown as ClimateView;
-    expect(gazette(land, map, overview, 10, { climate }).facts).toEqual([
-      { label: "Terrain", value: "Plains" }, { label: "Area", value: "1,235 km²" }, { label: "Peoples", value: "Nara" }, { label: "Weather", value: "much drier than usual" },
-    ]);
+  test("land facts name the living holders and the latest chronicle entry about the land by the reading year", () => {
+    const card = gazette(land, map, overview, 10, {});
+    expect(card.facts).toEqual([{ label: "Held by", value: "Nara" }]);
+    expect(card.chronicle?.text).toBe("Luma met Nara in the valley.");
+    expect(gazette(land, map, overview, 3, {}).chronicle).toBeUndefined();
+    expect(gazette({ kind: "land", region: 2 }, map, { ...overview, communities: [] }, 10, {}).facts).toEqual([{ label: "Held by", value: "No people" }]);
   });
   test("city title keeps its own facade name and exposes the land, makeup and state card", () => {
     const card = gazette({ kind: "city", city: 3, region: 0 }, map, overview, 10, { selectedVariety: 5 });

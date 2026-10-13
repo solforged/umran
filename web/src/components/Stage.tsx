@@ -7,7 +7,7 @@ import { ETHOS_AXES, ETHOS_POLES, EVENT_KIND, hue } from "../lore";
 import { PACES } from "../words";
 import type { DialogKind, InterventionKind } from "./ActionDialog";
 import { attempt, message } from "../engine";
-import { useAnswer } from "./Pending";
+import { Pending, useAnswer } from "./Pending";
 import { SettlementDesk, type SettlementDraft } from "./SettlementDesk";
 import { concerns, findAnnal, individualAnnals, INITIAL_HISTORY } from "../history";
 import { latestTold } from "../eras";
@@ -23,6 +23,8 @@ import { LightChoice } from "./LightSwitch";
 import { Popover } from "./Popover";
 import { Timeline, marksFromAnnals } from "./Timeline";
 import { Sheet, type SheetDetent } from "./Sheet";
+import type { ChartReadingPlace } from "../shelf";
+import { FortunesTour, fortuneSteps, type FortuneStep } from "./FortunesTour";
 
 /// What stops the years passing on their own.
 type PauseOn = "nothing" | "peoples" | "sounds" | "anything";
@@ -76,10 +78,27 @@ function exists(subject: Focus, overview: Overview, map: WorldMap): boolean {
 }
 
 const nextRunYear = (latest: number) => Math.max(4000, Math.ceil((latest * YEARS + 1000) / 1000) * 1000);
+interface FortunesReading {
+  name: string;
+  steps: FortuneStep[];
+  index: number;
+  returnPoint: HistoryPoint;
+  trail: Destination[];
+  leaf: string | null;
+  detent: SheetDetent;
+  projection: "chart" | "globe";
+  opener: HTMLElement | null;
+}
 
 export interface UndoDestination {
   reading: ReadingRef;
   label: string;
+}
+
+function ContinueReadingPoint({ engine, generation }: { engine: ReadEngine; generation: number }) {
+  const decisions = use(engine.decisions());
+  const last = decisions.findLast((decision) => decision.generation <= generation);
+  return <p className="small">{last ? <>Last decision, year {last.generation * YEARS}: <Told text={last.text} /></> : "No decision recorded at this reading point."}</p>;
 }
 
 /// The world as a stage: the map in the middle, what just happened beside
@@ -107,6 +126,7 @@ export function Stage({
   onScrub,
   onTick,
   onRun,
+  onContinueTelling,
   onRunStart,
   onRunTarget,
   onStop,
@@ -128,6 +148,8 @@ export function Stage({
   comparisonReturn,
   sheetReturn,
   mapMotion,
+  initialChart,
+  onChart,
 }: {
   engine: ReadEngine;
   catalog: Catalog;
@@ -155,6 +177,8 @@ export function Stage({
   onTick: () => Promise<boolean>;
   /// A frame's worth of generations, committed together.
   onRun: (generations: number) => Promise<boolean>;
+  /// Continue this exact past reading in a new telling, then run to a year.
+  onContinueTelling: (targetYear: number) => Promise<boolean>;
   onRunStart: (target: number) => void;
   /// Study has no fixed end; keep the next year it intends to write.
   onRunTarget: (target: number) => void;
@@ -177,6 +201,8 @@ export function Stage({
   comparisonReturn: number;
   sheetReturn: number;
   mapMotion: RefObject<MapMotionReading | null>;
+  initialChart?: ChartReadingPlace;
+  onChart: (chart: ChartReadingPlace) => void;
   /// A year to run to as soon as the workshop opens, once.
   runOnOpen: number | null;
   onRunOpened: () => void;
@@ -185,8 +211,18 @@ export function Stage({
   const atPresent = overview.atTip;
 
   const mapContainer = useRef<HTMLElement>(null);
-  const [projection, setProjection] = useMapProjection(mapContainer);
+  const chartPlace = useRef<ChartReadingPlace>({ ...initialChart });
+  const [projection, setProjection] = useMapProjection(mapContainer, initialChart?.projection);
+  useEffect(() => {
+    chartPlace.current = { ...chartPlace.current, projection };
+    onChart(chartPlace.current);
+  }, [projection]);
   const [inspection, setInspection] = useState<MapInspection | null>(null);
+  const [fortunes, setFortunes] = useState<FortunesReading | null>(null);
+  const fortunesRef = useRef<FortunesReading | null>(null);
+  const fortunesPending = useRef<Promise<HistoryPoint | null> | null>(null);
+  const [fortunesBusy, setFortunesBusy] = useState(false);
+  const [fortunesError, setFortunesError] = useState<string | null>(null);
   // The encyclopedia's trail of cards; the last is the one open.
   const [trail, setTrail] = useState<Destination[]>([{ subject: initialFocus ?? { kind: "world" }, reading: { telling: overview.telling, point: overview.point } }]);
   const focus = trail.at(-1)!.subject;
@@ -300,15 +336,15 @@ export function Stage({
       if (speaker) onSelect(speaker.id);
     }
   }, [focus, overview.communities, onSelect]);
-  // Whether the map is veiled to what the language in view knows. It
-  // follows the people or language card open, and lifts on any other.
-  const [veiled, setVeiled] = useState(false);
-  const knownBy = !veiled ? null
-    : focus.kind === "language" ? focus.variety
-    : focus.kind === "people" ? (overview.communities[focus.id]?.variety ?? null)
-    : null;
+  // A viewpoint is a reader's explicit choice, never the card in focus.
+  const [viewpoint, setViewpoint] = useState<number | null>(null);
+  const [theirNames, setTheirNames] = useState(true);
+  const [onlyKnown, setOnlyKnown] = useState(true);
+  const viewpointPeople = viewpoint === null ? undefined : overview.communities.find((people) => people.id === viewpoint);
+  const namingVariety = theirNames ? viewpointPeople?.variety : undefined;
+  const knownBy = onlyKnown ? viewpointPeople?.variety ?? null : null;
   const known = useMemo(
-    () => (knownBy === null ? null : overview.varieties[knownBy] ? new Set(overview.varieties[knownBy].knownLands.map((l) => l.region)) : null),
+    () => knownBy === null ? null : new Set(overview.varieties[knownBy]?.knownLands.map((land) => land.region) ?? []),
     [knownBy, overview],
   );
 
@@ -323,6 +359,8 @@ export function Stage({
   const [running, setRunning] = useState<number | null>(null);
   const [runYear, setRunYear] = useState(() => nextRunYear(latest));
   const [runError, setRunError] = useState<string | null>(null);
+  const [continueYear, setContinueYear] = useState((latest > generation ? latest * YEARS : generation * YEARS + 500));
+  const [continuing, setContinuing] = useState(false);
   const [pace, setPace] = useState(PACES[1][0]);
   const [pauseOn, setPauseOn] = useState<PauseOn>("peoples");
   const tick = useRef(onTick);
@@ -422,6 +460,7 @@ export function Stage({
   useEffect(() => {
     if (previousYear.current === generation) return;
     previousYear.current = generation;
+    if (fortunesRef.current) return;
     const valid = trail.filter((visit, index) => exists(visit.subject, overview, map) && (visit.subject.kind !== "event" || index === trail.length - 1));
     if (!exists(focus, overview, map)) {
       setLeaf(null);
@@ -501,6 +540,7 @@ export function Stage({
   useEffect(() => {
     if (hidden) return;
     const shortcut = (event: KeyboardEvent) => {
+      if (fortunesRef.current) return;
       const target = event.target as HTMLElement;
       if (target.closest("input, select, textarea, [contenteditable=true], dialog[open]")) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
@@ -634,6 +674,74 @@ export function Stage({
   }
   const timelineAnnals = timelineOverview.current.telling === overview.telling ? timelineOverview.current.annals : overview.annals;
   const { marks, sounds } = useMemo(() => marksFromAnnals(timelineAnnals), [timelineAnnals]);
+  const visitFortune = async (index: number) => {
+    const tour = fortunesRef.current;
+    if (!tour || fortunesPending.current || !tour.steps[index]) return;
+    setFortunesBusy(true); setFortunesError(null);
+    const pending = onScrub(tour.steps[index].generation);
+    fortunesPending.current = pending;
+    try {
+      const point = await pending;
+      if (fortunesRef.current !== tour) return;
+      if (!point) { setFortunesError("This recorded year could not be opened."); return; }
+      const next = { ...tour, index };
+      fortunesRef.current = next; setFortunes(next);
+    } catch (error) {
+      if (fortunesRef.current === tour) setFortunesError(message(error));
+    } finally {
+      if (fortunesPending.current === pending) fortunesPending.current = null;
+      setFortunesBusy(false);
+    }
+  };
+  const followFortunes = (people: number) => {
+    if (fortunesRef.current || advancing.current || running !== null || playing) return;
+    const source = timelineOverview.current.telling === overview.telling ? timelineOverview.current : overview;
+    const steps = fortuneSteps(source, people);
+    if (!steps.length) return;
+    halt(); setSettlement(null); setLeaf(null); setDetent("peek"); setInspection(null);
+    const tour: FortunesReading = { name: source.communities.find((c) => c.id === people)?.name ?? "this people", steps, index: 0,
+      returnPoint: overview.point, trail, leaf, detent, projection,
+      opener: document.activeElement instanceof HTMLElement ? document.activeElement : null };
+    fortunesRef.current = tour; setFortunes(tour);
+    setFortunesBusy(true); setFortunesError(null);
+    const pending = (async () => {
+      const recorded = tellingTip ? await engine.overviewAt(tellingTip) : source;
+      if (fortunesRef.current !== tour) return null;
+      const recordedTour = { ...tour, steps: fortuneSteps(recorded, people) };
+      if (!recordedTour.steps.length) throw new Error("No fortunes are recorded for this people.");
+      fortunesRef.current = recordedTour; setFortunes(recordedTour);
+      return onScrub(recordedTour.steps[0].generation);
+    })();
+    fortunesPending.current = pending;
+    void pending.then((point) => {
+      if (!point && fortunesRef.current) setFortunesError("This recorded year could not be opened.");
+    }).catch((error) => {
+      if (fortunesRef.current) setFortunesError(message(error));
+    }).finally(() => {
+      if (fortunesPending.current === pending) fortunesPending.current = null;
+      setFortunesBusy(false);
+    });
+  };
+  const finishFortunes = async () => {
+    const tour = fortunesRef.current;
+    if (!tour) return;
+    fortunesRef.current = null;
+    // A pending scrub must finish before restoring the exact prior reading.
+    try { await fortunesPending.current; } catch { /* The prior reading still exists. */ }
+    onReadPoint(tour.returnPoint);
+    setTrail(tour.trail); setLeaf(tour.leaf); setDetent(tour.detent); setProjection(tour.projection);
+    setFortunes(null); setFortunesError(null); setInspection(null);
+    requestAnimationFrame(() => tour.opener?.focus({ preventScroll: true }));
+  };
+  const fortuneStep = fortunes?.steps[fortunes.index];
+  const fortuneStory = useMemo(() => {
+    if (!fortuneStep) return null;
+    const regions = fortuneStep.regions.length ? fortuneStep.regions
+      : overview.generation === fortuneStep.generation
+        ? [...new Set((fortuneStep.annal?.peoples ?? []).flatMap((id) => overview.communities.find((c) => c.id === id)?.lands ?? []))] : [];
+    return { regions, route: fortuneStep.moves.flatMap((move) => move.legs.map((leg) => ({ from: leg.from, to: leg.to, generation: move.generation }))),
+      label: `Year ${fortuneStep.generation * YEARS}` };
+  }, [fortuneStep, overview]);
 
   const layerName = tint.kind === "peoples" ? "Language families"
     : tint.kind === "faiths" ? "Faiths" : tint.kind === "crafts" ? catalog.crafts.find((c) => c.id === tint.craft)?.name
@@ -642,9 +750,19 @@ export function Stage({
     : tint.kind === "words" ? `Words for “${concept?.replaceAll("_", " ")}”` : "Sound change";
 
   return (
-    <div className="stage workbench" hidden={hidden} inert={hidden} data-detent={detent} data-settlement={desk !== null}
-      onClickCapture={(event) => { keyboardActivation.current = event.detail === 0; }}
-      onKeyDownCapture={(event) => { if (event.key === "Enter" || event.key === " ") keyboardActivation.current = true; }}>
+    <div className="stage workbench" hidden={hidden} inert={hidden} data-detent={detent} data-settlement={desk !== null} data-fortunes={fortunes !== null}
+      onClickCapture={(event) => {
+        keyboardActivation.current = event.detail === 0;
+        if (fortunes && event.target instanceof Element && !event.target.closest(".fortunes-tour, .mapview")) {
+          event.preventDefault(); event.stopPropagation();
+        }
+      }}
+      onKeyDownCapture={(event) => {
+        if (event.key === "Enter" || event.key === " ") keyboardActivation.current = true;
+        if (fortunes && event.target instanceof Element && !event.target.closest(".fortunes-tour, .mapview")) {
+          event.preventDefault(); event.stopPropagation();
+        }
+      }}>
       <div className="stage-notices">{notices}{runError ? <p className="notice error" role="alert">{runError}</p> : null}{followed ? <p className="following-note">Following {followed.label}. Study pauses when this subject appears in the chronicle. <button type="button" className="link" onClick={() => setFollowed(null)}>Stop following</button></p> : null}</div>
 
       <section ref={mapContainer} className="stage-map" aria-label={projection === "globe" ? "Globe" : "Chart"}>
@@ -652,15 +770,42 @@ export function Stage({
           map={map}
           projection={projection}
           onProjection={setProjection}
+          camera={chartPlace.current.camera}
+          globeCamera={chartPlace.current.globeCamera}
+          rotation={chartPlace.current.rotation}
+          frameOnOpen
+          onView={(camera, projection, rotation) => {
+            if (settlement) return;
+            chartPlace.current = { ...chartPlace.current, [projection === "chart" ? "camera" : "globeCamera"]: camera, projection, rotation };
+            onChart(chartPlace.current);
+          }}
+          viewpointControl={!settlement ? <Popover label="Chart viewpoint" role="dialog" side="bottom" align="end"
+            trigger={(props) => <button type="button" className="map-viewpoint" {...props}>
+              <span>{viewpointPeople ? `As the ${viewpointPeople.name} knew it` : "The author's names"}</span>
+              <ChevronDown size={14} aria-hidden="true" />
+            </button>}>
+            {() => <div className="viewpoint-menu">
+              <label>Viewpoint
+                <select value={viewpoint ?? ""} onChange={(event) => setViewpoint(event.target.value === "" ? null : Number(event.target.value))}>
+                  <option value="">The author's names</option>
+                  {overview.communities.map((people) => <option key={people.id} value={people.id}>As the {people.name} knew it{people.ended === null ? "" : " · ended"}</option>)}
+                </select>
+              </label>
+              <label><input type="checkbox" checked={theirNames} disabled={!viewpointPeople} onChange={(event) => setTheirNames(event.target.checked)} /> Their names</label>
+              <label><input type="checkbox" checked={onlyKnown} disabled={!viewpointPeople} onChange={(event) => setOnlyKnown(event.target.checked)} /> Only lands they knew</label>
+              <p className="muted small">{viewpointPeople ? `${theirNames ? "Their names" : "The author's names"} · ${onlyKnown ? "their known lands" : "the whole world"}. Opening a card does not change this choice.` : "Choose a people to read their names, their known lands, or both."}</p>
+            </div>}
+          </Popover> : undefined}
           overview={settlement ? settlementReading : overview}
           generation={settlement ? settlementReading.generation : generation}
           tint={settlement ? { kind: "peoples" } : tint}
           animateChanges={!playing && running === null && !desk}
           motionMemory={mapMotion}
+          story={fortuneStory}
           climate={climate}
           riverNames={riverNames}
           lakeNames={lakeNames}
-          selectedVariety={overview.communities[selected]?.variety}
+          selectedVariety={settlement ? undefined : namingVariety}
           names={layers.names}
           routes={!settlement && layers.routes}
           contacts={!settlement && layers.contacts}
@@ -669,7 +814,7 @@ export function Stage({
           lands={new Set(highlight.lands)}
           focus={settlement ? map.regions[settlement.destination ?? settlementReading.communities[settlement.community].region].site : highlight.point}
           known={settlement ? null : known}
-          lens={!settlement && veiled && focus.kind === "people" ? { people: focus.id } : null}
+          lens={!settlement && viewpointPeople ? { people: viewpointPeople.id, names: theirNames, known: onlyKnown } : null}
           settlement={settlementPreview.preview}
           zoomable
           onPeople={(id) => settlement ? setSettlement({ ...settlement, destination: settlementReading.communities[id].region }) : go({ kind: "people", id })}
@@ -685,8 +830,10 @@ export function Stage({
         />
         <MapInspector container={mapContainer} inspection={inspection} map={map}
           overview={settlement ? settlementReading : overview} generation={chartGeneration}
-          selectedVariety={knownBy ?? overview.communities[selected]?.variety} riverNames={riverNames} lakeNames={lakeNames} climate={climate}
-          known={settlement ? null : known} onOpen={settlement ? undefined : go} />
+          selectedVariety={settlement ? undefined : namingVariety} riverNames={riverNames} lakeNames={lakeNames} climate={climate}
+          known={settlement ? null : known} onOpen={settlement || fortunes ? undefined : go} pinnable={!settlement} />
+        {fortunes ? <FortunesTour name={fortunes.name} steps={fortunes.steps} index={fortunes.index}
+          busy={fortunesBusy} error={fortunesError} onStep={(index) => void visitFortune(index)} onDone={() => void finishFortunes()} /> : null}
         <div className="cartouche world-cartouche" data-map-furniture>
           <Popover label="This world" role="menu" side="bottom" align="start"
             trigger={(props) => (
@@ -819,10 +966,6 @@ export function Stage({
             <ScrollText size={14} aria-hidden="true" /> Chronicle
           </button>
         </div> : null}
-        {known !== null ? <div className="map-perspective">
-          As the speakers of {overview.varieties[knownBy!]?.name} knew it
-          <button type="button" className="icon" aria-label="Show the whole known and unknown world" onClick={() => setVeiled(false)}><X size={14} /></button>
-        </div> : null}
       </section>
       <div className="folio-host" ref={setFolioHost} />
 
@@ -849,6 +992,7 @@ export function Stage({
         onReadNote={onReadNote}
         onStartNote={halt}
         onFollow={(subject, label) => { halt(); setFollowed({ subject, label }); }}
+        onFortunes={followFortunes}
         dictionaryViews={dictionaryViews}
         onDictionaryView={(variety, view) => setDictionaryViews((views) => ({ ...views, [variety]: view }))}
         engine={engine}
@@ -877,7 +1021,16 @@ export function Stage({
         onLeaf={showLeaf}
         folioHost={folioHost}
         knownBy={knownBy}
-        onKnownBy={(v) => setVeiled(v !== null)}
+        onKnownBy={(variety) => {
+          if (variety === null) { setOnlyKnown(false); return; }
+          const people = overview.communities.find((people) => people.variety === variety && people.ended === null)
+            ?? overview.communities.find((people) => people.variety === variety);
+          if (people) {
+            setViewpoint(people.id);
+            setOnlyKnown(true);
+            setTheirNames(false);
+          }
+        }}
         onDialog={(kind, community) => {
           onSelect(community);
           openDialog(kind, community);
@@ -887,8 +1040,8 @@ export function Stage({
       />
       </Sheet>
 
-      <footer className="timebar stage-bar">
-        {interruptedRun && running === null && !playing ? <p className="small" style={{ gridColumn: "1 / -1", gridRow: 3, margin: 0 }} role="status">
+      <footer className="timebar stage-bar" inert={fortunes !== null}>
+        {interruptedRun && running === null && !playing ? <p className="small" style={{ gridColumn: "1 / -1", gridRow: atPresent ? 3 : 4, margin: 0 }} role="status">
           Writing stopped at year {interruptedRun.year} when the page closed.{" "}
           <button type="button" className="link" disabled={!atPresent} onClick={() => startRun(interruptedRun.target)}>Continue to year {interruptedRun.target}</button>{" "}
           <button type="button" className="link" onClick={onDismissRun}>Dismiss</button>
@@ -897,8 +1050,26 @@ export function Stage({
           {running !== null ? <button type="button" className="primary play" onClick={(event) => { event.preventDefault(); flushSync(() => setRunning(null)); }}><Square size={14} aria-hidden="true" /> Stop</button>
             : playing ? <button type="button" className="primary play" onClick={() => flushSync(() => setPlaying(false))}><Pause size={15} aria-hidden="true" /> Playing · Pause</button>
             : <button type="submit" className="primary play" disabled={!atPresent || !Number.isFinite(runYear) || runYear <= generation * YEARS}><Play size={15} aria-hidden="true" /> Run</button>}
-          {!playing ? <label>to year <input aria-label="Run to year" type="number" min={(generation + 1) * YEARS} step={YEARS} value={Number.isNaN(runYear) ? "" : runYear} disabled={running !== null}
+          {!playing && atPresent ? <label>to year <input aria-label="Run to year" type="number" min={(generation + 1) * YEARS} step={YEARS} value={Number.isNaN(runYear) ? "" : runYear} disabled={running !== null}
             onChange={(e) => setRunYear(e.currentTarget.valueAsNumber)} /></label> : null}
+          {!atPresent ? <Popover key={`${overview.telling}:${overview.point.action}:${overview.point.offset}`} label="Continue in another telling" role="dialog" side="top" align="start"
+            onOpenChange={(open) => { if (open) setContinueYear(latest > generation ? latest * YEARS : generation * YEARS + 500); }}
+            trigger={(props) => <button type="button" className="continue-telling-open" disabled={continuing} {...props}>Continue in another telling</button>}>
+            {(close) => <div className="continue-telling-panel">
+              <h3>Continue from year {generation * YEARS}</h3>
+              <Pending reading={engine} label="Reading the last decision…"><ContinueReadingPoint engine={engine} generation={generation} /></Pending>
+              <p>Your telling is kept</p>
+              <p className="small muted">Without a new decision, the years repeat as told. Deciding something in the past also begins a new telling.</p>
+              <label>Write through year <input aria-label="Continue to year" type="number" min={(generation + 1) * YEARS} step={YEARS}
+                value={Number.isNaN(continueYear) ? "" : continueYear} onChange={(e) => setContinueYear(e.currentTarget.valueAsNumber)} /></label>
+              <p className="small muted">{Number.isFinite(continueYear) && continueYear > generation * YEARS ? `${(Math.ceil(continueYear / YEARS) - generation) * YEARS} years to write in the new telling.` : "Choose a year after this reading point."}</p>
+              <button type="button" className="primary" disabled={!Number.isFinite(continueYear) || continueYear <= generation * YEARS}
+                onClick={() => {
+                  close(); halt(); setContinuing(true);
+                  void onContinueTelling(continueYear).finally(() => setContinuing(false));
+                }}>Continue and run</button>
+            </div>}
+          </Popover> : null}
         </form>
         <Popover label="Study the years" role="dialog" side="top" align="start"
           trigger={(props) => <button type="button" className="study-open" disabled={running !== null} {...props}>Study <ChevronDown size={13} aria-hidden="true" /></button>}>

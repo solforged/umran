@@ -3,6 +3,7 @@
 // the shelf once and otherwise left untouched.
 
 import type { GeographyVersion, HistoryPoint, MapSize, Overview, Subject as Focus } from "./model";
+import type { GlobeRotation, MapProjection } from "./cartography";
 
 export interface BookEntry {
   id: string;
@@ -367,6 +368,14 @@ export function onShelfChange(listener: (change: { book: string | null }) => voi
   return () => window.removeEventListener("storage", changed);
 }
 
+export interface ChartReadingPlace {
+  /// Left, top, width, height in the projection's map units.
+  camera?: [number, number, number, number];
+  globeCamera?: [number, number, number, number];
+  projection?: MapProjection;
+  rotation?: GlobeRotation;
+}
+
 /// Where the reader was in a book: the telling and exact reading, the
 /// year, and the open card. Only a convenience; a bad place is ignored.
 export interface ReadingPlace {
@@ -378,12 +387,29 @@ export interface ReadingPlace {
   runTo?: number;
   /// The chapter, subject, offset from it, and open apparatus in the book.
   book?: { chapter: string; anchor: string | null; scroll: number; open: string[] };
+  /// Each view of the chart has its own camera; old places need neither.
+  chart?: ChartReadingPlace;
 }
 const placeKey = (id: string) => `langgen.place.${id}`;
 
 export function readPlace(id: string): ReadingPlace | null {
   try {
-    return JSON.parse(get(placeKey(id)) ?? "null") as ReadingPlace | null;
+    const place = JSON.parse(get(placeKey(id)) ?? "null") as ReadingPlace | null;
+    if (place?.chart) {
+      const saved = place.chart;
+      const chart: ChartReadingPlace = {};
+      for (const key of ["camera", "globeCamera"] as const) {
+        const box = saved[key];
+        if (Array.isArray(box) && box.length === 4 && box.every((value) => typeof value === "number" && Number.isFinite(value)) &&
+          box[0] >= 0 && box[1] >= 0 && box[2] > 0 && box[3] > 0) chart[key] = box;
+      }
+      if (saved.projection === "chart" || saved.projection === "globe") chart.projection = saved.projection;
+      if (Array.isArray(saved.rotation) && saved.rotation.length === 2 &&
+        saved.rotation.every((value) => typeof value === "number" && Number.isFinite(value)) &&
+        Math.abs(saved.rotation[1]) <= 90) chart.rotation = saved.rotation;
+      place.chart = chart;
+    }
+    return place;
   } catch {
     return null;
   }

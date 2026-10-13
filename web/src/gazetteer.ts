@@ -1,6 +1,7 @@
-import type { ClimateView, LakeNamesView, NameView, Overview, PlaceExonym, PlaceName, RiverNamesView, Subject, WorldMap } from "./model";
+import type { Annal, ClimateView, LakeNamesView, NameView, Overview, PlaceExonym, PlaceName, RiverNamesView, Subject, WorldMap } from "./model";
 import { YEARS } from "./model";
-import { continentLabel, TERRAIN_NAME, weatherDeparture } from "./lore";
+import { continentLabel, TERRAIN_NAME } from "./lore";
+import { individualAnnals } from "./history";
 
 export type MapFeature =
   | { kind: "land"; region: number }
@@ -29,6 +30,7 @@ export interface Gazette {
   subtitle?: string;
   sayings: Saying[];
   facts: { label: string; value: string }[];
+  chronicle?: Annal;
   open: { label: string; subject: Subject } | null;
 }
 
@@ -76,8 +78,8 @@ function sayingsFor(names: PlaceName[], exonyms: PlaceExonym[], overview: Overvi
   for (const name of [...living].sort((a, b) => a.language.localeCompare(b.language) || a.variety - b.variety)) {
     if (!same(name, selectedName) && !same(name, current)) add(name, "exonym");
   }
-  for (const name of held.slice(0, -1).reverse().filter((name) => !same(name, selectedName)).slice(0, 3)) add(name, "former");
-  return out;
+  for (const name of held.slice(0, -1).reverse().filter((name) => !same(name, selectedName))) add(name, "former");
+  return out.filter((name, index) => out.findIndex((other) => other.spelled === name.spelled && other.ipa === name.ipa) === index);
 }
 
 /// Arrange facade evidence, never derive a word or its pronunciation here.
@@ -102,13 +104,9 @@ export function gazette(feature: MapFeature, map: WorldMap, overview: Overview, 
     case "land": {
       result.sayings = landSayings;
       if (region) {
-        fact("Terrain", TERRAIN_NAME[region.terrain]);
-        fact("Area", `${count(region.areaKm2)} km²`);
         const peoples = overview.communities.filter((c) => c.ended === null && c.lands.includes(region.id));
-        if (peoples.length) fact("Peoples", peoples.map((c) => c.name).join(", "));
-        const zone = options.climate?.regions.find((r) => r.id === region.id)?.zone;
-        const weather = zone === null || zone === undefined ? undefined : options.climate?.zones.find((z) => z.id === zone);
-        if (weather) fact("Weather", weatherDeparture(weather));
+        fact("Held by", peoples.length ? peoples.map((c) => c.name).join(", ") : "No people");
+        result.chronicle = individualAnnals(overview.annals).findLast((annal) => annal.generation <= generation && annal.lands.includes(region.id));
         if (region.terrain !== "sea") open({ kind: "land", region: region.id }, "Open land");
       }
       break;

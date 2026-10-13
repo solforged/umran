@@ -1,0 +1,34 @@
+.fortunes-tour {
+  position: absolute;
+  z-index: 9;
+  left: 50%;
+  bottom: 2.8rem;
+  transform: translateX(-50%);
+  width: min(34rem, calc(100% - 2rem));
+  max-height: min(22rem, 55%);
+  display: flex;
+  flex-direction: column;
+  padding: var(--dense-pad);
+  border: 3px double var(--ink-soft);
+  background: var(--paper-raised);
+  color: var(--ink);
+  box-shadow: 0 3px 12px var(--vignette);
+}
+.fortunes-tour:focus { outline: none; }
+.fortunes-tour header { display: flex; justify-content: space-between; gap: var(--dense-gap); color: var(--ink-soft); }
+.fortunes-tour header small { white-space: nowrap; }
+.fortunes-entry { min-height: 0; overflow-y: auto; }
+.fortunes-entry h3 { margin: 0.4rem 0; font-size: 1rem; }
+.fortunes-entry p { margin: 0.4rem 0; }
+.fortunes-tour footer { display: flex; flex-shrink: 0; gap: var(--dense-gap); padding-top: 0.4rem; border-top: 1px solid var(--line); }
+.fortunes-tour footer button:last-child { margin-left: auto; }
+.stage[data-fortunes="true"] .map-caption { visibility: hidden; }
+.stage[data-fortunes="true"] .chart-legend { display: none; }
+.stage[data-fortunes="true"] :is(.world-cartouche, .map-tools, .map-viewpoint) { pointer-events: none; opacity: 0.45; }
+@media (max-width: 599px) {
+  .fortunes-tour {
+    bottom: 8.5rem;
+    width: calc(100% - 1rem);
+    max-height: min(22rem, calc(100% - 10rem));
+  }
+}
