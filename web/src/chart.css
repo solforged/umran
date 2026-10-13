@@ -187,7 +187,10 @@
   font-variant: normal;
   letter-spacing: 0;
 }
-:root .stage :is(h1, h2)::first-letter {
+/* Sentences and questions read as prose: no boxed initial. */
+:root .stage :is(h1, h2)::first-letter,
+:root dialog.modal .modal-head h2.plain-title::first-letter,
+:root h2.plain-title::first-letter {
   font-family: inherit;
   font-size: inherit;
   color: inherit;

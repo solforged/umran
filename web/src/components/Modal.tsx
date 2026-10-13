@@ -2,6 +2,11 @@ import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom";
 import { closeClosingDialogs, motionDuration } from "../motion";
 
+/// Short titles open with the boxed initial; a question or a sentence reads as prose without it.
+export function plainTitle(title: string) {
+  return /[?.]$|:/.test(title) || title.trim().split(/\s+/).length > 4;
+}
+
 export function Modal({ open, title, onClose, children, wide = false, footer, initialFocus }: {
   open: boolean;
   title: string;
@@ -71,7 +76,7 @@ export function Modal({ open, title, onClose, children, wide = false, footer, in
     <dialog ref={dialogRef} className={wide ? "modal modal-wide" : "modal"} aria-labelledby={titleId}
       onCancel={(event) => { event.preventDefault(); onClose(); }}>
       <div className="modal-head">
-        <h2 id={titleId}>{title}</h2>
+        <h2 id={titleId} className={plainTitle(title) ? "plain-title" : undefined}>{title}</h2>
         <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}>×</button>
       </div>
       <div className="modal-body">{children}</div>

@@ -10,7 +10,7 @@ import { FormingChart } from "./FormingChart";
 import { MapView } from "./MapView";
 import { useMapProjection } from "./MapProjectionSwitch";
 import { MapInspector, type MapInspection } from "./MapInspector";
-import { Modal } from "./Modal";
+import { Modal, plainTitle } from "./Modal";
 import { decodeNaming, encodeNaming, namingChoices } from "./NamingSelect";
 import { Phrase } from "./Phrase";
 import { Sample } from "./Sample";
@@ -663,7 +663,7 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
 
   const head = (heading: string, lead?: ReactNode) => <header className="founding-head">
     <div className="eyebrow">{stepIndex + 1} · {STEPS[stepIndex].name}</div>
-    <h2>{heading}</h2>
+    <h2 className={plainTitle(heading) ? "plain-title" : undefined}>{heading}</h2>
     {lead ? <p>{lead}</p> : null}
   </header>;
 
