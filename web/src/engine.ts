@@ -10,6 +10,8 @@ import type {
   Read,
   Comparison,
   ClimateView,
+  ContactKind,
+  ContactReach,
   Forming,
   FoundingTraits,
   RiverNamesView,
@@ -137,6 +139,9 @@ class Reading implements ReadEngine {
   overviewAt(point: HistoryPoint) { return this.year<Overview>("overviewAt", JSON.stringify(point)); }
   settlement(point: HistoryPoint, community: number, intent: SettlementIntent, share: number, destination: number | null) {
     return this.ask<SettlementPreview>("settlement", JSON.stringify(point), community, intent, share, destination ?? -1);
+  }
+  contactReach(point: HistoryPoint, a: number, b: number, contact: ContactKind) {
+    return this.ask<ContactReach>("contactReach", JSON.stringify(point), a, b, contact);
   }
   lawChoices(point: HistoryPoint, variety: number) { return this.ask<LawChoice[]>("lawChoices", JSON.stringify(point), variety); }
   latest() { return this.answers.get("latest", () => this.world.call("latest", [], this.scope) as Promise<number>); }

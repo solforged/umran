@@ -6,6 +6,7 @@ export function Sample({ rendering, label }: { rendering: GrammarRendering; labe
   const words = rendering.text.split(/\s+/);
   const sounds = rendering.ipa.split(/\s+/);
   return <div className="grammar-sample" role="group" aria-label={label}>
+    <div className="sample-label">{label}</div>
     <div className="sample-columns">
       {words.map((word, i) => <div className="sample-column" key={i}>
         <span className="word">{word}</span>
@@ -15,5 +16,6 @@ export function Sample({ rendering, label }: { rendering: GrammarRendering; labe
         )}</span>
       </div>)}
     </div>
+    <p className="sample-translation">{rendering.translation}</p>
   </div>;
 }

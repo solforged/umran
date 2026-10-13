@@ -738,6 +738,7 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
           <section className="founding-trait" aria-labelledby="founding-temper">
             <h4 id="founding-temper">What they are like <button type="button" className="link" disabled={!Object.keys(current.ethos).length}
               onClick={() => update(current.key, { ethos: {} })}>as land and life made them</button></h4>
+            <p className="founding-leaning-legend">Diamond: drawn from the land; ring: the author’s choice. Click the chosen stop again to return to the drawn value.</p>
             <ul className="founding-leanings">
               {ETHOS_AXES.map((axis) => {
                 const [low, high] = ETHOS_POLES[axis];
@@ -873,7 +874,7 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
             </button>)}
           </div>
           <div className="founding-speech-actions">
-            <button type="button" className="link" onClick={() => { const seed = randomSeed(); update(speechOwner.key, { seed, design: speechOwner.preset === null ? speechOwner.design : { ...presetDesign(speechOwner.preset, seed), ...(speechOwner.design.grammar ? { grammar: speechOwner.design.grammar } : {}) } }); }}>Hear other words</button>
+            <button type="button" className="link" title="Draw a new vocabulary and names" onClick={() => { const seed = randomSeed(); update(speechOwner.key, { seed, design: speechOwner.preset === null ? speechOwner.design : { ...presetDesign(speechOwner.preset, seed), ...(speechOwner.design.grammar ? { grammar: speechOwner.design.grammar } : {}) } }); }}>Draw other words</button>
             <button type="button" className="link" onClick={() => setAdjusting(speechOwner.key)}>Shape the sounds by hand…</button>
           </div>
           <section className="founding-grammar">

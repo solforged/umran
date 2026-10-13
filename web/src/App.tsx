@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { loadCatalog, loadEngine, message } from "./engine";
-import type { Action, Catalog, Engine, HistoryPoint, NotebookNote, Overview, ReadEngine, SettlementChoice, SettlementPreview, WorldMap } from "./model";
+import type { Action, Catalog, DecisionView, Engine, HistoryPoint, NotebookNote, Overview, ReadEngine, SettlementChoice, SettlementPreview, WorldMap } from "./model";
 import type { Focus } from "./components/Pedia";
 import { YEARS } from "./model";
 import { ActionDialog, type DialogKind } from "./components/ActionDialog";
@@ -9,7 +9,7 @@ import { Book } from "./components/Book";
 import { Designer, type Founding as FoundingDesign } from "./components/Designer";
 import { Modal } from "./components/Modal";
 import { ChartRoom } from "./components/ChartRoom";
-import { Stage } from "./components/Stage";
+import { Stage, type UndoDestination } from "./components/Stage";
 import { TellingComparison } from "./components/TellingComparison";
 import type { MapMotionReading } from "./components/MapView";
 import { Founding } from "./components/Founding";
@@ -18,6 +18,8 @@ import { sampleWorld } from "./sample";
 import { download } from "./takeout";
 import { useLiftedValue } from "./motion";
 import { format as formatRoute, parse, push, replace, type Route } from "./route";
+import { EVENT_KIND } from "./lore";
+import { individualAnnals } from "./history";
 import {
   bringBack,
   describe,
@@ -45,6 +47,12 @@ import {
 
 /// Longest wait for something to happen before giving up.
 const EVENT_LIMIT = 400;
+
+const DECISION_NAME: Record<DecisionView["kind"], string> = {
+  settle: "the settlement", found: "the founding", "found-related": "the founding",
+  connect: "the contact", shift: "the language shift", state: "the state decision",
+  religion: "the faith decision", craft: "the craft decision", temper: "the change of temper", law: "the sound law",
+};
 
 type View =
   | { kind: "loading" }
@@ -469,6 +477,30 @@ export default function App() {
   const latest = frame?.latest ?? 0;
   const generation = overview?.generation ?? 0;
   const selected = overview ? Math.min(community, overview.communities.length - 1) : 0;
+  const canUndo = !!overview && (overview.point.offset > 0 || overview.point.action > 1);
+  const [undoReading, setUndoReading] = useState<{ frame: Frame; destination: UndoDestination } | null>(null);
+  const undoDestination = undoReading && undoReading.frame === frame ? undoReading.destination : null;
+  useEffect(() => {
+    const world = engine.current;
+    if (!world || !frame || !canUndo || writing || view.kind !== "book") return;
+    let cancelled = false;
+    const readDestination = async () => {
+      try {
+        const [previous, decisions] = await Promise.all([
+          world.previous({ telling: frame.overview.telling, point: frame.overview.point }),
+          frame.reading.decisions(),
+        ]);
+        const before = await world.read(previous.telling).overviewAt(previous.point);
+        const decision = decisions.find((entry) => entry.index === previous.point.action);
+        const annal = individualAnnals(frame.overview.annals).find((entry) => entry.decision === previous.point.action);
+        const shortName = annal ? EVENT_KIND[annal.kind].name : decision ? DECISION_NAME[decision.kind] : "the years ran";
+        const label = `Return to before ${shortName.charAt(0).toLowerCase()}${shortName.slice(1)}, year ${before.generation * YEARS}`;
+        if (!cancelled && world === engine.current) setUndoReading({ frame, destination: { reading: previous, label } });
+      } catch (e) { if (!cancelled && world === engine.current) setError(message(e)); }
+    };
+    void readDestination();
+    return () => { cancelled = true; };
+  }, [frame, canUndo, writing, view.kind]);
   const scrub = useCallback(async (g: number): Promise<HistoryPoint | null> => {
     if (!engine.current || !frame) return null;
     try {
@@ -805,9 +837,9 @@ export default function App() {
   );
 
   const strike = async () => {
-    if (!engine.current) return;
+    if (!engine.current || !undoDestination) return;
     try {
-      const previous = await engine.current.previous({ telling: overview.telling, point: overview.point });
+      const previous = undoDestination.reading;
       await show({ telling: previous.telling, point: previous.point, viewing: frame.viewing }, () => {
         setInitialFocus(null); setTellingVersion((v) => v + 1);
       });
@@ -908,7 +940,8 @@ export default function App() {
         onRemoveNote={removeNote}
         onReadNote={openNote}
         onReadPoint={(point) => void show({ telling: overview.telling, point, viewing: null })}
-        canUndo={overview.point.offset > 0 || overview.point.action > 1}
+        canUndo={canUndo}
+        undoDestination={undoDestination}
         selected={selected}
         onSelect={setCommunity}
         onShelf={toShelf}

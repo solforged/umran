@@ -658,6 +658,8 @@ export interface Annal {
   kind: "found" | "split" | "settlement" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "climate" | "river-flow" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper" | "grammar" | "pronoun-renewed" | "pronoun-polite" | "pronoun-generalised" | "pronoun-borrowed" | "class-emerged" | "class-merged" | "class-lost" | "harmony-gained" | "harmony-lost" | "tone-gained" | "tone-lost" | "coinage" | "calque" | "purist-reform" | "purist-replacement" | "tenet-adopted" | "tenet-disputed" | "taboo-replacement" | "drought" | "hard-winter" | "flood" | "fleet-built" | "fleet-lost" | "sea-route-opened";
   /// The annalist's words; words of the language are marked *thus*.
   text: string;
+  /// Recorded names in appearance order; start is a UTF-16 offset in text.
+  names: { text: string; subject: Subject; start: number }[];
   /// The apparatus: what a linguist would note, such as sound laws.
   notes: string[];
   cause?: Cause;
@@ -923,6 +925,7 @@ export interface ReadEngine {
   overviewAt(point: HistoryPoint): Read<Overview>;
   settlement(point: HistoryPoint, community: number, intent: SettlementIntent, share: number, destination: number | null): Read<SettlementPreview>;
   lawChoices(point: HistoryPoint, variety: number): Read<LawChoice[]>;
+  contactReach(point: HistoryPoint, a: number, b: number, contact: ContactKind): Read<ContactReach>;
   latest(): Read<number>;
   overview(generation: number): Read<Overview>;
   lexicon(generation: number, variety: number): Read<LexiconRow[]>;
@@ -993,6 +996,12 @@ export interface Engine {
   branch(generation: number): Promise<void>;
   restore(telling: number): Promise<void>;
   dispose(): void;
+}
+
+/// The engine's physical-access check, shared with the contact decision.
+export interface ContactReach {
+  ok: boolean;
+  reason: string | null;
 }
 
 /// Years per generation, for display only.
@@ -1117,6 +1126,7 @@ export interface GrammarRendering {
   text: string;
   ipa: string;
   gloss: string[];
+  translation: string;
 }
 
 export type GrammarOrigin =

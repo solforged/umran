@@ -1,7 +1,7 @@
 import { use, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { flushSync } from "react-dom";
 import { ChevronDown, Feather, Layers, Pause, Play, ScrollText, Search, SkipForward, Square, StepForward, Undo2, X } from "lucide-react";
-import type { Annal, Catalog, Craft, Destination, HistoryPoint, NotebookNote, ReadEngine, EthosAxis, Overview, SettlementChoice, SettlementPreview, WorldMap } from "../model";
+import type { Annal, Catalog, Craft, Destination, HistoryPoint, NotebookNote, ReadEngine, ReadingRef, EthosAxis, Overview, SettlementChoice, SettlementPreview, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { ETHOS_AXES, ETHOS_POLES, EVENT_KIND, hue } from "../lore";
 import { PACES } from "../words";
@@ -77,6 +77,11 @@ function exists(subject: Focus, overview: Overview, map: WorldMap): boolean {
 
 const nextRunYear = (latest: number) => Math.max(4000, Math.ceil((latest * YEARS + 1000) / 1000) * 1000);
 
+export interface UndoDestination {
+  reading: ReadingRef;
+  label: string;
+}
+
 /// The world as a stage: the map in the middle, what just happened beside
 /// it, the encyclopedia card for whatever is in focus to the side, and
 /// time along the bottom.
@@ -91,6 +96,7 @@ export function Stage({
   notices,
   sheet,
   canUndo,
+  undoDestination,
   selected,
   onSelect,
   onShelf,
@@ -134,6 +140,7 @@ export function Stage({
   /// A sheet laid over the map: the export page.
   sheet?: ReactNode;
   canUndo: boolean;
+  undoDestination: UndoDestination | null;
   selected: number;
   onSelect: (community: number) => void;
   onShelf: () => void;
@@ -791,27 +798,22 @@ export function Stage({
         </div>
         {settlement === null ? <div className="map-caption" data-map-furniture>
           {generation === 0 ? <span className="chronicle-latest muted">Year 0 · {overview.communities.length === 1 ? "One people settles" : `${overview.communities.length} peoples settle`} {overview.continents.find((c) => c.name)?.name?.name ?? title}</span> : last && LastIcon ? (
-            <button
-              type="button"
-              className="chronicle-latest"
-              title="Open this entry"
-              onClick={() => {
-                halt();
-                go({ kind: "event", id: last.id });
-              }}
-            >
-              <LastIcon size={14} aria-hidden="true" />
-              <span className="chronicle-year">{last.generation * YEARS}</span>
+            <span className="chronicle-latest">
+              <button type="button" className="chronicle-entry" title="Open this entry" aria-label={`Open the entry for year ${last.generation * YEARS}`}
+                onClick={() => { halt(); go({ kind: "event", id: last.id }); }}>
+                <LastIcon size={14} aria-hidden="true" />
+                <span className="chronicle-year">{last.generation * YEARS}</span>
+              </button>
               <span className="chronicle-text">
                 {last.decision !== undefined ? <span className="pen" title="The author's decision"><Feather size={12} aria-hidden="true" /></span> : null}
-                <Told text={last.text} />
+                <Told text={last.text} names={last.names} go={(subject) => { halt(); go(subject); }} />
               </span>
-            </button>
+            </span>
           ) : (
             <span className="chronicle-latest muted">Nothing is written yet.</span>
           )}
           {generation > 0 && last ? <EntryAnnotations annal={last} context={{ overview, go: (next) => { halt(); go(next); } }} /> : null}
-          {generation > 0 && sameYear > 1 ? <span className="chronicle-more muted">and {sameYear - 1} more that year</span> : null}
+          {generation > 0 && sameYear > 1 && last ? <button type="button" className="link chronicle-more" onClick={() => { halt(); go({ kind: "history", generation: last.generation }); }}>and {sameYear - 1} more that year</button> : null}
           <button type="button" className="link chronicle-open" onClick={() => go({ kind: "history" })}>
             <ScrollText size={14} aria-hidden="true" /> Chronicle
           </button>
@@ -855,7 +857,7 @@ export function Stage({
         generation={generation}
         overview={overview}
         title={title}
-        onRun={startRun}
+        onBook={() => { halt(); onBook(); }}
         running={running}
         onStopRun={() => flushSync(() => setRunning(null))}
         map={map}
@@ -893,9 +895,10 @@ export function Stage({
         </p> : null}
         <form className="run-control" onSubmit={(e) => { e.preventDefault(); startRun(); }}>
           {running !== null ? <button type="button" className="primary play" onClick={(event) => { event.preventDefault(); flushSync(() => setRunning(null)); }}><Square size={14} aria-hidden="true" /> Stop</button>
-            : <button type="submit" className="primary play" disabled={!atPresent || playing || !Number.isFinite(runYear) || runYear <= generation * YEARS}><Play size={15} aria-hidden="true" /> Run</button>}
-          <label>to year <input aria-label="Run to year" type="number" min={(generation + 1) * YEARS} step={YEARS} value={Number.isNaN(runYear) ? "" : runYear} disabled={running !== null}
-            onChange={(e) => setRunYear(e.currentTarget.valueAsNumber)} /></label>
+            : playing ? <button type="button" className="primary play" onClick={() => flushSync(() => setPlaying(false))}><Pause size={15} aria-hidden="true" /> Playing · Pause</button>
+            : <button type="submit" className="primary play" disabled={!atPresent || !Number.isFinite(runYear) || runYear <= generation * YEARS}><Play size={15} aria-hidden="true" /> Run</button>}
+          {!playing ? <label>to year <input aria-label="Run to year" type="number" min={(generation + 1) * YEARS} step={YEARS} value={Number.isNaN(runYear) ? "" : runYear} disabled={running !== null}
+            onChange={(e) => setRunYear(e.currentTarget.valueAsNumber)} /></label> : null}
         </form>
         <Popover label="Study the years" role="dialog" side="top" align="start"
           trigger={(props) => <button type="button" className="study-open" disabled={running !== null} {...props}>Study <ChevronDown size={13} aria-hidden="true" /></button>}>
@@ -920,7 +923,14 @@ export function Stage({
             if (point) go({ kind: "event", id: mark.annal.id }, point);
           }} />
         <span className={`stage-year${atPresent ? "" : " in-past"}`}>Year {generation * YEARS}{atPresent ? null : <> · <button type="button" className="link" onClick={() => scrub(latest)}>to the present</button></>}</span>
-        <button type="button" className="icon strike-out" disabled={!canUndo || running !== null || playing} title="Return before the last decision" aria-label="Return before the last decision" onClick={onUndo}><Undo2 size={16} aria-hidden="true" /></button>
+        <Popover key={undoDestination ? JSON.stringify(undoDestination.reading) : "no-return"} label={undoDestination?.label ?? "Return before a decision"} role="dialog" side="top" align="end"
+          trigger={(props) => <button type="button" className="icon strike-out" disabled={!canUndo || !undoDestination || running !== null || playing} title={undoDestination?.label} aria-label={undoDestination?.label ?? "Return before a decision"} {...props}><Undo2 size={16} aria-hidden="true" /></button>}>
+          {(close) => <div className="strike-confirm">
+            <p>{undoDestination?.label}</p>
+            <p className="small muted">Your telling is kept; you can return to the present.</p>
+            <button type="button" onClick={() => { close(); onUndo(); }}>Return</button>
+          </div>}
+        </Popover>
       </footer>
       <AtlasIndex open={indexOpen} overview={overview} map={map} riverNames={riverNames} lakeNames={lakeNames} go={go} onClose={() => setIndexOpen(false)} />
     </div>

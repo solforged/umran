@@ -1,5 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from "react";
-import type { Action, Catalog, ContactKind, Craft, EthosAxis, Overview, ReadEngine } from "../model";
+import type { Action, Catalog, ContactKind, ContactReach, Craft, EthosAxis, Overview, Read, ReadEngine } from "../model";
 import { YEARS } from "../model";
 import { CONTACT_NAME, ETHOS_AXES, ETHOS_POLES, FAITH_NAME, PEOPLE_NAME, temperament } from "../lore";
 import { Modal } from "./Modal";
@@ -19,6 +19,29 @@ const TITLES: Record<Exclude<DialogKind, "found">, string> = {
   temper: "A people's temper turns",
   law: "A sound change",
 };
+
+function ContactRecipient({ id, name, read }: { id: number; name: string; read: Read<ContactReach> | null }) {
+  const reach = useAnswer(read);
+  return <option value={id}>
+    {name}{reach ? reach.ok ? "" : ` — Out of reach: ${reach.reason}` : " — Checking reach…"}
+  </option>;
+}
+
+function ContactChoice({ choice, read, selected, onSelect }: {
+  choice: Catalog["contacts"][number];
+  read: Read<ContactReach> | null;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const reach = useAnswer(read);
+  return <label className="choice contact-choice">
+    <input type="radio" name="contact" checked={selected} onChange={onSelect} />
+    <span>
+      <strong>{CONTACT_NAME[choice.id as ContactKind]}</strong> {choice.description}
+      {!reach ? <small>Checking physical reach…</small> : !reach.ok ? <small>Out of reach: {reach.reason}</small> : null}
+    </span>
+  </label>;
+}
 
 /// Forms for shaping a people's history. Each validates the basics;
 /// the engine has the last word and reports anything it rejects.
@@ -62,10 +85,13 @@ export function ActionDialog({
   const [variety, setVariety] = useState(overview.communities[first]?.variety ?? languages[0]?.id ?? -1);
   const [law, setLaw] = useState<string | null>(null);
   const lawChoices = useAnswer(open && kind === "law" && variety >= 0 ? engine.lawChoices(overview.point, variety) : null) ?? [];
+  const reach = useAnswer(open && kind === "connect" && !!people && other >= 0 && other !== community
+    ? engine.contactReach(overview.point, community, other, contact) : null);
   const canSubmit = kind === "law" ? lawChoices.some((choice) => choice.id === law) :
     !!people && (kind === "state" ? people.lands.includes(capital) :
       kind === "craft" ? !people.crafts.includes(craft) :
       kind === "temper" ? amount > 0 :
+      kind === "connect" ? reach?.ok === true :
       kind === "religion" || communities.some((c) => c.id === other && c.id !== community));
 
   const submit = (event: FormEvent) => {
@@ -230,24 +256,30 @@ export function ActionDialog({
           <p className="muted">There is no other living people to meet. Let a people part, or wait for one to.</p>
         ) : (
           <>
-            {pick(PEOPLE_NAME, community, setCommunity)}
-            {pick("With", other, setOther, community)}
+            {pick(PEOPLE_NAME, community, (id) => {
+              setCommunity(id);
+              if (other === id) setOther(communities.find((c) => c.id !== id)?.id ?? -1);
+            })}
+            <label>
+              With
+              <select value={other} onChange={(e) => setOther(Number(e.target.value))}>
+                {communities.filter((c) => c.id !== community).map((c) => <ContactRecipient
+                  key={c.id} id={c.id} name={c.name}
+                  read={open ? engine.contactReach(overview.point, community, c.id, contact) : null} />)}
+              </select>
+            </label>
             <fieldset>
               <legend>Kind of contact</legend>
-              {catalog.contacts.map((c) => (
-                <label key={c.id} className="choice">
-                  <input
-                    type="radio"
-                    name="contact"
-                    checked={contact === c.id}
-                    onChange={() => setContact(c.id as ContactKind)}
-                  />
-                  <span>
-                    <strong>{CONTACT_NAME[c.id as ContactKind]}</strong> {c.description}
-                  </span>
-                </label>
-              ))}
+              {catalog.contacts.map((c) => <ContactChoice key={c.id} choice={c}
+                read={open && other >= 0 && other !== community
+                  ? engine.contactReach(overview.point, community, other, c.id as ContactKind) : null}
+                selected={contact === c.id} onSelect={() => setContact(c.id as ContactKind)} />)}
             </fieldset>
+            <p className={reach?.ok === false ? "notice error" : "muted small"} role="status">
+              {!reach ? "Checking physical reach…" : reach.ok
+                ? `These peoples can sustain ${CONTACT_NAME[contact].toLowerCase()} contact.`
+                : `Out of reach: ${reach.reason}`}
+            </p>
             {slider("Intensity", intensity, setIntensity, "How much they deal with each other.")}
           </>
         );

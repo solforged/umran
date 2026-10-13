@@ -1974,6 +1974,17 @@ impl World {
         }
     }
 
+    /// Read the same physical-access check used when authoring contact.
+    pub fn contact_reach(&self, a: usize, b: usize, kind: ContactKind) -> Result<(), String> {
+        if self.contact_eligible(a, b, kind) {
+            Ok(())
+        } else {
+            Err(format!(
+                "these peoples cannot sustain {kind:?} contact within physical reach"
+            ))
+        }
+    }
+
     /// Brings `a` and `b` into contact, as an event of the world's history.
     /// Rule goes to the more prestigious side (`a` on a tie), whose state
     /// the other joins.
@@ -1984,11 +1995,7 @@ impl World {
         intensity: f32,
         kind: ContactKind,
     ) -> Result<(), String> {
-        if !self.contact_eligible(a, b, kind) {
-            return Err(format!(
-                "these peoples cannot sustain {kind:?} contact within physical reach"
-            ));
-        }
+        self.contact_reach(a, b, kind)?;
         let changes_rule = kind == ContactKind::Rule
             || self
                 .contacts

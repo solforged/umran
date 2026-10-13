@@ -152,9 +152,9 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
   .stage-year .link { display: block; }
   .stage-bar button.play { min-width: 4.6rem; min-height: 2.5rem; padding-inline: .5rem; }
   .stage-bar > button.icon { min-height: 2.5rem; width: 2.25rem; }
-  .chronicle-more { display: none; }
-  .map-caption { font-size: .85rem; gap: .4rem; }
-  .chronicle-latest { flex: 1; }
+  .chronicle-more { white-space: normal; }
+  .map-caption { font-size: .85rem; gap: .4rem; flex-wrap: wrap; }
+  .chronicle-latest { flex: 1 1 100%; }
   .chronicle-open { min-height: 1.8rem; }
   .map-zoom button { width: 2.75rem; height: 2.75rem; }
   .map-tool[aria-haspopup] .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
@@ -335,7 +335,12 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 /* The workshop's frontispiece and dated decisions. */
 .frontispiece-caption { color: var(--ink-soft); line-height: 1.5; }
 .frontispiece-peoples { list-style: none; display: flex; flex-wrap: wrap; gap: .65rem 1.2rem; padding: .6rem 0; margin: .3rem 0 1rem; font-size: 1.2rem; }
-.frontispiece-run { display: inline-flex; align-items: center; gap: .5rem; margin-bottom: 1rem; }
+.frontispiece-reading { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem 1rem; margin: 0 0 1rem; }
+.frontispiece-families { list-style: none; display: grid; gap: .45rem; margin: .6rem 0 1rem; padding: 0; }
+.frontispiece-families > li { border-left: 2px solid; padding-left: .65rem; font-size: var(--dense-size); line-height: 1.3; }
+.frontispiece-all-peoples { margin-bottom: 1rem; }
+.frontispiece-all-peoples > summary { color: var(--accent); cursor: pointer; }
+.frontispiece-all-peoples .frontispiece-peoples { gap: .35rem .8rem; padding: .2rem 0; margin: 0; font-size: var(--dense-size); }
 /* While the years run, the frontispiece tells the chronicle as it is written. */
 .frontispiece-writing { margin: 0 0 1.2rem; }
 .frontispiece-year { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: .3rem 1rem; margin: 0 0 .4rem; font: italic 1.05rem var(--display); color: var(--ink-soft); }
@@ -369,6 +374,8 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .study-open { display: inline-flex; align-items: center; gap: .4rem; }
 .study-actions { display: grid; gap: .4rem; grid-column: 1 / -1; }
 .study-actions button { display: flex; align-items: center; gap: .5rem; text-align: left; }
+.strike-confirm { width: min(20rem, calc(100vw - 3rem)); }
+.strike-confirm p { margin: 0 0 .65rem; }
 @media (max-width: 839px) {
   .stage-bar { grid-template-columns: auto auto minmax(0, 1fr) auto; }
   .stage-bar .stage-year { grid-column: 3; }
@@ -393,3 +400,5 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .form .law-choice label { display: flex; justify-content: space-between; gap: .8rem; cursor: pointer; }
 .law-choice .specimen { margin: .4rem 0 0; }
 .law-choice small { display: block; margin-top: .3rem; }
+
+.form .contact-choice small { display: block; margin-top: .3rem; }

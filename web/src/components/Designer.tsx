@@ -152,12 +152,14 @@ export function Designer({
             </select>
           </label>
           <label>
-            Consonants <output>{consonants}</output>
+            Consonants for a redraw <output>{consonants}</output>
             <input type="range" min={6} max={30} value={consonants} onChange={(e) => setConsonants(Number(e.target.value))} />
+            <small>{sounds - chosenVowels} chosen now; the slider sets the redraw target.</small>
           </label>
           <label>
-            Vowels <output>{vowels}</output>
+            Vowels for a redraw <output>{vowels}</output>
             <input type="range" min={2} max={10} value={vowels} onChange={(e) => setVowels(Number(e.target.value))} />
+            <small>{chosenVowels} chosen now; the slider sets the redraw target.</small>
           </label>
           <button type="button" onClick={() => setDesign((current) => ({ ...frequencyDesign(seed, consonants, vowels), ...(current.grammar ? { grammar: current.grammar } : {}) }))}>
             Draw by world frequency
@@ -288,16 +290,16 @@ export function Designer({
             <NamingSelect catalog={catalog} value={naming} onChange={(n) => n && setNaming(n)} />
             <small>Built from their own words; see the preview.</small>
           </label>
-          {knob("Power", power, setPower, "weak", "strong")}
-          {knob("Openness to foreign words", openness, setOpenness, "closed", "open")}
+          {knob("Standing", power, setPower, "low", "high")}
+          {knob("Foreign words", openness, setOpenness, "guarded", "open")}
         </Section>
       </div>
 
       <aside className="designer-preview">
         <div className="row spread">
           <h3>Preview</h3>
-          <button type="button" onClick={() => setSeed(randomSeed())} title="Same design, a different draw of words">
-            Hear other words
+          <button type="button" onClick={() => setSeed(randomSeed())} title="Draw a new vocabulary and names">
+            Draw other words
           </button>
         </div>
         {typeof result === "string" ? (

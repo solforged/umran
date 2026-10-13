@@ -245,6 +245,24 @@ impl Workbench {
             .map_err(fail)
     }
 
+    #[wasm_bindgen(js_name = contactReach)]
+    pub fn contact_reach(
+        &self,
+        point: &str,
+        a: f64,
+        b: f64,
+        contact: &str,
+    ) -> Result<String, JsValue> {
+        self.bench
+            .contact_reach(
+                point,
+                entity_id(a).map_err(fail)?,
+                entity_id(b).map_err(fail)?,
+                contact,
+            )
+            .map_err(fail)
+    }
+
     #[wasm_bindgen(js_name = lawChoices)]
     pub fn law_choices(&self, point: &str, variety: f64) -> Result<String, JsValue> {
         self.bench
@@ -352,6 +370,24 @@ impl ReadView {
                 intent,
                 share,
                 destination,
+            )
+            .map_err(fail)
+    }
+    #[wasm_bindgen(js_name = contactReach)]
+    pub fn contact_reach(
+        &self,
+        point: &str,
+        a: f64,
+        b: f64,
+        contact: &str,
+    ) -> Result<String, JsValue> {
+        self.bench
+            .borrow()
+            .contact_reach(
+                point,
+                entity_id(a).map_err(fail)?,
+                entity_id(b).map_err(fail)?,
+                contact,
             )
             .map_err(fail)
     }
@@ -1519,6 +1555,33 @@ impl Bench {
             mutation: self.mutation,
             options,
             plan,
+            reason,
+        })
+    }
+
+    /// Whether two peoples can sustain the chosen contact at this reading.
+    pub fn contact_reach(
+        &self,
+        point: &str,
+        a: usize,
+        b: usize,
+        contact: &str,
+    ) -> Result<String, String> {
+        use umran_sim::world::ContactKind;
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct ContactReach {
+            ok: bool,
+            reason: Option<String>,
+        }
+        let point: HistoryPoint = serde_json::from_str(point).map_err(|e| e.to_string())?;
+        let contact: ContactKind =
+            serde_json::from_value(serde_json::Value::String(contact.into()))
+                .map_err(|e| e.to_string())?;
+        let world = self.chronicle.world_at_point(point)?;
+        let reason = world.contact_reach(a, b, contact).err();
+        to_json(&ContactReach {
+            ok: reason.is_none(),
             reason,
         })
     }
@@ -4178,13 +4241,18 @@ fn grammar_view(world: &World, variety: usize) -> GrammarView {
 }
 
 fn grammar_sample(variety: &Variety, generation: u32) -> Option<GrammarSample> {
-    let sentence = grammar_sentence(variety, generation, Category::Past)?;
-    let future = grammar_sentence(variety, generation, Category::Future)?;
+    let mut sentence = grammar_sentence(variety, generation, Category::Past)?;
+    sentence.translation = "The child saw the dog.";
+    let mut future = grammar_sentence(variety, generation, Category::Future)?;
+    future.translation = "The child will see the dog.";
     let possession_order = match variety.grammar.possessor {
         PossessorOrder::Before => ["child", "fish"],
         PossessorOrder::After => ["fish", "child"],
     };
-    let mut possession = GrammarRendering::default();
+    let mut possession = GrammarRendering {
+        translation: "The child’s fish.",
+        ..Default::default()
+    };
     for concept in possession_order {
         if concept == "fish" {
             sample_determiner(variety, concept, generation, &mut possession)?;
@@ -4865,10 +4933,12 @@ struct GrammarSample {
 }
 
 #[derive(Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct GrammarRendering {
     text: String,
     ipa: String,
     gloss: Vec<String>,
+    translation: &'static str,
 }
 
 #[derive(Serialize)]
@@ -7125,11 +7195,16 @@ mod tests {
         w.act(&found_at("Coast", "polynesian", b)).unwrap();
         let saved = w.save().unwrap();
         let before = w.overview(0).unwrap();
+        let point = to_json(&w.chronicle.end()).unwrap();
         for contact in ["neighbours", "trade", "intermarriage", "religion", "rule"] {
+            let reach: serde_json::Value =
+                serde_json::from_str(&w.contact_reach(&point, 0, 1, contact).unwrap()).unwrap();
+            assert_eq!(reach["ok"], false);
             let action = serde_json::json!({
                 "kind": "connect", "a": 0, "b": 1, "intensity": 0.8, "contact": contact
             });
-            assert!(w.act(&action.to_string()).is_err(), "{contact}");
+            let reason = w.act(&action.to_string()).unwrap_err();
+            assert_eq!(reach["reason"], reason);
             assert_eq!(w.save().unwrap(), saved, "{contact} changed the recipe");
             assert_eq!(
                 w.overview(0).unwrap(),
@@ -7139,6 +7214,16 @@ mod tests {
         }
         // The refusal does not prevent a later physically valid action.
         settle(&mut w, 0.0);
+        let old_reach: serde_json::Value =
+            serde_json::from_str(&w.contact_reach(&point, 0, 2, "trade").unwrap()).unwrap();
+        assert_eq!(
+            old_reach["ok"], false,
+            "this people did not exist at the old point"
+        );
+        let current = to_json(&w.chronicle.end()).unwrap();
+        let reach: serde_json::Value =
+            serde_json::from_str(&w.contact_reach(&current, 0, 2, "trade").unwrap()).unwrap();
+        assert_eq!(reach, serde_json::json!({ "ok": true, "reason": null }));
         w.act(r#"{"kind":"connect","a":0,"b":2,"intensity":0.6,"contact":"trade"}"#)
             .unwrap();
         assert_eq!(
@@ -7723,6 +7808,9 @@ mod tests {
             let view = grammar_view(&world, 0);
             assert_eq!(view.marking, "case");
             let sample = view.sample.unwrap();
+            assert_eq!(sample.sentence.translation, "The child saw the dog.");
+            assert_eq!(sample.possession.translation, "The child’s fish.");
+            assert_eq!(sample.future.translation, "The child will see the dog.");
             assert_eq!(sample.sentence.gloss, gloss);
             let expected: Vec<_> = gloss
                 .iter()

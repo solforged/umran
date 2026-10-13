@@ -1,4 +1,6 @@
 .grammar-sample { margin: .65rem 0; overflow-x: auto; }
+.sample-label { margin-bottom: var(--dense-row); font-size: var(--dense-size); color: var(--ink-soft); }
+.sample-translation { margin: var(--dense-row) 0 0; font-size: var(--dense-size); }
 .sample-columns { display: flex; gap: var(--dense-gap); align-items: start; width: max-content; max-width: none; padding-bottom: var(--dense-row); }
 .sample-column { display: grid; grid-template-rows: auto auto auto; gap: var(--dense-row); white-space: nowrap; }
 .sample-column .word { font-size: 1.05rem; }

@@ -5,7 +5,7 @@ import type { GeographyVersion, MapSize } from "./model";
 
 /// Workbench and ReadView methods that only read.
 export const READ_METHODS = {
-  latest: true, overview: true, overviewAt: true, settlement: true, lawChoices: true,
+  latest: true, overview: true, overviewAt: true, settlement: true, contactReach: true, lawChoices: true,
   lexicon: true, kin: true, word: true, story: true, climate: true, river: true,
   lake: true, map: true, wordMap: true, decisions: true, foundingPreview: true,
   foundingSites: true, foundingTraits: true, forming: true, resolveNote: true,

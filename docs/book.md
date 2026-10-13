@@ -232,7 +232,7 @@ the real engine.
 4. **Their speech.** Every preset as a voice card showing the words this
    people would have under it: the engine's own preview with the seed
    founding uses, so the chosen card's words are the founded words.
-   *Hear other words* draws another seed; *Shape the sounds by hand…*
+   *Draw other words* draws another seed; *Shape the sounds by hand…*
    opens the full sound chart. Grammar follows as phrases with sample
    sentences. Related peoples share their ancestral sound and grammar
    choices.

@@ -99,10 +99,10 @@ function CausePhrase({ annal, overview }: { annal: Annal; overview: Overview }) 
 
 /// `marked` names the author's decision on the entry itself. `dated`
 /// prints its year, which an entry under its year's heading leaves out.
-function ChronicleEntry({ annal, overview, anchor = false, marked = true, dated = true }: { annal: Annal; overview: Overview; anchor?: boolean; marked?: boolean; dated?: boolean }) {
+function ChronicleEntry({ annal, overview, link, anchor = false, marked = true, dated = true }: { annal: Annal; overview: Overview; link: ChapterContext["link"]; anchor?: boolean; marked?: boolean; dated?: boolean }) {
   return <li id={anchor ? `event-${annal.id}` : undefined} className={dated ? "book-annal" : "book-annal undated"}>
     {dated ? <span className="gen">{annal.generation * YEARS}</span> : null}
-    <div><Told text={annal.text} /><CausePhrase annal={annal} overview={overview} />
+    <div><Told text={annal.text} names={annal.names} link={link} /><CausePhrase annal={annal} overview={overview} />
       {marked && annal.decision !== undefined ? <small className="book-decision">The author’s decision</small> : null}
       {annal.specimen.length ? <Specimen words={annal.specimen} changes={annal.laws.length > 0} /> : null}
       {annal.notes.length ? <ul className="apparatus">{annal.notes.map((note, i) => <li key={i}><Told text={note} /></li>)}</ul> : null}
@@ -112,7 +112,7 @@ function ChronicleEntry({ annal, overview, anchor = false, marked = true, dated 
 
 /// A subject's fortunes in the world's eras: the headlines in full, the
 /// quieter entries of each era folded into one line that opens to them.
-function Fortunes({ annals, eras, overview }: { annals: Annal[]; eras: Era[]; overview: Overview }) {
+function Fortunes({ annals, eras, overview, link }: { annals: Annal[]; eras: Era[]; overview: Overview; link: ChapterContext["link"] }) {
   return <>{eras.map((era) => {
     const within = annals.filter((a) => a.generation >= era.start && a.generation <= era.end);
     if (!within.length) return null;
@@ -120,9 +120,9 @@ function Fortunes({ annals, eras, overview }: { annals: Annal[]; eras: Era[]; ov
     const quiet = within.filter((a) => isQuiet(a, overview.annals));
     return <section className="book-fortune-era" key={era.start}>
       <h5><span className="book-era-span">{era.start * YEARS}–{era.end * YEARS}</span> {era.heading}</h5>
-      {headlines.length ? <ol className="book-chronicle">{headlines.map((a) => <ChronicleEntry key={a.id} annal={a} overview={overview} />)}</ol> : null}
+      {headlines.length ? <ol className="book-chronicle">{headlines.map((a) => <ChronicleEntry key={a.id} annal={a} overview={overview} link={link} />)}</ol> : null}
       {quiet.length ? <Folded summary={<span className="book-quiet-line">{quietLine({ generation: era.start, headlines, quiet }, overview, lore.CHRONICLE.alsoEra)}</span>}>
-        {() => <ol className="book-quiet">{quiet.map((a) => <ChronicleEntry key={a.id} annal={a} overview={overview} />)}</ol>}
+        {() => <ol className="book-quiet">{quiet.map((a) => <ChronicleEntry key={a.id} annal={a} overview={overview} link={link} />)}</ol>}
       </Folded> : null}
     </section>;
   })}</>;
@@ -148,8 +148,8 @@ function PeopleChapter({ community: c, eras, ctx }: { community: Community; eras
     <h4>{phrases.land}</h4><p>{phrases.homeland} {landLink(c.region)}, {map.regions[c.region].coastal ? "coastal " : ""}{TERRAIN_NAME[map.regions[c.region].terrain].toLowerCase()}{map.regions[c.region].island ? ", on an island" : ""}. {c.lands.length > 1 ? <>Their lands: {c.lands.map((region, i) => <span key={region}>{i ? ", " : ""}{landLink(region)}</span>)}.</> : null}</p>
     <h4>{phrases.livelihood}</h4><p>{LIVELIHOOD_NAME[c.livelihood]}; {Math.round(c.size).toLocaleString()} people{c.ended !== null ? " when they ended" : " now"}.</p>
     <h4>What they are like</h4><p>{temper ? `${temper[0].toUpperCase()}${temper.slice(1)}` : "No marked leaning"}.</p>
-    {annals.some((a) => a.temper !== null) ? <ol className="book-chronicle">{annals.filter((a) => a.temper !== null).map((a) => <ChronicleEntry key={a.id} annal={a} overview={overview} />)}</ol> : null}
-    <h4>Their fortunes</h4>{annals.length ? <Fortunes annals={annals} eras={eras} overview={overview} /> : <p className="muted">No fortunes recorded.</p>}
+    {annals.some((a) => a.temper !== null) ? <ol className="book-chronicle">{annals.filter((a) => a.temper !== null).map((a) => <ChronicleEntry key={a.id} annal={a} overview={overview} link={ctx.link} />)}</ol> : null}
+    <h4>Their fortunes</h4>{annals.length ? <Fortunes annals={annals} eras={eras} overview={overview} link={ctx.link} /> : <p className="muted">No fortunes recorded.</p>}
     <h4>{phrases.speech}</h4><p>{phrases.lastSpeech}{ctx.link({ kind: "language", variety: language.id }, language.name)}{language.meaning ? `, “${language.meaning}”` : ""}.</p><Specimen words={language.specimen} onWord={(concept) => ctx.open({ kind: "word", variety: language.id, concept })} />
     <dl className="chapter-facts">
       <div><dt>Kin</dt><dd>{kin.length ? kin.map((other, i) => <span key={other.id}>{i ? ", " : ""}{personLink(other.id)}</span>) : "No recorded parents, daughters, or siblings"}.</dd></div>
@@ -519,13 +519,13 @@ export function Book({ worldId, chapter, onChapter, engine, catalog, version, ge
             return <section className="book-era-year" key={year.generation}>
               <h4>{year.through === undefined ? `Year ${year.generation * YEARS}` : `Years ${year.generation * YEARS}–${year.through * YEARS}`}</h4>
               {rows.length ? <ol className="book-chronicle">{rows.map(({ annal, decision }) => annal
-                ? <ChronicleEntry key={annal.id} annal={annal} overview={overview} anchor dated={false} />
+                ? <ChronicleEntry key={annal.id} annal={annal} overview={overview} link={ctx.link} anchor dated={false} />
                 : <li className="book-decision-row book-annal undated" key={`decision-${decision!.index}`}>
                     <div><Told text={decision!.text} /><small className="book-decision">The author’s decision</small></div>
                   </li>
               )}</ol> : null}
               {year.quiet.length ? <Folded summary={<span className="book-quiet-line" data-annals={quietIds.join(" ")}>{quietIds.map((id) => <span id={`event-${id}`} key={id} />)}{quietLine(year, overview, year.through === undefined ? lore.CHRONICLE.also : lore.CHRONICLE.alsoEra)}</span>}>
-                {() => <ol className="book-quiet">{individualAnnals(year.quiet).map((annal) => <ChronicleEntry key={annal.id} annal={annal} overview={overview} dated={year.through !== undefined} />)}</ol>}
+                {() => <ol className="book-quiet">{individualAnnals(year.quiet).map((annal) => <ChronicleEntry key={annal.id} annal={annal} overview={overview} link={ctx.link} dated={year.through !== undefined} />)}</ol>}
               </Folded> : null}
             </section>;
           })}

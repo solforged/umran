@@ -4,11 +4,13 @@
 //! is drawn from the annals' own stream, so it never moves the world's
 //! draws, and the same history is always told the same way.
 
+use crate::notebook::Subject;
 use crate::{
     GrammarFormView, SpecimenWord, grammar_form_at, grammar_form_view, language_label,
     livelihood_noun, specimen, substrate_label,
 };
 use serde::Serialize;
+use std::cell::RefCell;
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
 use umran_sim::climate::{ClimateCause, ClimateChange};
@@ -45,6 +47,8 @@ pub(crate) struct Annal {
     pub kind: &'static str,
     /// The annalist's words. Words of the language are marked `*thus*`.
     pub text: String,
+    /// Named spans, in appearance order, with their recorded subjects.
+    pub names: Vec<AnnalName>,
     /// The apparatus: what a linguist would note, such as the sound laws
     /// behind a change.
     pub notes: Vec<String>,
@@ -90,6 +94,121 @@ pub(crate) struct Annal {
     pub decision: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub before: Option<umran_sim::HistoryPoint>,
+}
+
+#[derive(Clone, PartialEq, Serialize)]
+pub(crate) struct AnnalName {
+    pub text: String,
+    pub subject: Subject,
+    /// Offset in the marked text, in JavaScript's UTF-16 code units.
+    pub start: usize,
+}
+
+/// Names carry their subjects through formatting, including templates that
+/// reorder or repeat placeholders. No identity is recovered from spelling.
+#[derive(Default)]
+struct Names(RefCell<Vec<(String, Subject)>>);
+
+impl Names {
+    fn mark(&self, text: String, subject: Subject) -> String {
+        if text.is_empty() {
+            return text;
+        }
+        let mut names = self.0.borrow_mut();
+        let index = names.len();
+        names.push((text, subject));
+        format!("\u{1f}{index}\u{1f}")
+    }
+
+    fn people(&self, world: &World, id: usize, generation: u32) -> String {
+        self.mark(
+            world.community_name_at(id, generation),
+            Subject::People { id },
+        )
+    }
+
+    fn language(&self, world: &World, variety: usize, generation: u32) -> String {
+        self.mark(
+            world.language_title_at(variety, generation),
+            Subject::Language { variety },
+        )
+    }
+
+    fn faith(&self, world: &World, id: usize) -> String {
+        self.mark(world.faith_name(id), Subject::Religion { id })
+    }
+
+    fn state(&self, world: &World, id: usize, generation: u32) -> String {
+        let state = &world.states[id];
+        self.mark(
+            world.varieties[world.communities[state.rulers].variety]
+                .title(state.name.form_at(generation)),
+            Subject::State { id },
+        )
+    }
+
+    fn river(&self, world: &World, id: usize, generation: u32) -> Option<String> {
+        let name = world.river_names[id]
+            .iter()
+            .rfind(|name| name.since <= generation)?;
+        Some(self.mark(
+            world.varieties[name.variety].title(name.name.form_at(generation)),
+            Subject::River { id },
+        ))
+    }
+
+    fn land(&self, world: &World, region: usize, generation: u32) -> String {
+        match world.place_at(region, generation) {
+            Some(text) => self.mark(text, Subject::Land { region }),
+            None => "a land without a name".into(),
+        }
+    }
+
+    fn land_before(&self, world: &World, region: usize, generation: u32) -> String {
+        match generation.checked_sub(1) {
+            Some(g) if world.place_at(region, g).is_some() => self.land(world, region, g),
+            _ => self.land(world, region, generation),
+        }
+    }
+
+    fn expand(&self, raw: &mut String, mut recorded: Option<&mut Vec<AnnalName>>) {
+        if !raw.contains('\u{1f}') {
+            return;
+        }
+        let marked = std::mem::take(raw);
+        let names = self.0.borrow();
+        let mut parts = marked.split('\u{1f}');
+        let mut offset = 0;
+        raw.reserve(marked.len());
+        let plain = parts.next().unwrap_or("");
+        raw.push_str(plain);
+        offset += plain.encode_utf16().count();
+        while let Some(index) = parts.next() {
+            let (text, subject) = &names[index.parse::<usize>().expect("a recorded name index")];
+            if let Some(recorded) = recorded.as_deref_mut() {
+                recorded.push(AnnalName {
+                    text: text.clone(),
+                    subject: subject.clone(),
+                    start: offset,
+                });
+            }
+            raw.push_str(text);
+            offset += text.encode_utf16().count();
+            let plain = parts.next().unwrap_or("");
+            raw.push_str(plain);
+            offset += plain.encode_utf16().count();
+        }
+    }
+
+    fn finish(&self, annal: &mut Annal) {
+        self.expand(&mut annal.text, Some(&mut annal.names));
+        for note in &mut annal.notes {
+            self.expand(note, None);
+        }
+        for member in &mut annal.members {
+            self.finish(member);
+        }
+    }
 }
 
 /// A people's temper turning: a leaning reaching one of its ends
@@ -313,6 +432,7 @@ pub(crate) fn world_event_id(position: usize) -> String {
 /// Everything that happened in `world`, as chronicle entries in order.
 /// Names are written as they were said at the time of each entry.
 pub(crate) fn annals(world: &World) -> Vec<Annal> {
+    let names = Names::default();
     let meaning = |c: usize| world.communities[c].name.meaning.as_str();
     let mut out: Vec<Annal> = Vec::new();
     let shifts = Shifts::of(world);
@@ -326,6 +446,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
         id: String::new(),
         members: Vec::new(),
         languages: Vec::new(),
+        names: Vec::new(),
         generation,
         kind,
         text,
@@ -352,7 +473,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
         before: None,
     };
     for (position, &(generation, ref event)) in world.events.iter().enumerate() {
-        let name = |c: usize| world.community_name_at(c, generation);
+        let name = |c: usize| names.people(world, c, generation);
         let pair = |kind: &'static str, options: &[&str], a: usize, b: usize| {
             let mut all = vec![key(kind), u64::from(generation)];
             all.extend([a as u64, b as u64]);
@@ -365,7 +486,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
             )
         };
         let tongue =
-            |c: usize| world.language_title_at(shifts.spoken_after(world, c, position), generation);
+            |c: usize| names.language(world, shifts.spoken_after(world, c, position), generation);
         let g = u64::from(generation);
         let mut annal = match *event {
             WorldEvent::Tone {
@@ -373,7 +494,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 gained,
                 law,
             } => {
-                let language = world.language_title_at(variety, generation);
+                let language = names.language(world, variety, generation);
                 let (text, note) = match (gained, law) {
                     (true, Some("coda-tonogenesis")) => (
                         format!(
@@ -409,7 +530,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 let plan = &record.plan;
                 let c = plan.choice.community;
                 let d = record.daughter;
-                let to = place(world, plan.choice.destination, generation);
+                let to = names.land(world, plan.choice.destination, generation);
                 let text = match plan.choice.intent {
                     SettlementIntent::Partition => format!(
                         "The *{}* divided their lands. The *{}* took *{}* as their heart, with {:.0} souls.",
@@ -474,8 +595,8 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 format!(
                     "The *{}* opened a sea road from *{}* to *{}*.",
                     name(community),
-                    place(world, from, generation),
-                    place(world, to, generation)
+                    names.land(world, from, generation),
+                    names.land(world, to, generation)
                 ),
                 &[community],
                 &[from, to],
@@ -515,7 +636,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                             ("p", &name(community)),
                             ("d", &name(daughter)),
                             ("m", meaning(daughter)),
-                            ("to", &place(world, to, generation)),
+                            ("to", &names.land(world, to, generation)),
                         ],
                     ),
                     &[community, daughter],
@@ -546,8 +667,8 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                         },
                         &[
                             ("p", &name(community)),
-                            ("from", &place_before(world, from, generation)),
-                            ("to", &place(world, to, generation)),
+                            ("from", &names.land_before(world, from, generation)),
+                            ("to", &names.land(world, to, generation)),
                         ],
                     ),
                     &[community],
@@ -571,7 +692,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     &[
                         ("p", &name(community)),
                         ("t", &name(toward)),
-                        ("l", &world.language_title_at(variety, generation)),
+                        ("l", &names.language(world, variety, generation)),
                     ],
                 ),
                 &[community, toward],
@@ -602,7 +723,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
             WorldEvent::Conquered { ruler, ruled } => pair("conquest", CONQUEST, ruler, ruled),
             WorldEvent::Spread { community, to } => {
                 spreads.entry(generation).or_default().push((community, to));
-                spread_annal(world, generation, &[(community, to)])
+                spread_annal(world, generation, &[(community, to)], &names)
             }
             WorldEvent::Displaced {
                 community,
@@ -618,7 +739,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     &[
                         ("p", &name(community)),
                         ("b", &name(by)),
-                        ("land", &place(world, region, generation)),
+                        ("land", &names.land(world, region, generation)),
                     ],
                 ),
                 &[community, by],
@@ -639,7 +760,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                         Hardship::Plague => PLAGUE,
                     },
                     &[
-                        ("land", &place(world, region, generation)),
+                        ("land", &names.land(world, region, generation)),
                         ("share", share_in_words(share)),
                     ],
                 ),
@@ -659,7 +780,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     [first, ..] => format!("the {} and their neighbours", name(*first)),
                     [] => "its people".into(),
                 };
-                let land = place(world, region, generation);
+                let land = names.land(world, region, generation);
                 let text = match hazard {
                     umran_sim::seasons::SeasonalHazard::Drought => {
                         format!("The rains failed in {land}, and {who} went hungry.")
@@ -668,7 +789,10 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                         format!("A hard winter fell on {land}, and {who} went hungry.")
                     }
                     umran_sim::seasons::SeasonalHazard::Flood => {
-                        format!("The river rose over the fields of {land}, and {who} went hungry.")
+                        let river = world.map.river_regions[region]
+                            .and_then(|id| names.river(world, id, generation))
+                            .unwrap_or_else(|| "The river".into());
+                        format!("{river} rose over the fields of {land}, and {who} went hungry.")
                     }
                 };
                 let mut annal = entry(generation, hazard.id(), text, peoples, &[region]);
@@ -720,12 +844,16 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 ref lands,
                 ref peoples,
             } => {
+                let flow = names.river(world, river, generation).map_or_else(
+                    || "The river's flow".into(),
+                    |name| format!("The flow of {name}"),
+                );
                 let text = if flowing {
-                    "The river's flow recovered."
+                    format!("{flow} recovered.")
                 } else {
-                    "The river's flow weakened."
+                    format!("{flow} weakened.")
                 };
-                let mut annal = entry(generation, "river-flow", text.into(), peoples, lands);
+                let mut annal = entry(generation, "river-flow", text, peoples, lands);
                 annal.rivers.push(river);
                 annal.river_flow = Some(RiverFlow {
                     river,
@@ -778,20 +906,21 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     &[],
                 )
             }
-            WorldEvent::Rose { state } => state_annal(world, generation, state, "rose"),
-            WorldEvent::Fell { state } => state_annal(world, generation, state, "fell"),
-            WorldEvent::Standard { state } => state_annal(world, generation, state, "standard"),
+            WorldEvent::Rose { state } => state_annal(world, generation, state, "rose", &names),
+            WorldEvent::Fell { state } => state_annal(world, generation, state, "fell", &names),
+            WorldEvent::Standard { state } => {
+                state_annal(world, generation, state, "standard", &names)
+            }
             WorldEvent::City { city } => {
                 let city = &world.cities[city];
                 let s = &world.states[city.state];
-                let realm = world.varieties[world.communities[s.rulers].variety]
-                    .title(s.name.form_at(generation));
+                let realm = names.state(world, city.state, generation);
                 let mut annal = entry(
                     generation,
                     "city",
                     format!(
                         "{}, where {realm} kept its court, grew into a great city, drawing people from across the realm.",
-                        place(world, city.region, generation)
+                        names.land(world, city.region, generation)
                     ),
                     &[s.rulers],
                     &[city.region],
@@ -810,9 +939,9 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     "koine",
                     format!(
                         "In {} the speech of many peoples ran together, and its townsfolk, the {}, came to speak a tongue of their own, {}.",
-                        place(world, city.region, generation),
+                        names.land(world, city.region, generation),
                         name(community),
-                        world.language_title_at(variety, generation),
+                        names.language(world, variety, generation),
                     ),
                     &[world.states[city.state].rulers, community],
                     &[city.region],
@@ -868,7 +997,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 annal.crafts = vec![craft];
                 annal
             }
-            WorldEvent::Revealed { religion } => faith_annal(world, generation, religion),
+            WorldEvent::Revealed { religion } => faith_annal(world, generation, religion, &names),
             WorldEvent::Schism {
                 religion,
                 parent,
@@ -879,8 +1008,8 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 let r = &world.religions[religion];
                 let (people, branch, elder) = (
                     name(community),
-                    world.faith_name(religion),
-                    world.faith_name(parent),
+                    names.faith(world, religion),
+                    names.faith(world, parent),
                 );
                 use umran_sim::schisms::SchismCause;
                 let text = match cause {
@@ -913,7 +1042,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 previous,
                 stance,
             } => {
-                let faith = world.faith_name(religion);
+                let faith = names.faith(world, religion);
                 let held = tenet_held(tenet, stance);
                 let mut annal = entry(
                     generation,
@@ -945,8 +1074,8 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     "tenet-disputed",
                     format!(
                         "{} parted from {} over {}: it {}.",
-                        world.faith_name(religion),
-                        world.faith_name(parent),
+                        names.faith(world, religion),
+                        names.faith(world, parent),
                         tenet_noun(tenet),
                         tenet_held(tenet, stance)
                     ),
@@ -976,7 +1105,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     format!(
                         "Among the {}, {} forbade the old word for “{}”, *{}*, and they said *{}* instead.",
                         name(community),
-                        world.faith_name(religion),
+                        names.faith(world, religion),
                         concept.gloss,
                         v.spell(v.lexicon.get(old).form_at(generation)),
                         v.spell(v.lexicon.get(word).form_at(generation))
@@ -1005,9 +1134,9 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     "pilgrimage",
                     format!(
                         "Pilgrims of {} first came from the lands of the {} to {}.",
-                        world.faith_name(religion),
+                        names.faith(world, religion),
                         name(community),
-                        place(world, to, generation)
+                        names.land(world, to, generation)
                     ),
                     &[community],
                     &[from, to],
@@ -1032,14 +1161,14 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     if faithful {
                         format!(
                             "{} returned to the keeping of the faithful of {}.",
-                            place(world, region, generation),
-                            world.faith_name(religion)
+                            names.land(world, region, generation),
+                            names.faith(world, religion)
                         )
                     } else {
                         format!(
                             "{} passed out of the keeping of the faithful of {}.",
-                            place(world, region, generation),
-                            world.faith_name(religion)
+                            names.land(world, region, generation),
+                            names.faith(world, religion)
                         )
                     },
                     &peoples,
@@ -1056,7 +1185,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 religion,
                 from,
             } => {
-                let faith = world.faith_name(religion);
+                let faith = names.faith(world, religion);
                 let teacher = from.map(name).unwrap_or_default();
                 let mut annal = entry(
                     generation,
@@ -1103,7 +1232,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                             name(community),
                             v.spell(word.form_at(generation)),
                             word.first_sense.gloss,
-                            world.language_title_at(donor, generation)
+                            names.language(world, donor, generation)
                         ),
                         None => format!(
                             "The {} made a word of their own for “{}”: *{}*.",
@@ -1165,7 +1294,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 annal
             }
             WorldEvent::Respelled { variety } => {
-                let tongue = world.language_title_at(variety, generation);
+                let tongue = names.language(world, variety, generation);
                 let mut annal = entry(
                     generation,
                     "respelling",
@@ -1184,9 +1313,11 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 ];
                 annal
             }
-            WorldEvent::Fixed { state } => state_annal(world, generation, state, "classical"),
+            WorldEvent::Fixed { state } => {
+                state_annal(world, generation, state, "classical", &names)
+            }
             WorldEvent::Vernacular { variety, by } => {
-                vernacular_annal(world, generation, variety, by)
+                vernacular_annal(world, generation, variety, by, &names)
             }
             WorldEvent::PuristReform { variety, episode } => {
                 let reform = &world.varieties[variety].purism[episode];
@@ -1195,7 +1326,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     "purist-reform",
                     format!(
                         "The keepers of written {} struck out {} borrowed {} and wrote native ones in their place.",
-                        world.language_title_at(variety, generation),
+                        names.language(world, variety, generation),
                         reform.replaced.len(),
                         if reform.replaced.len() == 1 {
                             "word"
@@ -1227,7 +1358,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     "purist-replacement",
                     format!(
                         "In written {}, *{}* took the place of the borrowed *{}* for “{}”.",
-                        world.language_title_at(variety, generation),
+                        names.language(world, variety, generation),
                         word.native_form,
                         word.loan_form,
                         umran_sim::concepts::by_id(word.concept).map_or(word.concept, |c| c.gloss)
@@ -1290,7 +1421,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
         }
     }
     out.extend(neighbours.into_iter().map(|(generation, n)| {
-        let mut annal = neighbours_annal(world, generation, &n);
+        let mut annal = neighbours_annal(world, generation, &n, &names);
         annal.id = format!("neighbours:{generation}");
         annal.members = grouped
             .remove(&("neighbours", generation))
@@ -1298,16 +1429,16 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
         annal
     }));
     out.extend(spreads.into_iter().map(|(generation, s)| {
-        let mut annal = spread_annal(world, generation, &s);
+        let mut annal = spread_annal(world, generation, &s, &names);
         annal.id = format!("spread:{generation}");
         annal.members = grouped.remove(&("spread", generation)).unwrap_or_default();
         annal
     }));
-    out.extend(sound_changes(world, &shifts));
-    out.extend(grammar_changes(world, &shifts));
-    out.extend(pronoun_changes(world, &shifts));
-    out.extend(class_changes(world, &shifts));
-    out.extend(harmony_changes(world, &shifts));
+    out.extend(sound_changes(world, &shifts, &names));
+    out.extend(grammar_changes(world, &shifts, &names));
+    out.extend(pronoun_changes(world, &shifts, &names));
+    out.extend(class_changes(world, &shifts, &names));
+    out.extend(harmony_changes(world, &shifts, &names));
     fn languages(a: &mut Annal, world: &World, shifts: &Shifts) {
         for member in &mut a.members {
             languages(member, world, shifts);
@@ -1344,6 +1475,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
         a.languages.dedup();
     }
     for a in &mut out {
+        names.finish(a);
         languages(a, world, &shifts);
         if let Some(first) = a.members.first() {
             a.decision = first.decision;
@@ -1394,15 +1526,21 @@ const FELL_COLLAPSED: &[&str] = &[
 const STANDARD: &[&str] = &["In {n}, {l} became the standard."];
 
 /// A state rising, falling, or taking a standard, as `kind` says.
-fn state_annal(world: &World, generation: u32, state: usize, kind: &'static str) -> Annal {
+fn state_annal(
+    world: &World,
+    generation: u32,
+    state: usize,
+    kind: &'static str,
+    names: &Names,
+) -> Annal {
     let s = &world.states[state];
-    let rulers = world.community_name_at(s.rulers, generation);
-    let variety = world.communities[s.rulers].variety;
-    let realm = world.varieties[variety].title(s.name.form_at(generation));
+    let rulers = names.people(world, s.rulers, generation);
+    let realm = names.state(world, state, generation);
     let court = world
         .place_at(s.capital, generation)
+        .map(|text| names.mark(text, Subject::Land { region: s.capital }))
         .unwrap_or_else(|| "their heart land".into());
-    let tongue = world.language_title_at(world.standard_variety(state), generation);
+    let tongue = names.language(world, world.standard_variety(state), generation);
     let mut notes = Vec::new();
     let mut peoples = vec![s.rulers];
     let options = match kind {
@@ -1449,12 +1587,13 @@ fn state_annal(world: &World, generation: u32, state: usize, kind: &'static str)
     };
     let conqueror = peoples
         .get(1)
-        .map(|&b| world.community_name_at(b, generation))
+        .map(|&b| names.people(world, b, generation))
         .unwrap_or_default();
     Annal {
         id: String::new(),
         members: Vec::new(),
         languages: Vec::new(),
+        names: Vec::new(),
         generation,
         kind,
         text: tell(
@@ -1513,24 +1652,33 @@ const VERNACULAR_SCRIPTURE: &[&str] = &[
 
 /// Speakers of `variety` beginning to write their own speech in place of
 /// a classical form.
-fn vernacular_annal(world: &World, generation: u32, variety: usize, by: Vernacular) -> Annal {
-    let tongue = world.language_title_at(variety, generation);
+fn vernacular_annal(
+    world: &World,
+    generation: u32,
+    variety: usize,
+    by: Vernacular,
+    names: &Names,
+) -> Annal {
+    let tongue = names.language(world, variety, generation);
     let high = world.varieties[variety]
         .high
-        .map(|h| crate::language_label(world, h))
+        .map(|h| {
+            names.mark(
+                crate::language_label(world, h),
+                Subject::Language { variety: h },
+            )
+        })
         .unwrap_or_default();
     let peoples: Vec<usize> = (0..world.communities.len())
         .filter(|&c| world.communities[c].variety == variety)
         .collect();
     let people = peoples
         .first()
-        .map(|&c| world.community_name_at(c, generation))
+        .map(|&c| names.people(world, c, generation))
         .unwrap_or_default();
     let (options, states, religions, realm, faith) = match by {
         Vernacular::Standard { state } => {
-            let s = &world.states[state];
-            let realm = world.varieties[world.communities[s.rulers].variety]
-                .title(s.name.form_at(generation));
+            let realm = names.state(world, state, generation);
             (
                 VERNACULAR_STANDARD,
                 vec![state],
@@ -1540,7 +1688,7 @@ fn vernacular_annal(world: &World, generation: u32, variety: usize, by: Vernacul
             )
         }
         Vernacular::Scripture { religion } => {
-            let faith = world.faith_name(religion);
+            let faith = names.faith(world, religion);
             (
                 VERNACULAR_SCRIPTURE,
                 Vec::new(),
@@ -1554,6 +1702,7 @@ fn vernacular_annal(world: &World, generation: u32, variety: usize, by: Vernacul
         id: String::new(),
         members: Vec::new(),
         languages: Vec::new(),
+        names: Vec::new(),
         generation,
         kind: "vernacular",
         text: tell(
@@ -1646,12 +1795,15 @@ const RESPELLED: &[&str] = &[
 ];
 
 /// A religion's founding.
-fn faith_annal(world: &World, generation: u32, religion: usize) -> Annal {
+fn faith_annal(world: &World, generation: u32, religion: usize, names: &Names) -> Annal {
     let r = &world.religions[religion];
     let sacred = &world.varieties[r.sacred];
-    let faith = world.faith_name(religion);
-    let founder = sacred.title(&r.founder.form);
-    let people = world.community_name_at(r.people, generation);
+    let faith = names.faith(world, religion);
+    let founder = names.mark(
+        sacred.title(&r.founder.form),
+        Subject::Religion { id: religion },
+    );
+    let people = names.people(world, r.people, generation);
     let options = match r.how {
         Revelation::Troubles => FOUNDED_TROUBLES,
         Revelation::Quiet => FOUNDED_QUIET,
@@ -1681,6 +1833,7 @@ fn faith_annal(world: &World, generation: u32, religion: usize) -> Annal {
         id: String::new(),
         members: Vec::new(),
         languages: Vec::new(),
+        names: Vec::new(),
         generation,
         kind: "faith",
         text: tell(
@@ -1845,9 +1998,14 @@ const SPREADS_NAMED: usize = 3;
 /// One entry for every people spreading into new land in `generation`,
 /// told together, and when there are many only counted, with each in the
 /// apparatus.
-fn spread_annal(world: &World, generation: u32, spreads: &[(usize, usize)]) -> Annal {
-    let name = |c: usize| world.community_name_at(c, generation);
-    let land = |r: usize| place(world, r, generation);
+fn spread_annal(
+    world: &World,
+    generation: u32,
+    spreads: &[(usize, usize)],
+    names: &Names,
+) -> Annal {
+    let name = |c: usize| names.people(world, c, generation);
+    let land = |r: usize| names.land(world, r, generation);
     let mut notes = Vec::new();
     let text = if spreads.len() > SPREADS_NAMED {
         notes.extend(
@@ -1884,6 +2042,7 @@ fn spread_annal(world: &World, generation: u32, spreads: &[(usize, usize)]) -> A
         id: String::new(),
         members: Vec::new(),
         languages: Vec::new(),
+        names: Vec::new(),
         generation,
         kind: "spread",
         text,
@@ -1925,8 +2084,8 @@ const NEIGHBOURS_NAMED: usize = 3;
 /// One entry for every change among neighbours in `generation`. A single
 /// change is told as any other dealing is; several are told together, and
 /// many only counted, with each pair in the apparatus.
-fn neighbours_annal(world: &World, generation: u32, n: &Neighbours) -> Annal {
-    let name = |c: usize| world.community_name_at(c, generation);
+fn neighbours_annal(world: &World, generation: u32, n: &Neighbours, names: &Names) -> Annal {
+    let name = |c: usize| names.people(world, c, generation);
     let g = u64::from(generation);
     let single = |kind: &str, options: &[&str], (a, b): (usize, usize)| {
         tell(
@@ -1999,6 +2158,7 @@ fn neighbours_annal(world: &World, generation: u32, n: &Neighbours) -> Annal {
         id: String::new(),
         members: Vec::new(),
         languages: Vec::new(),
+        names: Vec::new(),
         generation,
         kind: "neighbours",
         text,
@@ -2037,22 +2197,6 @@ fn number(n: usize) -> String {
         .map_or_else(|| n.to_string(), |w| (*w).to_string())
 }
 
-/// What `region` was called at the end of `generation`.
-fn place(world: &World, region: usize, generation: u32) -> String {
-    world
-        .place_at(region, generation)
-        .unwrap_or_else(|| "a land without a name".into())
-}
-
-/// What `region` was called before anything that happened in
-/// `generation`, or at its end if it had no name before.
-fn place_before(world: &World, region: usize, generation: u32) -> String {
-    match generation.checked_sub(1) {
-        Some(g) if world.place_at(region, g).is_some() => place(world, region, g),
-        _ => place(world, region, generation),
-    }
-}
-
 /// The linguist's note on how `region` came by the name it took in
 /// `generation`: what it meant when coined, or what it was borrowed from.
 fn place_note(world: &World, region: usize, generation: u32) -> Option<String> {
@@ -2077,7 +2221,7 @@ fn place_note(world: &World, region: usize, generation: u32) -> Option<String> {
 
 /// One entry per language and generation in which its sounds changed,
 /// told through a word that changed, with the laws in the apparatus.
-fn sound_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
+fn sound_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> {
     let laws = world.law_catalog();
     let label = |id: &str| {
         laws.iter()
@@ -2098,7 +2242,7 @@ fn sound_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
             by_generation.entry(generation).or_default().push(id);
         }
         for (generation, ids) in by_generation {
-            let people = speakers(world, shifts, v, generation);
+            let people = speakers(world, shifts, v, generation, names);
             let keys = [key("law"), u64::from(generation), v as u64];
             let text = match example(variety, generation) {
                 Some((before, after, gloss)) => tell(
@@ -2123,7 +2267,7 @@ fn sound_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
                 Some(&(_, _, source)) => format!(
                     "{}, spreading from {}",
                     label(id),
-                    speakers(world, shifts, source, generation)
+                    speakers(world, shifts, source, generation, names)
                 ),
                 None => label(id),
             };
@@ -2136,6 +2280,7 @@ fn sound_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
                 id: format!("sounds:{v}:{generation}"),
                 members: Vec::new(),
                 languages: Vec::new(),
+                names: Vec::new(),
                 generation,
                 kind: "law",
                 text,
@@ -2173,7 +2318,7 @@ fn sound_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
 
 /// Grammatical changes are told from recorded notices, not inferred from
 /// the language's current markers or how its words happen to look.
-fn grammar_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
+fn grammar_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> {
     let mut out = Vec::new();
     for (v, variety) in world.varieties.iter().enumerate() {
         // Inherited events belong to the parent's annals. A daughter can
@@ -2195,7 +2340,7 @@ fn grammar_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
             })
         {
             let generation = notice.generation;
-            let people = speakers(world, shifts, v, generation);
+            let people = speakers(world, shifts, v, generation, names);
             let category_id = notice.category.id();
             let category = notice.category.label();
             let (text, notes, event, donor) = match &notice.event {
@@ -2205,7 +2350,7 @@ fn grammar_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
                     let text = match marker.kind {
                         MarkerKind::None => format!(
                             "In {}, {category} had no overt grammatical marker.",
-                            world.language_title_at(v, generation)
+                            names.language(world, v, generation)
                         ),
                         _ => format!(
                             "In those days {people} began marking {category} with {phrase}."
@@ -2320,7 +2465,7 @@ fn grammar_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
                 }
                 NoticeKind::ImportedPair { lexeme, from } => {
                     let word = variety.lexicon.get(*lexeme);
-                    let language = world.language_title_at(*from, generation);
+                    let language = names.language(world, *from, generation);
                     (
                         format!(
                             "The word for “{}” came to {people} from {language} together with its {category_id} form.",
@@ -2337,7 +2482,7 @@ fn grammar_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
                     )
                 }
                 NoticeKind::MarkerTransfer { marker, from } => {
-                    let language = world.language_title_at(*from, generation);
+                    let language = names.language(world, *from, generation);
                     let phrase = grammatical_marker(
                         variety,
                         variety.grammar.marker(*marker),
@@ -2362,6 +2507,7 @@ fn grammar_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
                 id: format!("grammar:{v}:{position}"),
                 members: Vec::new(),
                 languages: Vec::new(),
+                names: Vec::new(),
                 generation,
                 kind: "grammar",
                 text,
@@ -2401,7 +2547,7 @@ fn grammar_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
     out
 }
 
-fn pronoun_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
+fn pronoun_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> {
     use umran_sim::pronouns::NoticeKind;
     let mut out = Vec::new();
     for (v, variety) in world.varieties.iter().enumerate() {
@@ -2417,7 +2563,7 @@ fn pronoun_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
                 continue;
             }
             let generation = notice.generation;
-            let people = speakers(world, shifts, v, generation);
+            let people = speakers(world, shifts, v, generation, names);
             let gloss = |id: &str| umran_sim::concepts::by_id(id).map_or("", |c| c.gloss);
             let (before, after) = (variety.spell(&notice.before), variety.spell(&notice.after));
             let meaning = gloss(notice.cell);
@@ -2457,7 +2603,7 @@ fn pronoun_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
                     "pronoun-borrowed",
                     format!(
                         "In those days {people} took *{after}* for “{meaning}” from {}, in place of *{before}*.",
-                        world.language_title_at(*from, generation)
+                        names.language(world, *from, generation)
                     ),
                     "Pronouns are rarely borrowed; it takes long and intense contact, as English they came from Norse.".into(),
                     Some(*from),
@@ -2468,6 +2614,7 @@ fn pronoun_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
                 id: format!("pronoun:{v}:{position}"),
                 members: Vec::new(),
                 languages: Vec::new(),
+                names: Vec::new(),
                 generation,
                 kind,
                 text,
@@ -2504,7 +2651,7 @@ fn pronoun_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
     out
 }
 
-fn harmony_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
+fn harmony_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> {
     use umran_sim::harmony::{Feature, Trigger};
     let mut out = Vec::new();
     for (v, variety) in world.varieties.iter().enumerate() {
@@ -2523,7 +2670,7 @@ fn harmony_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
             })
         {
             let generation = notice.generation;
-            let people = speakers(world, shifts, v, generation);
+            let people = speakers(world, shifts, v, generation, names);
             let agree = match notice.feature {
                 Feature::Backness => "front with front and back with back",
                 Feature::Rounding => "rounded with rounded",
@@ -2558,7 +2705,7 @@ fn harmony_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
                 Trigger::Contact { donor, cause } => (
                     format!(
                         "Among {people}, vowel harmony gave way after long contact with {}, which had none.",
-                        world.language_title_at(donor, generation)
+                        names.language(world, donor, generation)
                     ),
                     "Urban Uzbek lost its palatal harmony this way, under long contact with Persian.".into(),
                     Vec::new(),
@@ -2570,6 +2717,7 @@ fn harmony_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
                 id: format!("harmony:{v}:{position}"),
                 members: Vec::new(),
                 languages: Vec::new(),
+                names: Vec::new(),
                 generation,
                 kind: if notice.gained {
                     "harmony-gained"
@@ -2610,7 +2758,7 @@ fn harmony_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
     out
 }
 
-fn class_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
+fn class_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> {
     use umran_sim::gender::{Basis, ClassChange};
     let mut out = Vec::new();
     for (v, variety) in world.varieties.iter().enumerate() {
@@ -2629,7 +2777,7 @@ fn class_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
             })
         {
             let generation = notice.generation;
-            let people = speakers(world, shifts, v, generation);
+            let people = speakers(world, shifts, v, generation, names);
             let said = |class: u32, at: u32| {
                 format!(
                     "*{}*",
@@ -2677,6 +2825,7 @@ fn class_changes(world: &World, shifts: &Shifts) -> Vec<Annal> {
                 id: format!("classes:{v}:{position}"),
                 members: Vec::new(),
                 languages: Vec::new(),
+                names: Vec::new(),
                 generation,
                 kind,
                 text,
@@ -2777,7 +2926,7 @@ fn grammatical_marker(variety: &Variety, marker: &Marker, generation: u32) -> St
 /// Who spoke variety `v` in `generation`: its people if one people spoke
 /// it then, otherwise its speakers, named by the language as it was then
 /// called.
-fn speakers(world: &World, shifts: &Shifts, v: usize, generation: u32) -> String {
+fn speakers(world: &World, shifts: &Shifts, v: usize, generation: u32, names: &Names) -> String {
     let mut speaking = (0..world.communities.len()).filter(|&c| {
         shifts.alive_at(world, c, generation) && shifts.spoken_by(world, c, generation) == v
     });
@@ -2785,11 +2934,11 @@ fn speakers(world: &World, shifts: &Shifts, v: usize, generation: u32) -> String
         // Named as they were called going into the year's changes.
         (Some(c), None) => format!(
             "the {}",
-            world.community_name_at(c, generation.saturating_sub(1))
+            names.people(world, c, generation.saturating_sub(1))
         ),
         _ => format!(
             "those who spoke {}",
-            world.language_title_at(v, generation.saturating_sub(1))
+            names.language(world, v, generation.saturating_sub(1))
         ),
     }
 }
@@ -2909,6 +3058,50 @@ mod cause_tests {
     use umran_sim::{Naming, Params, SoundProfile};
 
     #[test]
+    fn names_follow_reordered_repeated_placeholders_not_spelling() {
+        let world = World::solo(7, &SoundProfile::base(), Params::static_society());
+        let names = Names::default();
+        let people = names.mark("Nām".into(), Subject::People { id: 0 });
+        let land = names.mark("Nām".into(), Subject::Land { region: 3 });
+        let mut text = tell(
+            &world,
+            &[0],
+            &["😀 *{b}* saw {a}; {b}."],
+            &[("a", &people), ("b", &land)],
+        );
+        let mut recorded = Vec::new();
+        names.expand(&mut text, Some(&mut recorded));
+        assert_eq!(text, "😀 *Nām* saw Nām; Nām.");
+        assert_eq!(
+            recorded.iter().map(|name| name.start).collect::<Vec<_>>(),
+            vec![4, 13, 18],
+        );
+        assert_eq!(
+            recorded
+                .iter()
+                .map(|name| &name.subject)
+                .collect::<Vec<_>>(),
+            vec![
+                &Subject::Land { region: 3 },
+                &Subject::People { id: 0 },
+                &Subject::Land { region: 3 },
+            ],
+        );
+        let json = serde_json::to_value(&recorded).unwrap();
+        assert_eq!(
+            json[0]["subject"],
+            serde_json::json!({ "kind": "land", "region": 3 })
+        );
+        assert_eq!(
+            json[1]["subject"],
+            serde_json::json!({ "kind": "people", "id": 0 })
+        );
+        let mut note = format!("{land} had the same name as {people}.");
+        names.expand(&mut note, None);
+        assert_eq!(note, "Nām had the same name as Nām.");
+    }
+
+    #[test]
     fn ranked_examples_match_exhaustive_spelling() {
         fn exhaustive(
             variety: &Variety,
@@ -2995,6 +3188,18 @@ mod cause_tests {
                 .find(|a| a.kind == "found" && a.peoples == [0])
                 .unwrap();
             assert!(before.text.contains(&world.language_title_at(original, 0)));
+            assert!(
+                before
+                    .names
+                    .iter()
+                    .any(|name| name.subject == Subject::People { id: 0 })
+            );
+            assert!(
+                before
+                    .names
+                    .iter()
+                    .any(|name| name.subject == Subject::Language { variety: original })
+            );
             world.generation = shift_generation;
             let adopted = world.shift(0, 1);
             assert_ne!(original, adopted);
@@ -3003,6 +3208,7 @@ mod cause_tests {
                 .find(|a| a.id == before.id)
                 .unwrap();
             assert_eq!(after.text, before.text);
+            assert!(after.names == before.names);
             assert_eq!(after.languages, vec![original]);
         }
     }

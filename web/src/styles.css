@@ -2135,7 +2135,19 @@ button.play {
   text-overflow: ellipsis;
 }
 
-button.chronicle-latest:hover {
+.chronicle-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+
+.chronicle-entry:hover {
   color: var(--ink);
 }
 
