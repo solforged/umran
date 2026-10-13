@@ -791,6 +791,78 @@ export interface BuilderExample {
   built: { concept: string; gloss: string; form: FormView };
 }
 
+/// One aligned position: an IPA segment on each side, or null for a gap.
+export interface Segment { a: string | null; b: string | null }
+
+/// The comparative method on two languages' current forms (compare.rs). It never reads lineage.
+export interface Correspondences {
+  a: number;
+  b: number;
+  generation: number;
+  /// The meaning set used: "core", "specimen", or a semantic field id from `meaningSets`.
+  meanings: string;
+  rows: {
+    concept: string;
+    gloss: string;
+    a: FormView;
+    b: FormView;
+    alignment: Segment[];
+    /// Share of this row's aligned pairs that are recurring correspondences, 0 to 1.
+    regularity: number;
+    /// The method's verdict: the pair looks cognate.
+    cognate: boolean;
+  }[];
+  /// Recurring correspondences, strongest first; `support` counts the rows that show the pair.
+  regular: { pair: Segment; support: number }[];
+  /// Grammatical observations the method used.
+  grammar: { category: string; a: string; b: string; regular: boolean }[];
+}
+
+/// The answer key for the same rows, kept apart from `Correspondences`.
+export interface Truth {
+  rows: { concept: string; sameRoot: boolean; borrowed: { into: number; from: number; cause: LoanCause } | null }[];
+  /// Nearest common ancestor variety, when the two are related.
+  ancestor: number | null;
+  /// The generation they parted.
+  splitAt: number | null;
+}
+
+export interface MeaningSet { id: string; label: string }
+
+/// One side of a shared language in `SpeechDelta`.
+export interface SpeechSide {
+  alive: boolean;
+  /// Languages descended from it on this side after the divergence.
+  descendants: number;
+  /// Laws applied after the divergence on this side.
+  laws: { id: string; label: string; generation: number }[];
+  specimen: SpecimenWord[];
+}
+
+/// What diverged in speech between two tellings at one year, for the languages they share
+/// from before the divergence. Branch-local descendants are counted, never paired by id.
+export interface SpeechDelta {
+  generation: number;
+  /// The generation the two tellings parted.
+  diverged: number;
+  /// The first decision after the divergence in the right telling.
+  decision: DecisionView | null;
+  languages: {
+    /// A variety id both tellings share from before the divergence.
+    variety: number;
+    left: SpeechSide;
+    right: SpeechSide;
+    /// Law ids applied after the divergence on one side only.
+    onlyLeft: string[];
+    onlyRight: string[];
+    /// Specimen meanings whose current forms differ.
+    changedWords: { concept: string; gloss: string; left: FormView | null; right: FormView | null }[];
+    /// Loans after the divergence, counted by donor variety.
+    loansLeft: { donor: number; count: number }[];
+    loansRight: { donor: number; count: number }[];
+  }[];
+}
+
 export interface LexiconForm {
   spelled: string;
   said: string | null;
@@ -1008,6 +1080,11 @@ export interface ReadEngine {
   loanTrail(generation: number, variety: number, concept: string): Read<LoanTrail | null>;
   grammarStory(generation: number, variety: number, category: string): Read<GrammarStory>;
   builderExamples(generation: number, variety: number): Read<BuilderExample[]>;
+  /// The comparative method on current forms; never reads lineage.
+  correspondences(generation: number, a: number, b: number, meanings: string): Read<Correspondences>;
+  /// What the record knows about the same rows.
+  truth(generation: number, a: number, b: number, meanings: string): Read<Truth>;
+  meaningSets(): Read<MeaningSet[]>;
   story(generation: number, subject: Subject): Read<Story>;
   climate(generation: number): Read<ClimateView>;
   river(generation: number, id: number): Read<RiverNamesView>;
@@ -1065,6 +1142,7 @@ export interface Engine {
   setAuthor(author: string): Promise<void>;
   previous(reading: ReadingRef): Promise<ReadingRef>;
   compare(left: number, right: number, generation: number): Read<Comparison>;
+  speechDelta(left: number, right: number, generation: number): Read<SpeechDelta>;
   rename(telling: number, name: string): Promise<void>;
   actAt(reading: ReadingRef, mutation: number, action: Action): Promise<void>;
   untilAt(reading: ReadingRef, mutation: number, limit: number): Promise<number>;

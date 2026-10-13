@@ -2,6 +2,7 @@
 //! browser asks for presentation-ready views of any generation as JSON.
 
 mod annals;
+mod desk;
 mod evidence;
 mod notebook;
 mod provenance;
@@ -599,6 +600,10 @@ impl Bench {
             .fixed
             .as_ref()
             .map_or_else(|| self.chronicle.latest(), |(_, world)| world);
+        to_json(&self.decision_views(world))
+    }
+
+    fn decision_views(&self, world: &World) -> Vec<DecisionView> {
         let mut generation = 0;
         let mut actions = self.chronicle.actions().iter().enumerate();
         let mut views = Vec::with_capacity(world.decisions.len());
@@ -812,7 +817,7 @@ impl Bench {
                 },
             });
         }
-        to_json(&views)
+        views
     }
 
     pub fn save_note(&mut self, json: &str) -> Result<(), String> {

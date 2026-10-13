@@ -316,6 +316,21 @@ This bookkeeping makes no random draws and does not itself change replay.
   Repetition of one marker pair contributes at most one correspondence
   support per category, not one clue for every noun. Marker ancestry,
   grammatical sources, histories, and lineage are never evidence.
+  The philologist's desk (`umran-web/src/desk.rs`) exposes that comparison
+  through `correspondences`: current same-meaning forms, phoneme alignments
+  with explicit gaps, regularity, the method's cognate verdict, and the
+  current grammatical contrasts it inspected. Its displayed correspondence
+  support counts distinct lexical rows, not repeated positions or grammar
+  votes; inference still uses the method's existing support thresholds.
+  Grammatical observations say whether they supplied recurring support in
+  the final inference round. `meaningSets` offers the core list, the six
+  specimen words, then every semantic field with its catalog label.
+  The separate `truth` read uses recorded root identity, loan causes, and
+  variety forks; it never supplies evidence to the blind comparison. Missing
+  words are omitted identically from both reads. A loan inherited by a
+  daughter names the original borrowing variety. Where both forms are loans,
+  the single loan slot prefers borrowing between the compared varieties,
+  then the first side's record, then the second's.
 - Language views report contrast retention separately from how synthetic
   they are: the usage-weighted share of eligible forms with an audible
   grammatical contrast inside one word. Separate particles score zero for
@@ -628,6 +643,20 @@ This bookkeeping makes no random draws and does not itself change replay.
 - Varieties fork on splits and shifts and keep their lineage (`Fork`);
   `World::cognate` and `root_of` give true descent. The comparative method
   (`compare.rs`) must never read lineage; it is only graded against it.
+  The revision desk's pure `speechDelta` read compares tellings at one
+  recorded generation, using the same exact common reading as `compare`.
+  Only languages already present there are paired; later descendants are
+  counted per side, including silent descendants, never joined by coincident
+  numeric ids. Each shared language reports whether it is spoken, its own
+  post-divergence law ledger and specimen, exclusive law ids, differing
+  specimen forms (spelling or IPA), and newly borrowed lexemes by donor,
+  including loans now obsolete. Descendant laws and loans stay with their
+  own languages rather than being misattributed to a shared ancestor.
+  Ledger and lexeme prefixes preserve decisions made in the same generation
+  as the divergence. The first right-side decision after that exact boundary
+  uses the existing decision view and is shown only once it has happened at
+  the requested reading. Reading before the divergence gives no later speech
+  changes or decision. These reads do not alter recipes or engine revision.
 - A people holds many lands (`Community::lands`, its heart first) and
   lives by a way of life (`livelihood.rs`): foraging, herding, or
   farming. Each sets how many a land feeds them (farmers on open plain
@@ -2013,6 +2042,13 @@ shared coastal midpoint. The browser's `cartography.ts` projects this one
 geography as an equirectangular chart or an orthographic globe; d3-geo clips
 the seam and horizon. Switching or rotating views changes no history.
 Movement views use the event's recorded `bySea`, not the present coast.
+The workshop's reading place keeps optional chart and globe cameras,
+globe rotation and projection under the existing `langgen.place.` key;
+older reading places open without these fields. Without a saved camera,
+`MapView` frames the living communities' recorded `lands`, using their
+geographic boundaries to pad a chart box or face and size the globe.
+Its temporary `story` reading accepts region IDs and dated centre-to-centre
+route legs, preserving the reader's camera until that reading ends.
 
 Revision 33 replaces the old flat geography and its region identities.
 Earlier recipes open recovery with their originals intact rather than
@@ -2131,8 +2167,15 @@ confluence region; a tributary can border several reaches of its parent.
 Close zoom adds attested names in the selected
 people's speech, falling back to the mouth's speakers. River cards retain
 name records, exonyms, and flow annals. Weather colouring uses zone departures,
-and climate annals lead to zone cards. Far, middle, and close chart views
-disclose progressively finer detail; a kilometre scale follows the camera.
+and climate annals lead to zone cards. One kilometre-per-screen-pixel
+policy controls far, middle and close detail and the matching projection
+layer masks: world lettering above 20 km/pixel, regional lettering below
+6 km/pixel, tongue lettering below 1.5 km/pixel. Regional land and water
+lettering begins at 13 CSS pixels and grows to 20, while terrain glyphs
+are screen-size capped and border strokes do not scale with the camera.
+A ruled key names the active colouring and enabled overlays. Naming
+speech and known-land veiling are independent, explicit choices; opening
+a people or language card never silently changes the chart's names.
 Lakes appear on both chart and globe as sea-filled, coast-outlined insets
 within their regions. Their area is not modelled: every outline is drawn
 at a fixed 0.6 scale toward its region centre, not from water elevation.

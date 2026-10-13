@@ -40,6 +40,10 @@ import type {
   LoanTrail,
   GrammarStory,
   BuilderExample,
+  Correspondences,
+  Truth,
+  MeaningSet,
+  SpeechDelta,
 } from "./model";
 import type { EngineReply, EngineRequest, EngineStatus, Opened, ReadMethod, WriteMethod, Written } from "./engineProtocol";
 
@@ -160,6 +164,9 @@ class Reading implements ReadEngine {
   loanTrail(generation: number, variety: number, concept: string) { return this.ask<LoanTrail | null>("loanTrail", generation, variety, concept); }
   grammarStory(generation: number, variety: number, category: string) { return this.ask<GrammarStory>("grammarStory", generation, variety, category); }
   builderExamples(generation: number, variety: number) { return this.ask<BuilderExample[]>("builderExamples", generation, variety); }
+  correspondences(generation: number, a: number, b: number, meanings: string) { return this.ask<Correspondences>("correspondences", generation, a, b, meanings); }
+  truth(generation: number, a: number, b: number, meanings: string) { return this.ask<Truth>("truth", generation, a, b, meanings); }
+  meaningSets() { return this.ask<MeaningSet[]>("meaningSets"); }
   story(generation: number, subject: Subject) { return this.ask<Story>("story", generation, JSON.stringify(subject)); }
   climate(generation: number) { return this.year<ClimateView>("climate", generation); }
   river(generation: number, id: number) { return this.ask<RiverNamesView>("river", generation, id); }
@@ -254,6 +261,7 @@ class World implements Engine {
   async setAuthor(author: string) { await this.write("setAuthor", author); }
   async previous(reading: ReadingRef) { return json(await this.call("previous", [JSON.stringify(reading)], null)) as ReadingRef; }
   compare(left: number, right: number, generation: number) { return this.own<Comparison>("compare", left, right, generation); }
+  speechDelta(left: number, right: number, generation: number) { return this.own<SpeechDelta>("speechDelta", left, right, generation); }
   async rename(telling: number, name: string) { await this.write("rename", telling, name); }
   async actAt(reading: ReadingRef, mutation: number, action: Action) {
     await this.write("actAt", JSON.stringify(reading), mutation, JSON.stringify(action));

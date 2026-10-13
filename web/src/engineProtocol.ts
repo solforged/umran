@@ -10,7 +10,8 @@ export const READ_METHODS = {
   lake: true, map: true, wordMap: true, decisions: true, foundingPreview: true,
   foundingSites: true, foundingTraits: true, forming: true, resolveNote: true,
   lawOccurrences: true, specimenLives: true, wordLife: true, loanTrail: true,
-  grammarStory: true, builderExamples: true,
+  grammarStory: true, builderExamples: true, correspondences: true, truth: true,
+  meaningSets: true, speechDelta: true,
   previous: true, compare: true,
 } as const satisfies Record<string, true>;
 /// Workbench methods that change the world; each answers with its new status.
