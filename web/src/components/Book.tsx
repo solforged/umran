@@ -11,6 +11,7 @@ import { Miniature } from "./MapView";
 import { Specimen } from "./Specimen";
 import { Renderings } from "./Renderings";
 import { Told } from "./Told";
+import { format } from "../route";
 import "./book.css";
 
 const CONTENTS = [
@@ -80,9 +81,20 @@ function subjectId(subject: Subject, overview: Overview): string {
   }
 }
 
+function subjectChapter(subject: Subject): string {
+  switch (subject.kind) {
+    case "world": return "frontispiece";
+    case "people": return "peoples";
+    case "language": case "word": return "languages";
+    case "state": case "religion": case "craft": return "institutions";
+    case "history": case "event": case "law": return "chronicle";
+    default: return "lands";
+  }
+}
+
 function CausePhrase({ annal, overview }: { annal: Annal; overview: Overview }) {
   const cause = lore.causePhrase(annal, overview);
-  return cause ? <span className="book-cause"> <a href={`#event-${cause.trigger.id}`} title={cause.trigger.text}>{cause.text[0].toUpperCase() + cause.text.slice(1)}</a>.</span> : null;
+  return cause ? <span className="book-cause"> <button type="button" className="link" data-book-target={`event-${cause.trigger.id}`} title={cause.trigger.text}>{cause.text[0].toUpperCase() + cause.text.slice(1)}</button>.</span> : null;
 }
 
 /// `marked` names the author's decision on the entry itself. `dated`
@@ -157,7 +169,8 @@ function PeopleChapter({ community: c, eras, ctx }: { community: Community; eras
   </article>;
 }
 
-export function Book({ engine, catalog, version, generation, overview, map, title, author, decisionsFor, notes, onReadNote, onBack }: {
+export function Book({ worldId, chapter, onChapter, engine, catalog, version, generation, overview, map, title, author, decisionsFor, notes, onReadNote, onBack }: {
+  worldId: string; chapter: string | null; onChapter: (chapter: string | null) => void;
   engine: ReadEngine; catalog: Catalog; version: number; generation: number;
   overview: Overview; map: WorldMap; title: string; author: string | null;
   decisionsFor: (telling: number) => Read<DecisionView[]>; notes: NotebookNote[]; onBack: () => void;
@@ -167,7 +180,19 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
   const [copyError, setCopyError] = useState<string | null>(null);
   const [noteError, setNoteError] = useState<string | null>(null);
   const close = useRef<HTMLButtonElement>(null);
+  const inBookNavigation = useRef<{ chapter: string | null } | null>(null);
   useEffect(() => { close.current?.focus(); }, []);
+  useEffect(() => {
+    if (inBookNavigation.current?.chapter === chapter) { inBookNavigation.current = null; return; }
+    inBookNavigation.current = null;
+    if (chapter) document.getElementById(`book-${chapter}`)?.scrollIntoView({ block: "start" });
+  }, [chapter]);
+  const scrollTo = (target: HTMLElement) => {
+    target.scrollIntoView({ block: "start" });
+    const next = target.closest<HTMLElement>("[data-book-chapter]")?.dataset.bookChapter ?? null;
+    inBookNavigation.current = { chapter: next };
+    onChapter(next);
+  };
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || document.querySelector("dialog[open]") || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return;
@@ -178,13 +203,14 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
   }, [onBack]);
   const ctx: ChapterContext = {
     engine, version, generation, overview, map,
-    link: (subject, label) => <a href={`#${subjectId(subject, overview)}`} onClick={(event) => {
-      if (subject.kind === "word") { event.preventDefault(); ctx.open(subject); }
+    link: (subject, label) => <a href={format({ kind: "world", id: worldId, page: "book", chapter: subjectChapter(subject) })} onClick={(event) => {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      event.preventDefault(); ctx.open(subject);
     }}>{label}</a>,
     open: (subject) => {
       const id = subjectId(subject, overview);
       const arrive = (target: HTMLElement) => {
-        target.scrollIntoView({ block: "start" });
+        scrollTo(target);
         if (subject.kind === "word") {
           const evidence = target.querySelector("details");
           if (evidence) evidence.open = true;
@@ -255,21 +281,37 @@ export function Book({ engine, catalog, version, generation, overview, map, titl
   const head = (index: number, copyLines?: string[] | (() => string[] | Promise<string[]>)) => (
     <header className="book-running-head">
       <span>{index + 1} · {CONTENTS[index][1]}</span>
-      <a href="#book-contents">Contents</a>
+      <a href={format({ kind: "world", id: worldId, page: "book" })} onClick={(event) => {
+        event.preventDefault();
+        const contents = document.getElementById("book-contents");
+        if (contents) scrollTo(contents);
+      }}>Contents</a>
       {copyLines ? <button type="button" className="book-copy" onClick={async () => void copy(CONTENTS[index][0], (await (typeof copyLines === "function" ? copyLines() : copyLines)).join("\n"))}>
         {copied === CONTENTS[index][0] ? "Copied" : "Copy"}
       </button> : null}
     </header>
   );
-  return <section className="book" role="dialog" aria-modal="false" aria-label={`The book of ${title}`}>
+  return <section className="book" role="dialog" aria-modal="false" aria-label={`The book of ${title}`} onClick={(event) => {
+    const link = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-book-target]") : null;
+    const id = link?.dataset.bookTarget;
+    if (!id) return;
+    event.preventDefault();
+    const target = document.getElementById(id);
+    if (target) scrollTo(target);
+  }}>
     <header className="book-sheet-head">
       <span className="book-of">The book</span><h2>{title}</h2>
-      <button ref={close} type="button" className="icon-btn book-close" aria-label="Back to the chart" onClick={onBack}>×</button>
+      <button ref={close} type="button" className="icon-btn book-close" aria-label="Back to the workshop" onClick={onBack}>×</button>
     </header>
     <div className="book-page">
       <nav className="book-contents" id="book-contents" aria-label="Table of contents">
         <h3>Contents</h3>
-        <ol>{CONTENTS.map(([id, name]) => <li key={id}><a href={`#book-${id}`}>{name}</a></li>)}</ol>
+        <ol>{CONTENTS.map(([id, name]) => <li key={id}><a href={format({ kind: "world", id: worldId, page: "book", chapter: id })} onClick={(event) => {
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          event.preventDefault();
+          const target = document.getElementById(`book-${id}`);
+          if (target) scrollTo(target);
+        }}>{name}</a></li>)}</ol>
       </nav>
       <section className="book-chapter book-frontispiece" id="book-frontispiece" data-book-chapter="frontispiece">
         {head(0)}

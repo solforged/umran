@@ -102,7 +102,10 @@ export function Stage({
   onTick,
   onRun,
   onRunStart,
+  onRunTarget,
   onStop,
+  interruptedRun,
+  onDismissRun,
   onNextEvent,
   onUndo,
   onDialog,
@@ -145,9 +148,13 @@ export function Stage({
   onTick: () => Promise<boolean>;
   /// A frame's worth of generations, committed together.
   onRun: (generations: number) => Promise<boolean>;
-  onRunStart: () => void;
+  onRunStart: (target: number) => void;
+  /// Study has no fixed end; keep the next year it intends to write.
+  onRunTarget: (target: number) => void;
   /// The years stopped passing; a chance to save.
   onStop: () => void;
+  interruptedRun: { year: number; target: number } | null;
+  onDismissRun: () => void;
   onNextEvent: () => Promise<boolean>;
   onUndo: () => void;
   onDialog: (kind: DialogKind) => void;
@@ -317,9 +324,14 @@ export function Stage({
   run.current = onRun;
   const stop = useRef(onStop);
   stop.current = onStop;
-  const closeDecisions = () => {
+  const target = useRef(onRunTarget);
+  target.current = onRunTarget;
+  const paceRef = useRef(pace);
+  paceRef.current = pace;
+  const advancing = useRef(false);
+  const closeDecisions = (targetYear: number) => {
     afterLift.current = null; suspendedLeaf.current = null; comparing.current = false;
-    setSettlement(null); onRunStart(); setRunError(null);
+    setSettlement(null); onRunStart(targetYear); setRunError(null);
     setTrail((visits) => {
       const current = visits.at(-1)!.subject;
       const subjects = visits.filter((visit) => visit.subject.kind !== "event");
@@ -328,16 +340,25 @@ export function Stage({
     if (focus.kind === "event") setLeaf(null);
   };
   const finishStudy = async (advance: () => Promise<boolean>) => {
-    closeDecisions();
-    if (await advance()) stop.current();
+    if (advancing.current || running !== null || playing) return;
+    closeDecisions((generation + 1) * YEARS);
+    advancing.current = true;
+    try { await advance(); }
+    catch (error) { setRunError(message(error)); }
+    finally { advancing.current = false; stop.current(); }
   };
-  const startRun = () => {
-    if (!atPresent || running !== null || !Number.isFinite(runYear) || runYear <= generation * YEARS) return;
-    closeDecisions(); setPlaying(false); setLeaf(null);
-    setRunning(Math.ceil(runYear / YEARS));
+  const startRun = (targetYear = runYear) => {
+    if (!atPresent || playing || advancing.current || running !== null || !Number.isFinite(targetYear) || targetYear <= generation * YEARS) return;
+    const end = Math.ceil(targetYear / YEARS);
+    closeDecisions(end * YEARS); setPlaying(false); setLeaf(null);
+    setRunYear(targetYear); setRunning(end);
   };
-  const startStudy = () => { closeDecisions(); setRunning(null); setPlaying(true); };
+  const startStudy = () => {
+    if (advancing.current) return;
+    closeDecisions((generation + 1) * YEARS); setRunning(null); setPlaying(true);
+  };
   const halt = () => { setPlaying(false); setRunning(null); };
+  useEffect(() => { if (sheet) halt(); }, [!!sheet]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (running !== null || playing) return;
     setRunYear((value) => Number.isFinite(value) && value <= latest * YEARS ? nextRunYear(latest) : value);
@@ -346,6 +367,7 @@ export function Stage({
     if (runOnOpen === null) return;
     onRunOpened();
     if (!atPresent || runOnOpen <= generation * YEARS) return;
+    onRunStart(Math.ceil(runOnOpen / YEARS) * YEARS);
     setRunYear(runOnOpen);
     setRunning(Math.ceil(runOnOpen / YEARS));
   }, [runOnOpen]);
@@ -353,6 +375,7 @@ export function Stage({
     if (running === null) return;
     let frame = 0;
     let cancelled = false;
+    let pending = false;
     let current = generation;
     let chunk = 1;
     const advance = async () => {
@@ -362,12 +385,16 @@ export function Stage({
       let advanced: boolean;
       // The app commits the new year before this resolves, so the next chunk
       // reads its point and mutation guard.
+      pending = true; advancing.current = true;
       try { advanced = await run.current(amount); }
       catch (error) {
-        if (!cancelled) { setRunError(message(error)); setRunning(null); }
+        pending = false; advancing.current = false;
+        if (cancelled) stop.current();
+        else { setRunError(message(error)); setRunning(null); }
         return;
       }
-      if (cancelled) return;
+      pending = false; advancing.current = false;
+      if (cancelled) { stop.current(); return; }
       if (!advanced) { setRunning(null); return; }
       current += amount;
       // The years pass on the engine's thread, so the page stays live; size
@@ -377,7 +404,12 @@ export function Stage({
       else frame = requestAnimationFrame(() => void advance());
     };
     frame = requestAnimationFrame(() => void advance());
-    return () => { cancelled = true; cancelAnimationFrame(frame); stop.current(); };
+    return () => {
+      cancelled = true; cancelAnimationFrame(frame);
+      // A Stop can arrive while the worker is finishing a chunk. Save that
+      // completed chunk, not the preceding frame.
+      if (!pending) stop.current();
+    };
   }, [running]);
   const previousYear = useRef(generation);
   useEffect(() => {
@@ -425,21 +457,34 @@ export function Stage({
   };
   useEffect(() => {
     if (!playing) return;
-    // A year that takes longer than the pace skips the ticks it overlaps.
-    let busy = false;
-    const timer = window.setInterval(() => {
-      if (busy) return;
-      busy = true;
-      tick.current().then(
-        (advanced) => { if (!advanced) setPlaying(false); },
-        (error: unknown) => { setRunError(message(error)); setPlaying(false); },
-      ).finally(() => { busy = false; });
-    }, 1000 / pace);
-    return () => {
-      window.clearInterval(timer);
-      stop.current();
+    let cancelled = false;
+    let pending = false;
+    let current = generation;
+    let timer = 0;
+    const advance = async () => {
+      if (cancelled) return;
+      const before = performance.now();
+      pending = true; advancing.current = true;
+      try {
+        const advanced = await tick.current();
+        pending = false; advancing.current = false;
+        if (cancelled) { stop.current(); return; }
+        if (!advanced) { setPlaying(false); return; }
+        current += 1;
+        target.current((current + 1) * YEARS);
+        timer = window.setTimeout(() => void advance(), Math.max(0, 1000 / paceRef.current - (performance.now() - before)));
+      } catch (error) {
+        pending = false; advancing.current = false;
+        if (cancelled) stop.current();
+        else { setRunError(message(error)); setPlaying(false); }
+      }
     };
-  }, [playing, pace]);
+    timer = window.setTimeout(() => void advance(), 1000 / paceRef.current);
+    return () => {
+      cancelled = true; window.clearTimeout(timer);
+      if (!pending) stop.current();
+    };
+  }, [playing]);
   // Turning back to an earlier year stops the years passing.
   useEffect(() => {
     if (!atPresent) halt();
@@ -841,9 +886,14 @@ export function Stage({
       </Sheet>
 
       <footer className="timebar stage-bar">
+        {interruptedRun && running === null && !playing ? <p className="small" style={{ gridColumn: "1 / -1", gridRow: 3, margin: 0 }} role="status">
+          Writing stopped at year {interruptedRun.year} when the page closed.{" "}
+          <button type="button" className="link" disabled={!atPresent} onClick={() => startRun(interruptedRun.target)}>Continue to year {interruptedRun.target}</button>{" "}
+          <button type="button" className="link" onClick={onDismissRun}>Dismiss</button>
+        </p> : null}
         <form className="run-control" onSubmit={(e) => { e.preventDefault(); startRun(); }}>
           {running !== null ? <button type="button" className="primary play" onClick={(event) => { event.preventDefault(); flushSync(() => setRunning(null)); }}><Square size={14} aria-hidden="true" /> Stop</button>
-            : <button type="submit" className="primary play" disabled={!atPresent || !Number.isFinite(runYear) || runYear <= generation * YEARS}><Play size={15} aria-hidden="true" /> Run</button>}
+            : <button type="submit" className="primary play" disabled={!atPresent || playing || !Number.isFinite(runYear) || runYear <= generation * YEARS}><Play size={15} aria-hidden="true" /> Run</button>}
           <label>to year <input aria-label="Run to year" type="number" min={(generation + 1) * YEARS} step={YEARS} value={Number.isNaN(runYear) ? "" : runYear} disabled={running !== null}
             onChange={(e) => setRunYear(e.currentTarget.valueAsNumber)} /></label>
         </form>

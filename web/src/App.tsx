@@ -17,18 +17,29 @@ import { Pending } from "./components/Pending";
 import { sampleWorld } from "./sample";
 import { download } from "./takeout";
 import { useLiftedValue } from "./motion";
+import { format as formatRoute, parse, push, replace, type Route } from "./route";
 import {
+  bringBack,
   describe,
+  discardDraft,
   loadShelf,
   newBookId,
+  onShelfChange,
+  putAway,
   rawShelf,
   readBook,
   readPlace,
-  removeBook,
+  rebuildShelf,
+  removeForGood,
   saveBook,
   savePlace,
+  scanBooks,
   setLast,
+  StaleSave,
   worldName,
+  type BookEntry,
+  type ReadingPlace,
+  type ScannedBook,
   type Shelf as ShelfIndex,
 } from "./shelf";
 
@@ -38,12 +49,25 @@ const EVENT_LIMIT = 400;
 type View =
   | { kind: "loading" }
   | { kind: "shelf" }
-  | { kind: "setup" }
+  | { kind: "setup"; draft?: string }
   | { kind: "book"; id: string }
-  | { kind: "recovery"; what: string; raw: string; error: string };
+  | { kind: "recovery"; what: string; raw: string; error: string; books?: ScannedBook[] };
 
-/// The workshop, or the book laid open over its chart.
-type Page = "stage" | "book";
+function shelfRecovery(error: unknown): View {
+  let books: ScannedBook[] = [];
+  let reason = message(error);
+  try { books = scanBooks(); }
+  catch (e) { reason += ` The saved worlds could not be listed: ${message(e)}.`; }
+  return { kind: "recovery", what: "The shelf", raw: rawShelf() ?? "", error: reason, books };
+}
+
+interface OpenBookSave {
+  id: string;
+  revision: number;
+  history: string | null;
+  keptTitle?: { title: string; named: boolean };
+}
+
 
 /// Which telling and year are on screen. Null telling and point read the
 /// present telling; null viewing is its latest year.
@@ -60,7 +84,7 @@ function foundingAction(f: FoundingDesign): Action {
 export default function App() {
   const [view, setView] = useState<View>({ kind: "loading" });
   const [catalog, setCatalog] = useState<Catalog | null>(null);
-  const [shelf, setShelf] = useState<ShelfIndex>({ books: [], last: null });
+  const [shelf, setShelf] = useState<ShelfIndex>({ books: [], last: null, drafts: [], putAway: [] });
   const mapMotion = useRef<MapMotionReading | null>(null);
   const engine = useRef<Engine | null>(null);
   const [version, setVersion] = useState(0);
@@ -73,13 +97,18 @@ export default function App() {
   const [notebook, setNotebook] = useState<NotebookNote[]>([]);
   const [community, setCommunity] = useState(0);
   const [dialog, setDialog] = useState<DialogKind | null>(null);
-  const [page, setPage] = useState<Page>("stage");
-  const [bookChapter, setBookChapter] = useState<string | null>(null);
+  const [route, setRoute] = useState<Route>({ kind: "shelf" });
+  const routeRef = useRef<Route>(route);
+  const page = route.kind === "world" ? route.page : "stage";
+  const bookChapter = route.kind === "world" ? route.chapter ?? null : null;
   /// Years a newly founded world runs to when the workshop first opens.
   const [firstRun, setFirstRun] = useState<number | null>(null);
-  useEffect(() => {
-    if (page === "book" && bookChapter) document.getElementById(`book-${bookChapter}`)?.scrollIntoView({ block: "start" });
-  }, [page, bookChapter]);
+  const [runTo, setRunTo] = useState<number | null>(null);
+  const runToRef = useRef<number | null>(null);
+  const runningRef = useRef(false);
+  const [interruptedRun, setInterruptedRun] = useState<{ year: number; target: number } | null>(null);
+  const [writing, setWriting] = useState(false);
+  const readyId = useRef<string | null>(null);
   const [comparisonReturn, setComparisonReturn] = useState(0);
   const [sheetReturn, setSheetReturn] = useState(0);
   const liftedDialog = useLiftedValue(dialog, () => setSheetReturn((n) => n + 1));
@@ -88,41 +117,123 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [opening, setOpening] = useState<string | null>(null);
+  const [newerBook, setNewerBook] = useState<string | null>(null);
+  const openedBook = useRef<OpenBookSave | null>(null);
+  const openingRequest = useRef(0);
+  const pendingWrites = useRef(0);
   const bookId = view.kind === "book" ? view.id : null;
 
   // The present telling at its latest year, which the shelf describes. Kept
   // whenever it is opened, so saving never waits on the engine's thread.
   const present = useRef<Overview | null>(null);
+  const placeRef = useRef<{ frame: Frame | null; focus: Focus }>({ frame: null, focus: { kind: "world" } });
+  const keepPlace = useCallback(() => {
+    const id = openedBook.current?.id;
+    const { frame: reading, focus: subject } = placeRef.current;
+    if (id && readyId.current === id && reading) savePlace(id, {
+      telling: reading.telling, point: reading.point, viewing: reading.viewing, focus: subject,
+      ...(runToRef.current === null ? {} : { runTo: runToRef.current }),
+    });
+  }, []);
   const persist = useCallback(() => {
     const world = engine.current;
-    if (!world || bookId === null || !present.current) return true;
+    const saved = openedBook.current;
+    if (!world || !saved || readyId.current !== saved.id || !present.current) return true;
     try {
-      const entry = describe(bookId, present.current, world.title(), world.author());
-      setShelf(saveBook(shelf, entry, world.save()));
+      const currentHistory = world.save();
+      const entry = describe(saved.id, present.current, world.title(), world.author());
+      entry.generation = world.latest();
+      let history = currentHistory;
+      if (saved.keptTitle) {
+        entry.title = saved.keptTitle.title;
+        entry.named = saved.keptTitle.named;
+        history = JSON.stringify({ ...JSON.parse(currentHistory), title: entry.title }, null, 2);
+      }
+      let kept;
+      try {
+        kept = saveBook(entry, history, saved.revision);
+      } catch (e) {
+        if (!(e instanceof StaleSave)) throw e;
+        const id = newBookId();
+        const title = `${entry.title} (kept from another tab)`;
+        const named = entry.named === true;
+        const copy = { ...entry, id, title, named };
+        const copyHistory = JSON.stringify({ ...JSON.parse(currentHistory), title }, null, 2);
+        kept = saveBook(copy, copyHistory, 0);
+        saved.id = id;
+        saved.keptTitle = { title, named };
+        readyId.current = id;
+        const currentRoute = routeRef.current;
+        const destination: Route = currentRoute.kind === "world"
+          ? { ...currentRoute, id } : { kind: "world", id, page: "stage" };
+        replace(destination);
+        routeRef.current = destination;
+        setRoute(destination);
+        setView({ kind: "book", id });
+        setInfo("Another tab saved this world. Both versions are kept; this tab is now reading its own copy.");
+      }
+      saved.revision = kept.revision;
+      saved.history = currentHistory;
+      setShelf(kept.shelf);
+      keepPlace();
+      setNewerBook(null);
       setSaveError(null);
       return true;
     } catch (e) {
       setSaveError(`Not saved in this browser: ${message(e)}. The book's save file still works.`);
       return false;
     }
-  }, [bookId, shelf]);
+  }, [keepPlace]);
+
+  const startWriting = useCallback((target: number) => {
+    runningRef.current = true; setWriting(true);
+    runToRef.current = target; setRunTo(target); setInterruptedRun(null);
+    setDialog(null);
+    keepPlace();
+  }, [keepPlace]);
+  const writingTarget = useCallback((target: number) => {
+    runToRef.current = target; setRunTo(target);
+    keepPlace();
+  }, [keepPlace]);
+  const stopWriting = useCallback(() => {
+    runningRef.current = false; setWriting(false);
+    runToRef.current = null; setRunTo(null);
+    persist();
+  }, [persist]);
+  const dismissRun = useCallback(() => {
+    runToRef.current = null; setRunTo(null); setInterruptedRun(null);
+    keepPlace();
+  }, [keepPlace]);
+  useEffect(() => {
+    if (!writing) return;
+    const timer = window.setInterval(() => { if (runningRef.current) persist(); }, 3000);
+    return () => window.clearInterval(timer);
+  }, [writing, persist]);
 
   useEffect(() => {
-    // Playback saves when it stops; an accepted update also saves its latest
-    // generation. A full or unavailable store must not cause a lossy reload.
+    // Checkpoints and lifecycle saves use the worker's last completed chunk,
+    // synchronously: a closing page cannot wait for another engine reading.
     const beforeUpdate = (event: Event) => {
       if (!persist()) event.preventDefault();
     };
     window.addEventListener("umran:before-update", beforeUpdate);
-    return () => window.removeEventListener("umran:before-update", beforeUpdate);
+    const pagehide = () => { if (runningRef.current) persist(); };
+    const hidden = () => { if (runningRef.current && document.visibilityState === "hidden") persist(); };
+    window.addEventListener("pagehide", pagehide);
+    document.addEventListener("visibilitychange", hidden);
+    return () => {
+      window.removeEventListener("umran:before-update", beforeUpdate);
+      window.removeEventListener("pagehide", pagehide);
+      document.removeEventListener("visibilitychange", hidden);
+    };
   }, [persist]);
 
   // Saving needs the book open first, so new books save on the next render.
   const [unsaved, setUnsaved] = useState(false);
   useEffect(() => {
     if (unsaved && bookId !== null) {
-      persist();
-      setUnsaved(false);
+      if (persist()) setUnsaved(false);
     }
   }, [unsaved, bookId, persist]);
 
@@ -144,23 +255,39 @@ export default function App() {
     if (request !== showing.current || world !== engine.current) return null;
     if (atPresent && overview.generation === latest) present.current = overview;
     const next: Frame = { ...place, reading, latest, overview };
+    placeRef.current.frame = next;
     flushSync(() => { setFrame(next); then?.(next); });
     return next;
   }, []);
 
-  const adopt = useCallback(async (id: string, next: Engine, fresh: boolean) => {
+  const adopt = useCallback(async (id: string, next: Engine, fresh: boolean, entry?: BookEntry, placeOverride?: ReadingPlace, canAdopt?: () => boolean, request = openingRequest.current) => {
     const [map, tip] = await Promise.all([next.map(), next.tip().overview(next.latest())]);
+    if (!fresh && !entry) {
+      const stored = loadShelf();
+      entry = [...stored.books, ...stored.putAway].find((book) => book.id === id);
+      setShelf(stored);
+    }
+    if (request !== openingRequest.current || (canAdopt && !canAdopt())) { next.dispose(); return false; }
     // The world on screen stays readable until the new one is committed.
     const previous = engine.current;
     engine.current = next;
     present.current = tip;
+    openedBook.current = {
+      id, revision: entry?.revision ?? 0, history: fresh ? null : next.save(),
+      keptTitle: entry?.named === false && next.title() !== null ? { title: entry.title, named: false } : undefined,
+    };
+    readyId.current = null;
+    setNewerBook(null);
+    setSaveError(null);
     mapMotion.current = null;
     // Reopen where the reader left off, if that reading still exists; a place
     // from another engine revision or a removed telling opens the latest year.
-    const place = fresh ? null : readPlace(id);
+    const place = fresh ? null : placeOverride ?? readPlace(id);
     const opened = place ? await show({ telling: place.telling, point: place.point, viewing: place.viewing }).catch(() => null) : null;
     if (!opened) await show(PRESENT);
     if (previous !== next) previous?.dispose();
+    if (request !== openingRequest.current || engine.current !== next) return false;
+    readyId.current = id;
     setNotebook(next.notebook());
     setWorldMap(map);
     setCompareWith(null);
@@ -169,37 +296,102 @@ export default function App() {
     setTellingVersion((v) => v + 1);
     setCommunity(0);
     setDialog(null);
-    setPage("stage");
+    const target = place?.runTo;
+    runningRef.current = false; setWriting(false);
+    const unfinished = typeof target === "number" && Number.isFinite(target) && target > tip.latest * YEARS ? target : null;
+    runToRef.current = unfinished;
+    setRunTo(unfinished);
+    setInterruptedRun(unfinished === null ? null : { year: tip.latest * YEARS, target: unfinished });
+    if (fresh) {
+      // A begun founding belongs to the chart room, not an unfinished form
+      // reached by going Back from its workshop.
+      if (routeRef.current.kind === "setup") replace({ kind: "shelf" });
+      const destination: Route = { kind: "world", id, page: "stage" };
+      push(destination);
+      routeRef.current = destination;
+      setRoute(destination);
+    }
     setError(null);
     setInfo(null);
     setVersion((v) => v + 1);
     setView({ kind: "book", id });
     if (fresh) setUnsaved(true);
+    return true;
   }, [show]);
 
   const [focus, setFocus] = useState<Focus>({ kind: "world" });
+  placeRef.current.focus = focus;
   useEffect(() => {
-    if (view.kind === "book" && frame) savePlace(view.id, { telling: frame.telling, point: frame.point, viewing: frame.viewing, focus });
-  }, [view, frame, focus]);
+    keepPlace();
+  }, [view, frame, focus, runTo, keepPlace]);
 
-  const openBook = useCallback(
-    (id: string) => {
-      const raw = readBook(id);
-      if (raw === null) {
-        setError("That world could not be found in this browser.");
+  const openBook = useCallback(async (id: string, place?: ReadingPlace, fromAnotherTab = false): Promise<void> => {
+    const request = ++openingRequest.current;
+    const previous = engine.current;
+    const previousHistory = previous?.save();
+    const safeToRefresh = () => request === openingRequest.current
+      && (!fromAnotherTab || (previous === engine.current && !runningRef.current && pendingWrites.current === 0
+        && previous?.save() === previousHistory && openedBook.current?.history === previousHistory));
+    let entry: BookEntry | undefined;
+    try {
+      const stored = loadShelf();
+      setShelf(stored);
+      entry = [...stored.books, ...stored.putAway].find((book) => book.id === id);
+    } catch (e) { setView(shelfRecovery(e)); return; }
+    const raw = readBook(id);
+    if (raw === null) {
+      setError("That world could not be found in this browser.");
+      if (!fromAnotherTab) {
+        const destination: Route = { kind: "shelf" };
+        replace(destination); routeRef.current = destination; setRoute(destination);
+        setOpening(null);
         setView({ kind: "shelf" });
+      }
+      return;
+    }
+    setOpening(id);
+    try {
+      const next = await loadEngine(raw);
+      if (!safeToRefresh()) {
+        next.dispose();
+        if (fromAnotherTab && request === openingRequest.current) setNewerBook(id);
         return;
       }
-      loadEngine(raw).then((next) => adopt(id, next, false)).catch(
-        (e) => {
-          // Open the shelf next time rather than this book again.
-          setShelf((current) => setLast(current, null));
-          setView({ kind: "recovery", what: "This world", raw, error: message(e) });
-        },
-      );
-    },
-    [adopt],
-  );
+      const adopted = await adopt(id, next, false, entry, place, safeToRefresh, request);
+      // adopt(false) leaves the current route, page, and chapter untouched.
+      if (fromAnotherTab && request === openingRequest.current && !adopted) setNewerBook(id);
+    } catch (e) {
+      if (request !== openingRequest.current) return;
+      // Keep malformed single-world recovery separate from an unreadable index.
+      try { setShelf(setLast(null)); } catch { /* The original is still kept. */ }
+      setView({ kind: "recovery", what: "This world", raw, error: message(e) });
+    } finally {
+      if (request === openingRequest.current) setOpening(null);
+    }
+  }, [adopt]);
+
+  const applyRoute = useCallback((destination: Route) => {
+    routeRef.current = destination;
+    setRoute(destination);
+    setDialog(null); setCompareWith(null); setFirstRun(null); setError(null);
+    if (destination.kind === "world") {
+      if (readyId.current === destination.id && openedBook.current?.id === destination.id && engine.current && placeRef.current.frame) {
+        ++openingRequest.current;
+        setOpening(null);
+        setView({ kind: "book", id: destination.id });
+      } else void openBook(destination.id);
+    } else {
+      ++openingRequest.current; ++showing.current;
+      setOpening(null);
+      setView(destination);
+    }
+  }, [openBook]);
+  const navigate = useCallback((destination: Route, method: "push" | "replace" = "push") => {
+    if (method === "push") {
+      if (formatRoute(destination) !== formatRoute(routeRef.current)) push(destination);
+    } else replace(destination);
+    applyRoute(destination);
+  }, [applyRoute]);
 
   useEffect(() => {
     loadCatalog().then(setCatalog, (e) => setError(message(e)));
@@ -207,26 +399,71 @@ export default function App() {
     try {
       loaded = loadShelf();
     } catch (e) {
-      setView({ kind: "recovery", what: "The shelf", raw: rawShelf() ?? "", error: message(e) });
+      setView(shelfRecovery(e));
       return;
     }
     setShelf(loaded);
-    if (loaded.last !== null && loaded.books.some((b) => b.id === loaded.last)) openBook(loaded.last);
-    else setView({ kind: "shelf" });
-  }, [openBook]);
+    const destination = parse(window.location.hash, loaded.last);
+    if (!destination || (destination.kind === "world" && !loaded.books.some((entry) => entry.id === destination.id))) {
+      const room: Route = { kind: "shelf" };
+      replace(room); applyRoute(room);
+      setError(destination ? "That world could not be found in this browser." : "That page could not be found. Your worlds are still in the chart room.");
+      return;
+    }
+    // Seed a direct link's screen ancestry once. A reload already carries
+    // our history state and must not add another copy of these destinations.
+    if (window.history.state?.umran !== true && destination.kind !== "shelf") {
+      replace({ kind: "shelf" });
+      if (destination.kind === "world" && destination.page === "book") push({ kind: "world", id: destination.id, page: "stage" });
+      push(destination);
+    } else replace(destination);
+    applyRoute(destination);
+  }, [applyRoute]);
+
+  useEffect(() => {
+    const backOrForward = () => {
+      const destination = parse(window.location.hash, shelf.last);
+      if (!destination || (destination.kind === "world" && !shelf.books.some((entry) => entry.id === destination.id))) {
+        const room: Route = { kind: "shelf" };
+        replace(room); applyRoute(room);
+        setError(destination ? "That world could not be found in this browser." : "That page could not be found. Your worlds are still in the chart room.");
+      } else applyRoute(destination);
+    };
+    window.addEventListener("popstate", backOrForward);
+    return () => window.removeEventListener("popstate", backOrForward);
+  }, [applyRoute, shelf]);
+
+  useEffect(() => onShelfChange(({ book }) => {
+    let latestShelf: ShelfIndex;
+    try {
+      latestShelf = loadShelf();
+      setShelf(latestShelf);
+    } catch (e) { setView(shelfRecovery(e)); return; }
+    const saved = openedBook.current;
+    const world = engine.current;
+    if (view.kind !== "book" || !saved || !world || (book !== null && book !== saved.id)) return;
+    const stored = [...latestShelf.books, ...latestShelf.putAway].find((entry) => entry.id === saved.id);
+    if (!stored || (stored.revision ?? 0) <= saved.revision) return;
+    if (runningRef.current || pendingWrites.current > 0 || world.save() !== saved.history) {
+      setNewerBook(saved.id);
+      return;
+    }
+    const place = frame ? {
+      telling: frame.telling, point: frame.point, viewing: frame.viewing, focus,
+      ...(runToRef.current === null ? {} : { runTo: runToRef.current }),
+    } : undefined;
+    void openBook(saved.id, place, true);
+  }), [view, frame, focus, openBook]);
 
   // Record the destination after the stage's playback cleanup has saved.
   // Opening an unchanged world must also make it the one resumed next time.
   useEffect(() => {
-    if (view.kind === "loading" || view.kind === "recovery") return;
-    const last = view.kind === "book" ? view.id : null;
-    setShelf((current) => current.last === last ? current : setLast(current, last));
+    if (view.kind !== "book") return;
+    try { setShelf(setLast(view.id)); }
+    catch (e) { setView(shelfRecovery(e)); }
   }, [view]);
 
-  const toShelf = useCallback(() => {
-    setError(null);
-    setView({ kind: "shelf" });
-  }, []);
+  const toShelf = useCallback(() => navigate({ kind: "shelf" }), [navigate]);
 
   const overview = frame?.overview ?? null;
   const latest = frame?.latest ?? 0;
@@ -255,6 +492,7 @@ export default function App() {
     async (action: Action, from: Overview | null = overview) => {
       const current = engine.current;
       if (!current || !from) return;
+      pendingWrites.current++;
       try {
         await current.actAt({ telling: from.telling, point: from.point }, from.mutation, action);
         await changed(from);
@@ -262,6 +500,7 @@ export default function App() {
       } catch (e) {
         setError(message(e));
       }
+      finally { pendingWrites.current--; }
     },
     [overview, changed, persist],
   );
@@ -284,26 +523,32 @@ export default function App() {
     } catch (e) { setError(`This telling could not be read: ${message(e)}. Its saved telling is still kept.`); }
   }, [show]);
   const renameTelling = async (telling: number, name: string) => {
+    pendingWrites.current++;
     try {
       await engine.current?.rename(telling, name);
       if (frame) await show(frame, () => setVersion((v) => v + 1));
       persist();
     } catch (e) { setError(message(e)); }
+    finally { pendingWrites.current--; }
   };
 
   const saveNote = async (note: NotebookNote): Promise<string | null> => {
+    pendingWrites.current++;
     try {
       await engine.current?.saveNote(note);
       setNotebook(engine.current?.notebook() ?? []);
       return persist() ? null : "The entry is kept in this open world, but browser storage failed. Export a save file before closing.";
     } catch (e) { return message(e); }
+    finally { pendingWrites.current--; }
   };
   const removeNote = async (id: string): Promise<string | null> => {
+    pendingWrites.current++;
     try {
       await engine.current?.removeNote(id);
       setNotebook(engine.current?.notebook() ?? []);
       return persist() ? null : "The note was removed in this open world, but browser storage failed. Export a save file before closing.";
     } catch (e) { return message(e); }
+    finally { pendingWrites.current--; }
   };
   const openNote = async (note: NotebookNote): Promise<string | null> => {
     try {
@@ -316,10 +561,11 @@ export default function App() {
     } catch (e) { return message(e); }
   };
 
-  // One frame's run at the selected point; saving waits until it stops.
+  // One completed frame; periodic checkpoints and the final stop save it.
   const runYears = useCallback(async (generations: number): Promise<boolean> => {
     const current = engine.current;
     if (!current || !overview) return false;
+    pendingWrites.current++;
     try {
       await current.actAt({ telling: overview.telling, point: overview.point }, overview.mutation, { kind: "run", generations });
       return await changed(overview) !== null;
@@ -327,6 +573,7 @@ export default function App() {
       setError(message(e));
       return false;
     }
+    finally { pendingWrites.current--; }
   }, [overview, changed]);
   const tick = useCallback(() => runYears(1), [runYears]);
 
@@ -334,28 +581,77 @@ export default function App() {
     async (limit: number): Promise<boolean> => {
       const current = engine.current;
       if (!current || !overview) return false;
+      pendingWrites.current++;
       try {
         const ran = await current.untilAt({ telling: overview.telling, point: overview.point }, overview.mutation, limit);
         return await changed(overview, () => setInfo(ran >= limit ? `${limit * YEARS} years passed, and nothing of note befell.` : null)) !== null;
       } catch (e) { setError(message(e)); return false; }
+      finally { pendingWrites.current--; }
     },
     [overview, changed],
   );
 
-  const begin = useCallback(async (next: Engine, title: string | null, author: string | null, years: number) => {
+  const begin = useCallback(async (next: Engine, title: string | null, author: string | null, years: number, id: string) => {
     await next.setTitle(title ?? "");
     await next.setAuthor(author ?? "");
+    const tip = await next.tip().overview(next.latest());
+    const saved = saveBook(describe(id, tip, next.title(), next.author()), next.save(), 0);
+    setShelf(saved.shelf);
     try { localStorage.setItem("umran.author", author ?? ""); }
     catch { /* The author is still kept in the world save. */ }
-    await adopt(newBookId(), next, true);
+    // This world is already saved; do not schedule another initial save.
+    if (!await adopt(id, next, false)) return;
+    // A begun founding belongs to the chart room, not an unfinished form
+    // reached by going Back from its workshop.
+    if (routeRef.current.kind === "setup") replace({ kind: "shelf" });
+    const destination: Route = { kind: "world", id, page: "stage" };
+    push(destination);
+    routeRef.current = destination;
+    setRoute(destination);
     setFirstRun(years);
+    try { setShelf(discardDraft(id)); }
+    catch (failure) { setSaveError(`The world is saved, but its founding draft could not be cleared: ${message(failure)}.`); }
   }, [adopt]);
 
   const sample = async () => {
+    let next: Engine | null = null;
     try {
-      await adopt(newBookId(), await sampleWorld(), true);
+      next = await sampleWorld();
+      const expected = JSON.parse(next.save()) as Record<string, unknown>;
+      // The title distinguishes copies; the actual history and notes decide
+      // whether this is still the untouched chronicle already written.
+      delete expected.title;
+      delete expected.author;
+      const stored = loadShelf();
+      const allBooks = [...stored.books, ...stored.putAway];
+      const untouched = allBooks.find((book) => {
+        const raw = readBook(book.id);
+        if (!raw) return false;
+        try {
+          const recipe = JSON.parse(raw) as Record<string, unknown>;
+          delete recipe.title;
+          delete recipe.author;
+          return JSON.stringify(recipe) === JSON.stringify(expected);
+        } catch { return false; }
+      });
+      if (untouched) {
+        next.dispose();
+        next = null;
+        if (stored.putAway.some((book) => book.id === untouched.id)) setShelf(bringBack(untouched.id));
+        navigate({ kind: "world", id: untouched.id, page: "stage" });
+        return;
+      }
+      const sampleOverview = await next.tip().overview(next.latest());
+      const name = `${worldName(sampleOverview) ?? "A world"} · sample chronicle`;
+      let title = name;
+      let copy = 2;
+      while (allBooks.some((book) => book.title === title)) title = `${name} ${copy++}`;
+      await next.setTitle(title);
+      await adopt(newBookId(), next, true);
+      next = null;
     } catch (e) {
-      setError(`The sample could not be written: ${message(e)}`);
+      next?.dispose();
+      setError(`The sample could not be opened: ${message(e)}`);
     }
   };
 
@@ -380,6 +676,28 @@ export default function App() {
         <h1>{view.what} could not be opened</h1>
         <p>{view.error}</p>
         <p>It has not been changed or deleted. Download it before going on.</p>
+        {view.books ? <>
+          <p>These worlds were found in this browser, even though their list could not be read.</p>
+          <ul className="recovery-worlds">
+            {view.books.map((book) => <li key={book.id}>
+              <strong>{book.title ?? `A saved world (${book.id})`}</strong>
+              <small>{book.generation === null ? "Year unreadable" : `year ${book.generation * YEARS}`} · {book.bytes.toLocaleString()} bytes</small>
+              <button type="button" onClick={() => download(`umran-world-${book.id}.json`, book.raw)}>Download this world</button>
+            </li>)}
+          </ul>
+          {!view.books.length ? <p>No saved worlds could be found.</p> : null}
+          <p>Download all keeps the original saved data together in one file.</p>
+          <div className="row">
+            <button type="button" onClick={() => download("umran-recovered-worlds.json", JSON.stringify({ shelf: view.raw, books: view.books }, null, 2))}>Download all</button>
+            <button type="button" className="primary" onClick={() => {
+              try {
+                setShelf(rebuildShelf());
+                setError(null);
+                navigate({ kind: "shelf" }, "replace");
+              } catch (e) { setView(shelfRecovery(e)); }
+            }}>Rebuild the list of worlds</button>
+          </div>
+        </> : null}
         <div className="row">
           <button type="button" onClick={() => download("umran-unreadable.json", view.raw)}>
             Download saved data
@@ -397,6 +715,8 @@ export default function App() {
       <div className="app">
         <Founding
           catalog={catalog}
+          draft={view.draft}
+          onDraft={(draft) => navigate({ kind: "setup", draft }, "replace")}
           onBegin={begin}
           onChartRoom={toShelf}
         />
@@ -409,18 +729,34 @@ export default function App() {
       <>
         <ChartRoom
           revision={catalog.revision}
-          books={shelf.books}
-          onOpen={openBook}
-          onBegin={() => setView({ kind: "setup" })}
+          shelf={shelf}
+          opening={opening}
+          onOpen={(id) => navigate({ kind: "world", id, page: "stage" })}
+          onBegin={() => navigate({ kind: "setup" })}
           onSample={sample}
           onImport={(f) => void importFile(f)}
-          onFailure={(failure) => setView({ kind: "recovery", what: "The shelf", raw: rawShelf() ?? "", error: message(failure) })}
-          onRemove={(id) => {
-            try {
-              setShelf((current) => removeBook(current, id));
-            } catch (e) {
-              setError(`Could not remove it: ${message(e)}`);
-            }
+          onFailure={(failure) => setView(shelfRecovery(failure))}
+          onPutAway={(id) => {
+            try { setShelf(putAway(id)); return true; }
+            catch (e) { setError(`Could not put it away: ${message(e)}`); return false; }
+          }}
+          onBringBack={(id) => {
+            try { setShelf(bringBack(id)); return true; }
+            catch (e) { setError(`Could not bring it back: ${message(e)}`); return false; }
+          }}
+          onRemoveForGood={(id) => {
+            try { setShelf(removeForGood(id)); return true; }
+            catch (e) { setError(`Could not remove it: ${message(e)}`); return false; }
+          }}
+          onDownload={(id) => {
+            const raw = readBook(id);
+            if (raw !== null) download(`umran-world-${id}.json`, raw);
+            else setError("That world's saved data could not be found in this browser.");
+          }}
+          onResumeDraft={(id) => navigate({ kind: "setup", draft: id })}
+          onDiscardDraft={(id) => {
+            try { setShelf(discardDraft(id)); return true; }
+            catch (e) { setError(`Could not discard it: ${message(e)}`); return false; }
           }}
         />
         {error ? <p className="notice error">{error}</p> : null}
@@ -428,7 +764,7 @@ export default function App() {
     );
   }
 
-  const title = engine.current?.title() ?? worldName(overview) ?? "A new world";
+  const title = openedBook.current?.keptTitle?.title ?? engine.current?.title() ?? worldName(overview) ?? "A new world";
 
   const notices = (
     <>
@@ -444,6 +780,22 @@ export default function App() {
         </p>
       ) : null}
       {saveError ? <p className="notice error">{saveError}</p> : null}
+      {newerBook === view.id ? <p className="notice" role="status">
+        Another tab has saved a newer version of this world. Your open version has not been replaced.{" "}
+        <button type="button" className="link" disabled={opening !== null || pendingWrites.current > 0 || runningRef.current} onClick={() => {
+          const id = newerBook;
+          const currentRoute = routeRef.current;
+          if (!id || !persist()) return;
+          const destination: Route = currentRoute.kind === "world"
+            ? { ...currentRoute, id } : { kind: "world", id, page: "stage" };
+          replace(destination); routeRef.current = destination; setRoute(destination);
+          const place = {
+            telling: frame.telling, point: frame.point, viewing: frame.viewing, focus,
+            ...(runToRef.current === null ? {} : { runTo: runToRef.current }),
+          };
+          void openBook(id, place);
+        }}>Open the newer version</button>
+      </p> : null}
       {info ? (
         <p className="notice" role="status">
           {info} <button type="button" className="link" onClick={() => setInfo(null)}>Dismiss</button>
@@ -465,6 +817,7 @@ export default function App() {
   const settle = async (choice: SettlementChoice, preview: SettlementPreview) => {
     const current = engine.current;
     if (!current) return;
+    pendingWrites.current++;
     try {
       await current.actAt({ telling: preview.telling, point: preview.point }, preview.mutation, { kind: "settle", ...choice });
       await show(PRESENT, (after) => {
@@ -477,6 +830,7 @@ export default function App() {
       });
       persist();
     } catch (e) { setError(message(e)); }
+    finally { pendingWrites.current--; }
   };
 
   const dialogs =
@@ -525,6 +879,9 @@ export default function App() {
         sheet={page === "book" ? (
           <Pending reading={frame.reading}>
           <Book
+            worldId={view.id}
+            chapter={bookChapter}
+            onChapter={(chapter) => navigate({ kind: "world", id: view.id, page: "book", ...(chapter ? { chapter } : {}) }, "replace")}
             engine={frame.reading}
             author={engine.current.author()}
             decisionsFor={(telling) => engine.current!.read(telling).decisions()}
@@ -536,7 +893,7 @@ export default function App() {
             overview={overview}
             title={title}
             map={worldMap}
-            onBack={() => setPage("stage")}
+            onBack={() => navigate({ kind: "world", id: view.id, page: "stage" })}
           />
           </Pending>
         ) : null}
@@ -555,15 +912,18 @@ export default function App() {
         selected={selected}
         onSelect={setCommunity}
         onShelf={toShelf}
-        onBook={(chapter) => { setBookChapter(chapter ?? null); setPage("book"); }}
+        onBook={(chapter) => navigate({ kind: "world", id: view.id, page: "book", ...(chapter ? { chapter } : {}) })}
         onRestore={readTelling}
         onRenameTelling={renameTelling}
         onCompare={setCompareWith}
         onScrub={scrub}
         onTick={tick}
         onRun={runYears}
-        onRunStart={() => setDialog(null)}
-        onStop={persist}
+        onRunStart={startWriting}
+        onRunTarget={writingTarget}
+        onStop={stopWriting}
+        interruptedRun={interruptedRun}
+        onDismissRun={dismissRun}
         onNextEvent={() => nextEvent(EVENT_LIMIT)}
         onUndo={strike}
         onDialog={setDialog}

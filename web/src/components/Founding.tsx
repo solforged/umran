@@ -4,7 +4,7 @@ import { attempt, createEngine, message, presetDesign, preview } from "../engine
 import type { Action, Catalog, Craft, Engine, EthosAxis, Forming, FoundingPreview, FoundingTraits, GrammarChoice, GrammarDesign, LakeNamesView, Livelihood, MapSize, Naming, Overview, PossessorOrder, RiverNamesView, Variety, WordOrder, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { countWord, ETHOS_AXES, ETHOS_DRIVES, ETHOS_POLES, hue, landCardLabel, LIVELIHOOD_DRIVES, LIVELIHOOD_NAME, MARKING_PHRASE, MILD, OPENNESS, OPENNESS_DRIVES, peopleLabel, POSSESSOR_PHRASE, STANDING, STANDING_DRIVES, STRONG, TERRAIN_NAME, WORD_ORDER_PHRASE } from "../lore";
-import { worldName } from "../shelf";
+import { newBookId, readDraft, saveDraft, worldName, type DraftEntry } from "../shelf";
 import { Designer, randomSeed, type Founding as FoundingDesign } from "./Designer";
 import { FormingChart } from "./FormingChart";
 import { MapView } from "./MapView";
@@ -26,6 +26,7 @@ const LEANING = [0.35, 0.7];
 const DEFAULT_YEARS = 4000;
 /// Words a voice card shows, by the preview's gloss.
 const VOICE_WORDS = ["water", "fire", "sun", "night"];
+const WORLD_SIZES: Record<MapSize, string> = { small: "small", medium: "middling", large: "wide", vast: "vast" };
 
 type Step = "world" | "homeland" | "peoples" | "speech" | "title";
 const STEPS: { id: Step; name: string; next: string }[] = [
@@ -51,6 +52,88 @@ interface Founder extends FoundingDesign {
   crafts: Craft[];
   realm: boolean;
   faith: boolean;
+}
+
+/// Authored constraints only. The engine derives the map, names, and speech
+/// again through the ordinary founding path when this manuscript is opened.
+interface DraftDesign {
+  version: 1;
+  seed: number;
+  size: MapSize;
+  founders: Founder[];
+  step: number;
+  selected: number | null;
+  land: number | null;
+  title: string | null;
+  author: string;
+  years: number | null;
+  settling: Settling;
+  groupCount: number;
+  nextKey: number;
+}
+
+interface OpenedDraft {
+  design: DraftDesign;
+  id: string | null;
+  notice: string | null;
+}
+
+function freshDesign(): DraftDesign {
+  let author = "";
+  try { author = localStorage.getItem("umran.author") ?? ""; } catch { /* A title page may still be written. */ }
+  return { version: 1, seed: randomSeed(), size: "medium", founders: [], step: 0, selected: null, land: null,
+    title: null, author, years: DEFAULT_YEARS, settling: "one", groupCount: 3, nextKey: 0 };
+}
+
+function isDraftDesign(value: unknown): value is DraftDesign {
+  const record = (value: unknown): value is Record<string, unknown> =>
+    value !== null && typeof value === "object" && !Array.isArray(value);
+  const index = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+  const seed = (value: unknown): value is number => index(value) && value <= 0xffff_ffff;
+  const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
+  if (!record(value) || value.version !== 1 || !seed(value.seed)
+    || !["small", "medium", "large", "vast"].includes(String(value.size))
+    || !index(value.step) || value.step >= STEPS.length || !index(value.nextKey)
+    || (value.selected !== null && !index(value.selected)) || (value.land !== null && !index(value.land))
+    || (value.title !== null && typeof value.title !== "string") || typeof value.author !== "string"
+    || (value.years !== null && !finite(value.years))
+    || !["one", "kin", "neighbours"].includes(String(value.settling))
+    || !index(value.groupCount) || value.groupCount < 2 || value.groupCount > 6
+    || !Array.isArray(value.founders) || value.founders.length > MOST_PEOPLES) return false;
+  const keys = new Set<number>();
+  for (const founder of value.founders) {
+    if (!record(founder) || !index(founder.key) || keys.has(founder.key) || founder.key >= value.nextKey
+      || (founder.source !== null && (!index(founder.source) || !keys.has(founder.source)))
+      || (founder.region !== null && !index(founder.region))
+      || (founder.preset !== null && typeof founder.preset !== "string")
+      || !seed(founder.seed) || !finite(founder.power) || !finite(founder.openness)
+      || (founder.livelihood !== null && !["foraging", "herding", "farming"].includes(String(founder.livelihood)))
+      || !record(founder.ethos) || !Object.entries(founder.ethos).every(([axis, leaning]) =>
+        ETHOS_AXES.includes(axis as EthosAxis) && finite(leaning))
+      || !Array.isArray(founder.crafts) || !founder.crafts.every((craft: unknown) =>
+        ["metalworking", "riding", "seafaring", "writing"].includes(String(craft)))
+      || typeof founder.realm !== "boolean" || typeof founder.faith !== "boolean"
+      || !record(founder.naming) || !["people", "speakers", "place", "epithet"].includes(String(founder.naming.kind))
+      || (founder.naming.kind === "place" && typeof founder.naming.place !== "string")
+      || (founder.naming.kind === "epithet" && typeof founder.naming.epithet !== "string")
+      || !record(founder.design) || !Array.isArray(founder.design.sounds)
+      || !record(founder.design.spelling)) return false;
+    keys.add(founder.key);
+  }
+  return (value.selected === null || keys.has(value.selected))
+    && (value.step < 2 || value.founders.length > 0 || (value.step === 2 && value.land !== null));
+}
+
+function openDesign(id?: string): OpenedDraft {
+  if (id) {
+    try {
+      const raw = readDraft(id);
+      const design: unknown = raw === null ? null : JSON.parse(raw);
+      if (isDraftDesign(design)) return { design, id, notice: null };
+    } catch { /* Leave the original manuscript untouched. */ }
+    return { design: freshDesign(), id: null, notice: "That founding draft could not be opened; a fresh founding is open, and the saved draft has not been changed." };
+  }
+  return { design: freshDesign(), id: null, notice: null };
 }
 
 interface Built {
@@ -93,27 +176,27 @@ function markerChoice(speech: Variety, category: "plural" | "past" | "object"): 
 /// Draft on the real engine, one step at a time: the coasts, a homeland,
 /// the peoples, their speech, and the title page. Writing the chronicle
 /// hands that same world to the workshop with the years to run.
-export function Founding({ catalog, onBegin, onChartRoom }: {
+export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
   catalog: Catalog;
-  onBegin: (engine: Engine, title: string | null, author: string | null, years: number) => Promise<void>;
+  draft?: string;
+  onBegin: (engine: Engine, title: string | null, author: string | null, years: number, id: string) => Promise<void>;
   onChartRoom: () => void;
+  onDraft?: (id: string) => void;
 }) {
-  const [step, setStep] = useState<Step>("world");
+  const [opening] = useState(() => openDesign(draft));
+  const [step, setStep] = useState<Step>(STEPS[opening.design.step].id);
   const [detent, setDetent] = useState<SheetDetent>("half");
-  const [worldSeed, setWorldSeed] = useState(() => randomSeed());
-  const [size, setSize] = useState<MapSize>("medium");
-  const [founders, setFounders] = useState<Founder[]>([]);
-  const [selected, setSelected] = useState<number | null>(null);
-  const [inspected, setInspected] = useState<number | null>(null);
+  const [worldSeed, setWorldSeed] = useState(opening.design.seed);
+  const [size, setSize] = useState<MapSize>(opening.design.size);
+  const [founders, setFounders] = useState<Founder[]>(opening.design.founders);
+  const [selected, setSelected] = useState<number | null>(opening.design.selected);
+  const [inspected, setInspected] = useState<number | null>(opening.design.land);
   const mapContainer = useRef<HTMLElement>(null);
   const [inspection, setInspection] = useState<MapInspection | null>(null);
-  const [focus, setFocus] = useState<number | null>(null);
-  const [title, setTitle] = useState<string | null>(null);
-  const [author, setAuthor] = useState(() => {
-    try { return localStorage.getItem("umran.author") ?? ""; }
-    catch { return ""; }
-  });
-  const [years, setYears] = useState(DEFAULT_YEARS);
+  const [focus, setFocus] = useState<number | null>(opening.design.land);
+  const [title, setTitle] = useState<string | null>(opening.design.title);
+  const [author, setAuthor] = useState(opening.design.author);
+  const [years, setYears] = useState(opening.design.years ?? NaN);
   const [projection, setProjection] = useMapProjection(mapContainer);
   const [adjusting, setAdjusting] = useState<number | null>(null);
   const [redraw, setRedraw] = useState<{ seed: number; size: MapSize } | null>(null);
@@ -123,21 +206,148 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
   /// Whether the next land click founds another people there.
   const [adding, setAdding] = useState(false);
   const [moveNotice, setMoveNotice] = useState<string | null>(null);
-  const [settling, setSettling] = useState<Settling>("one");
-  const [groupCount, setGroupCount] = useState(3);
+  const [settling, setSettling] = useState<Settling>(opening.design.settling);
+  const [groupCount, setGroupCount] = useState(opening.design.groupCount);
   /// The world whose coasts have finished forming on the chart.
   const [formed, setFormed] = useState<string | null>(() =>
     window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "always" : null);
   const [built, setBuilt] = useState<Built | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [draftNotice, setDraftNotice] = useState(opening.notice);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const engine = useRef<Engine | null>(null);
   const base = useRef<{ seed: number; size: MapSize; engine: Engine } | null>(null);
   const published = useRef<Built | null>(null);
   const handedOver = useRef(false);
   const grammarDraws = useRef(new Map<number, { order: WordOrder; object: GrammarChoice; possessor: PossessorOrder }>());
-  const nextKey = useRef(0);
+  const nextKey = useRef(opening.design.nextKey);
   const pages = useRef<HTMLDivElement>(null);
   const roster = useRef<HTMLElement>(null);
+  const draftId = useRef(opening.id);
+  const restoring = useRef(opening.id !== null);
+  const requestedDraft = useRef(draft);
+  const baseline = useRef(JSON.stringify(opening.design));
+  const saved = useRef<string | null>(null);
+  const saving = useRef<number | undefined>(undefined);
+  const draftChanged = useRef(onDraft);
+  draftChanged.current = onDraft;
+  const design = useMemo<DraftDesign>(() => ({
+    version: 1, seed: worldSeed, size, founders, step: STEPS.findIndex((entry) => entry.id === step),
+    selected, land: inspected, title, author, years: Number.isFinite(years) ? years : null,
+    settling, groupCount, nextKey: nextKey.current,
+  }), [worldSeed, size, founders, step, selected, inspected, title, author, years, settling, groupCount]);
+  const rawDesign = useMemo(() => JSON.stringify(design), [design]);
+  const manuscript = useRef({ design, raw: rawDesign, built });
+  manuscript.current = { design, raw: rawDesign, built };
+
+  const keepDraft = useCallback((): boolean => {
+    if (handedOver.current || restoring.current) return true;
+    const { design, raw, built } = manuscript.current;
+    if (draftId.current === null && raw === baseline.current) return true;
+    if (draftId.current === null) {
+      draftId.current = newBookId();
+      draftChanged.current?.(draftId.current);
+    }
+    const current = built?.seed === design.seed && built.size === design.size && built.founders === design.founders ? built : null;
+    const peoples = current?.overview.communities.map((people) => ({
+      name: people.name, family: current.overview.varieties.find((variety) => variety.id === people.variety)!.family,
+      region: people.region, lands: people.lands,
+    }));
+    const signature = `${raw}\n${JSON.stringify(peoples)}`;
+    if (signature === saved.current) return true;
+    const worldSize = WORLD_SIZES[design.size];
+    const peopleCount = design.founders.length;
+    const subject = peopleCount
+      ? `${countWord(peopleCount).replace(/^./, (letter) => letter.toUpperCase())} ${peopleCount === 1 ? "people" : "peoples"} on a ${worldSize} world`
+      : `A ${worldSize} world`;
+    const entry: DraftEntry = {
+      id: draftId.current, title: design.title, summary: `${subject} · ${STEPS[design.step].name.toLowerCase()}`,
+      step: design.step, updated: Date.now(), seed: design.seed, size: design.size,
+      ...(peoples?.length ? { peoples } : {}),
+    };
+    try {
+      saveDraft(entry, raw);
+      saved.current = signature;
+      setSaveError(null);
+      return true;
+    } catch (failure) {
+      setSaveError(`This founding could not be kept in this browser: ${message(failure)}.`);
+      return false;
+    }
+  }, []);
+  const installDesign = useCallback(({ design, id, notice }: OpenedDraft) => {
+    window.clearTimeout(saving.current);
+    restoring.current = id !== null;
+    handedOver.current = false;
+    draftId.current = id;
+    saved.current = null;
+    baseline.current = JSON.stringify(design);
+    manuscript.current = { design, raw: baseline.current, built: null };
+    nextKey.current = design.nextKey;
+    grammarDraws.current.clear();
+    engine.current?.dispose();
+    engine.current = null;
+    base.current?.engine.dispose();
+    base.current = null;
+    published.current = null;
+    setBuilt(null);
+    setStep(STEPS[design.step].id);
+    setWorldSeed(design.seed);
+    setSize(design.size);
+    setFounders(design.founders);
+    setSelected(design.selected);
+    setInspected(design.land);
+    setFocus(design.land);
+    setTitle(design.title);
+    setAuthor(design.author);
+    setYears(design.years ?? NaN);
+    setSettling(design.settling);
+    setGroupCount(design.groupCount);
+    setMoving(null);
+    setAdding(false);
+    setAdjusting(null);
+    setRedraw(null);
+    setClearing(false);
+    setInspection(null);
+    setMoveNotice(null);
+    setError(null);
+    setSaveError(null);
+    setDraftNotice(notice);
+  }, []);
+
+  useEffect(() => {
+    if (requestedDraft.current === draft) return;
+    requestedDraft.current = draft;
+    // The first change replaces /found with this very draft, not a new one.
+    if ((draft ?? null) === draftId.current) return;
+    keepDraft();
+    installDesign(openDesign(draft));
+  }, [draft, keepDraft, installDesign]);
+
+  useEffect(() => {
+    if (manuscript.current.raw !== rawDesign) return;
+    if (restoring.current || handedOver.current || (draftId.current === null && rawDesign === baseline.current)) return;
+    if (draftId.current === null) {
+      draftId.current = newBookId();
+      draftChanged.current?.(draftId.current);
+    }
+    saving.current = window.setTimeout(keepDraft, 500);
+    return () => {
+      window.clearTimeout(saving.current);
+      saving.current = undefined;
+    };
+  }, [rawDesign, built, keepDraft]);
+
+  useEffect(() => {
+    const hidden = () => { if (document.visibilityState === "hidden") keepDraft(); };
+    window.addEventListener("pagehide", keepDraft);
+    document.addEventListener("visibilitychange", hidden);
+    return () => {
+      window.removeEventListener("pagehide", keepDraft);
+      document.removeEventListener("visibilitychange", hidden);
+      keepDraft();
+    };
+  }, [keepDraft]);
 
   useEffect(() => {
     if (pages.current) pages.current.scrollTop = 0;
@@ -152,22 +362,37 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
   }, [moving, adding]);
 
   useEffect(() => {
+    const current = manuscript.current.design;
+    if (current.seed !== worldSeed || current.size !== size || current.founders !== founders) return;
     // Resolving new homelands publishes their draft in the same render. It
     // must not immediately rebuild the identical world a second time.
     const previous = published.current;
     if (previous?.founders === founders && previous.seed === worldSeed && previous.size === size) return;
     let live = true;
+    const isCurrent = () => {
+      const design = manuscript.current.design;
+      return live && design.seed === worldSeed && design.size === size && design.founders === founders;
+    };
+    const failed = (failure: unknown) => {
+      if (!isCurrent()) return;
+      if (!restoring.current) { setError(message(failure)); return; }
+      // A refused replay is not permission to replace the saved design.
+      installDesign({
+        design: freshDesign(), id: null,
+        notice: "That founding draft could not be rebuilt; a fresh founding is open, and the saved draft has not been changed.",
+      });
+    };
     const build = async () => {
       if (base.current?.seed !== worldSeed || base.current.size !== size) {
         const fresh = await createEngine(worldSeed, size);
-        if (!live) { fresh.dispose(); return; }
+        if (!isCurrent()) { fresh.dispose(); return; }
         base.current?.engine.dispose();
         base.current = { seed: worldSeed, size, engine: fresh };
       }
-      if (!live) return;
+      if (!isCurrent()) return;
       const origin = base.current.engine;
       const next = await origin.foundingDraft();
-      if (!live) { next.dispose(); return; }
+      if (!isCurrent()) { next.dispose(); return; }
       try {
         const indices = new Map<number, number>();
         for (const [index, founder] of founders.entries()) {
@@ -211,7 +436,10 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
           year.rivers(0), year.lakes(0),
           sameWorld ? sameWorld.map : next.map(), sameWorld ? sameWorld.forming : origin.forming(),
         ]);
-        if (!live) { next.dispose(); return; }
+        if (!isCurrent()) { next.dispose(); return; }
+        if (restoring.current && inspected !== null && (!drawn.regions[inspected] || drawn.regions[inspected].terrain === "sea")) {
+          throw new Error("The draft's selected homeland could not be found.");
+        }
         founders.forEach((founder, index) => {
           const held = overview.communities[index];
           const declined = refused.get(founder.key) ?? new Set<string>();
@@ -239,17 +467,18 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
         engine.current?.dispose();
         engine.current = next;
         published.current = founded;
+        restoring.current = false;
         setBuilt(founded);
         if (settled !== founders) setFounders(settled);
         setError(null);
       } catch (failure) {
         next.dispose();
-        setError(message(failure));
+        failed(failure);
       }
     };
-    void build().catch((failure) => { if (live) setError(message(failure)); });
+    void build().catch(failed);
     return () => { live = false; };
-  }, [worldSeed, size, founders]);
+  }, [worldSeed, size, founders, installDesign]);
 
   useEffect(() => () => {
     base.current?.engine.dispose();
@@ -389,7 +618,7 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
   // Every voice card is the engine's own preview of this people's words
   // under that preset, with the seed founding would use.
   const voices = useMemo(() => {
-    if (step !== "speech" || !speechOwner) return [];
+    if (!currentBuild || step !== "speech" || !speechOwner) return [];
     return catalog.presets.map((preset) => {
       const result = preview(presetDesign(preset.id, speechOwner.seed), speechOwner.seed, speechOwner.naming);
       const words = typeof result === "string" ? [] : VOICE_WORDS
@@ -397,7 +626,7 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
         .filter((word) => word !== undefined);
       return { preset, words };
     });
-  }, [step, catalog, speechOwner?.key, speechOwner?.seed, speechOwner?.naming]);
+  }, [currentBuild, step, catalog, speechOwner?.key, speechOwner?.seed, speechOwner?.naming]);
 
   const stepIndex = STEPS.findIndex((s) => s.id === step);
   const reachable = (id: Step) => id === "world" || (chartReady && (id === "homeland" || (id === "peoples" ? (inspected !== null || founders.length > 0) : founders.length > 0)));
@@ -409,10 +638,13 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
     setStep(next);
   };
   const begin = () => {
-    if (!engine.current || !canBegin) return;
+    if (!engine.current || !canBegin || handedOver.current) return;
+    if (!keepDraft()) return;
+    const id = draftId.current ?? newBookId();
     handedOver.current = true;
-    onBegin(engine.current, title?.trim() && title.trim() !== defaultTitle ? title.trim() : null, author.trim() || null, years)
-      .catch((failure: unknown) => { handedOver.current = false; setError(message(failure)); });
+    window.clearTimeout(saving.current);
+    onBegin(engine.current, title?.trim() && title.trim() !== defaultTitle ? title.trim() : null, author.trim() || null, years, id)
+      .catch((failure: unknown) => { handedOver.current = false; setError(message(failure)); keepDraft(); });
   };
   const formedNow = useCallback(() => setFormed(worldKey), [worldKey]);
 
@@ -694,7 +926,7 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
   return (
     <div className="stage setup founding" data-step={step} data-detent={detent}>
       <header className="founding-rail">
-        <button type="button" className="brand" aria-label="Back to the chart room" onClick={onChartRoom}>
+        <button type="button" className="brand" aria-label="Back to the chart room" onClick={() => { if (keepDraft()) onChartRoom(); }}>
           <span className="brand-name"><span>ʿUmrān</span></span>
         </button>
         <Popover label="Founding a world" role="menu" align="end"
@@ -749,13 +981,14 @@ export function Founding({ catalog, onBegin, onChartRoom }: {
 
       <Sheet detent={detent} onDetent={setDetent} label={`Raise or lower ${STEPS[stepIndex].name.toLowerCase()}`}>
       <aside className="pedia setup-panel founding-plate" aria-label={STEPS[stepIndex].name} aria-busy={!currentBuild}>
+        {draftNotice ? <p className="notice" role="status">{draftNotice}</p> : null}
         {plate}
       </aside>
 
       <footer className="timebar setup-foot">
         {stepIndex > 0 ? <button type="button" className="link founding-back" onClick={() => go(STEPS[stepIndex - 1].id)}>
           <ArrowLeft size={14} aria-hidden="true" /> {STEPS[stepIndex - 1].name}</button> : <span />}
-        <span className="year">{error ? <span className="error" role="alert">{error}</span> : founders.length
+        <span className="year">{saveError || error ? <span className="error" role="alert">{saveError ?? error}</span> : founders.length
           ? <><strong>Year 0.</strong> {founders.length} {founders.length === 1 ? "people" : "peoples"}; their chronicle is yet to be written.</>
           : "A world before its first peoples."}</span>
         {step === "title"

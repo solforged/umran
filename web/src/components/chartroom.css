@@ -127,15 +127,59 @@
 .room-world-open:hover .room-world-title strong { color: var(--accent); }
 .room-world-open:focus-visible { outline: 2px solid var(--gold); outline-offset: 4px; }
 
-.room-remove {
+.room-put-away {
   position: absolute;
   right: 0.9rem;
   top: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.55rem;
   background: var(--paper);
   color: var(--ink-soft);
-  opacity: 0.6;
+  font-size: 0.8rem;
 }
-.room-remove:is(:hover, :focus-visible) { opacity: 1; color: var(--danger); }
+.room-put-away:is(:hover, :focus-visible) { color: var(--accent); }
+.room-world-open:disabled { cursor: progress; opacity: 1; }
+.room-world[aria-busy="true"] .room-world-title { border-color: var(--accent); }
+
+.room-undo {
+  margin: 0 0 1.5rem;
+  color: var(--desk-ink);
+}
+.room-undo .link { color: inherit; margin-left: 0.35rem; }
+.room-unfinished { margin-top: 2.5rem; }
+.room-unfinished h2 { font: 400 1.6rem var(--display); margin: 0; }
+.room-unfinished .room-world-row { margin-top: 1rem; }
+.room-draft .room-world-title { width: min(19rem, 90%); }
+
+.room-put-away-list {
+  margin-top: 2rem;
+  border-top: 1px solid color-mix(in srgb, var(--desk-ink) 25%, transparent);
+  padding-top: 1rem;
+}
+.room-put-away-list summary { cursor: pointer; font: 1.2rem var(--display); }
+.room-put-away-list ul { list-style: none; padding: 0; }
+.room-put-away-list li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem 1.5rem;
+  padding: 0.8rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--desk-ink) 15%, transparent);
+}
+.room-put-away-list li > div:first-child { display: grid; gap: 0.2rem; min-width: 0; }
+.room-put-away-list strong { font: 400 1.25rem var(--display); overflow-wrap: anywhere; }
+.room-put-away-list li span { font-size: 0.8rem; opacity: 0.75; }
+.room-kept-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.room-kept-actions button { background: transparent; color: var(--desk-ink); border-color: currentColor; }
+
+.recovery-worlds { width: min(100%, 42rem); list-style: none; padding: 0; text-align: left; }
+.recovery-worlds li { display: grid; gap: 0.5rem; padding: 1rem 0; border-top: 1px solid var(--line); }
+.recovery-worlds strong { overflow-wrap: anywhere; }
+.recovery-worlds small { color: var(--ink-soft); }
+.recovery-worlds button { justify-self: start; }
 
 .room-actions { margin-top: 2rem; }
 .room-action-list { display: flex; align-items: flex-start; gap: 2.5rem; }
