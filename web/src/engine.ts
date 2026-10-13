@@ -35,6 +35,11 @@ import type {
   SettlementPreview,
   Story,
   DecisionView,
+  LawOccurrence,
+  WordLife,
+  LoanTrail,
+  GrammarStory,
+  BuilderExample,
 } from "./model";
 import type { EngineReply, EngineRequest, EngineStatus, Opened, ReadMethod, WriteMethod, Written } from "./engineProtocol";
 
@@ -149,6 +154,12 @@ class Reading implements ReadEngine {
   lexicon(generation: number, variety: number) { return this.ask<LexiconRow[]>("lexicon", generation, variety); }
   kin(generation: number, variety: number) { return this.ask<Kin[]>("kin", generation, variety); }
   word(generation: number, variety: number, concept: string) { return this.ask<WordDetail>("word", generation, variety, concept); }
+  lawOccurrences(generation: number, variety: number, law: string) { return this.ask<LawOccurrence[]>("lawOccurrences", generation, variety, law); }
+  specimenLives(generation: number, variety: number) { return this.ask<WordLife[]>("specimenLives", generation, variety); }
+  wordLife(generation: number, variety: number, concept: string) { return this.ask<WordLife>("wordLife", generation, variety, concept); }
+  loanTrail(generation: number, variety: number, concept: string) { return this.ask<LoanTrail | null>("loanTrail", generation, variety, concept); }
+  grammarStory(generation: number, variety: number, category: string) { return this.ask<GrammarStory>("grammarStory", generation, variety, category); }
+  builderExamples(generation: number, variety: number) { return this.ask<BuilderExample[]>("builderExamples", generation, variety); }
   story(generation: number, subject: Subject) { return this.ask<Story>("story", generation, JSON.stringify(subject)); }
   climate(generation: number) { return this.year<ClimateView>("climate", generation); }
   river(generation: number, id: number) { return this.ask<RiverNamesView>("river", generation, id); }

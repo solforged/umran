@@ -7,19 +7,52 @@ use umran_sim::{Craft, ReadingRef, Recipe};
 pub(crate) enum Subject {
     World,
     History,
-    People { id: usize },
-    State { id: usize },
-    Religion { id: usize },
-    Craft { id: Craft },
-    Language { variety: usize },
-    Word { variety: usize, concept: String },
-    Law { id: String },
-    Land { region: usize },
-    Continent { landmass: usize },
-    River { id: usize },
-    Lake { id: usize },
-    Zone { id: usize },
-    Event { id: String },
+    People {
+        id: usize,
+    },
+    State {
+        id: usize,
+    },
+    Religion {
+        id: usize,
+    },
+    Craft {
+        id: Craft,
+    },
+    Language {
+        variety: usize,
+    },
+    Word {
+        variety: usize,
+        concept: String,
+    },
+    Law {
+        id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        variety: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        generation: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<usize>,
+    },
+    Land {
+        region: usize,
+    },
+    Continent {
+        landmass: usize,
+    },
+    River {
+        id: usize,
+    },
+    Lake {
+        id: usize,
+    },
+    Zone {
+        id: usize,
+    },
+    Event {
+        id: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

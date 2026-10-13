@@ -2,6 +2,7 @@
 //! browser asks for presentation-ready views of any generation as JSON.
 
 mod annals;
+mod evidence;
 mod notebook;
 mod provenance;
 
@@ -866,7 +867,7 @@ impl Bench {
             Subject::River { id } => world.map.rivers.get(*id).is_some(),
             Subject::Lake { id } => world.map.lakes.get(*id).is_some(),
             Subject::Zone { id } => world.map.climate_zones.get(*id).is_some(),
-            Subject::Law { id } => world
+            Subject::Law { id, .. } => world
                 .varieties
                 .iter()
                 .any(|v| v.laws.iter().any(|(_, law)| law == id)),

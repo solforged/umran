@@ -56,7 +56,7 @@ pub(crate) enum LoanCauseView {
 
 /// Only recorded participants and times identify a triggering annal. Inherited
 /// faith, classical learning, and word-finding need not have a matching annal.
-fn event_position(world: &World, cause: LoanCause, generation: u32) -> Option<usize> {
+pub(crate) fn event_position(world: &World, cause: LoanCause, generation: u32) -> Option<usize> {
     if matches!(cause, LoanCause::Unrecorded | LoanCause::Coinage { .. }) {
         return None;
     }
@@ -237,7 +237,12 @@ pub(crate) fn origin_cause(world: &World, word: &Lexeme) -> Option<LoanCauseView
 
 /// An inherited log entry belongs to the ancestor that recorded it, not every
 /// daughter that later carries it. Same-generation daughter changes stay local.
-fn entry_variety(world: &World, mut variety: usize, word: &Lexeme, index: usize) -> usize {
+pub(crate) fn entry_variety(
+    world: &World,
+    mut variety: usize,
+    word: &Lexeme,
+    index: usize,
+) -> usize {
     while let Some(fork) = world.varieties[variety].parent {
         if word.id.0 >= fork.inherited || word.log[index].generation > fork.generation {
             break;
@@ -335,7 +340,7 @@ impl Bench {
             Subject::Craft { id } => a.crafts.contains(id),
             Subject::Language { variety } => a.languages.contains(variety),
             Subject::Word { .. } => word.contains(&a.id),
-            Subject::Law { id } => a.laws.contains(&id.as_str()),
+            Subject::Law { id, .. } => a.laws.contains(&id.as_str()),
             Subject::Land { region } => a.lands.contains(region),
             Subject::Continent { landmass } => a
                 .lands

@@ -607,7 +607,7 @@ export type Subject =
   | { kind: "religion"; id: number } | { kind: "craft"; id: Craft }
   | { kind: "language"; variety: number }
   | { kind: "word"; variety: number; concept: string }
-  | { kind: "law"; id: string } | { kind: "land"; region: number }
+  | { kind: "law"; id: string; variety?: number; generation?: number; index?: number } | { kind: "land"; region: number }
   | { kind: "river"; id: number } | { kind: "lake"; id: number } | { kind: "zone"; id: number }
   | { kind: "continent"; landmass: number } | { kind: "event"; id: string };
 export interface Destination { reading: ReadingRef; subject: Subject }
@@ -718,6 +718,77 @@ export interface Coined {
   generation: number;
   from?: number;
   opaqueSince: number | null;
+}
+
+export interface FormView { spelled: string; ipa: string }
+
+export interface LawOccurrenceRef {
+  variety: number; law: string; generation: number; index: number;
+}
+
+export type ChangeCause =
+  | { kind: "law"; law: string; label: string; occurrence: LawOccurrenceRef | null }
+  | { kind: "loan"; cause: LoanCause }
+  | { kind: "coined"; coined: Coined }
+  | { kind: "inherited"; from: number }
+  | { kind: "founding" }
+  | { kind: "kept"; from: number }
+  /// `from` is the recorded first meaning; intermediate semantic steps may be unknown.
+  | { kind: "extended"; from: string }
+  | { kind: "expressive" }
+  | { kind: "marker"; origin: GrammarOrigin };
+
+export interface LawOccurrence {
+  ref: LawOccurrenceRef;
+  label: string;
+  arrival: { kind: "own" } | { kind: "wave"; from: number } | { kind: "inherited"; ancestor: number }
+    | { kind: "authored"; decision: number } | { kind: "substrate" } | { kind: "unrecorded" };
+  annal: string | null;
+  words: { concept: string; gloss: string; before: FormView; after: FormView; dominant: boolean }[];
+  markers: { category: string; marker: string; before: FormView; after: FormView }[];
+  names: { subject: Subject; before: string; after: string }[];
+}
+
+export interface WordLife {
+  concept: string; gloss: string;
+  /// Recorded holders only, with the current holder last. Competition weights
+  /// are not a historical series: an unknown dominance onset stays null.
+  holders: {
+    forms: { generation: number; form: FormView; cause: ChangeCause }[];
+    entered: number;
+    dominantFrom: number | null;
+    until: number | null;
+    share: number;
+  }[];
+}
+
+export interface LoanTrail {
+  concept: string;
+  donor: { variety: number; form: FormView };
+  cause: LoanCause;
+  heard: FormView;
+  adapted: FormView;
+  since: number;
+  after: { generation: number; form: FormView; cause: ChangeCause }[];
+  sameMeeting: { concept: string; gloss: string; form: FormView }[];
+}
+
+export interface GrammarStory {
+  category: string; label: string;
+  markers: {
+    marker: string; kind: string;
+    source: { concept: string; gloss: string; form: FormView } | null;
+    born: number; retired: number | null;
+    /// Only recorded observations; no interpolation of past competition.
+    shares: { generation: number; share: number }[];
+    forms: { generation: number; form: FormView; cause: ChangeCause | { kind: "analogy" } }[];
+  }[];
+}
+
+export interface BuilderExample {
+  builder: string;
+  base: { concept: string; gloss: string; form: FormView };
+  built: { concept: string; gloss: string; form: FormView };
 }
 
 export interface LexiconForm {
@@ -931,6 +1002,12 @@ export interface ReadEngine {
   lexicon(generation: number, variety: number): Read<LexiconRow[]>;
   kin(generation: number, variety: number): Read<Kin[]>;
   word(generation: number, variety: number, concept: string): Read<WordDetail>;
+  lawOccurrences(generation: number, variety: number, law: string): Read<LawOccurrence[]>;
+  specimenLives(generation: number, variety: number): Read<WordLife[]>;
+  wordLife(generation: number, variety: number, concept: string): Read<WordLife>;
+  loanTrail(generation: number, variety: number, concept: string): Read<LoanTrail | null>;
+  grammarStory(generation: number, variety: number, category: string): Read<GrammarStory>;
+  builderExamples(generation: number, variety: number): Read<BuilderExample[]>;
   story(generation: number, subject: Subject): Read<Story>;
   climate(generation: number): Read<ClimateView>;
   river(generation: number, id: number): Read<RiverNamesView>;

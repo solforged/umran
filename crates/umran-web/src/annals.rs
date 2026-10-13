@@ -682,22 +682,26 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 toward,
                 variety,
                 ..
-            } => entry(
-                generation,
-                "shift",
-                tell(
-                    world,
-                    &[key("shift"), g, community as u64],
-                    SHIFT,
-                    &[
-                        ("p", &name(community)),
-                        ("t", &name(toward)),
-                        ("l", &names.language(world, variety, generation)),
-                    ],
-                ),
-                &[community, toward],
-                &[],
-            ),
+            } => {
+                let mut annal = entry(
+                    generation,
+                    "shift",
+                    tell(
+                        world,
+                        &[key("shift"), g, community as u64],
+                        SHIFT,
+                        &[
+                            ("p", &name(community)),
+                            ("t", &name(toward)),
+                            ("l", &names.language(world, variety, generation)),
+                        ],
+                    ),
+                    &[community, toward],
+                    &[],
+                );
+                annal.variety = Some(variety);
+                annal
+            }
             WorldEvent::Met {
                 a,
                 b,
