@@ -2201,6 +2201,9 @@ layer masks: world lettering above 20 km/pixel, regional lettering below
 6 km/pixel, tongue lettering below 1.5 km/pixel. Regional land and water
 lettering begins at 13 CSS pixels and grows to 20, while terrain glyphs
 are screen-size capped and border strokes do not scale with the camera.
+Each kind of terrain glyph is drawn as one joined path, rebuilt only when
+the globe turns or the zoom changes, so turning the globe repaints seven
+paths rather than thousands of small transformed groups.
 A ruled key names the active colouring and enabled overlays. Naming
 speech and known-land veiling are independent, explicit choices; opening
 a people or language card never silently changes the chart's names.

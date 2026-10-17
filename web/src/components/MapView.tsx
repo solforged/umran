@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react";
 import { geoAzimuthalEquidistant } from "d3-geo";
 import { LocateFixed, Maximize, Minus, Plus } from "lucide-react";
-import type { ClimateView, Community, Craft, EthosAxis, FoundingPreview, Lake, LakeNamesView, Overview, River, RiverNamesView, SettlementPreview, WordMap, WorldMap } from "../model";
+import type { ClimateView, Community, Craft, EthosAxis, FoundingPreview, Lake, LakeNamesView, Overview, River, RiverNamesView, SettlementPreview, Terrain, WordMap, WorldMap } from "../model";
 import type { ShelfPeople } from "../shelf";
 import { reducedMotion } from "../motion";
 import { YEARS } from "../model";
@@ -139,9 +139,11 @@ function inside(outline: [number, number][], [x, y]: [number, number]): boolean 
   return within;
 }
 
+interface MarkSpot { kind: Exclude<Terrain, "sea">; site: MapPoint; size: number }
+
 interface ChartDress {
   coast: MapPoint[][];
-  marked: { id: number; spots: { kind: string; site: MapPoint; size: number }[] }[];
+  marks: MarkSpot[];
 }
 
 type PathDrawer = (cartography: Cartography) => string;
@@ -154,7 +156,7 @@ function chartDress(map: WorldMap): ChartDress {
   const coast = land.flatMap((r) => r.neighbours
     .filter((id) => map.regions[id].terrain === "sea")
     .map((id) => sharedBorder(map, r.id, id)));
-  const marked: ChartDress["marked"] = [];
+  const marks: MarkSpot[] = [];
   for (const r of land) {
     const next = scatter(r.id);
     const [cx, cy] = r.site;
@@ -163,18 +165,17 @@ function chartDress(map: WorldMap): ChartDress {
       const [x, y] = chartPoint(map, point);
       return [x + Math.round((cx - x) / map.width) * map.width, y] as MapPoint;
     });
-    const spots: ChartDress["marked"][number]["spots"] = [];
-    const count = r.terrain === "desert" ? 14 : r.terrain === "forest" || r.terrain === "steppe" ? 6 : 3;
+    const kind = r.terrain as MarkSpot["kind"];
+    const count = kind === "desert" ? 14 : kind === "forest" || kind === "steppe" ? 6 : 3;
     for (let placed = 0, tries = 0; placed < count && tries < 60; tries++) {
       const site: MapPoint = [cx + (next() - 0.5) * 0.9 * size, cy + (next() - 0.5) * 0.8 * size];
       if (!inside(outline, site) || !inside(outline, [site[0] + 0.13 * size, site[1]]) ||
         !inside(outline, [site[0] - 0.13 * size, site[1] - 0.17 * size])) continue;
-      spots.push({ kind: r.terrain, site, size: r.terrain === "mountains" ? size * (0.18 + next() * 0.07) : size });
+      marks.push({ kind, site, size: kind === "mountains" ? size * (0.18 + next() * 0.07) : size });
       placed++;
     }
-    marked.push({ id: r.id, spots });
   }
-  return { coast, marked };
+  return { coast, marks };
 }
 
 function dressUnder(dress: ChartDress, cartography: Cartography, bind?: PathBinder) {
@@ -193,28 +194,61 @@ function dressUnder(dress: ChartDress, cartography: Cartography, bind?: PathBind
   </g>;
 }
 
-function dressOver(dress: ChartDress, cartography: Cartography, bind?: (site: MapPoint, scale: number) => (node: SVGGElement | null) => void) {
-  return <g className="chart-dress chart-marks" aria-hidden="true">
-    {dress.marked.map(({ id, spots }) => <g key={id} data-chart-region={id}>
-      {spots.map(({ kind, site, size }, i) => {
-        const at = cartography.point(site);
-        if (!at && !bind) return null;
-        return <g key={i} ref={bind?.(site, size)} style={{ display: at ? undefined : "none" }}
-          data-mark-size={size}
-          data-mark-extent={kind === "mountains" ? 2 : kind === "hills" ? 0.22 : kind === "forest" ? 0.09 : kind === "desert" ? 0.016 : 0.12}
-          data-mark-pixels={kind === "mountains" ? 14 : kind === "desert" ? 1.5 : 5}
-          transform={`translate(${(at ?? [0, 0]).join(" ")}) scale(${size})`}>
-          {kind === "mountains" ? <g>
-            <path className="mark-peak" d="M-1,0L0,-1.5L1,0" />
-            <path className="mark-shade" d="M.15,-1.2L.65,0" />
-          </g> : kind === "hills" ? <path className="mark-hill" d="M-.11,0Q0,-.16 .11,0" />
-            : kind === "forest" ? <path className="mark-tree" d="M-.045,-.07a.045,.045 0 1,0 .09,0a.045,.045 0 1,0 -.09,0M0,-.025V.03" />
-              : kind === "desert" ? <path className="mark-sand" d="M-.008,0a.008,.008 0 1,0 .016,0a.008,.008 0 1,0 -.016,0" />
-                : kind === "steppe" ? <path className="mark-grass" d="M-.04,0l.02,-.05M0,0v-.06M.04,0l-.02,-.05" />
-                  : <path className="mark-field" d="M-.06,0h.12" />}
-        </g>;
-      })}
-    </g>)}
+/// The paths that draw the chart's marks, in painting order. A mountain is a
+/// peak and a fainter shade; trees, grass, fields, and sand are the small
+/// marks that show only close in.
+const MARK_INK = ["mark-peak", "mark-shade", "mark-hill", "mark-tree", "mark-sand", "mark-grass", "mark-field"] as const;
+type MarkInk = Record<(typeof MARK_INK)[number], string>;
+
+/// Each glyph's widest ink in its own units, and the most screen pixels
+/// that width may take, so marks stop growing as the view closes in.
+const MARK_LIMIT: Record<MarkSpot["kind"], [extent: number, pixels: number]> = {
+  mountains: [2, 14], hills: [0.22, 5], forest: [0.09, 5], desert: [0.016, 1.5], steppe: [0.12, 5], plains: [0.12, 5],
+};
+
+/// Every mark of a kind joins one path. Thousands of small transformed
+/// groups cost far more to paint than their ink, and a turning globe moves
+/// all of them every frame. `place` projects a site, or gives null when it
+/// is out of sight; with `pixelsPerUnit`, marks stop growing past their
+/// screen limit and the small ones are left out unless `small`.
+function markInk(dress: ChartDress, place: (site: MapPoint) => MapPoint | null, pixelsPerUnit = 0, small = true): MarkInk {
+  const ink: Record<keyof MarkInk, string[]> = {
+    "mark-peak": [], "mark-shade": [], "mark-hill": [], "mark-tree": [], "mark-sand": [], "mark-grass": [], "mark-field": [],
+  };
+  const n = (value: number) => Math.round(value * 1e4) / 1e4;
+  for (const spot of dress.marks) {
+    const { kind } = spot;
+    if (!small && kind !== "mountains" && kind !== "hills") continue;
+    const at = place(spot.site);
+    if (!at) continue;
+    const [extent, pixels] = MARK_LIMIT[kind];
+    const [x, y] = at, s = pixelsPerUnit > 0 ? Math.min(spot.size, pixels / (extent * pixelsPerUnit)) : spot.size;
+    if (kind === "mountains") {
+      ink["mark-peak"].push(`M${n(x - s)},${n(y)}l${n(s)},${n(-1.5 * s)}l${n(s)},${n(1.5 * s)}`);
+      ink["mark-shade"].push(`M${n(x + 0.15 * s)},${n(y - 1.2 * s)}l${n(0.5 * s)},${n(1.2 * s)}`);
+    } else if (kind === "hills") {
+      ink["mark-hill"].push(`M${n(x - 0.11 * s)},${n(y)}q${n(0.11 * s)},${n(-0.16 * s)} ${n(0.22 * s)},0`);
+    } else if (kind === "forest") {
+      const r = n(0.045 * s);
+      ink["mark-tree"].push(`M${n(x - r)},${n(y - 0.07 * s)}a${r},${r} 0 1,0 ${2 * r},0a${r},${r} 0 1,0 ${-2 * r},0M${n(x)},${n(y - 0.025 * s)}v${n(0.055 * s)}`);
+    } else if (kind === "desert") {
+      const r = n(0.008 * s);
+      ink["mark-sand"].push(`M${n(x - r)},${n(y)}a${r},${r} 0 1,0 ${2 * r},0a${r},${r} 0 1,0 ${-2 * r},0`);
+    } else if (kind === "steppe") {
+      ink["mark-grass"].push(`M${n(x - 0.04 * s)},${n(y)}l${n(0.02 * s)},${n(-0.05 * s)}M${n(x)},${n(y)}v${n(-0.06 * s)}M${n(x + 0.04 * s)},${n(y)}l${n(-0.02 * s)},${n(-0.05 * s)}`);
+    } else {
+      ink["mark-field"].push(`M${n(x - 0.06 * s)},${n(y)}h${n(0.12 * s)}`);
+    }
+  }
+  const joined = {} as MarkInk;
+  for (const name of MARK_INK) joined[name] = ink[name].join("");
+  return joined;
+}
+
+/// With `ink`, the marks are drawn once; without it, the camera draws them.
+function dressOver(ink: MarkInk | null, ref?: RefObject<SVGGElement | null>) {
+  return <g className="chart-dress chart-marks" aria-hidden="true" ref={ref}>
+    {MARK_INK.map((name) => <path key={name} className={name} d={ink?.[name]} />)}
   </g>;
 }
 
@@ -254,6 +288,7 @@ function clash(a: DOMRect, b: DOMRect): boolean {
 export function Miniature({ map, peoples = [] }: { map: WorldMap; peoples?: readonly ShelfPeople[] }) {
   const dress = useMemo(() => chartDress(map), [map]);
   const cartography = useMemo(() => createCartography(map), [map]);
+  const ink = useMemo(() => markInk(dress, (site) => cartography.point(site)), [dress, cartography]);
   const paths = useMemo(() => map.regions.map((r) => cartography.region(r)), [map, cartography]);
   // Largest first, so where two peoples share a land the largest colours it.
   const holder = useMemo(() => {
@@ -296,7 +331,7 @@ export function Miniature({ map, peoples = [] }: { map: WorldMap; peoples?: read
           {dressUnder(dress, cartography)}
           {map.regions.filter((r) => r.terrain !== "sea").map(shape)}
         </g>
-        {dressOver(dress, cartography)}
+        {dressOver(ink)}
         <g className="peoples" ref={lettering}>
           {named.map((p, i) => {
             const [x, y] = cartography.point(map.regions[p.region].site)!;
@@ -462,7 +497,8 @@ export function MapView({
   const labelLayers = useRef<SVGElement[]>([]);
   const labelAnchors = useRef<SVGElement[]>([]);
   const lettering = useRef<SVGTextElement[]>([]);
-  const terrainMarks = useRef<{ scale: SVGTransform; size: number; extent: number; pixels: number }[]>([]);
+  const marks = useRef<SVGGElement>(null);
+  const drawnMarks = useRef<{ node: SVGGElement; cartography: Cartography; revision: number; pixelsPerUnit: number; small: boolean } | null>(null);
   const largestPeoples = useMemo(() => new Set(overview.communities.filter((people) => people.ended === null)
     .sort((a, b) => b.size - a.size).slice(0, NAMED).map((people) => String(people.id))), [overview.communities]);
   /// Region sites by map-unit cell, for asking which region holds a point,
@@ -472,13 +508,12 @@ export function MapView({
   const drawnPaths = useMemo(() => new WeakMap<PathDrawer, { revision: number; d: string }>(), [cartography]);
   const drawRevision = useRef(0);
   const projectedAnchors = useRef(new Map<SVGElement, {
-    site: MapPoint; translation?: SVGTransform; visible: boolean; revision: number;
+    site: MapPoint; visible: boolean; revision: number;
   }>());
   // The same physical scale controls visible ink and hidden projection work.
   const projectionLayers = useRef<{ mask: number; paths: typeof paths.current; anchors: typeof projectedAnchors.current; labels: SVGElement[] }[]>([]);
   const layerMask = (node: SVGElement): number => {
     if (node.closest(".place-names, .river-names, .lake-names")) return LAND_LETTERING_LAYER;
-    if (node.closest(".chart-marks") && node.querySelector(".mark-tree, .mark-grass, .mark-field, .mark-sand")) return 4;
     if (node.closest(".chart-river:not(.river-tier-3), .routes, .dealings, .pilgrim-roads, .founding-markers")) return 6;
     if (node.closest(".continent-names")) return 3;
     return 7;
@@ -507,15 +542,12 @@ export function MapView({
       }
     } };
   };
-  const bindAnchor = (site: MapPoint, scale?: number) => {
+  const bindAnchor = (site: MapPoint) => {
     let attached: SVGElement | null = null;
     return (node: SVGElement | null) => {
       if (attached) projectedAnchors.current.delete(attached);
       attached = node;
-      if (node) projectedAnchors.current.set(node, {
-        site, visible: node.style.display !== "none", revision: -1,
-        translation: scale === undefined ? undefined : (node as SVGGraphicsElement).transform.baseVal.getItem(0),
-      });
+      if (node) projectedAnchors.current.set(node, { site, visible: node.style.display !== "none", revision: -1 });
     };
   };
   // Hidden hemisphere anchors still have DOM and handlers, so they can appear
@@ -534,6 +566,13 @@ export function MapView({
     const element = svg.current, chart = root.current;
     if (!element || !chart) return;
     const value = view.current, ratio = value[2] / width;
+    // Read the chart and its overlaid furniture (the cartouche, tools,
+    // caption, scale: the map's own and its container's direct children)
+    // before projection writes invalidate the SVG's layout.
+    const chartBounds = chart.getBoundingClientRect();
+    const occupied: DOMRect[] = [...chart.children, ...chart.parentElement?.children ?? []]
+      .filter((node) => node.hasAttribute("data-map-furniture"))
+      .map((node) => node.getBoundingClientRect()).filter((rect) => rect.width > 0);
     // Both camera dimensions scale together. Read the old screen scale before
     // changing viewBox, then derive the new one without a second SVG layout.
     const pixelsPerUnit = (element.getScreenCTM()?.a ?? 1) * element.viewBox.baseVal.width / value[2];
@@ -544,10 +583,6 @@ export function MapView({
     const landLettering = policy.land, visibleMask = policy.mask;
     chart.dataset.kmPerPixel = String(kmPerPixel);
     chart.style.setProperty("--small-label-min", `${policy.landPixels / pixelsPerUnit}px`);
-    for (const mark of terrainMarks.current) {
-      const size = Math.min(mark.size, mark.pixels / (mark.extent * pixelsPerUnit));
-      mark.scale.setScale(size, size);
-    }
     if (pendingTurn.current) {
       cartography.rotate(turning.current);
       ++drawRevision.current;
@@ -584,19 +619,25 @@ export function MapView({
         const visible = point !== null;
         if (visible !== binding.visible) { node.style.display = visible ? "" : "none"; binding.visible = visible; }
         if (!point) return;
-        if (binding.translation) {
-          binding.translation.setTranslate(point[0], point[1]);
-        } else {
-          node.dataset.labelX = String(point[0]);
-          node.dataset.labelY = String(point[1]);
-        }
+        node.dataset.labelX = String(point[0]);
+        node.dataset.labelY = String(point[1]);
       });
     }
+    // Marks follow the turn and the zoom; a pan leaves their ink alone.
+    const small = (visibleMask & 4) !== 0, marked = drawnMarks.current, markNode = marks.current;
+    if (markNode && (marked?.node !== markNode || marked.cartography !== cartography || marked.revision !== revision ||
+      marked.small !== small || Math.abs(marked.pixelsPerUnit - pixelsPerUnit) > pixelsPerUnit * 1e-9)) {
+      const ink = markInk(dress, (site) => cartography.point(site), pixelsPerUnit, small);
+      MARK_INK.forEach((name, i) => markNode.children[i].setAttribute("d", ink[name]));
+      drawnMarks.current = { node: markNode, cartography, revision, pixelsPerUnit, small };
+    }
     const label = Math.max(Math.sqrt(ratio), 14 / (pixelsPerUnit * 0.24));
+    const labelSize = String(label), smallSize = `${policy.landPixels / pixelsPerUnit}px`, peopleSize = `${14 / pixelsPerUnit}px`;
     for (const layer of labelLayers.current) {
-      layer.style.setProperty("--label", String(label));
-      layer.style.setProperty("--small-label-min", `${policy.landPixels / pixelsPerUnit}px`);
-      if (layer.classList.contains("peoples")) layer.style.setProperty("--people-label-min", `${14 / pixelsPerUnit}px`);
+      if (layer.style.getPropertyValue("--label") !== labelSize) layer.style.setProperty("--label", labelSize);
+      if (layer.style.getPropertyValue("--small-label-min") !== smallSize) layer.style.setProperty("--small-label-min", smallSize);
+      if (layer.classList.contains("peoples") && layer.style.getPropertyValue("--people-label-min") !== peopleSize)
+        layer.style.setProperty("--people-label-min", peopleSize);
     }
     // Camera frames need only relayout lettering, not rerender mesh geometry.
     for (const layer of projectionLayers.current) {
@@ -605,10 +646,11 @@ export function MapView({
         const x = Number(anchor.dataset.labelX) + Number(anchor.dataset.labelDx ?? 0) * label;
         const y = Number(anchor.dataset.labelY) + Number(anchor.dataset.labelDy ?? 0) * label;
         if (anchor.tagName === "g" || anchor.dataset.labelScale !== undefined) {
-          anchor.setAttribute("transform", `translate(${x} ${y})${anchor.dataset.labelScale === undefined ? "" : ` scale(${label})`}`);
+          const transform = `translate(${x} ${y})${anchor.dataset.labelScale === undefined ? "" : ` scale(${label})`}`;
+          if (anchor.getAttribute("transform") !== transform) anchor.setAttribute("transform", transform);
         } else {
-          anchor.setAttribute("x", String(x));
-          anchor.setAttribute("y", String(y));
+          if (anchor.getAttribute("x") !== String(x)) anchor.setAttribute("x", String(x));
+          if (anchor.getAttribute("y") !== String(y)) anchor.setAttribute("y", String(y));
         }
       }
     }
@@ -627,7 +669,6 @@ export function MapView({
       }
     }
     const named = new Set<string>();
-    const chartBounds = chart.getBoundingClientRect();
     const matrix = element.getScreenCTM()!;
     // Namesakes belong to this reading: use the spellings and land anchors
     // in the viewport, not historical names or another tongue's exonyms.
@@ -645,7 +686,6 @@ export function MapView({
     // Keep names at their geographic anchors. Priority decides which fit;
     // zoom reveals the rest without sending leaders across the chart.
     for (const text of lettering.current) {
-      text.style.visibility = "";
       const name = text.dataset.landName;
       if (name !== undefined) {
         const peers = landNamesakes.get(name);
@@ -653,7 +693,10 @@ export function MapView({
           ? landCardLabel(overview, map, Number(text.dataset.region), name, peers) : name;
         if (text.textContent !== reading) text.textContent = reading;
       }
-      if (text.dataset.labelKind === "river") text.setAttribute("dy", String(-0.06 * label));
+      if (text.dataset.labelKind === "river") {
+        const dy = String(-0.06 * label);
+        if (text.getAttribute("dy") !== dy) text.setAttribute("dy", dy);
+      }
     }
     const measured = lettering.current.map((text) => ({ text, rect: text.getBoundingClientRect() }));
     // Family hands have different ascenders. Place the land's name above
@@ -664,19 +707,19 @@ export function MapView({
       const region = text.parentElement?.dataset.region;
       if (region !== undefined) peopleTops.set(region, Math.min(peopleTops.get(region) ?? Infinity, rect.top));
     }
+    const raised: typeof measured = [];
     for (const item of measured) {
       if (item.text.dataset.labelKind !== "land") continue;
       const top = peopleTops.get(item.text.dataset.region ?? "");
       if (top === undefined) continue;
-      const y = Number(item.text.getAttribute("y")) + (top - LABEL_GAP * 2 - item.rect.bottom) / pixelsPerUnit;
-      item.text.setAttribute("y", String(y));
-      item.rect = item.text.getBoundingClientRect();
+      const before = Number(item.text.getAttribute("y"));
+      const y = before + (top - LABEL_GAP * 2 - item.rect.bottom) / pixelsPerUnit;
+      if (before !== y) item.text.setAttribute("y", String(y));
+      raised.push(item);
     }
-    // Overlaid furniture (the cartouche, tools, caption, scale) holds its
-    // ground too: the map's own and its container's direct children.
-    const occupied: DOMRect[] = [...chart.children, ...chart.parentElement?.children ?? []]
-      .filter((node) => node.hasAttribute("data-map-furniture"))
-      .map((node) => node.getBoundingClientRect()).filter((rect) => rect.width > 0);
+    // Write every land baseline before reading ink again: interleaving them
+    // forces a complete SVG layout once per inhabited land on every turn.
+    for (const item of raised) item.rect = item.text.getBoundingClientRect();
     const surface = new DOMRect(matrix.e, matrix.f, width * pixelsPerUnit, height * pixelsPerUnit);
     const overlaps = (rect: DOMRect) => occupied.some((other) =>
       other.left < rect.right + LABEL_GAP && rect.left < other.right + LABEL_GAP &&
@@ -784,7 +827,8 @@ export function MapView({
             if (placed) break;
           }
         }
-        text.style.visibility = placed ? "" : "hidden";
+        const visibility = placed ? "" : "hidden";
+        if (text.style.visibility !== visibility) text.style.visibility = visibility;
         continue;
       }
       const people = text.dataset.people;
@@ -796,13 +840,16 @@ export function MapView({
       const inView = rect.right > chartBounds.left && rect.left < chartBounds.right &&
         rect.bottom > chartBounds.top && rect.top < chartBounds.bottom;
       const visible = allowed && inView && rect.width > 0 && fits(rect);
-      text.style.visibility = visible ? "" : "hidden";
+      const visibility = visible ? "" : "hidden";
+      if (text.style.visibility !== visibility) text.style.visibility = visibility;
       if (visible) { occupied.push(rect); if (kind === "people") named.add(people!); }
       if (kind === "people") {
         const dot = text.parentElement?.querySelector<SVGCircleElement>(".people-dot");
         if (dot) {
-          dot.style.visibility = visible ? "hidden" : "";
-          dot.setAttribute("r", String(Math.max(0.06 * Math.sqrt(ratio), 2.5 / pixelsPerUnit)));
+          const visibility = visible ? "hidden" : "";
+          if (dot.style.visibility !== visibility) dot.style.visibility = visibility;
+          const radius = String(Math.max(0.06 * Math.sqrt(ratio), 2.5 / pixelsPerUnit));
+          if (dot.getAttribute("r") !== radius) dot.setAttribute("r", radius);
         }
       }
     }
@@ -854,10 +901,6 @@ export function MapView({
     scheduleDraw();
   }, [camera, globeCamera, projection]);
   useLayoutEffect(() => {
-    terrainMarks.current = [...(root.current?.querySelectorAll<SVGGElement>("[data-mark-size]") ?? [])].map((node) => ({
-      scale: node.transform.baseVal.getItem(1), size: Number(node.dataset.markSize),
-      extent: Number(node.dataset.markExtent), pixels: Number(node.dataset.markPixels),
-    }));
     culled.current = [...(root.current?.querySelectorAll<SVGElement>("[data-chart-region]") ?? [])].map((node) => ({
       node, bounds: bounds[Number(node.dataset.chartRegion)], hidden: node.style.display === "none",
     }));
@@ -1662,7 +1705,7 @@ export function MapView({
           {dressUnder(dress, cartography, bindPath)}
           {grounds.map(shape)}
         </g>
-        {dressOver(dress, cartography, bindAnchor)}
+        {dressOver(null, marks)}
         <g className="chart-rivers">
           {riverPaths.map(({ river, points, tier }) => {
             if (river.course.every(hidden)) return null;
