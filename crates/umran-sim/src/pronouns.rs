@@ -119,6 +119,7 @@ pub enum NoticeKind {
 
 /// Simple, short syllables favour the same common segments as the founding
 /// inventory. Collisions draw again; a small inventory may need longer forms.
+/// A cell the author gave a root keeps it, and the other cells avoid it.
 pub(crate) fn found(seed: u64, tactics: &Phonotactics, lexicon: &mut Lexicon) {
     let mut used = Vec::with_capacity(6);
     for (_, _, cell) in CELLS.into_iter().take(6) {
@@ -126,7 +127,12 @@ pub(crate) fn found(seed: u64, tactics: &Phonotactics, lexicon: &mut Lexicon) {
             .slot(by_id(cell).expect("pronoun concept"))
             .dominant()
             .expect("founding pronoun");
-        let stress = lexicon.get(id).form.stress.map(|_| 0);
+        let word = lexicon.get(id);
+        if word.authored {
+            used.push(word.form.clone());
+            continue;
+        }
+        let stress = word.form.stress.map(|_| 0);
         let mut rng = stream(seed, &[key("pronoun founding"), key(cell)]);
         let form = mint_cell(tactics, stress, &used, &mut rng);
         lexicon.get_mut(id).form = form.clone();

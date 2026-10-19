@@ -94,8 +94,10 @@ pub struct Fork {
 impl Variety {
     /// A new variety at founding: an inventory sampled from the profile,
     /// one root per concept its speakers living by `livelihood` know of
-    /// (meanings that wait for a craft or a faith have none yet), and a
-    /// stock of given names weighted by ethos. Identical inputs always agree.
+    /// (meanings that wait for a craft or a faith have none yet), the
+    /// author's own roots kept verbatim where the profile carries them, and
+    /// a stock of given names weighted by ethos. Identical inputs always
+    /// agree.
     pub fn found(
         seed: u64,
         profile: &SoundProfile,
@@ -115,12 +117,21 @@ impl Variety {
             Some(Need::Livelihood(l)) => l == livelihood,
             Some(_) => false,
         };
+        let supplied: Vec<(&'static crate::Concept, Form)> = profile
+            .roots
+            .iter()
+            .map(|root| {
+                root.resolve()
+                    .expect("roots are checked by LanguageDesign::validate before founding")
+            })
+            .collect();
         let roots = mint_roots(
             seed,
             &phonotactics,
             &profile.spelling,
             &morphology,
             profile.morphology.derivation,
+            &supplied,
         );
         let style = if stream(seed, &[key("given style")]).r#gen::<f32>() < 0.6 {
             NameStyle::Double
@@ -165,10 +176,16 @@ impl Variety {
                 .stress
                 .unwrap_or_else(|| StressRule::draw(&mut prosody_rng)),
         );
+        // Each word draws its own lexical stress and geminates on a stream
+        // of its own, so one word's shape never moves another's draws. The
+        // author's roots are left as given: unaccented, so initial stress.
         for word in &mut variety.lexicon.lexemes {
+            if word.authored {
+                continue;
+            }
+            let mut rng = stream(seed, &[key("founding prosody"), key(word.first_sense.id)]);
             if variety.profile.stress == Some(StressRule::Free) {
-                word.form.stress =
-                    Some(crate::rng::index(&mut prosody_rng, word.form.vowel_count()));
+                word.form.stress = Some(crate::rng::index(&mut rng, word.form.vowel_count()));
             }
             if profile.phonotactics.geminates > 0.0 {
                 let end = word.form.segs.len().saturating_sub(1);
@@ -178,7 +195,7 @@ impl Variety {
                         && word.form.is_vowel(i + 1)
                     {
                         word.form.segs[i].long =
-                            prosody_rng.r#gen::<f32>() < profile.phonotactics.geminates;
+                            rng.r#gen::<f32>() < profile.phonotactics.geminates;
                     }
                 }
             }

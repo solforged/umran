@@ -4,6 +4,7 @@
 mod annals;
 mod desk;
 mod evidence;
+mod extract;
 mod notebook;
 mod provenance;
 
@@ -21,8 +22,9 @@ use umran_sim::geography::{
     geographic,
 };
 use umran_sim::grammar::{
-    Category, GrammarChoice, GrammarEntry, GrammarEvent, Marker as GrammarMarker, MarkerKind,
-    MarkerOrigin, PossessorOrder, Side, WordOrder,
+    AgreementForm, AgreementKind, AgreementStage, Category, GrammarChoice, GrammarEntry,
+    GrammarEvent, Marker as GrammarMarker, MarkerKind, MarkerOrigin, PossessorOrder, Side,
+    WordOrder,
 };
 use umran_sim::ideas::{NEEDS, Need, SacredKind};
 use umran_sim::morphology::Slot;
@@ -132,6 +134,18 @@ impl Workbench {
     #[wasm_bindgen(js_name = frequencyDesign)]
     pub fn frequency_design(seed: u32, consonants: u8, vowels: u8) -> Result<String, JsValue> {
         Bench::frequency_design(seed, consonants, vowels).map_err(fail)
+    }
+
+    /// The catalog of meanings a founding language has words for.
+    pub fn concepts() -> Result<String, JsValue> {
+        Bench::concepts().map_err(fail)
+    }
+
+    /// Reads an author's roots, one per line, against a design: each line's
+    /// verdict and the design with the accepted roots merged in.
+    #[wasm_bindgen(js_name = checkRoots)]
+    pub fn check_roots(design: &str, text: &str) -> Result<String, JsValue> {
+        Bench::check_roots(design, text).map_err(fail)
     }
 
     /// Sample words from a design, and the names its people would take,
@@ -1039,11 +1053,20 @@ impl Bench {
                 spelled: variety.spell(&word.form),
                 ipa: word.form.ipa_stressed(variety.stress()),
                 from,
+                authored: word.authored,
             })
         };
+        // The usual sample, then the author's own roots not already in it.
         let words = PREVIEW
             .iter()
-            .filter_map(|id| umran_sim::concepts::by_id(id))
+            .filter_map(|id| by_id(id))
+            .chain(
+                design
+                    .roots
+                    .iter()
+                    .filter(|root| !PREVIEW.contains(&root.concept.as_str()))
+                    .filter_map(|root| by_id(&root.concept)),
+            )
             .filter_map(row)
             .collect();
         let families = umran_sim::FAMILIES
@@ -1076,6 +1099,107 @@ impl Bench {
             homophones,
             syllables,
         })
+    }
+
+    /// Every catalog meaning, for pickers and quarries: `foundable` marks
+    /// the ones a founding language has a word for (not the pronoun cells
+    /// a language may lack, nor meanings that wait for a craft, a way of
+    /// life, or a faith); `core` and `specimen` name the desk's sets.
+    pub fn concepts() -> Result<String, String> {
+        let views: Vec<ConceptView> = CONCEPTS.iter().map(concept_view).collect();
+        to_json(&views)
+    }
+
+    /// Reads an author's roots from `text`, one per line, against `design`:
+    /// a verdict for each line, and the design with the accepted roots
+    /// merged in (replacing its earlier root for the same meaning).
+    pub fn check_roots(design: &str, text: &str) -> Result<String, String> {
+        let mut design: LanguageDesign =
+            serde_json::from_str(design).map_err(|e| format!("Malformed design: {e}"))?;
+        let mut roots: Vec<RootCheck> = Vec::new();
+        let mut accepted: Vec<(&'static str, usize)> = Vec::new();
+        for (i, line) in text.lines().enumerate() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let (meaning, ipa) = split_root_line(line);
+            let mut check = RootCheck {
+                line: i + 1,
+                meaning: meaning.to_string(),
+                ipa: ipa.to_string(),
+                concept: None,
+                gloss: None,
+                spelled: None,
+                status: "unknown-meaning",
+                detail: None,
+                suggestions: Vec::new(),
+                warnings: Vec::new(),
+            };
+            let concept = match resolve_meaning(meaning) {
+                Resolved::One(concept) => concept,
+                Resolved::Many(ids) => {
+                    check.detail = Some(ids.join("|"));
+                    check.suggestions = ids;
+                    roots.push(check);
+                    continue;
+                }
+                Resolved::None(suggestions) => {
+                    check.suggestions = suggestions;
+                    roots.push(check);
+                    continue;
+                }
+            };
+            check.concept = Some(concept.id);
+            check.gloss = Some(concept.gloss);
+            let root = umran_sim::Root {
+                concept: concept.id.to_string(),
+                ipa: ipa.to_string(),
+            };
+            match design.check_root(&root) {
+                Err(umran_sim::RootError::UnknownConcept | umran_sim::RootError::Duplicate) => {
+                    check.concept = None;
+                    check.gloss = None;
+                }
+                Err(umran_sim::RootError::BadIpa(at)) => {
+                    check.status = "bad-ipa";
+                    check.detail = at;
+                }
+                Err(umran_sim::RootError::NoVowel) => {
+                    check.status = "bad-ipa";
+                    check.detail = Some("no-vowel".into());
+                }
+                Err(umran_sim::RootError::OutsideInventory(ipa)) => {
+                    check.status = "outside-inventory";
+                    check.detail = Some(ipa);
+                }
+                Ok((_, form)) => {
+                    if let Some((_, earlier)) = accepted.iter().find(|(id, _)| *id == concept.id) {
+                        check.status = "duplicate";
+                        check.detail = Some(earlier.to_string());
+                    } else {
+                        check.warnings = root_warnings(&design, &form);
+                        check.status = if check.warnings.is_empty() {
+                            "ok"
+                        } else {
+                            "warned"
+                        };
+                        check.spelled = Some(design.spelling.write(&form));
+                        accepted.push((concept.id, i + 1));
+                        let canonical = umran_sim::Root {
+                            concept: concept.id.to_string(),
+                            ipa: form.ipa(),
+                        };
+                        match design.roots.iter_mut().find(|r| r.concept == concept.id) {
+                            Some(existing) => *existing = canonical,
+                            None => design.roots.push(canonical),
+                        }
+                    }
+                }
+            }
+            roots.push(check);
+        }
+        to_json(&RootsReport { roots, design })
     }
 
     /// Applies an action (JSON, as `umran_sim::Action`) at the latest
@@ -2932,6 +3056,7 @@ fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
             generation: word.born,
             from_variety: Some(from),
             cause: origin_cause(world, word),
+            authored: false,
         };
     }
     match word.origin {
@@ -2941,6 +3066,7 @@ fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
             generation: word.born,
             from_variety: None,
             cause: None,
+            authored: word.authored,
         },
         Origin::Expressive => OriginView {
             kind: "coined",
@@ -2948,6 +3074,7 @@ fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
             generation: word.born,
             from_variety: None,
             cause: None,
+            authored: false,
         },
         Origin::Compound { .. } => OriginView {
             kind: "coined",
@@ -2955,6 +3082,7 @@ fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
             generation: word.born,
             from_variety: word.coined.as_ref().and_then(|c| c.from),
             cause: None,
+            authored: false,
         },
         Origin::Derived { base, relation } => OriginView {
             kind: "derived",
@@ -2966,6 +3094,7 @@ fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
             generation: word.born,
             from_variety: None,
             cause: None,
+            authored: false,
         },
         Origin::Renewed { base, with } => {
             let gloss = |id| world.varieties[variety].lexicon.get(id).first_sense.gloss;
@@ -2978,6 +3107,7 @@ fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
                 generation: word.born,
                 from_variety: None,
                 cause: None,
+                authored: false,
             }
         }
         Origin::Borrowed { from, .. } => OriginView {
@@ -2986,6 +3116,7 @@ fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
             generation: word.born,
             from_variety: Some(from),
             cause: origin_cause(world, word),
+            authored: false,
         },
     }
 }
@@ -3337,6 +3468,187 @@ struct PreviewWord {
     spelled: String,
     ipa: String,
     from: Option<String>,
+    /// The author's own root, kept verbatim.
+    authored: bool,
+}
+
+/// One catalog meaning, for pickers.
+#[derive(Serialize)]
+struct ConceptView {
+    id: &'static str,
+    gloss: &'static str,
+    /// The field's meaning-set id (`desk.rs`), e.g. "physical-world".
+    field: &'static str,
+    /// "count" or "mass" for things, "verb", "property", or "function".
+    class: &'static str,
+    pronoun: bool,
+    foundable: bool,
+    /// On the Leipzig–Jakarta core list, the desk's "core" set.
+    core: bool,
+    /// One of the specimen words every language view carries.
+    specimen: bool,
+}
+
+fn concept_view(concept: &'static Concept) -> ConceptView {
+    use umran_sim::Class;
+    ConceptView {
+        id: concept.id,
+        gloss: concept.gloss,
+        field: desk::field_id(concept.field),
+        class: match concept.class {
+            Class::Entity if concept.categories.plural => "count",
+            Class::Entity => "mass",
+            Class::Event => "verb",
+            Class::Property => "property",
+            Class::Function => "function",
+        },
+        pronoun: umran_sim::pronouns::is_pronoun(concept),
+        foundable: umran_sim::design::foundable(concept),
+        core: concept.stability.is_some(),
+        specimen: SPECIMEN.contains(&concept.id),
+    }
+}
+
+/// One line of an author's root list, read against a design.
+#[derive(Serialize)]
+struct RootCheck {
+    /// 1-based line in the text.
+    line: usize,
+    /// The meaning as typed.
+    meaning: String,
+    /// The form as typed, without its `/…/` or `[…]`.
+    ipa: String,
+    concept: Option<&'static str>,
+    gloss: Option<&'static str>,
+    /// The design's spelling of an accepted form.
+    spelled: Option<String>,
+    /// "ok", "warned", "unknown-meaning", "bad-ipa", "outside-inventory",
+    /// or "duplicate".
+    status: &'static str,
+    /// A fragment for the UI, never a sentence: the sound the catalog or
+    /// the design lacks, "no-vowel", the ambiguous meanings joined by "|",
+    /// or the earlier line a duplicate repeats.
+    detail: Option<String>,
+    /// Meanings whose id or gloss contains the text, up to six.
+    suggestions: Vec<&'static str>,
+    /// "cluster", "length", or "final": shapes the design's knobs never
+    /// draw, accepted all the same.
+    warnings: Vec<&'static str>,
+}
+
+#[derive(Serialize)]
+struct RootsReport {
+    roots: Vec<RootCheck>,
+    design: LanguageDesign,
+}
+
+/// A root line's meaning and form: split at the first `:`, `=`, or tab;
+/// else before a trailing `/…/` or `[…]`; else at the last space.
+fn split_root_line(line: &str) -> (&str, &str) {
+    let (meaning, form) = if let Some(i) = line.find([':', '=', '\t']) {
+        (&line[..i], &line[i + 1..])
+    } else if line.ends_with('/')
+        && let Some(i) = line[..line.len() - 1].rfind('/')
+    {
+        (&line[..i], &line[i..])
+    } else if line.ends_with(']')
+        && let Some(i) = line.rfind('[')
+    {
+        (&line[..i], &line[i..])
+    } else if let Some(i) = line.rfind(char::is_whitespace) {
+        (&line[..i], &line[i..])
+    } else {
+        (line, "")
+    };
+    let form = form.trim();
+    let form = form
+        .strip_prefix('/')
+        .and_then(|f| f.strip_suffix('/'))
+        .or_else(|| form.strip_prefix('[').and_then(|f| f.strip_suffix(']')))
+        .unwrap_or(form);
+    (meaning.trim(), form.trim())
+}
+
+enum Resolved {
+    One(&'static Concept),
+    /// Two or more meanings claim the text.
+    Many(Vec<&'static str>),
+    /// Nothing does; meanings whose id or gloss contains it, up to six.
+    None(Vec<&'static str>),
+}
+
+/// A typed meaning against the foundable catalog: an exact id, then an
+/// exact gloss, then one alternative of a gloss that lists several
+/// ("chief, king"), case-insensitively.
+fn resolve_meaning(text: &str) -> Resolved {
+    let wanted = text.trim().to_lowercase();
+    if wanted.is_empty() {
+        return Resolved::None(Vec::new());
+    }
+    let pool = || CONCEPTS.iter().filter(|c| umran_sim::design::foundable(c));
+    let levels: [&dyn Fn(&Concept) -> bool; 3] = [
+        &|c| c.id == wanted,
+        &|c| c.gloss.to_lowercase() == wanted,
+        &|c| c.gloss.split(", ").any(|alt| alt.to_lowercase() == wanted),
+    ];
+    for level in levels {
+        let hits: Vec<&'static Concept> = pool().filter(|c| level(c)).collect();
+        match hits.as_slice() {
+            [] => continue,
+            [one] => return Resolved::One(one),
+            _ => return Resolved::Many(hits.iter().map(|c| c.id).collect()),
+        }
+    }
+    Resolved::None(
+        pool()
+            .filter(|c| c.id.contains(&wanted) || c.gloss.to_lowercase().contains(&wanted))
+            .map(|c| c.id)
+            .take(6)
+            .collect(),
+    )
+}
+
+/// Shapes a design's root draw never produces: clusters (an onset or coda
+/// of two, or consonants meeting inside a word when inner clusters are
+/// off), length (more than three syllables, or long segments the design
+/// never draws), and a final consonant when the design closes no words.
+fn root_warnings(design: &LanguageDesign, form: &Form) -> Vec<&'static str> {
+    let syllables = form.syllables();
+    let mut out = Vec::new();
+    let cluster = syllables.iter().enumerate().any(|(i, s)| {
+        let last = i + 1 == syllables.len();
+        let shared = s.coda.len() == 1
+            && form.segs[s.coda.start].long
+            && syllables
+                .get(i + 1)
+                .is_some_and(|n| n.onset.start == s.coda.start);
+        s.onset.len() > 1
+            || s.coda.len() > 1
+            || (!last && !design.inner_clusters && !s.coda.is_empty() && !shared)
+    });
+    if cluster {
+        out.push("cluster");
+    }
+    let long = |vowel: bool| {
+        form.segs
+            .iter()
+            .any(|seg| seg.long && CATALOG.get(seg.phone).is_vowel() == vowel)
+    };
+    if syllables.len() > 3
+        || (design.long_vowels == 0.0 && long(true))
+        || (design.geminates == 0.0 && long(false))
+    {
+        out.push("length");
+    }
+    if design.final_consonants == 0.0
+        && form
+            .segs
+            .last()
+            .is_some_and(|seg| !CATALOG.get(seg.phone).is_vowel())
+    {
+        out.push("final");
+    }
+    out
 }
 
 #[derive(Serialize)]
@@ -4170,6 +4482,7 @@ fn grammar_view(world: &World, variety: usize) -> GrammarView {
             "order"
         },
         pronoun_case: v.grammar.pronoun_case(),
+        agreement: agreement_view(v, world.generation),
         sample: grammar_sample(v, world.generation),
         classes: v
             .gender
@@ -4277,6 +4590,73 @@ fn grammar_view(world: &World, variety: usize) -> GrammarView {
     }
 }
 
+fn agreement_view(v: &Variety, generation: u32) -> AgreementView {
+    let agreement = v.grammar.agreement();
+    let stress = v.stress();
+    AgreementView {
+        stage: agreement.stage,
+        pro_drop: agreement.pro_drop,
+        side: agreement.side.id(),
+        since: agreement.since,
+        cells: agreement
+            .living()
+            .filter(|cell| cell.born <= generation)
+            .map(|cell| {
+                let (person, number, _) = umran_sim::pronouns::CELLS
+                    .into_iter()
+                    .find(|(_, _, id)| *id == cell.cell)
+                    .expect("agreement cells are pronoun cells");
+                let form = cell.form_at(generation);
+                let source = v.lexicon.get(cell.source).form_at(cell.born);
+                AgreementCellView {
+                    cell: cell.cell,
+                    person,
+                    number,
+                    spelled: v.spell(form),
+                    ipa: form.ipa_stressed(stress),
+                    source: AgreementSourceView {
+                        spelled: v.spell(source),
+                        ipa: source.ipa_stressed(v.stress_at(cell.born)),
+                    },
+                    distinct: agreement.distinct(cell, stress),
+                }
+            })
+            .collect(),
+        history: agreement
+            .events
+            .iter()
+            .map(|notice| AgreementHistoryView {
+                generation: notice.generation,
+                kind: notice.kind,
+            })
+            .collect(),
+    }
+}
+
+/// The Leipzig person gloss of a pronoun cell's agreement.
+fn agreement_gloss(cell: &str) -> &'static str {
+    match cell {
+        "1sg" => "1SG",
+        "1pl" => "1PL",
+        "1pl-inclusive" => "1PL.INCL",
+        "1pl-exclusive" => "1PL.EXCL",
+        "2sg" => "2SG",
+        "2sg-polite" => "2SG.POL",
+        "2pl" => "2PL",
+        "3sg" => "3SG",
+        _ => "3PL",
+    }
+}
+
+/// The verb's agreement with a subject cell, where the language marks it.
+fn subject_agreement<'a>(variety: &'a Variety, subject: &str) -> Option<&'a AgreementForm> {
+    let agreement = variety.grammar.agreement();
+    if agreement.stage == AgreementStage::None {
+        return None;
+    }
+    agreement.cell(subject)
+}
+
 fn grammar_sample(variety: &Variety, generation: u32) -> Option<GrammarSample> {
     let mut sentence = grammar_sentence(variety, generation, Category::Past)?;
     sentence.translation = "The child saw the dog.";
@@ -4295,7 +4675,14 @@ fn grammar_sample(variety: &Variety, generation: u32) -> Option<GrammarSample> {
             sample_determiner(variety, concept, generation, &mut possession)?;
         }
         let category = (concept == "child").then_some(Category::Genitive);
-        sample_word(variety, concept, category, generation, &mut possession)?;
+        sample_word(
+            variety,
+            concept,
+            category,
+            generation,
+            &mut possession,
+            None,
+        )?;
     }
     Some(GrammarSample {
         sentence,
@@ -4305,6 +4692,8 @@ fn grammar_sample(variety: &Variety, generation: u32) -> Option<GrammarSample> {
     })
 }
 
+/// The noun subject stays even where pronouns drop: the verb's person mark
+/// doubles it, as in Spanish.
 fn grammar_sentence(
     variety: &Variety,
     generation: u32,
@@ -4320,13 +4709,22 @@ fn grammar_sentence(
         WordOrder::SVO => [0, 1, 2],
         WordOrder::VSO => [1, 0, 2],
     };
+    let agreement = subject_agreement(variety, "3sg");
     let mut sentence = GrammarRendering::default();
     for index in order {
         let (concept, category) = words[index];
         if concept != "see" {
             sample_determiner(variety, concept, generation, &mut sentence)?;
         }
-        sample_word(variety, concept, category, generation, &mut sentence)?;
+        let agreement = (concept == "see").then_some(agreement).flatten();
+        sample_word(
+            variety,
+            concept,
+            category,
+            generation,
+            &mut sentence,
+            agreement,
+        )?;
     }
     Some(sentence)
 }
@@ -4343,11 +4741,17 @@ fn grammar_pronoun_sample(variety: &Variety, generation: u32) -> Option<PronounS
             WordOrder::SVO => [0, 1, 2],
             WordOrder::VSO => [1, 0, 2],
         };
+        let agreement = subject_agreement(variety, subject);
+        // Audible person marks on the verb leave the free pronoun unsaid.
+        let dropped = agreement.is_some() && variety.grammar.agreement().pro_drop;
         let mut sentence = GrammarRendering {
             translation,
             ..Default::default()
         };
         for index in order {
+            if index == 0 && dropped {
+                continue;
+            }
             let (concept, category) = words[index];
             let word = variety
                 .lexicon
@@ -4362,7 +4766,15 @@ fn grammar_pronoun_sample(variety: &Variety, generation: u32) -> Option<PronounS
             }) {
                 return None;
             }
-            sample_word(variety, concept, category, generation, &mut sentence)?;
+            let agreement = (concept == "see").then_some(agreement).flatten();
+            sample_word(
+                variety,
+                concept,
+                category,
+                generation,
+                &mut sentence,
+                agreement,
+            )?;
         }
         Some(sentence)
     };
@@ -4394,12 +4806,60 @@ fn sample_determiner(
     Some(())
 }
 
+/// One spoken word of a sample: its text, IPA, and gloss.
+struct SampleToken {
+    text: String,
+    ipa: String,
+    gloss: String,
+}
+
+/// The verb with its person mark outside its other marking: a clitic as its
+/// own piece joined by `=`, an affix within one word, both glossed by Leipzig.
+fn agree_token(
+    variety: &Variety,
+    verb: &Form,
+    gloss: &str,
+    cell: &str,
+    form: &Form,
+) -> SampleToken {
+    let grammar = &variety.grammar;
+    let agreement = grammar.agreement();
+    let stress = variety.stress();
+    let label = agreement_gloss(cell);
+    if agreement.stage == AgreementStage::Affix {
+        let joined = grammar.affix_agreement(verb, form, &variety.morphology, stress);
+        return SampleToken {
+            text: variety.spell(&joined),
+            ipa: joined.ipa_stressed(stress),
+            gloss: match agreement.side {
+                Side::Prefix => format!("{label}-{gloss}"),
+                Side::Suffix => format!("{gloss}-{label}"),
+            },
+        };
+    }
+    let (clitic, verb_text) = (variety.spell(form), variety.spell(verb));
+    let (clitic_ipa, verb_ipa) = (form.ipa_stressed(stress), verb.ipa_stressed(stress));
+    match agreement.side {
+        Side::Prefix => SampleToken {
+            text: format!("{clitic}={verb_text}"),
+            ipa: format!("{clitic_ipa}={verb_ipa}"),
+            gloss: format!("{label}={gloss}"),
+        },
+        Side::Suffix => SampleToken {
+            text: format!("{verb_text}={clitic}"),
+            ipa: format!("{verb_ipa}={clitic_ipa}"),
+            gloss: format!("{gloss}={label}"),
+        },
+    }
+}
+
 fn sample_word(
     variety: &Variety,
     concept: &'static str,
     category: Option<Category>,
     generation: u32,
     rendering: &mut GrammarRendering,
+    agreement: Option<&AgreementForm>,
 ) -> Option<()> {
     let word = variety
         .lexicon
@@ -4418,15 +4878,11 @@ fn sample_word(
             .filter(|r| r.born <= generation && r.retired.is_none() && r.share > 0.0)
             .max_by(|a, b| a.share.total_cmp(&b.share))
     });
-    let append = |rendering: &mut GrammarRendering, form: &Form, gloss: String| {
-        if !rendering.gloss.is_empty() {
-            rendering.text.push(' ');
-            rendering.ipa.push(' ');
-        }
-        rendering.text.push_str(&variety.spell(form));
-        rendering.ipa.push_str(&form.ipa_stressed(variety.stress()));
-        rendering.gloss.push(gloss);
-    };
+    let stress = variety.stress();
+    // The word's pieces, and which of them is the word itself rather than
+    // a particle: that one hosts the verb's person mark.
+    let mut pieces: Vec<(Form, String)> = Vec::with_capacity(2);
+    let mut host = 0;
     if let Some(realization) = realization {
         let marker = variety.grammar.marker(realization.marker);
         let forms = variety
@@ -4444,13 +4900,14 @@ fn sample_word(
             Category::Genitive => "GEN",
         };
         for (index, form) in forms.iter().enumerate() {
+            let particle = marker.kind == MarkerKind::Particle
+                && ((marker.side == Side::Prefix && index == 0)
+                    || (marker.side == Side::Suffix && index == 1));
             let gloss = match marker.kind {
                 // A bound mark that sound change has worn to nothing is no
                 // longer audible; the sample says so by glossing it bare.
                 MarkerKind::Bound | MarkerKind::Pattern
-                    if !variety
-                        .grammar
-                        .audible(&word.form, realization, variety.stress()) =>
+                    if !variety.grammar.audible(&word.form, realization, stress) =>
                 {
                     gloss_base.into()
                 }
@@ -4460,21 +4917,44 @@ fn sample_word(
                     format!("{gloss_base}.{label}")
                 }
                 MarkerKind::Bound | MarkerKind::Pattern => format!("{gloss_base}-{label}"),
-                MarkerKind::Particle
-                    if (marker.side == Side::Prefix && index == 0)
-                        || (marker.side == Side::Suffix && index == 1) =>
-                {
-                    label.into()
-                }
+                MarkerKind::Particle if particle => label.into(),
                 _ => gloss_base.into(),
             };
-            append(rendering, form, gloss);
+            if !particle {
+                host = index;
+            }
+            pieces.push((form.clone(), gloss));
         }
     } else {
         if word.form.segs.is_empty() {
             return None;
         }
-        append(rendering, &word.form, gloss_base.into());
+        pieces.push((word.form.clone(), gloss_base.into()));
+    }
+    let mut tokens: Vec<SampleToken> = pieces
+        .iter()
+        .map(|(form, gloss)| SampleToken {
+            text: variety.spell(form),
+            ipa: form.ipa_stressed(stress),
+            gloss: gloss.clone(),
+        })
+        .collect();
+    if let Some(cell) = agreement {
+        let form = cell.form_at(generation);
+        // A mark worn to nothing is unsaid and unglossed, like a worn affix.
+        if !form.segs.is_empty() {
+            let (verb, gloss) = &pieces[host];
+            tokens[host] = agree_token(variety, verb, gloss, cell.cell, form);
+        }
+    }
+    for token in tokens {
+        if !rendering.gloss.is_empty() {
+            rendering.text.push(' ');
+            rendering.ipa.push(' ');
+        }
+        rendering.text.push_str(&token.text);
+        rendering.ipa.push_str(&token.ipa);
+        rendering.gloss.push(token.gloss);
     }
     Some(())
 }
@@ -4949,6 +5429,8 @@ struct OriginView {
     generation: u32,
     from_variety: Option<usize>,
     cause: Option<LoanCauseView>,
+    /// An inherited word the author gave at founding, kept verbatim.
+    authored: bool,
 }
 
 #[derive(Serialize)]
@@ -4996,11 +5478,49 @@ struct GrammarView {
     marking: &'static str,
     #[serde(rename = "pronounCase")]
     pronoun_case: umran_sim::grammar::PronounCase,
+    agreement: AgreementView,
     #[serde(skip_serializing_if = "Option::is_none")]
     sample: Option<GrammarSample>,
     markers: Vec<GrammarMarkerView>,
     classes: Vec<NounClassView>,
     categories: Vec<GrammarCategoryView>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgreementView {
+    stage: AgreementStage,
+    pro_drop: bool,
+    side: &'static str,
+    /// Generation of the current stage; after a loss, the loss itself.
+    since: Option<u32>,
+    cells: Vec<AgreementCellView>,
+    history: Vec<AgreementHistoryView>,
+}
+
+#[derive(Serialize)]
+struct AgreementCellView {
+    cell: &'static str,
+    person: u8,
+    number: &'static str,
+    spelled: String,
+    ipa: String,
+    /// The pronoun as it was said when the cell took its form from it.
+    source: AgreementSourceView,
+    /// Audible and unlike every other living cell.
+    distinct: bool,
+}
+
+#[derive(Serialize)]
+struct AgreementSourceView {
+    spelled: String,
+    ipa: String,
+}
+
+#[derive(Serialize)]
+struct AgreementHistoryView {
+    generation: u32,
+    kind: AgreementKind,
 }
 
 #[derive(Serialize)]
@@ -7262,6 +7782,310 @@ mod tests {
         assert!(catalog["presets"].as_array().unwrap().len() > 5);
     }
 
+    fn keys(value: &serde_json::Value, expected: &[&str]) {
+        let actual: std::collections::BTreeSet<_> = value
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(actual, expected.iter().copied().collect());
+    }
+
+    #[test]
+    fn concept_catalog_lists_every_meaning_with_its_sets() {
+        let concepts: Vec<serde_json::Value> =
+            serde_json::from_str(&Bench::concepts().unwrap()).unwrap();
+        assert_eq!(concepts.len(), CONCEPTS.len());
+        let find = |id: &str| concepts.iter().find(|c| c["id"] == id);
+        assert_eq!(
+            find("iron").unwrap()["foundable"],
+            false,
+            "waits for metalworking"
+        );
+        assert_eq!(
+            find("till").unwrap()["foundable"],
+            false,
+            "waits for a way of life"
+        );
+        assert_eq!(
+            find("2sg-polite").unwrap()["foundable"],
+            false,
+            "a cell a language may lack"
+        );
+        assert_eq!(find("iron").unwrap()["core"], false);
+        let water = find("water").unwrap();
+        assert_eq!(water["class"], "mass");
+        assert_eq!(water["field"], "physical-world");
+        assert_eq!(water["pronoun"], false);
+        assert_eq!(water["foundable"], true);
+        assert_eq!(water["core"], true);
+        assert_eq!(water["specimen"], true);
+        assert_eq!(
+            concepts.iter().filter(|c| c["core"] == true).count(),
+            CONCEPTS.iter().filter(|c| c.stability.is_some()).count()
+        );
+        assert_eq!(find("dog").unwrap()["class"], "count");
+        assert_eq!(find("go").unwrap()["class"], "verb");
+        assert_eq!(find("big").unwrap()["class"], "property");
+        let me = find("1sg").unwrap();
+        assert_eq!(me["class"], "function");
+        assert_eq!(me["pronoun"], true);
+        assert_eq!(me["gloss"], "I, me");
+        assert_eq!(find("wolf").unwrap()["field"], "animals");
+        for concept in &concepts {
+            keys(
+                concept,
+                &[
+                    "id",
+                    "gloss",
+                    "field",
+                    "class",
+                    "pronoun",
+                    "foundable",
+                    "core",
+                    "specimen",
+                ],
+            );
+        }
+    }
+
+    /// The familiar preset's design with `ipas` added where its draw left
+    /// them out.
+    fn familiar_with(seed: u32, ipas: &[&str]) -> serde_json::Value {
+        let mut design: serde_json::Value =
+            serde_json::from_str(&Bench::design("familiar", seed).unwrap()).unwrap();
+        for ipa in ipas {
+            if !design["sounds"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|s| s["ipa"] == *ipa)
+            {
+                design["sounds"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(serde_json::json!({"ipa": ipa, "favoured": false}));
+            }
+        }
+        design
+    }
+
+    #[test]
+    fn root_lines_read_every_shape_and_refuse_with_a_reason() {
+        let mut design = familiar_with(
+            3,
+            &[
+                "n", "r", "a", "p", "t", "k", "ʃ", "m", "s", "i", "g", "o", "w", "l", "e",
+            ],
+        );
+        assert!(
+            !design["sounds"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|s| s["ipa"] == "q")
+        );
+        design["roots"] = serde_json::json!([
+            {"concept": "fire", "ipa": "tutu"},
+            {"concept": "night", "ipa": "noko"},
+        ]);
+        // A design that closes no word and keeps inner syllables open, so
+        // long vowels, final consonants, and clusters all draw warnings.
+        design["finalConsonants"] = serde_json::json!(0.0);
+        design["innerClusters"] = serde_json::json!(false);
+        let text = "# the author's roots\n\
+                    water /nara/\n\
+                    \n\
+                    fire: pata\n\
+                    king = kaːr\n\
+                    song\t[ʃaːn]\n\
+                    flesh, meat  misa\n\
+                    stone = /go.ra/\n\
+                    wolf waga\n\
+                    you (singular) [ta]\n\
+                    unicorn /tutu/\n\
+                    water /nawa/\n\
+                    sun /qala/\n\
+                    star /ñaka/\n\
+                    sky /kr/\n\
+                    dream\n\
+                    sea /ˈsola/\n\
+                    iron /mira/\n\
+                    peace /kraspantarkat/\n";
+        let report: serde_json::Value =
+            serde_json::from_str(&Bench::check_roots(&design.to_string(), text).unwrap()).unwrap();
+        let roots = report["roots"].as_array().unwrap();
+        let row = |line: u64| roots.iter().find(|r| r["line"] == line).unwrap();
+        assert_eq!(roots.len(), 17, "comments and blank lines are skipped");
+        let ok = |line: u64, concept: &str, ipa: &str, spelled: &str| {
+            let r = row(line);
+            assert_eq!(r["status"], "ok", "line {line}: {r}");
+            assert_eq!(r["concept"], concept);
+            assert_eq!(r["ipa"], ipa);
+            assert_eq!(r["spelled"], spelled);
+            assert!(r["detail"].is_null());
+            assert!(r["warnings"].as_array().unwrap().is_empty());
+        };
+        ok(2, "water", "nara", "nara");
+        ok(4, "fire", "pata", "pata");
+        assert_eq!(row(4)["meaning"], "fire");
+        ok(7, "flesh", "misa", "misa");
+        assert_eq!(row(7)["meaning"], "flesh, meat");
+        ok(8, "stone", "go.ra", "gora");
+        ok(9, "wolf", "waga", "waga");
+        ok(10, "2sg", "ta", "ta");
+        assert_eq!(row(10)["meaning"], "you (singular)");
+        // Long vowels the familiar preset never draws: accepted with a warning.
+        for (line, concept) in [(5, "king"), (6, "song")] {
+            let r = row(line);
+            assert_eq!(r["status"], "warned", "{r}");
+            assert_eq!(
+                r["concept"],
+                if concept == "king" { "chief" } else { "song" }
+            );
+            assert_eq!(r["warnings"], serde_json::json!(["length", "final"]));
+            assert!(r["spelled"].is_string());
+        }
+        assert_eq!(row(5)["gloss"], "chief, king");
+        let r = row(11);
+        assert_eq!(r["status"], "unknown-meaning");
+        assert!(r["concept"].is_null());
+        assert_eq!(r["suggestions"], serde_json::json!([]));
+        let r = row(12);
+        assert_eq!(r["status"], "duplicate");
+        assert_eq!(r["concept"], "water");
+        assert_eq!(r["detail"], "2");
+        let r = row(13);
+        assert_eq!(r["status"], "outside-inventory");
+        assert_eq!(r["detail"], "q");
+        let r = row(14);
+        assert_eq!(r["status"], "bad-ipa");
+        assert_eq!(r["detail"], "ñ");
+        let r = row(15);
+        assert_eq!(r["status"], "bad-ipa");
+        assert_eq!(r["detail"], "no-vowel");
+        let r = row(16);
+        assert_eq!(r["status"], "bad-ipa");
+        assert_eq!(r["ipa"], "");
+        assert!(r["detail"].is_null());
+        let r = row(17);
+        assert_eq!(r["status"], "bad-ipa");
+        assert_eq!(r["detail"], "ˈ");
+        let r = row(18);
+        assert_eq!(r["status"], "unknown-meaning", "iron waits for a craft");
+        assert_eq!(r["suggestions"], serde_json::json!([]));
+        let r = row(19);
+        assert_eq!(r["status"], "warned");
+        assert_eq!(
+            r["warnings"],
+            serde_json::json!(["cluster", "length", "final"])
+        );
+        for r in roots {
+            keys(
+                r,
+                &[
+                    "line",
+                    "meaning",
+                    "ipa",
+                    "concept",
+                    "gloss",
+                    "spelled",
+                    "status",
+                    "detail",
+                    "suggestions",
+                    "warnings",
+                ],
+            );
+        }
+        // Suggestions name meanings whose id or gloss contains the text.
+        let report: serde_json::Value =
+            serde_json::from_str(&Bench::check_roots(&design.to_string(), "fish").unwrap())
+                .unwrap();
+        assert_eq!(report["roots"][0]["status"], "bad-ipa");
+        let report: serde_json::Value =
+            serde_json::from_str(&Bench::check_roots(&design.to_string(), "wat /a/").unwrap())
+                .unwrap();
+        assert_eq!(report["roots"][0]["status"], "unknown-meaning");
+        assert_eq!(
+            report["roots"][0]["suggestions"],
+            serde_json::json!(["water"])
+        );
+        // The merged design: accepted roots replace the design's root for the
+        // same meaning, keep the others, and are stored in catalog IPA.
+        let merged: LanguageDesign = serde_json::from_value(report["design"].clone()).unwrap();
+        assert_eq!(merged.roots.len(), 2);
+        let report: serde_json::Value =
+            serde_json::from_str(&Bench::check_roots(&design.to_string(), text).unwrap()).unwrap();
+        let merged: LanguageDesign = serde_json::from_value(report["design"].clone()).unwrap();
+        let root = |concept: &str| {
+            merged
+                .roots
+                .iter()
+                .find(|r| r.concept == concept)
+                .map(|r| r.ipa.as_str())
+        };
+        assert_eq!(root("fire"), Some("pata"));
+        assert_eq!(root("night"), Some("noko"));
+        assert_eq!(root("water"), Some("nara"));
+        assert_eq!(root("stone"), Some("gora"));
+        assert_eq!(root("chief"), Some("kaːr"));
+        assert_eq!(root("peace"), Some("kraspantarkat"));
+        assert_eq!(root("sun"), None);
+        assert_eq!(merged.validate(), Ok(()));
+        assert!(Bench::check_roots("{}", text).is_err());
+    }
+
+    #[test]
+    fn previews_and_cards_mark_the_authors_roots() {
+        let design = familiar_with(3, &["n", "a", "r", "w", "g"]);
+        let report: serde_json::Value = serde_json::from_str(
+            &Bench::check_roots(&design.to_string(), "water /nara/\nwolf /waga/").unwrap(),
+        )
+        .unwrap();
+        assert!(
+            report["roots"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|r| r["status"] == "ok"),
+            "{}",
+            report["roots"]
+        );
+        let design = report["design"].to_string();
+        let preview: serde_json::Value =
+            serde_json::from_str(&Bench::preview(&design, 5, PEOPLE).unwrap()).unwrap();
+        let words = preview["words"].as_array().unwrap();
+        let water = words.iter().find(|w| w["gloss"] == "water").unwrap();
+        assert_eq!(water["ipa"], "ˈnara");
+        assert_eq!(water["authored"], true);
+        let wolf = words.iter().find(|w| w["gloss"] == "wolf").unwrap();
+        assert_eq!(wolf["spelled"], "waga");
+        assert_eq!(wolf["authored"], true);
+        assert_eq!(words.iter().filter(|w| w["authored"] == true).count(), 2);
+        assert_eq!(words.len(), PREVIEW.len() + 1);
+
+        let mut w = Bench::new(1, "medium").unwrap();
+        let action = format!(
+            r#"{{"kind":"found","naming":{{"kind":"people"}},"design":{design},"seed":5,"power":0.5,"openness":0.5}}"#
+        );
+        w.act(&action).unwrap();
+        let word: serde_json::Value =
+            serde_json::from_str(&w.word(0, 0, "water").unwrap()).unwrap();
+        assert_eq!(word["variants"][0]["ipa"], "ˈnara");
+        assert_eq!(word["variants"][0]["origin"]["kind"], "inherited");
+        assert_eq!(word["variants"][0]["origin"]["authored"], true);
+        let fire: serde_json::Value = serde_json::from_str(&w.word(0, 0, "fire").unwrap()).unwrap();
+        assert_eq!(fire["variants"][0]["origin"]["authored"], false);
+        // Recipes carry the roots and replay them verbatim.
+        let saved = w.save().unwrap();
+        assert!(saved.contains("\"roots\""));
+        let mut again = Bench::load(&saved).unwrap();
+        let word: serde_json::Value =
+            serde_json::from_str(&again.word(0, 0, "water").unwrap()).unwrap();
+        assert_eq!(word["variants"][0]["ipa"], "ˈnara");
+    }
+
     #[test]
     fn views_serialize_at_any_generation() {
         let mut w = bench();
@@ -8166,6 +8990,156 @@ mod tests {
                     .iter()
                     .any(|e| e["category"] == "object" && e["event"] == id)
             );
+        }
+    }
+
+    #[test]
+    fn agreement_samples_show_clitics_affixes_and_pro_drop_and_reach_annals() {
+        use umran_sim::Params;
+        let forced = Params {
+            agreement_rate: 1.0,
+            agreement_fusion_rate: 1.0,
+            pro_drop_rate: 1.0,
+            ..Params::static_society()
+        };
+        for (order, side, clitic, affix, dropped, sentence, sentence_clitic) in [
+            (
+                WordOrder::SVO,
+                "prefix",
+                ["1SG", "1SG=see-PAST", "2SG.OBJ"],
+                ["1SG", "1SG-see-PAST", "2SG.OBJ"],
+                ["1SG-see-PAST", "2SG.OBJ"],
+                ["child", "3SG-see-PAST", "dog-OBJ"],
+                ["child", "3SG=see-PAST", "dog-OBJ"],
+            ),
+            (
+                WordOrder::VSO,
+                "suffix",
+                ["see-PAST=1SG", "1SG", "2SG.OBJ"],
+                ["see-PAST-1SG", "1SG", "2SG.OBJ"],
+                ["see-PAST-1SG", "2SG.OBJ"],
+                ["see-PAST-3SG", "child", "dog-OBJ"],
+                ["see-PAST=3SG", "child", "dog-OBJ"],
+            ),
+        ] {
+            let mut world = grammar_world(GrammarChoice::Suffix, order);
+            let v = &mut world.varieties[0];
+            for (cell, ipa) in [
+                ("1sg", "kami"),
+                ("1pl", "miko"),
+                ("1pl-inclusive", "miko"),
+                ("1pl-exclusive", "nata"),
+                ("2sg", "tunu"),
+                ("2pl", "sata"),
+                ("3sg", "pano"),
+                ("3pl", "lupi"),
+            ] {
+                let Some(word) = v
+                    .lexicon
+                    .word_for(umran_sim::concepts::by_id(cell).unwrap())
+                else {
+                    continue;
+                };
+                let id = word.id;
+                v.lexicon.get_mut(id).form = Form::from_ipa(ipa).unwrap();
+            }
+            let stress = v.stress();
+            let evolve = |v: &mut Variety, generation: u32| {
+                v.grammar.evolve(
+                    7,
+                    0,
+                    generation,
+                    &mut v.lexicon,
+                    &v.morphology,
+                    stress,
+                    &forced,
+                );
+            };
+            evolve(v, 1);
+            world.generation = 1;
+            let view = grammar_view(&world, 0);
+            let value = serde_json::to_value(&view).unwrap();
+            assert_eq!(value["agreement"]["stage"], "clitic");
+            assert_eq!(value["agreement"]["proDrop"], false);
+            assert_eq!(value["agreement"]["side"], side);
+            assert_eq!(value["agreement"]["since"], 1);
+            assert_eq!(value["agreement"]["history"][0]["kind"], "clitics");
+            let cells = value["agreement"]["cells"].as_array().unwrap();
+            assert_eq!(cells.len(), 6);
+            let first = cells.iter().find(|c| c["cell"] == "1sg").unwrap();
+            assert_eq!(
+                (first["person"].as_u64(), first["number"].as_str()),
+                (Some(1), Some("sg"))
+            );
+            assert_eq!(first["source"]["ipa"], "ˈkami");
+            assert_eq!(first["distinct"], true);
+            assert!(!first["spelled"].as_str().unwrap().is_empty());
+            let sample = view.sample.unwrap();
+            let pronoun = sample.pronoun.unwrap();
+            assert_eq!(pronoun.first.gloss, clitic);
+            assert_eq!(pronoun.first.translation, "I saw you.");
+            assert_eq!(pronoun.first.text.split(' ').count(), 3);
+            assert_eq!(pronoun.first.ipa.matches('=').count(), 1);
+            assert_eq!(sample.sentence.gloss, sentence_clitic);
+            assert!(
+                sample
+                    .future
+                    .gloss
+                    .iter()
+                    .any(|g| g.contains("3SG") && g.contains('='))
+            );
+            let v = &mut world.varieties[0];
+            evolve(v, 9);
+            world.generation = 9;
+            let view = grammar_view(&world, 0);
+            assert_eq!(view.agreement.stage, AgreementStage::Affix);
+            let sample = view.sample.unwrap();
+            let pronoun = sample.pronoun.unwrap();
+            assert_eq!(pronoun.first.gloss, affix);
+            assert!(!pronoun.first.text.contains('='));
+            assert_eq!(pronoun.first.text.split(' ').count(), 3);
+            assert_eq!(sample.sentence.gloss, sentence);
+            let v = &mut world.varieties[0];
+            evolve(v, 10);
+            world.generation = 10;
+            let view = grammar_view(&world, 0);
+            assert!(view.agreement.pro_drop);
+            let sample = view.sample.unwrap();
+            let pronoun = sample.pronoun.unwrap();
+            assert_eq!(pronoun.first.gloss, dropped);
+            assert_eq!(pronoun.first.translation, "I saw you.");
+            assert_eq!(pronoun.first.text.split(' ').count(), 2);
+            assert_eq!(pronoun.second.gloss.len(), 2);
+            assert!(
+                pronoun.second.gloss[0].contains("2SG") || pronoun.second.gloss[1].contains("2SG")
+            );
+            assert_eq!(sample.sentence.gloss, sentence);
+            let events: Vec<_> = annals(&world)
+                .iter()
+                .filter(|a| a.variety == Some(0))
+                .filter_map(|a| {
+                    a.grammar
+                        .as_ref()
+                        .map(|g| (a.generation, a.kind, serde_json::to_value(g).unwrap()))
+                })
+                .filter(|(_, _, g)| g["category"] == "agreement")
+                .collect();
+            let kinds: Vec<_> = events
+                .iter()
+                .map(|(_, _, g)| g["kind"].as_str().unwrap().to_owned())
+                .collect();
+            assert_eq!(kinds, ["clitics", "affixes", "pro-drop"]);
+            for (generation, kind, event) in &events {
+                assert_eq!(*kind, "grammar");
+                assert_eq!(event["event"], "agreement");
+                assert_eq!(event["cells"].as_array().unwrap().len(), 6);
+                assert!(
+                    event["cells"][0]["ipa"]
+                        .as_str()
+                        .is_some_and(|s| !s.is_empty())
+                );
+                assert!([1, 9, 10].contains(generation));
+            }
         }
     }
 }

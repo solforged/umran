@@ -51,7 +51,11 @@ use std::collections::BTreeMap;
 /// outlive the nouns' marking, and stops pronouns lending senses to nouns.
 /// Revision 60 scales every ethos response by its headroom and pulls piety
 /// back in years of plenty and restlessness back once a people has settled.
-pub const ENGINE_REVISION: u32 = 60;
+/// Revision 61 lets subject pronouns lean on the verb as clitics, fuse into
+/// person affixes, license pro-drop, and wear away to start the cycle over.
+/// Revision 62 keeps the author's own roots at founding, adds wolf, song,
+/// peace, death, and dream, and keys founding prosody draws by word.
+pub const ENGINE_REVISION: u32 = 62;
 /// Revision 33 replaces flat geography and its region identities with a sphere.
 /// Earlier region-targeted actions cannot be replayed on the spherical mesh.
 pub const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;

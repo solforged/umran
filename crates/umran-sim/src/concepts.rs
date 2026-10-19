@@ -162,8 +162,8 @@ impl Concept {
             "father" => Male,
             "child" | "person" | "people" | "chief" | "friend" | "stranger" | "priest"
             | "smith" | "prophet" | "sorcerer" => Human,
-            "louse" | "fly" | "fish" | "ant" | "dog" | "bird" | "cattle" | "horse" | "herd"
-            | "god" | "spirit" | "demon" => Animate,
+            "louse" | "fly" | "fish" | "ant" | "dog" | "wolf" | "bird" | "cattle" | "horse"
+            | "herd" | "god" | "spirit" | "demon" => Animate,
             "root" | "bone" | "tongue" | "neck" | "tail" | "rope" | "tree" | "needle" | "spear"
             | "bow" | "path" | "river" => Long,
             "leaf" | "wing" | "cloth" | "skin" | "sail" | "shield" | "book" => Flat,
@@ -536,6 +536,12 @@ pub static CONCEPTS: &[Concept] = &[
         F,
         PRONOUN,
     ),
+    // Meanings an author's own roots asked for, appended in the same way.
+    culture(Everyday, "wolf", "wolf", Animals, E, COUNT),
+    culture(Basic, "song", "song", Speech, E, COUNT),
+    culture(Everyday, "peace", "peace", Warfare, E, UNMARKED),
+    culture(Basic, "death", "death", Body, E, UNMARKED),
+    culture(Basic, "dream", "dream", Body, E, COUNT),
 ];
 
 pub fn by_id(id: &str) -> Option<&'static Concept> {
@@ -699,6 +705,8 @@ pub static FAMILIES: &[(&str, &str, Relation)] = &[
     ("judge", "law", Relation::Result),
     ("pray", "priest", Relation::Agent),
     ("seed", "field", Relation::Place),
+    ("sing", "song", Relation::Result),
+    ("die", "death", Relation::Abstract),
 ];
 
 /// Concepts a word for `concept` could plausibly extend to, or come from.

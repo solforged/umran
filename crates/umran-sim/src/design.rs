@@ -3,6 +3,8 @@
 //! grammar choices, optional stress, and spelling. Presets and drawing by world frequency
 //! produce designs; a design then resolves to the `SoundProfile` the engine runs on.
 
+use crate::concepts::{Concept, by_id};
+use crate::form::Form;
 use crate::grammar::{GrammarDesign, GrammarPrior};
 use crate::inventory::Inventory;
 use crate::phoneme::{CATALOG, PhonemeId};
@@ -27,6 +29,104 @@ pub struct Sound {
     pub ipa: String,
     #[serde(default)]
     pub favoured: bool,
+}
+
+/// A root the author gives the language at founding: a catalog meaning
+/// and its form in the catalog's own IPA, with `ː` for length. The engine
+/// keeps the form verbatim as the year-0 word for that meaning.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Root {
+    pub concept: String,
+    pub ipa: String,
+}
+
+/// Why a root is refused. A root is taken whole or not at all: the engine
+/// never repairs, trims, or drops an author's form.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RootError {
+    /// No meaning a founding language has a word for carries this id.
+    UnknownConcept,
+    /// The catalog cannot read the form: the fragment it stopped at, or
+    /// `None` for an empty form.
+    BadIpa(Option<String>),
+    /// The form parses but has no vowel, so it could never be a word.
+    NoVowel,
+    /// A sound the design leaves out, by IPA.
+    OutsideInventory(String),
+    /// Another root already gives this meaning its word.
+    Duplicate,
+}
+
+impl RootError {
+    fn describe(&self, root: &Root) -> String {
+        match self {
+            Self::UnknownConcept => format!("The catalog has no meaning “{}”.", root.concept),
+            Self::BadIpa(Some(at)) => format!(
+                "The root /{}/ for “{}” cannot be read at “{at}”.",
+                root.ipa, root.concept
+            ),
+            Self::BadIpa(None) => format!("The root for “{}” is empty.", root.concept),
+            Self::NoVowel => format!(
+                "The root /{}/ for “{}” has no vowel.",
+                root.ipa, root.concept
+            ),
+            Self::OutsideInventory(ipa) => format!(
+                "The root /{}/ for “{}” uses {ipa}, a sound these speakers do not have.",
+                root.ipa, root.concept
+            ),
+            Self::Duplicate => format!("“{}” is given two roots.", root.concept),
+        }
+    }
+}
+
+/// Whether a founding language gets a word for `concept` at year 0: every
+/// meaning except the pronoun cells a language may lack and the meanings
+/// that wait for a craft, a way of life, or a faith (`ideas::NEEDS`).
+pub fn foundable(concept: &Concept) -> bool {
+    !crate::pronouns::is_optional_cell(concept.id) && crate::ideas::need(concept).is_none()
+}
+
+impl Root {
+    /// The meaning and form this root founds, before the design's own
+    /// sounds are checked.
+    pub fn resolve(&self) -> Result<(&'static Concept, Form), RootError> {
+        let concept = by_id(&self.concept)
+            .filter(|c| foundable(c))
+            .ok_or(RootError::UnknownConcept)?;
+        let raw = self.ipa.trim();
+        if raw.is_empty() {
+            return Err(RootError::BadIpa(None));
+        }
+        if let Some(tone) = raw.chars().find(|c| matches!(c, '˥' | '˧' | '˩')) {
+            // Tone arises in a history; no founding root carries it.
+            return Err(RootError::BadIpa(Some(tone.to_string())));
+        }
+        let form = Form::from_ipa(raw).ok_or_else(|| RootError::BadIpa(Some(unread(raw))))?;
+        if form.vowel_count() == 0 {
+            return Err(RootError::NoVowel);
+        }
+        Ok((concept, form))
+    }
+}
+
+/// The character where the catalog stops reading `raw`: the first one past
+/// the longest prefix it can read.
+fn unread(raw: &str) -> String {
+    let text: String = raw
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '.')
+        .collect();
+    let readable = text
+        .char_indices()
+        .map(|(i, _)| i)
+        .chain(std::iter::once(text.len()))
+        .rev()
+        .find(|&end| Form::from_ipa(&text[..end]).is_some())
+        .unwrap_or(0);
+    text[readable..]
+        .chars()
+        .next()
+        .map_or_else(String::new, |c| c.to_string())
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -58,6 +158,10 @@ pub struct LanguageDesign {
     #[serde(default)]
     pub grammar: GrammarDesign,
     pub spelling: Spelling,
+    /// The author's own words for some meanings, kept verbatim at year 0;
+    /// every other word is drawn. Absent in older designs.
+    #[serde(default)]
+    pub roots: Vec<Root>,
 }
 
 impl LanguageDesign {
@@ -120,6 +224,7 @@ impl LanguageDesign {
             derivation: profile.morphology.derivation,
             grammar: profile.grammar.draw(seed, &profile.morphology),
             spelling: profile.spelling.clone(),
+            roots: profile.roots.clone(),
         }
     }
 
@@ -157,7 +262,35 @@ impl LanguageDesign {
         if knobs.iter().any(|k| !(0.0..=1.0).contains(k)) {
             return Err("knobs run from 0 to 1".into());
         }
+        let mut supplied: Vec<&str> = Vec::new();
+        for root in &self.roots {
+            let (concept, _) = self.check_root(root).map_err(|e| e.describe(root))?;
+            if supplied.contains(&concept.id) {
+                return Err(RootError::Duplicate.describe(root));
+            }
+            supplied.push(concept.id);
+        }
         Ok(())
+    }
+
+    /// The meaning and form `root` founds in this design, or why it is
+    /// refused: its form must read in the catalog and use only the design's
+    /// sounds, so later coinages and the card's sound list agree with it.
+    /// Shapes the design's knobs would never draw are accepted: the
+    /// author's language outranks the knobs.
+    pub fn check_root(&self, root: &Root) -> Result<(&'static Concept, Form), RootError> {
+        let (concept, form) = root.resolve()?;
+        if let Some(seg) = form.segs.iter().find(|seg| {
+            !self
+                .sounds
+                .iter()
+                .any(|s| s.ipa == CATALOG.get(seg.phone).ipa())
+        }) {
+            return Err(RootError::OutsideInventory(
+                CATALOG.get(seg.phone).ipa().to_string(),
+            ));
+        }
+        Ok((concept, form))
     }
 
     /// The profile the engine runs on: exactly these sounds, favoured ones
@@ -202,6 +335,7 @@ impl LanguageDesign {
             derivation: self.derivation,
         };
         profile.spelling = self.spelling.clone();
+        profile.roots = self.roots.clone();
         profile.stress = self.stress;
         profile.grammar = GrammarPrior::fixed(self.grammar);
         profile
@@ -213,6 +347,7 @@ mod tests {
     use super::*;
     use crate::concepts;
     use crate::grammar::{Category, GrammarChoice, MarkerKind, Side};
+    use crate::lexicon::Origin;
     use crate::variety::Variety;
 
     fn assert_founding_grammar(variety: &Variety, expected: GrammarDesign) {
@@ -486,5 +621,222 @@ mod tests {
                 != b.form.stressed_syllable(final_stress.stress());
         }
         assert!(moved);
+    }
+
+    /// The familiar preset with every sound the roots need, and the roots.
+    fn with_roots(seed: u64, roots: &[(&str, &str)]) -> LanguageDesign {
+        let mut design = LanguageDesign::preset("familiar", seed).unwrap();
+        for (concept, ipa) in roots {
+            for seg in Form::from_ipa(ipa).unwrap().segs {
+                let ipa = CATALOG.get(seg.phone).ipa();
+                if !design.sounds.iter().any(|s| s.ipa == ipa) {
+                    design.sounds.push(Sound {
+                        ipa: ipa.into(),
+                        favoured: false,
+                    });
+                }
+            }
+            design.roots.push(Root {
+                concept: (*concept).into(),
+                ipa: (*ipa).into(),
+            });
+        }
+        design
+    }
+
+    fn found(design: &LanguageDesign, seed: u64) -> Variety {
+        Variety::found(
+            seed,
+            &design.profile(),
+            crate::Livelihood::Farming,
+            crate::Ethos::default(),
+        )
+    }
+
+    #[test]
+    fn roots_are_refused_whole_with_a_reason() {
+        // The sounds the roots below use, without any root yet.
+        let mut design = with_roots(
+            3,
+            &[
+                ("water", "nara"),
+                ("stone", "mata"),
+                ("chief", "kraspantark"),
+            ],
+        );
+        design.roots.clear();
+        let root = |concept: &str, ipa: &str| Root {
+            concept: concept.into(),
+            ipa: ipa.into(),
+        };
+        let refused =
+            |concept: &str, ipa: &str| design.check_root(&root(concept, ipa)).unwrap_err();
+        assert_eq!(refused("unicorn", "nara"), RootError::UnknownConcept);
+        // Pronoun cells a language may lack, and meanings that wait for a
+        // craft, a way of life, or a faith, have no founding word.
+        assert_eq!(refused("2sg-polite", "nara"), RootError::UnknownConcept);
+        assert_eq!(refused("iron", "nara"), RootError::UnknownConcept);
+        assert_eq!(refused("till", "nara"), RootError::UnknownConcept);
+        assert_eq!(refused("water", ""), RootError::BadIpa(None));
+        assert_eq!(
+            refused("water", "naña"),
+            RootError::BadIpa(Some("ñ".into()))
+        );
+        assert_eq!(
+            refused("water", "ˈnara"),
+            RootError::BadIpa(Some("ˈ".into()))
+        );
+        assert_eq!(
+            refused("water", "na˥ra"),
+            RootError::BadIpa(Some("˥".into()))
+        );
+        assert_eq!(refused("water", "kr"), RootError::NoVowel);
+        assert!(!design.sounds.iter().any(|s| s.ipa == "q"));
+        assert_eq!(
+            refused("water", "qara"),
+            RootError::OutsideInventory("q".into())
+        );
+        let (concept, form) = design.check_root(&root("water", "na.ra")).unwrap();
+        assert_eq!(concept.id, "water");
+        assert_eq!(form, Form::from_ipa("nara").unwrap());
+        assert_eq!(form.stress, None);
+        assert!(form.boundaries.is_empty());
+
+        // `validate` names the offending root and refuses the whole design.
+        design.roots = vec![root("water", "nara"), root("stone", "qara")];
+        assert!(design.validate().unwrap_err().contains("stone"));
+        design.roots.pop();
+        design.roots.push(root("water", "mata"));
+        assert!(design.validate().unwrap_err().contains("water"));
+        design.roots.pop();
+        assert_eq!(design.validate(), Ok(()));
+        // Shapes the knobs never draw are the author's business.
+        design.word_length = 0.0;
+        design.final_consonants = 0.0;
+        design.inner_clusters = false;
+        design.roots.push(root("chief", "kraspantark"));
+        assert_eq!(design.validate(), Ok(()));
+    }
+
+    #[test]
+    fn supplied_roots_leave_every_other_word_alone() {
+        let given = [("water", "nara"), ("stone", "gora"), ("chief", "kaːr")];
+        for seed in [1, 7, 1319325112] {
+            let mut same_sounds = with_roots(seed, &given);
+            same_sounds.roots.clear();
+            let plain = found(&same_sounds, seed);
+            let rooted = found(&with_roots(seed, &given), seed);
+            assert_eq!(plain.lexicon.lexemes.len(), rooted.lexicon.lexemes.len());
+            for (a, b) in plain.lexicon.lexemes.iter().zip(&rooted.lexicon.lexemes) {
+                assert_eq!(a.first_sense.id, b.first_sense.id);
+                match given.iter().find(|(id, _)| *id == a.first_sense.id) {
+                    Some((_, ipa)) => {
+                        assert_eq!(b.form, Form::from_ipa(ipa).unwrap());
+                        assert!(b.authored);
+                        assert_eq!(b.origin, Origin::Founding);
+                    }
+                    None => {
+                        assert_eq!(a.form, b.form, "seed {seed}: {}", a.first_sense.id);
+                        assert!(!b.authored);
+                    }
+                }
+            }
+            // The author's word is the word for its meaning, and the sample
+            // list has no duplicate within the field.
+            let water = rooted
+                .lexicon
+                .word_for(concepts::by_id("water").unwrap())
+                .unwrap();
+            assert!(water.authored);
+            assert_eq!(rooted.spell(&water.form), "nara");
+        }
+    }
+
+    /// A root the author gave is an ordinary word afterwards: sound law
+    /// changes it, and nothing else does.
+    #[test]
+    fn an_authored_root_changes_only_by_recorded_laws() {
+        use crate::lexicon::Event;
+        use crate::world::{Params, World};
+        let supplied = Form::from_ipa("nara").unwrap();
+        let mut changed = 0;
+        for seed in 0..6 {
+            let design = with_roots(seed, &[("water", "nara")]);
+            let mut world = World::new(seed, Params::static_society());
+            world.found_seeded(
+                &crate::Naming::People,
+                &design.profile(),
+                seed,
+                0.5,
+                0.5,
+                None,
+                None,
+                None,
+            );
+            world.run(40);
+            let variety = &world.varieties[0];
+            let word = variety
+                .lexicon
+                .lexemes
+                .iter()
+                .find(|l| l.authored)
+                .expect("the author's root is in the lexicon");
+            assert_eq!(word.first_sense.id, "water");
+            assert_eq!(*word.form_at(0), supplied, "seed {seed}");
+            let mut current = supplied.clone();
+            for entry in &word.log {
+                let Event::SoundLaw { law, before } = &entry.event else {
+                    continue;
+                };
+                assert!(
+                    variety.laws.contains(&(entry.generation, *law)),
+                    "seed {seed}: {law} at {} is not a recorded law",
+                    entry.generation
+                );
+                assert_eq!(
+                    *before, current,
+                    "seed {seed}: {law} follows the last change"
+                );
+                let rule = world
+                    .law_catalog()
+                    .iter()
+                    .find(|l| l.id == *law)
+                    .expect("a catalog law");
+                // The rule a law applied under: the one before any shift at
+                // or after its generation.
+                let stress = variety
+                    .stress_history
+                    .iter()
+                    .find(|(g, _)| *g >= entry.generation)
+                    .map_or(variety.stress(), |(_, before)| *before);
+                current = rule.apply(before, variety.minimal, stress);
+                changed += 1;
+            }
+            assert_eq!(
+                word.form, current,
+                "seed {seed}: the form is the laws' result"
+            );
+        }
+        assert!(changed > 0, "forty generations change the word somewhere");
+    }
+
+    #[test]
+    fn an_authored_pronoun_cell_is_kept() {
+        for seed in [2, 5] {
+            let plain = found(&with_roots(seed, &[]), seed);
+            let rooted = found(&with_roots(seed, &[("1sg", "ŋo")]), seed);
+            let cell = |v: &Variety, id: &str| {
+                v.lexicon
+                    .word_for(concepts::by_id(id).unwrap())
+                    .unwrap()
+                    .form
+                    .clone()
+            };
+            assert_eq!(cell(&rooted, "1sg"), Form::from_ipa("ŋo").unwrap());
+            assert_ne!(cell(&plain, "1sg"), cell(&rooted, "1sg"));
+            for id in ["2sg", "3sg", "2pl", "3pl"] {
+                assert_eq!(cell(&plain, id), cell(&rooted, id), "seed {seed}: {id}");
+            }
+        }
     }
 }

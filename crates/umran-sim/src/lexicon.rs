@@ -59,6 +59,8 @@ pub struct Lexeme {
     pub paradigms: Vec<Paradigm>,
     /// Post-founding native construction and its historical transparency.
     pub coined: Option<crate::coinage::Coinage>,
+    /// A founding root the author gave, kept verbatim at year 0.
+    pub authored: bool,
 }
 
 impl Lexeme {
@@ -184,6 +186,7 @@ impl Lexicon {
                 None => Origin::Founding,
             };
             let id = lexicon.coin(minted.form.clone(), origin, minted.concept, 0);
+            lexicon.get_mut(id).authored = minted.authored;
             lexicon.slot_mut(minted.concept).introduce(id, 1.0);
         }
         lexicon
@@ -207,6 +210,7 @@ impl Lexicon {
             log: Vec::new(),
             paradigms: Vec::new(),
             coined: None,
+            authored: false,
         });
         id
     }

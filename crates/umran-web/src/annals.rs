@@ -273,6 +273,19 @@ enum GrammarAnnalEvent {
         marker: u32,
         from: usize,
     },
+    /// A step of the verb agreement cycle, with the person forms as they
+    /// stood: `kind` is `clitics`, `affixes`, `pro-drop`, or `loss`.
+    Agreement {
+        kind: &'static str,
+        cells: Vec<AgreementCellAnnal>,
+    },
+}
+
+#[derive(Clone, PartialEq, Serialize)]
+pub(crate) struct AgreementCellAnnal {
+    cell: &'static str,
+    spelled: String,
+    ipa: String,
 }
 
 #[derive(Clone, PartialEq, Serialize)]
@@ -1449,6 +1462,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
     }));
     out.extend(sound_changes(world, &shifts, &names));
     out.extend(grammar_changes(world, &shifts, &names));
+    out.extend(agreement_changes(world, &shifts, &names));
     out.extend(pronoun_changes(world, &shifts, &names));
     out.extend(class_changes(world, &shifts, &names));
     out.extend(harmony_changes(world, &shifts, &names));
@@ -2595,6 +2609,145 @@ fn grammar_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> 
         }
     }
     out
+}
+
+/// Steps of the verb agreement cycle, from the grammar's recorded notices.
+fn agreement_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> {
+    use umran_sim::grammar::AgreementKind;
+    let mut out = Vec::new();
+    for (v, variety) in world.varieties.iter().enumerate() {
+        let agreement = variety.grammar.agreement();
+        for (position, notice) in agreement.events.iter().enumerate().filter(|(_, notice)| {
+            variety.parent.is_none_or(|fork| {
+                notice.generation > fork.generation
+                    || (notice.generation == fork.generation
+                        && !world.varieties[fork.variety]
+                            .grammar
+                            .agreement()
+                            .events
+                            .contains(*notice))
+            })
+        }) {
+            let generation = notice.generation;
+            let people = speakers(world, shifts, v, generation, names);
+            let stress = variety.stress_at(generation);
+            let cells: Vec<AgreementCellAnnal> = agreement
+                .cells
+                .iter()
+                .filter(|cell| {
+                    cell.born <= generation && cell.retired.is_none_or(|r| r >= generation)
+                })
+                .map(|cell| {
+                    let form = cell.form_at(generation);
+                    AgreementCellAnnal {
+                        cell: cell.cell,
+                        spelled: variety.spell(form),
+                        ipa: form.ipa_stressed(stress),
+                    }
+                })
+                .collect();
+            let examples = agreement_examples(&cells, agreement.side);
+            let (text, note) = match notice.kind {
+                AgreementKind::Clitics => (
+                    format!(
+                        "Among {people}, the pronouns for the one who acts wore short and leaned on the verb{examples}."
+                    ),
+                    "A pronoun said beside its verb every time weakens into a clitic, a short form that cannot stand alone.",
+                ),
+                AgreementKind::Affixes => (
+                    format!(
+                        "Among {people}, those leaning pronouns grew into the verb itself, so that every verb told who acted{examples}."
+                    ),
+                    "Clitics that always sit on the verb become part of it: person affixes, as Latin -ō, -s, -t came from older pronominal elements.",
+                ),
+                AgreementKind::ProDrop => (
+                    format!(
+                        "Among {people}, the verb told who acted so plainly that the pronoun fell silent before it."
+                    ),
+                    "When affixes tell the persons apart, the free pronoun is left out unless it is emphasized, as in Spanish and Italian.",
+                ),
+                AgreementKind::Loss => (
+                    format!(
+                        "Among {people}, the verb's marks of person wore away until they no longer told one from another, and the pronoun was spoken again."
+                    ),
+                    "Sound change wears affixes down until they no longer tell the persons apart; the pronoun becomes obligatory, as in French, and may start the cycle over.",
+                ),
+            };
+            out.push(Annal {
+                id: format!("agreement:{v}:{position}"),
+                members: Vec::new(),
+                languages: Vec::new(),
+                names: Vec::new(),
+                generation,
+                kind: "grammar",
+                text,
+                notes: vec![note.into()],
+                cause: None,
+                variety: Some(v),
+                peoples: (0..world.communities.len())
+                    .filter(|&c| {
+                        shifts.alive_at(world, c, generation)
+                            && shifts.spoken_by(world, c, generation) == v
+                    })
+                    .collect(),
+                lands: Vec::new(),
+                laws: Vec::new(),
+                specimen: Vec::new(),
+                states: Vec::new(),
+                religions: Vec::new(),
+                crafts: Vec::new(),
+                temper: None,
+                doctrine: None,
+                taboo: None,
+                grammar: Some(GrammarAnnal {
+                    category: "agreement",
+                    event: GrammarAnnalEvent::Agreement {
+                        kind: notice.kind.id(),
+                        cells,
+                    },
+                }),
+                zones: Vec::new(),
+                rivers: Vec::new(),
+                climate: None,
+                river_flow: None,
+                settlement: None,
+                decision: None,
+                before: None,
+            });
+        }
+    }
+    out
+}
+
+/// Up to two cells as ", *-tāw* for “I” and *-nī* for “you”", on the verb's side.
+fn agreement_examples(cells: &[AgreementCellAnnal], side: umran_sim::grammar::Side) -> String {
+    let gloss = |cell: &str| match cell {
+        "1sg" => Some("I"),
+        "2sg" => Some("you"),
+        "3sg" => Some("he or she"),
+        "1pl" | "1pl-inclusive" | "1pl-exclusive" => Some("we"),
+        "2pl" => Some("you all"),
+        "3pl" => Some("they"),
+        _ => None,
+    };
+    let shown: Vec<String> = cells
+        .iter()
+        .filter(|cell| !cell.spelled.is_empty())
+        .filter_map(|cell| {
+            let word = match side {
+                umran_sim::grammar::Side::Prefix => format!("*{}-*", cell.spelled),
+                umran_sim::grammar::Side::Suffix => format!("*-{}*", cell.spelled),
+            };
+            Some(format!("{word} for “{}”", gloss(cell.cell)?))
+        })
+        .take(2)
+        .collect();
+    match shown.as_slice() {
+        [] => String::new(),
+        [one] => format!(", {one}"),
+        [one, two] => format!(", {one} and {two}"),
+        _ => unreachable!("at most two examples"),
+    }
 }
 
 fn pronoun_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> {

@@ -58,6 +58,23 @@ This bookkeeping makes no random draws and does not itself change replay.
   culture packs; `SoundProfile::base()` weights sounds by world frequency
   for "draw by world frequency", and presets (the base plus a `Flavor` from
   `flavor.rs` or `palettes.rs`) only produce starting designs to edit.
+- A design may carry the author's own roots (`LanguageDesign.roots`): a
+  catalog meaning and a form in the catalog's IPA, with `ː` for length.
+  A root is taken whole or refused with a reason (`RootError`): the
+  meaning must be one a founding language has a word for (not a pronoun
+  cell a language may lack, nor a meaning that waits for a craft, a way of
+  life, or a faith), the form must read in the catalog, have a vowel, and
+  use only the design's sounds, and no meaning may have two roots. Shapes
+  the knobs would never draw are accepted; the facade reports them as
+  warnings. At founding the root is the year-0 word for its meaning,
+  verbatim and unaccented; the draw it replaces is still made and reserved
+  so every other word keeps the form the seed gave it, and drawn words
+  avoid colliding with the author's. A supplied family member stands over
+  derivation; a supplied base is built on like any other. From then on the
+  root is an ordinary word: sound law, borrowing, competition, and renewal
+  treat it like the rest. The lexeme remembers it was `authored`.
+  Founding lexical stress and geminates draw on a stream per word, so one
+  word's shape never moves another's draws.
 - One preference score, taste plus cross-linguistic frequency from PHOIBLE
   (`typology.rs`), drives inventories, how often sounds are used, sound-law
   odds, and acceptance of foreign sounds. Sampled inventories favour
@@ -76,7 +93,9 @@ This bookkeeping makes no random draws and does not itself change replay.
   birds, cries and sounds, baby talk) reduplicate or repeat consonants;
   others avoid it. Roots are unique within a semantic field, with a weak
   sound-symbolic bias. Minting skips spellings that read as English
-  vulgarities, a courtesy rather than a linguistic claim.
+  vulgarities, a courtesy rather than a linguistic claim. Five meanings
+  (wolf, song, peace, death, dream) were appended for authors' roots, with
+  sing → song and die → death as families.
 - Word families (`FAMILIES`, `morphology.rs`): each language mints its own
   affixes, or vowel patterns over consonant roots for root-and-pattern
   (`MorphologyKind::RootPattern`), and builds some family members from
@@ -142,7 +161,8 @@ This bookkeeping makes no random draws and does not itself change replay.
   the five inclusive-only systems are not counted as the full opposition.
   The choice is inherited, not redrawn when a people splits. Founding gives
   each cell a short syllable of common segments from the language's own
-  phonotactics, distinct from the others. They then change by regular sound
+  phonotactics, distinct from the others, unless the author gave the cell a
+  root, which stands. They then change by regular sound
   law like every word, and both plural cells take part in renewal. Contact
   copies only cells that both languages express. A pronoun
   worn below two segments or the minimal word, or merged in sound with
@@ -234,6 +254,50 @@ This bookkeeping makes no random draws and does not itself change replay.
   workbench recipe is reported separately: two of its three founders had
   object marking, none began with particles, and one ended with a relic.
   Related descendants are not pooled as independent founding samples.
+- Verb person agreement (`agreement.rs`) follows Givón's cycle (*On
+  Understanding Grammar*, 1979; Hopper and Traugott, *Grammaticalization*,
+  ch. 6; Siewierska, *Person*, 2004): a subject pronoun said beside its
+  verb weakens into a clitic, the clitic fuses into a person affix, audible
+  affixes let the free pronoun drop, and sound change wears the affixes
+  until the pronoun is needed again, as French *je*, *tu*, *il* became
+  obligatory once *-e*, *-es*, *-ent* fell silent. Cliticization has a
+  chance of `agreement_rate` (0.01) a generation while every person cell
+  has a pronoun of two or more segments and no two sound alike. The clitic
+  is the syllable nearest the verb: onset and nucleus of the first
+  syllable as a proclitic where the subject precedes the verb (SOV, SVO),
+  the whole last syllable as an enclitic where it follows (VSO), a
+  monosyllable whole, and the whole pronouns where those syllables would
+  not tell the persons apart. Inclusive and exclusive replace the plain
+  plural; respectful singular address agrees as the plural it came from.
+  Each form is cut from the pronoun of the moment and then lives its own
+  life: pronoun renewal does not touch it. After eight generations as
+  clitics the forms fuse into affixes at `agreement_fusion_rate` (0.02);
+  an affix sits outside the verb's other marking (stem-PST-1SG, 1SG-PST-stem)
+  and takes the stem's harmony value like any bound marker. Pro-drop follows
+  at `pro_drop_rate` (0.02) a generation once two thirds of the living cells
+  are audibly distinct. The forms wear by the language's sound laws with
+  the markers, keeping their own histories, though a rule never deletes a
+  form's last vowel; when fewer than half the living cells still sound
+  apart, the contrast is lost, the forms retire, the pronoun is obligatory
+  again, and after twelve generations the renewed pronouns can start over.
+  One draw a generation comes from the `agreement` stream, keyed by variety
+  and generation, after every other grammar draw; `static_society()` zeroes
+  the three rates; daughters inherit the state with its history; contact
+  does not transfer it. The language card renders the stage on the verb,
+  a clitic joined by `=` and an affix within the word, and leaves the free
+  pronoun out of the pronoun samples under pro-drop while the noun subject
+  stays, doubled by the verb, as in Spanish.
+  The brief's starting rates, 0.0025, 0.004, and 0.004, left 17% of the
+  40-seed, five-profile, 4,000-year cohort with clitics or affixes and 1%
+  with pro-drop, so the rates were raised to the calibration band. At the
+  chosen rates 45.0% of the 200 founders end with clitics or affixes (6.5%
+  clitics, 38.5% affixes), 28.5% with pro-drop, 93 cliticized at some point,
+  and three lost the contrast; [WALS 101A](https://wals.info/feature/101A)
+  counts 437 of 711 languages, 61%, with pronominal subject affixes. The
+  unchanged workbench recipe ends with five languages of its Polynesian
+  lineage marking agreement, clitics from generation 24 and affixes from
+  123, reported separately. The release band with the sample runs in about
+  a minute.
 - Noun classes (`gender.rs`) sort nouns into groups that other words must
   agree with, following Corbett, *Gender* (1991): agreement is how a class
   becomes visible. Founding draws presence and semantic basis separately

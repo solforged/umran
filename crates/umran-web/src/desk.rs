@@ -12,7 +12,7 @@ use umran_sim::concepts::{Concept, Field, by_id};
 use umran_sim::{CATALOG, CONCEPTS, Form, Lexeme, Origin, TellingId, Variety, World};
 use wasm_bindgen::prelude::*;
 
-const FIELDS: [(Field, &str); 23] = [
+pub(crate) const FIELDS: [(Field, &str); 23] = [
     (Field::PhysicalWorld, "physical-world"),
     (Field::Kinship, "kinship"),
     (Field::Animals, "animals"),
@@ -37,6 +37,15 @@ const FIELDS: [(Field, &str); 23] = [
     (Field::Religion, "religion"),
     (Field::Function, "function"),
 ];
+
+/// The kebab-case id a meaning set and the concept catalog use for a field.
+pub(crate) fn field_id(field: Field) -> &'static str {
+    FIELDS
+        .iter()
+        .find(|(f, _)| *f == field)
+        .map(|(_, id)| *id)
+        .expect("every field has a meaning set")
+}
 
 #[derive(Serialize)]
 struct MeaningSet {

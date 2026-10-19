@@ -26,28 +26,47 @@ pub struct Minted {
     pub concept: &'static Concept,
     pub form: Form,
     pub derived: Option<(&'static Concept, Relation)>,
+    /// The author gave this form; the engine kept it verbatim.
+    pub authored: bool,
 }
 
 /// One word per concept. Roots draw from per-concept random streams, so
 /// adding concepts never changes how earlier draws begin. Then, for each
 /// word family, the derived concept is rebuilt from its base with chance
 /// `derivation`.
+///
+/// A concept among `supplied` gets that form in place of its draw. The
+/// supplied forms are entered among the used forms and their fields before
+/// any draw, so drawn words avoid colliding with them, and the draw each
+/// replaces is still made and reserved; nothing else about the other words
+/// changes.
 pub fn mint_roots(
     seed: u64,
     tactics: &Phonotactics,
     spelling: &Spelling,
     morphology: &Morphology,
     derivation: f32,
+    supplied: &[(&'static Concept, Form)],
 ) -> Vec<Minted> {
     let mut used: HashSet<Form> = HashSet::new();
     let mut by_field: HashMap<Field, HashSet<Form>> = HashMap::new();
+    for (concept, form) in supplied {
+        used.insert(form.clone());
+        by_field
+            .entry(concept.field)
+            .or_default()
+            .insert(form.clone());
+    }
     let mut out: Vec<Minted> = CONCEPTS
         .iter()
         .filter(|concept| !crate::pronouns::is_optional_cell(concept.id))
         .map(|concept| {
-            let mut rng = stream(seed, &[key("root"), key(concept.id)]);
             let field = by_field.entry(concept.field).or_default();
-            let form = mint_one(
+            // The draw is made and reserved even where the author supplied
+            // the word, so every later word meets the same taken forms as
+            // it would without the author's roots and keeps its own draw.
+            let mut rng = stream(seed, &[key("root"), key(concept.id)]);
+            let drawn = mint_one(
                 &mut rng,
                 tactics,
                 spelling,
@@ -56,11 +75,16 @@ pub fn mint_roots(
                 &used,
                 field,
             );
-            used.insert(form.clone());
-            field.insert(form.clone());
+            used.insert(drawn.clone());
+            field.insert(drawn.clone());
+            let given = supplied
+                .iter()
+                .find(|(c, _)| c.id == concept.id)
+                .map(|(_, form)| form.clone());
             Minted {
                 concept,
-                form,
+                authored: given.is_some(),
+                form: given.unwrap_or(drawn),
                 derived: None,
             }
         })
@@ -117,6 +141,11 @@ pub fn mint_roots(
             continue;
         }
         let (b, w) = (index(base), index(word));
+        // The author's word for a family member stands; a supplied base is
+        // built on like any other.
+        if out[w].authored {
+            continue;
+        }
         let Some(form) = morphology.derive(&out[b].form, roots[b], relation) else {
             continue;
         };
@@ -132,6 +161,7 @@ pub fn mint_roots(
             concept,
             form,
             derived: Some((out[b].concept, relation)),
+            authored: false,
         };
     }
     out
@@ -197,6 +227,7 @@ mod tests {
             &profile.spelling,
             &morphology,
             profile.morphology.derivation,
+            &[],
         );
         (roots, tactics)
     }

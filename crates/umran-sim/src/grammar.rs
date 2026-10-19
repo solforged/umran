@@ -14,8 +14,11 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
+#[path = "agreement.rs"]
+mod agreement;
 #[path = "pronoun_case.rs"]
 mod pronoun_case;
+pub use agreement::{Agreement, AgreementForm, AgreementKind, AgreementNotice, AgreementStage};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -449,6 +452,8 @@ pub struct GrammarSummary {
     pub categories: [CategorySummary; Category::ALL.len()],
     pub marker_shares: Vec<f32>,
     pub pronoun_case: PronounCase,
+    pub agreement: AgreementStage,
+    pub pro_drop: bool,
 }
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Grammar {
@@ -467,6 +472,7 @@ pub struct Grammar {
     noun_object_shares: Vec<f32>,
     pub(crate) pronoun_case_enabled: bool,
     pronoun_relic_recorded: bool,
+    agreement: Agreement,
 }
 
 fn historical<'a>(form: &'a Form, history: &'a [GrammarEntry], generation: u32) -> &'a Form {
@@ -923,6 +929,7 @@ impl Grammar {
         }
         self.summary = summary;
         self.refresh_pronoun_case(lexicon, stress, generation);
+        self.refresh_agreement(stress, generation);
     }
     /// Productive material follows surviving edges, including empty ones.
     fn update_edges(&mut self, lexicon: &Lexicon, generation: u32, law: &'static str) {
@@ -995,6 +1002,7 @@ impl Grammar {
                 }
             }
         }
+        self.wear_agreement(law, stress, generation);
         for word in &mut lexicon.lexemes {
             if word.obsolete.is_some() {
                 continue;
@@ -1510,6 +1518,7 @@ impl Grammar {
                 params.pronoun_fusion_rate,
             );
         }
+        self.evolve_agreement(seed, variety, generation, lexicon, stress, params);
         self.refresh(lexicon, stress, generation);
     }
     #[allow(clippy::too_many_arguments)]

@@ -1,3 +1,4 @@
+use crate::design::Root;
 use crate::flavor::Flavor;
 use crate::grammar::GrammarPrior;
 use crate::phoneme::{Backness, Height, Manner, Place};
@@ -24,6 +25,9 @@ pub struct SoundProfile {
     /// Absent in a design/profile means draw on a separate founding stream.
     #[serde(default)]
     pub stress: Option<StressRule>,
+    /// The author's own year-0 words, from the design; presets have none.
+    #[serde(default)]
+    pub roots: Vec<Root>,
 }
 
 /// How words are built from other words.
@@ -227,5 +231,6 @@ fn base() -> SoundProfile {
             boundary_mark: None,
         },
         stress: None,
+        roots: Vec::new(),
     }
 }

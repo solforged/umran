@@ -319,6 +319,15 @@ pub struct Params {
     pub harmony_rate: f32,
     /// Per-category chance to level one internal inflection to its sound affix.
     pub pattern_analogy_rate: f32,
+    /// Chance per generation that distinct subject pronouns weaken into
+    /// person clitics on the verb.
+    pub agreement_rate: f32,
+    /// Chance per generation, after eight generations as clitics, that
+    /// they fuse into person affixes.
+    pub agreement_fusion_rate: f32,
+    /// Chance per generation that audible person affixes let the free
+    /// subject pronoun drop.
+    pub pro_drop_rate: f32,
 }
 
 impl Default for Params {
@@ -393,6 +402,9 @@ impl Default for Params {
             class_emergence_rate: 0.00075,
             harmony_rate: 0.004,
             pattern_analogy_rate: 0.04,
+            agreement_rate: 0.01,
+            agreement_fusion_rate: 0.02,
+            pro_drop_rate: 0.02,
         }
     }
 }
@@ -451,6 +463,9 @@ impl Params {
             class_emergence_rate: 0.0,
             harmony_rate: 0.0,
             pattern_analogy_rate: 0.0,
+            agreement_rate: 0.0,
+            agreement_fusion_rate: 0.0,
+            pro_drop_rate: 0.0,
             ..Self::default()
         }
     }

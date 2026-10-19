@@ -125,8 +125,8 @@ rules. Bun manages frontend dependencies; Rust is pinned in
   replay differently.
 - Never delete a user's saved data; unreadable saves open recovery.
 - Worlds live in the engine worker. The main thread keeps only the
-  stateless WASM helpers (catalog, voice designs, previews) and never
-  blocks on a world.
+  stateless WASM helpers (catalog, meanings, voice designs, root checks,
+  previews) and never blocks on a world.
 
 ## Commands
 

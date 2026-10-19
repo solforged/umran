@@ -69,7 +69,7 @@ pub use chronicle::{
 };
 pub use climate::{Climate, ClimateCause, ClimateChange, RegionClimate, ZoneClimate};
 pub use concepts::{CONCEPTS, Class, Concept, FAMILIES, Field, Iconic, Relation, Tier};
-pub use design::{LanguageDesign, Sound};
+pub use design::{LanguageDesign, Root, RootError, Sound};
 pub use diglossia::{Classical, Fixing, Vernacular};
 pub use ethos::{Axis, Effect, Ethos, FoundingEthos, Pole, TemperCause};
 pub use flavor::Flavor;
