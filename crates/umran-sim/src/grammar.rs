@@ -14,6 +14,9 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
+#[path = "pronoun_case.rs"]
+mod pronoun_case;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Category {
@@ -320,11 +323,30 @@ pub enum MarkerOrigin {
         source: Form,
     },
 }
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MarkerScope {
+    #[default]
+    All,
+    Pronouns,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PronounCase {
+    #[default]
+    None,
+    LikeNouns,
+    Ahead,
+    Relic,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Marker {
     pub id: u32,
     pub category: Category,
     pub kind: MarkerKind,
+    pub scope: MarkerScope,
     pub side: Side,
     pub form: Form,
     pub template: Option<crate::inflection::Template>,
@@ -353,6 +375,7 @@ pub(crate) struct ImportedPair {
     pub category: Category,
     pub source_marker: u32,
     pub kind: MarkerKind,
+    pub scope: MarkerScope,
     pub side: Side,
     pub marker_form: Form,
     pub source_marker_form: Form,
@@ -391,6 +414,13 @@ pub enum NoticeKind {
         particle: u32,
         marker: u32,
     },
+    PronounFusion {
+        particle: u32,
+        marker: u32,
+    },
+    PronounRelic {
+        cells: Vec<&'static str>,
+    },
     ContrastLoss,
     Analogy {
         lexeme: LexemeId,
@@ -418,6 +448,7 @@ pub struct GrammarSummary {
     pub contrast_retention: f32,
     pub categories: [CategorySummary; Category::ALL.len()],
     pub marker_shares: Vec<f32>,
+    pub pronoun_case: PronounCase,
 }
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Grammar {
@@ -432,6 +463,10 @@ pub struct Grammar {
     pub harmony: Option<crate::harmony::Feature>,
     pub(crate) pattern_seed: u64,
     usage: Vec<[f32; Category::ALL.len()]>,
+    pronoun_usage: Vec<bool>,
+    noun_object_shares: Vec<f32>,
+    pub(crate) pronoun_case_enabled: bool,
+    pronoun_relic_recorded: bool,
 }
 
 fn historical<'a>(form: &'a Form, history: &'a [GrammarEntry], generation: u32) -> &'a Form {
@@ -468,8 +503,12 @@ impl Grammar {
                 marker.category == Category::Object
                     && marker.kind != MarkerKind::None
                     && marker.productive
+                    && marker.scope == MarkerScope::All
                     && marker.retired.is_none()
             })
+    }
+    pub fn pronoun_case(&self) -> PronounCase {
+        self.summary.pronoun_case
     }
     pub fn surface(&self, base: &Form, realization: &Realization) -> Vec<Form> {
         self.surface_at(base, realization, u32::MAX)
@@ -599,6 +638,7 @@ impl Grammar {
             id,
             category,
             kind,
+            scope: MarkerScope::All,
             side,
             form,
             template: None,
@@ -625,7 +665,14 @@ impl Grammar {
         self.usage
             .resize(lexicon.lexemes.len(), [0.0; Category::ALL.len()]);
         self.usage.fill([0.0; Category::ALL.len()]);
+        self.pronoun_usage.resize(lexicon.lexemes.len(), false);
+        self.pronoun_usage.fill(false);
         for slot in &lexicon.slots {
+            if crate::pronouns::is_pronoun(slot.concept) {
+                for variant in &slot.variants {
+                    self.pronoun_usage[variant.lexeme.0 as usize] = true;
+                }
+            }
             for category in Category::ALL {
                 if slot.concept.categories.allows(category) {
                     for variant in &slot.variants {
@@ -636,13 +683,28 @@ impl Grammar {
             }
         }
     }
+    pub(crate) fn productivity_share(&self, marker: &Marker) -> f32 {
+        if marker.category == Category::Object {
+            self.noun_object_shares
+                .get(marker.id as usize)
+                .copied()
+                .unwrap_or(0.0)
+        } else {
+            self.marker_share(marker.id)
+        }
+    }
     fn productive(&self, category: Category) -> Option<u32> {
         self.markers
             .iter()
-            .filter(|m| m.category == category && m.productive && m.retired.is_none())
+            .filter(|m| {
+                m.category == category
+                    && m.scope == MarkerScope::All
+                    && m.productive
+                    && m.retired.is_none()
+            })
             .max_by(|a, b| {
-                self.marker_share(a.id)
-                    .total_cmp(&self.marker_share(b.id))
+                self.productivity_share(a)
+                    .total_cmp(&self.productivity_share(b))
                     .then(b.id.cmp(&a.id))
             })
             .map(|m| m.id)
@@ -710,6 +772,9 @@ impl Grammar {
         generation: u32,
     ) {
         self.uses(lexicon);
+        if self.pronoun_case_enabled {
+            self.retain_pronoun_markers(lexicon, stress, generation);
+        }
         for word in &mut lexicon.lexemes {
             for paradigm in &mut word.paradigms {
                 if word.obsolete.is_some()
@@ -739,7 +804,8 @@ impl Grammar {
                 });
                 if !exists
                     && let Some(marker) = self
-                        .acquire_pattern(category, word, morphology, generation)
+                        .pronoun_productive(category, word.id)
+                        .or_else(|| self.acquire_pattern(category, word, morphology, generation))
                         .or_else(|| self.productive(category))
                 {
                     let realization =
@@ -759,6 +825,7 @@ impl Grammar {
                             .filter(|m| {
                                 m.category == category
                                     && m.kind == MarkerKind::Bound
+                                    && m.scope == MarkerScope::All
                                     && m.productive
                                     && m.retired.is_none()
                             })
@@ -785,12 +852,15 @@ impl Grammar {
     }
     pub fn refresh(&mut self, lexicon: &Lexicon, stress: StressRule, generation: u32) {
         self.uses(lexicon);
+        self.noun_object_shares.resize(self.markers.len(), 0.0);
+        self.noun_object_shares.fill(0.0);
         let old = self.summary.categories;
         let mut summary = GrammarSummary {
             marker_shares: vec![0.0; self.markers.len()],
             ..GrammarSummary::default()
         };
         let mut totals = [0.0; Category::ALL.len()];
+        let mut marker_totals = [0.0; Category::ALL.len()];
         for word in lexicon.living() {
             for p in &word.paradigms {
                 let i = p.category.position();
@@ -798,12 +868,23 @@ impl Grammar {
                 if usage == 0.0 {
                     continue;
                 }
-                summary.categories[i].eligible += 1;
-                totals[i] += usage;
+                marker_totals[i] += usage;
+                let noun_side =
+                    p.category != Category::Object || !self.pronoun_usage[word.id.0 as usize];
+                if noun_side {
+                    summary.categories[i].eligible += 1;
+                    totals[i] += usage;
+                }
                 for r in p.realizations.iter().filter(|r| r.retired.is_none()) {
                     let weight = usage * r.share;
                     summary.marker_shares[r.marker as usize] += weight;
-                    if self.audible(&word.form, r, stress) {
+                    if noun_side && p.category == Category::Object {
+                        self.noun_object_shares[r.marker as usize] += weight;
+                    }
+                    if noun_side
+                        && self.marker(r.marker).scope == MarkerScope::All
+                        && self.audible(&word.form, r, stress)
+                    {
                         summary.categories[i].contrast_retention += weight;
                         if r.form.is_some() {
                             summary.categories[i].how_synthetic += weight;
@@ -835,9 +916,13 @@ impl Grammar {
             }
         }
         for (m, share) in self.markers.iter().zip(&mut summary.marker_shares) {
-            *share /= totals[m.category.position()].max(f32::EPSILON);
+            *share /= marker_totals[m.category.position()].max(f32::EPSILON);
+        }
+        for share in &mut self.noun_object_shares {
+            *share /= totals[Category::Object.position()].max(f32::EPSILON);
         }
         self.summary = summary;
+        self.refresh_pronoun_case(lexicon, stress, generation);
     }
     /// Productive material follows surviving edges, including empty ones.
     fn update_edges(&mut self, lexicon: &Lexicon, generation: u32, law: &'static str) {
@@ -1029,7 +1114,25 @@ impl Grammar {
     ) {
         let category = self.marker(marker).category;
         for word in &mut lexicon.lexemes {
-            if word.obsolete.is_some() {
+            if word.obsolete.is_some()
+                || (self.marker(marker).scope == MarkerScope::Pronouns
+                    && !self.pronoun_usage[word.id.0 as usize])
+            {
+                continue;
+            }
+            if self.pronoun_case_enabled
+                && category == Category::Object
+                && self.marker(marker).scope == MarkerScope::All
+                && self.pronoun_usage[word.id.0 as usize]
+                && word
+                    .paradigms
+                    .iter()
+                    .filter(|p| p.category == category)
+                    .flat_map(|p| &p.realizations)
+                    .any(|r| {
+                        r.retired.is_none() && r.share > 0.0 && self.audible(&word.form, r, stress)
+                    })
+            {
                 continue;
             }
             if let Some(p) = word.paradigms.iter_mut().find(|p| {
@@ -1048,6 +1151,25 @@ impl Grammar {
         stress: StressRule,
         generation: u32,
     ) -> u32 {
+        self.fuse_scoped(
+            particle,
+            self.marker(particle).scope,
+            lexicon,
+            morphology,
+            stress,
+            generation,
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn fuse_scoped(
+        &mut self,
+        particle: u32,
+        scope: MarkerScope,
+        lexicon: &mut Lexicon,
+        morphology: &Morphology,
+        stress: StressRule,
+        generation: u32,
+    ) -> u32 {
         let old = self.marker(particle).clone();
         let marker = self.add_marker(
             old.category,
@@ -1058,18 +1180,37 @@ impl Grammar {
             old.productive,
             generation,
         );
+        self.markers[marker as usize].scope = scope;
         // Only words that actually use the particle receive its fused competitor.
         for word in &mut lexicon.lexemes {
-            if word.obsolete.is_some() {
+            if word.obsolete.is_some()
+                || (scope == MarkerScope::Pronouns && !self.pronoun_usage[word.id.0 as usize])
+            {
                 continue;
             }
             for p in &mut word.paradigms {
-                if p.realizations
-                    .iter()
-                    .any(|r| r.retired.is_none() && r.marker == particle)
+                if (scope == MarkerScope::Pronouns && p.category == Category::Object)
+                    || p.realizations
+                        .iter()
+                        .any(|r| r.retired.is_none() && r.marker == particle)
                 {
+                    let share = if scope == MarkerScope::Pronouns {
+                        1.0
+                    } else {
+                        0.18
+                    };
                     let r =
-                        self.materialize(marker, &word.form, morphology, stress, generation, 0.18);
+                        self.materialize(marker, &word.form, morphology, stress, generation, share);
+                    if scope == MarkerScope::Pronouns {
+                        for old in p.realizations.iter_mut().filter(|r| r.retired.is_none()) {
+                            old.retired = Some(generation);
+                            old.share = 0.0;
+                            old.history.push(GrammarEntry {
+                                generation,
+                                event: GrammarEvent::Retired,
+                            });
+                        }
+                    }
                     Self::introduce(p, r);
                 }
             }
@@ -1077,7 +1218,11 @@ impl Grammar {
         self.notice(
             generation,
             old.category,
-            NoticeKind::Fusion { particle, marker },
+            if scope == MarkerScope::Pronouns {
+                NoticeKind::PronounFusion { particle, marker }
+            } else {
+                NoticeKind::Fusion { particle, marker }
+            },
         );
         self.refresh(lexicon, stress, generation);
         marker
@@ -1091,9 +1236,10 @@ impl Grammar {
         lexicon: &mut Lexicon,
         morphology: &Morphology,
         stress: StressRule,
-        speakers: u32,
-        tense_aspect: bool,
+        params: &crate::Params,
     ) {
+        self.pronoun_case_enabled = params.pronoun_case;
+        let tense_aspect = params.tense_aspect;
         self.sync(lexicon, morphology, stress, generation);
         for category in Category::ALL {
             if !category.evolves(tense_aspect) {
@@ -1192,7 +1338,7 @@ impl Grammar {
                             1.0
                         };
                 }
-                let n = speakers.clamp(16, 64);
+                let n = params.speakers.clamp(16, 64);
                 let mut counts = [0u32; 3];
                 for _ in 0..n {
                     counts[weighted_index(&mut rng, weights[..active_count].iter().copied())] += 1;
@@ -1213,14 +1359,15 @@ impl Grammar {
         self.refresh(lexicon, stress, generation);
         let mut fusions = Vec::new();
         for i in 0..self.markers.len() {
-            let already_fused = self
-                .markers
-                .iter()
-                .any(|m| matches!(m.origin,MarkerOrigin::Fused {particle} if particle==i as u32));
+            let already_fused = self.markers.iter().any(|m| {
+                m.scope == MarkerScope::All
+                    && matches!(m.origin,MarkerOrigin::Fused {particle} if particle==i as u32)
+            });
             let marker = &mut self.markers[i];
             if !marker.category.evolves(tense_aspect)
                 || marker.kind != MarkerKind::Particle
                 || marker.retired.is_some()
+                || marker.scope != MarkerScope::All
                 || !marker.productive
             {
                 continue;
@@ -1250,6 +1397,7 @@ impl Grammar {
         for particle in fusions {
             self.fuse(particle, lexicon, morphology, stress, generation);
         }
+        let mut retained_analogy = None;
         for category in Category::ALL {
             if !category.evolves(tense_aspect) {
                 continue;
@@ -1295,45 +1443,38 @@ impl Grammar {
                 continue;
             }
             let id = candidates[index(&mut rng, candidates.len())];
-            let word = lexicon.get_mut(id);
-            let p = word
-                .paradigms
-                .iter_mut()
-                .find(|p| p.category == category)
-                .expect("candidate category");
-            let r = p
-                .realizations
-                .iter_mut()
-                .filter(|r| {
-                    r.retired.is_none()
-                        && r.form.is_some()
-                        && self.marker(r.marker).kind != MarkerKind::Pattern
-                })
-                .max_by(|a, b| a.share.total_cmp(&b.share))
-                .expect("candidate form");
-            let regular =
-                self.materialize(marker, &word.form, morphology, stress, generation, r.share);
-            let before = r
-                .form
-                .replace(regular.form.expect("bound form"))
-                .expect("old bound form");
-            r.marker = marker;
-            r.edge = regular.edge;
-            r.history.push(GrammarEntry {
-                generation,
-                event: GrammarEvent::Analogy {
-                    before: before.clone(),
-                },
-            });
-            self.notice(
-                generation,
-                category,
-                NoticeKind::Analogy {
-                    lexeme: id,
-                    before,
-                    after: r.form.as_ref().expect("bound form").clone(),
-                },
+            if params.pronoun_case
+                && category == Category::Object
+                && self.pronoun_usage[id.0 as usize]
+            {
+                retained_analogy = Some((id, marker));
+                continue;
+            }
+            self.apply_analogy(
+                lexicon, morphology, stress, generation, category, id, marker,
             );
+        }
+        // These purpose-keyed draws come after every pre-existing grammar draw.
+        if let Some((id, marker)) = retained_analogy {
+            let mut rng = stream(
+                seed,
+                &[
+                    key("pronoun case retention"),
+                    variety as u64,
+                    generation as u64,
+                ],
+            );
+            if rng.r#gen::<f32>() >= params.pronoun_case_retention {
+                self.apply_analogy(
+                    lexicon,
+                    morphology,
+                    stress,
+                    generation,
+                    Category::Object,
+                    id,
+                    marker,
+                );
+            }
         }
         self.refresh(lexicon, stress, generation);
         let mut pattern_categories = [false; Category::ALL.len()];
@@ -1358,6 +1499,68 @@ impl Grammar {
                 });
             }
         }
+        if params.pronoun_case {
+            self.evolve_pronoun_case(
+                seed,
+                variety,
+                generation,
+                lexicon,
+                morphology,
+                stress,
+                params.pronoun_fusion_rate,
+            );
+        }
+        self.refresh(lexicon, stress, generation);
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn apply_analogy(
+        &mut self,
+        lexicon: &mut Lexicon,
+        morphology: &Morphology,
+        stress: StressRule,
+        generation: u32,
+        category: Category,
+        id: LexemeId,
+        marker: u32,
+    ) {
+        let word = lexicon.get_mut(id);
+        let p = word
+            .paradigms
+            .iter_mut()
+            .find(|p| p.category == category)
+            .expect("candidate category");
+        let r = p
+            .realizations
+            .iter_mut()
+            .filter(|r| {
+                r.retired.is_none()
+                    && r.form.is_some()
+                    && self.marker(r.marker).kind != MarkerKind::Pattern
+            })
+            .max_by(|a, b| a.share.total_cmp(&b.share))
+            .expect("candidate form");
+        let regular = self.materialize(marker, &word.form, morphology, stress, generation, r.share);
+        let before = r
+            .form
+            .replace(regular.form.expect("bound form"))
+            .expect("old bound form");
+        r.marker = marker;
+        r.edge = regular.edge;
+        r.history.push(GrammarEntry {
+            generation,
+            event: GrammarEvent::Analogy {
+                before: before.clone(),
+            },
+        });
+        self.notice(
+            generation,
+            category,
+            NoticeKind::Analogy {
+                lexeme: id,
+                before,
+                after: r.form.as_ref().expect("bound form").clone(),
+            },
+        );
     }
     pub(crate) fn import_pair(
         &mut self,
@@ -1368,12 +1571,16 @@ impl Grammar {
         stress: StressRule,
         generation: u32,
     ) {
+        if pair.scope == MarkerScope::Pronouns && !self.pronoun_usage[lexeme.0 as usize] {
+            return;
+        }
         let category = pair.category;
         let marker = self
             .markers
             .iter()
             .find(|m| {
                 m.category == category
+                    && m.scope == pair.scope
                     && m.retired.is_none()
                     && matches!(m.origin, MarkerOrigin::Imported {from:f,marker,..}
                     if f == from && marker == pair.source_marker)
@@ -1393,6 +1600,7 @@ impl Grammar {
                     false,
                     generation,
                 );
+                self.markers[marker as usize].scope = pair.scope;
                 if pair.kind == MarkerKind::Pattern {
                     let template = pair
                         .form
@@ -1756,6 +1964,7 @@ mod tests {
                     category: Category::Plural,
                     source_marker: 7,
                     kind: MarkerKind::Particle,
+                    scope: MarkerScope::All,
                     side: Side::Suffix,
                     marker_form: Form::from_ipa("mikant").unwrap(),
                     source_marker_form: Form::from_ipa("miːkant").unwrap(),
@@ -1844,8 +2053,10 @@ mod tests {
                         &mut daughter.lexicon,
                         &daughter.morphology,
                         stress,
-                        1000,
-                        true,
+                        &crate::Params {
+                            speakers: 1000,
+                            ..crate::Params::default()
+                        },
                     );
                 }
                 assert_eq!(

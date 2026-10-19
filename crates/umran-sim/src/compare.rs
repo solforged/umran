@@ -499,6 +499,7 @@ mod tests {
                 id: 0,
                 category: Category::Plural,
                 kind,
+                scope: crate::grammar::MarkerScope::All,
                 side: Side::Suffix,
                 form: Form::from_ipa(particle).unwrap(),
                 template: None,

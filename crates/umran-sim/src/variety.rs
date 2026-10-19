@@ -209,6 +209,7 @@ impl Variety {
         variety
             .pronouns
             .found_clusivity(seed, &phonotactics, &mut variety.lexicon);
+        variety.sync_grammar(0);
         variety
     }
 

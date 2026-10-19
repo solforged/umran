@@ -252,6 +252,13 @@ enum GrammarAnnalEvent {
         particle: u32,
         marker: u32,
     },
+    PronounFusion {
+        particle: u32,
+        marker: u32,
+    },
+    PronounRelic {
+        cells: Vec<&'static str>,
+    },
     ContrastLoss,
     Analogy {
         lexeme: u32,
@@ -2427,6 +2434,43 @@ fn grammar_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> 
                         None,
                     )
                 }
+                NoticeKind::PronounFusion { particle, marker } => {
+                    let old = grammatical_marker(
+                        variety,
+                        variety.grammar.marker(*particle),
+                        generation,
+                    );
+                    let new = grammatical_marker(
+                        variety,
+                        variety.grammar.marker(*marker),
+                        generation,
+                    );
+                    (
+                        format!(
+                            "Among {people}, {old} clung to the pronouns and became {new}, part of the word itself, while nouns still took it as a word apart."
+                        ),
+                        vec![
+                            "Pronouns are said more often than any noun, and what is said often fuses first. The separate word lives on with the nouns.".into(),
+                        ],
+                        GrammarAnnalEvent::PronounFusion {
+                            particle: *particle,
+                            marker: *marker,
+                        },
+                        None,
+                    )
+                }
+                NoticeKind::PronounRelic { cells } => (
+                    format!(
+                        "Among {people}, nouns no longer marked the object, but the pronouns kept their old object forms."
+                    ),
+                    vec![
+                        "What is said often resists being made regular; the pronouns' forms outlived the marking that made them.".into(),
+                    ],
+                    GrammarAnnalEvent::PronounRelic {
+                        cells: cells.clone(),
+                    },
+                    None,
+                ),
                 NoticeKind::ContrastLoss => (
                     if notice.category == Category::Object {
                         format!("Among {people}, the object's mark weakened; word order carried more of the distinction between subject and object.")

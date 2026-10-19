@@ -38,7 +38,7 @@ import {
   WholeWord,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, ClimateView, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Mechanism, Overview, PlaceExonym, PlaceName, ReadEngine, ReligionView, Rendering, SchismCause, Seasons, StateView, StressRule, Tenet, Terrain, TravelLeg, WorldMap } from "./model";
+import type { Annal, ClimateView, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Mechanism, Overview, PlaceExonym, PlaceName, PronounCase, ReadEngine, ReligionView, Rendering, SchismCause, Seasons, StateView, StressRule, Tenet, Terrain, TravelLeg, WorldMap } from "./model";
 import { YEARS } from "./model";
 import { findAnnal } from "./history";
 
@@ -456,6 +456,14 @@ export const POSSESSOR_PHRASE = {
   before: { choice: "the possessor first (“child — fish”)", prose: "the possessor comes before", summary: "possessor before" },
   after: { choice: "the possessor last (“fish — child”)", prose: "the possessor comes after", summary: "possessor after" },
 } as const;
+
+/** What the pronouns do about the object, beside the nouns. */
+export const PRONOUN_CASE_PHRASE: Record<PronounCase, string | null> = {
+  none: null,
+  "like-nouns": "The pronouns mark the object as the nouns do",
+  ahead: "The pronouns have fused their object marker onto the word, ahead of the nouns, which still use a separate one",
+  relic: "The nouns have lost their object marking, but the pronouns keep theirs, as English keeps me and him",
+};
 
 /// The chronicle's quiet apparatus shares its nouns with cards and the book.
 export const CHRONICLE = {

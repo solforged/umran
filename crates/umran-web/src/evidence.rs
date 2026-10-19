@@ -195,6 +195,7 @@ struct GrammarStory {
 struct MarkerStory {
     marker: String,
     kind: &'static str,
+    scope: umran_sim::grammar::MarkerScope,
     source: Option<MeaningForm>,
     born: u32,
     retired: Option<u32>,
@@ -1225,6 +1226,7 @@ fn grammar_story(
         markers.push(MarkerStory {
             marker: marker.id.to_string(),
             kind: marker.kind.id(),
+            scope: marker.scope,
             source,
             born: marker.born,
             retired: marker.retired,

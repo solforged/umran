@@ -89,10 +89,13 @@ the engine, not a second source. Blank where the engine has nothing yet.
      (`Variety.laws`, `Annal.specimen`, `word` history).
    - *Word building*: the builders (affixes or vowel patterns).
    - *Grammar*: the sketch (word order, how the object is marked, where
-     the possessor goes), a sample sentence and a possession phrase
-     rendered from the lexicon, the categories the engine models
-     (plural, past, object: `grammar.markers`), and a heading for what
-     it does not model yet, stated as such.
+     the possessor goes), a sample sentence, a possession phrase, and
+     "I saw you" / "You saw me" rendered from the lexicon, the categories
+     the engine models (plural, past, object, future, progressive,
+     genitive: `grammar.markers`), the pronouns with their object forms
+     and where they stand against the nouns (`grammar.pronounCase`: like
+     the nouns, ahead of them, or keeping a relic the nouns lost), and a
+     heading for what it does not model yet, stated as such.
    - *Lexicon*: every word with its origin (inherited, borrowed with its
      source and the contact behind it, coined, stretched), competitors,
      and cognates across the family (`lexicon`, `word`).

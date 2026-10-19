@@ -309,6 +309,10 @@ pub struct Params {
     /// Chance of repairing a worn/merged pronoun. Court address changes
     /// six times faster; loans under intense contact are twenty times rarer.
     pub pronoun_rate: f32,
+    /// Enables earlier pronoun object fusion and retention after noun case loss.
+    pub pronoun_case: bool,
+    pub pronoun_fusion_rate: f32,
+    pub pronoun_case_retention: f32,
     /// Per-generation chance of recruiting a noun-class agreement system.
     pub class_emergence_rate: f32,
     /// Chance to phonologize recent vowel assimilation into word harmony.
@@ -383,6 +387,9 @@ impl Default for Params {
             seasons_enabled: true,
             tense_aspect: true,
             pronoun_rate: 0.003,
+            pronoun_case: true,
+            pronoun_fusion_rate: 0.004,
+            pronoun_case_retention: 0.9,
             class_emergence_rate: 0.00075,
             harmony_rate: 0.004,
             pattern_analogy_rate: 0.04,
@@ -438,6 +445,9 @@ impl Params {
             seasons_enabled: false,
             tense_aspect: false,
             pronoun_rate: 0.0,
+            pronoun_case: false,
+            pronoun_fusion_rate: 0.0,
+            pronoun_case_retention: 0.0,
             class_emergence_rate: 0.0,
             harmony_rate: 0.0,
             pattern_analogy_rate: 0.0,
@@ -2187,6 +2197,7 @@ impl World {
         let areal = self.areal_targets();
         for (v, targets) in areal.iter().enumerate() {
             if spoken[v] {
+                self.varieties[v].grammar.pronoun_case_enabled = self.params.pronoun_case;
                 self.sound_change(v, targets);
                 self.tone_change(v);
             }
@@ -2212,8 +2223,7 @@ impl World {
                 &mut variety.lexicon,
                 &variety.morphology,
                 stress,
-                self.params.speakers,
-                self.params.tense_aspect,
+                &self.params,
             );
             variety.gender.evolve(
                 self.seed,
@@ -4662,6 +4672,142 @@ impl World {
     }
 
     /// Native marking is normal. Strong bilingual contact occasionally carries pairs.
+    pub(crate) fn import_grammar_pairs(
+        &mut self,
+        recipient: usize,
+        donor: usize,
+        intensity: f32,
+        new_loans: Vec<LexemeId>,
+    ) {
+        let generation = self.generation;
+        let own = &self.varieties[recipient];
+        let adapter = Adapter::new(
+            own.lexicon.living().map(|l| &l.form),
+            &own.profile.inventory,
+        );
+        let mut pairs = Vec::new();
+        for id in new_loans {
+            let Origin::Borrowed { source, .. } = own.lexicon.get(id).origin else {
+                continue;
+            };
+            let donor_word = self.varieties[donor].lexicon.get(source);
+            for category in Category::ALL {
+                if !own
+                    .lexicon
+                    .get(id)
+                    .paradigms
+                    .iter()
+                    .any(|p| p.category == category)
+                {
+                    continue;
+                }
+                let mut rng = self.at(recipient).rng(&[
+                    key("grammar imported pair"),
+                    donor as u64,
+                    key(category.id()),
+                    id.0 as u64,
+                ]);
+                if rng.r#gen::<f32>() >= 0.04 * intensity {
+                    continue;
+                }
+                let Some(paradigm) = donor_word.paradigms.iter().find(|p| p.category == category)
+                else {
+                    continue;
+                };
+                let Some(realization) = paradigm
+                    .realizations
+                    .iter()
+                    .filter(|r| {
+                        r.retired.is_none()
+                            && self.varieties[donor].grammar.marker(r.marker).kind
+                                != MarkerKind::None
+                    })
+                    .max_by(|a, b| a.share.total_cmp(&b.share))
+                else {
+                    continue;
+                };
+                let marker = self.varieties[donor].grammar.marker(realization.marker);
+                let (form, edge, marker_form, source_form) = match marker.kind {
+                    MarkerKind::Bound => {
+                        let Some(source_form) = realization.form.as_ref() else {
+                            continue;
+                        };
+                        let form = adapter.adapt(
+                            source_form,
+                            self.params.bilingual_keep * intensity,
+                            &mut rng,
+                        );
+                        let mut input = 0;
+                        let mut output = 0;
+                        let mut edge = 0;
+                        for (left, right) in crate::compare::align(source_form, &form) {
+                            if input >= realization.edge {
+                                edge = output;
+                                break;
+                            }
+                            input += usize::from(left.is_some());
+                            output += usize::from(right.is_some());
+                            edge = output;
+                        }
+                        let edge = edge.min(form.segs.len());
+                        let edge_form = Form {
+                            segs: match marker.side {
+                                Side::Prefix => form.segs[..edge].to_vec(),
+                                Side::Suffix => form.segs[edge..].to_vec(),
+                            },
+                            boundaries: Vec::new(),
+                            stress: None,
+                        };
+                        (Some(form), edge, edge_form, source_form.clone())
+                    }
+                    MarkerKind::Pattern => {
+                        let Some(source_form) = realization.form.as_ref() else {
+                            continue;
+                        };
+                        let form = adapter.adapt(
+                            source_form,
+                            self.params.bilingual_keep * intensity,
+                            &mut rng,
+                        );
+                        (Some(form), 0, Form::default(), source_form.clone())
+                    }
+                    MarkerKind::Particle => (
+                        None,
+                        0,
+                        adapter.adapt(
+                            &marker.form,
+                            self.params.bilingual_keep * intensity,
+                            &mut rng,
+                        ),
+                        marker.form.clone(),
+                    ),
+                    MarkerKind::None => unreachable!(),
+                };
+                pairs.push((
+                    id,
+                    ImportedPair {
+                        category,
+                        source_marker: marker.id,
+                        kind: marker.kind,
+                        scope: marker.scope,
+                        side: marker.side,
+                        marker_form,
+                        source_marker_form: marker.form.clone(),
+                        form,
+                        edge,
+                        source_form,
+                    },
+                ));
+            }
+        }
+        let own = &mut self.varieties[recipient];
+        let stress = own.stress();
+        for (id, pair) in pairs {
+            own.grammar
+                .import_pair(&mut own.lexicon, id, donor, pair, stress, generation);
+        }
+    }
+
     fn grammar_contact(&mut self, spoken: &[bool]) {
         let generation = self.generation;
         let mut strong: BTreeMap<(usize, usize), f32> = BTreeMap::new();
@@ -4706,132 +4852,7 @@ impl World {
                 .map(|l| l.id)
                 .collect();
             if !new_loans.is_empty() {
-                let own = &self.varieties[recipient];
-                let adapter = Adapter::new(
-                    own.lexicon.living().map(|l| &l.form),
-                    &own.profile.inventory,
-                );
-                let mut pairs = Vec::new();
-                for id in new_loans {
-                    let Origin::Borrowed { source, .. } = own.lexicon.get(id).origin else {
-                        continue;
-                    };
-                    let donor_word = self.varieties[donor].lexicon.get(source);
-                    for category in Category::ALL {
-                        if !own
-                            .lexicon
-                            .get(id)
-                            .paradigms
-                            .iter()
-                            .any(|p| p.category == category)
-                        {
-                            continue;
-                        }
-                        let mut rng = self.at(recipient).rng(&[
-                            key("grammar imported pair"),
-                            donor as u64,
-                            key(category.id()),
-                            id.0 as u64,
-                        ]);
-                        if rng.r#gen::<f32>() >= 0.04 * intensity {
-                            continue;
-                        }
-                        let Some(paradigm) =
-                            donor_word.paradigms.iter().find(|p| p.category == category)
-                        else {
-                            continue;
-                        };
-                        let Some(realization) = paradigm
-                            .realizations
-                            .iter()
-                            .filter(|r| {
-                                r.retired.is_none()
-                                    && self.varieties[donor].grammar.marker(r.marker).kind
-                                        != MarkerKind::None
-                            })
-                            .max_by(|a, b| a.share.total_cmp(&b.share))
-                        else {
-                            continue;
-                        };
-                        let marker = self.varieties[donor].grammar.marker(realization.marker);
-                        let (form, edge, marker_form, source_form) = match marker.kind {
-                            MarkerKind::Bound => {
-                                let Some(source_form) = realization.form.as_ref() else {
-                                    continue;
-                                };
-                                let form = adapter.adapt(
-                                    source_form,
-                                    self.params.bilingual_keep * intensity,
-                                    &mut rng,
-                                );
-                                let mut input = 0;
-                                let mut output = 0;
-                                let mut edge = 0;
-                                for (left, right) in crate::compare::align(source_form, &form) {
-                                    if input >= realization.edge {
-                                        edge = output;
-                                        break;
-                                    }
-                                    input += usize::from(left.is_some());
-                                    output += usize::from(right.is_some());
-                                    edge = output;
-                                }
-                                let edge = edge.min(form.segs.len());
-                                let edge_form = Form {
-                                    segs: match marker.side {
-                                        Side::Prefix => form.segs[..edge].to_vec(),
-                                        Side::Suffix => form.segs[edge..].to_vec(),
-                                    },
-                                    boundaries: Vec::new(),
-                                    stress: None,
-                                };
-                                (Some(form), edge, edge_form, source_form.clone())
-                            }
-                            MarkerKind::Pattern => {
-                                let Some(source_form) = realization.form.as_ref() else {
-                                    continue;
-                                };
-                                let form = adapter.adapt(
-                                    source_form,
-                                    self.params.bilingual_keep * intensity,
-                                    &mut rng,
-                                );
-                                (Some(form), 0, Form::default(), source_form.clone())
-                            }
-                            MarkerKind::Particle => (
-                                None,
-                                0,
-                                adapter.adapt(
-                                    &marker.form,
-                                    self.params.bilingual_keep * intensity,
-                                    &mut rng,
-                                ),
-                                marker.form.clone(),
-                            ),
-                            MarkerKind::None => unreachable!(),
-                        };
-                        pairs.push((
-                            id,
-                            ImportedPair {
-                                category,
-                                source_marker: marker.id,
-                                kind: marker.kind,
-                                side: marker.side,
-                                marker_form,
-                                source_marker_form: marker.form.clone(),
-                                form,
-                                edge,
-                                source_form,
-                            },
-                        ));
-                    }
-                }
-                let own = &mut self.varieties[recipient];
-                let stress = own.stress();
-                for (id, pair) in pairs {
-                    own.grammar
-                        .import_pair(&mut own.lexicon, id, donor, pair, stress, generation);
-                }
+                self.import_grammar_pairs(recipient, donor, intensity, new_loans);
             }
             if !sustained {
                 continue;
@@ -4941,6 +4962,7 @@ impl World {
             }
             let mut donors: Vec<LexemeId> = related(concept)
                 .chain(living_related(concept, livelihood))
+                .filter(|other| !crate::pronouns::is_pronoun(other))
                 .filter_map(|other| lexicon.slot(other).dominant())
                 .filter(|id| !lexicon.slots[i].has(*id))
                 .collect();

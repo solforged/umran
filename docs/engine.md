@@ -182,7 +182,58 @@ This bookkeeping makes no random draws and does not itself change replay.
   systems, 27.5%, have the distinction; all 55 still have distinct forms.
   Related daughters and the separately reported workbench sample are not
   pooled into that percentage. The founding choice is profile-neutral;
-  case, dual number, and inclusive-only systems are not yet represented.
+  dual number and inclusive-only systems are not yet represented.
+- Pronoun object forms (`pronoun_case.rs`) use the same paradigms and sound
+  laws as nouns. All nine personal-pronoun meanings allow object marking,
+  but neither plural nor genitive marking. Founding builds their paradigms
+  after replacing the initial roots, including optional clusivity cells;
+  renewal and borrowing acquire the current native object form at sync.
+  A donor's object form enters only as recorded imported-pair evidence,
+  not an automatically productive foreign marker. Pronouns do not serve
+  as lexical-extension donors to nouns.
+  A separate object particle can fuse on pronouns while nouns keep it as a
+  word. Such markers have `Pronouns` scope: noun acquisition and productive
+  noun marking ignore them, but harmony and sound laws do not. After noun
+  contrast loss, surviving pronoun forms retain their sounds and histories
+  under a nonproductive scoped copy of their old marker. The copy records
+  when its scope narrowed; each realization keeps its original birth.
+  `Params.pronoun_case` enables these frequency-sensitive processes.
+  `pronoun_fusion_rate` is 0.004 per generation, with full-share adoption
+  and no eight-generation waiting period. The starting 0.02 prior (four
+  times noun fusion's 0.005) put 88.9% of particle-marking founders ahead;
+  calibration reduced only the new rate.
+  `pronoun_case_retention`, 0.9, is the chance of sparing a pronoun object
+  form selected for analogical levelling. Fusion and retention use separate
+  `pronoun case fusion` and `pronoun case retention` streams keyed by
+  variety and generation, after the earlier grammar draws; detachment
+  consumes no draw. `static_society()` disables both processes and sets
+  both new rates to zero, without changing founding eligibility or regular
+  sound laws.
+  The summary reads the dominant realization of each living pronoun cell.
+  It is `Ahead` when at least half have an audible bound object form while
+  nouns' dominant productive marker is a particle; `Relic` when pronouns
+  keep an audible dominant contrast and nouns no longer mark objects;
+  `LikeNouns` otherwise, or `None` without an audible dominant contrast.
+  At least two surviving cells record a relic notice once per noun-loss
+  episode; regaining noun contrast permits a later notice. This models the
+  frequency effects discussed in Bybee, *Frequency of Use and the
+  Organization of Language* (2007), and Hopper and Traugott,
+  *Grammaticalization*, chapter 6: frequent forms fuse early and resist
+  levelling later.
+  Across 40 seeds per profile over 4,000 years, familiar, Semitic, and
+  Polynesian each began with 24 object-marking languages, nine with particles.
+  Four of nine particle founders per profile reached `Ahead`, and all four
+  remained ahead at the end: 12/27 pooled, 44.4%. First pronoun fusion took
+  a mean 48.2 generations among the four fusion histories per profile.
+  Among object-marking founders, relics appeared in 1/24 familiar, 3/24
+  Semitic, and 1/24 Polynesian histories. At year 4,000 they survived in
+  0/2, 3/3, and 1/1 of the respective noun-loss histories: 4/6 pooled,
+  66.7%, within the 35–70% calibration band. These are small denominators,
+  not estimates of language frequencies; matching seed numbers also share
+  purpose-keyed social and fusion draws across profiles. The unchanged
+  workbench recipe is reported separately: two of its three founders had
+  object marking, none began with particles, and one ended with a relic.
+  Related descendants are not pooled as independent founding samples.
 - Noun classes (`gender.rs`) sort nouns into groups that other words must
   agree with, following Corbett, *Gender* (1991): agreement is how a class
   becomes visible. Founding draws presence and semantic basis separately
@@ -2294,6 +2345,7 @@ cargo run --release -p umran-sim --example ethos -- --band 40 160
 cargo run --release -p umran-sim --example endings -- [seeds]
 cargo run --release -p umran-sim --example tense -- [seeds] [years]
 cargo run --release -p umran-sim --example pronouns -- [seeds]
+cargo run --release -p umran-sim --example pronoun_case -- [seeds=40] [fusion-rate] [retention]
 cargo run --release -p umran-sim --example gender -- [seeds-per-profile]
 cargo run --release -p umran-sim --example harmony -- [seeds] [generations]
 cargo run --release -p umran-sim --example pattern -- [seeds] [generations]
@@ -2321,9 +2373,9 @@ can refuse this fixed recipe; the report counts those refusals separately.
 
 Subregional river meanders, changing lake extents, lake salinity, resolved travel times,
 purism in speech rather than writing, spelling reform as a purist act,
-inflection beyond count noun plural and object marking, the genitive, and verb
-past, future, and progressive, agreement beyond the determiner, combined
-tense–aspect forms, modal readings and clitic stages, pronoun case forms,
+inflection beyond count noun plural, noun and pronoun object marking, the genitive,
+and verb past, future, and progressive, agreement beyond the determiner, combined
+tense–aspect forms, modal readings and clitic stages, possessive pronouns,
 tone beyond the word (sandhi), vowel harmony beyond the word, syllabic
 consonants and productive cluster repair, prenasalized stops, syntax beyond fixed word
 and possessor order, alignment beyond this object contrast, and doctrine

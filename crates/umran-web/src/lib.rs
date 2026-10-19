@@ -3741,6 +3741,15 @@ struct PronounView {
     since: u32,
     origin: &'static str,
     source: Option<String>,
+    object: Option<PronounObjectView>,
+}
+
+#[derive(Serialize)]
+struct PronounObjectView {
+    spelled: String,
+    ipa: String,
+    kind: &'static str,
+    since: u32,
 }
 
 fn pronoun_view(variety: &Variety) -> Vec<PronounView> {
@@ -3785,6 +3794,26 @@ fn pronoun_view(variety: &Variety) -> Vec<PronounView> {
                 },
                 origin,
                 source,
+                object: variety
+                    .grammar
+                    .pronoun_object(word, variety.stress())
+                    .map(|r| {
+                        let forms = variety.grammar.surface(&word.form, r);
+                        PronounObjectView {
+                            spelled: forms
+                                .iter()
+                                .map(|f| variety.spell(f))
+                                .collect::<Vec<_>>()
+                                .join(" "),
+                            ipa: forms
+                                .iter()
+                                .map(|f| f.ipa_stressed(variety.stress()))
+                                .collect::<Vec<_>>()
+                                .join(" "),
+                            kind: variety.grammar.marker(r.marker).kind.id(),
+                            since: r.born,
+                        }
+                    }),
             })
         })
         .collect()
@@ -4140,6 +4169,7 @@ fn grammar_view(world: &World, variety: usize) -> GrammarView {
         } else {
             "order"
         },
+        pronoun_case: v.grammar.pronoun_case(),
         sample: grammar_sample(v, world.generation),
         classes: v
             .gender
@@ -4179,6 +4209,7 @@ fn grammar_view(world: &World, variety: usize) -> GrammarView {
                     id: marker.id,
                     category: marker.category.id(),
                     kind: marker.kind.id(),
+                    scope: marker.scope,
                     template: marker.template.as_ref().map(|t| t.notation()),
                     side: marker.side.id(),
                     form,
@@ -4232,7 +4263,7 @@ fn grammar_view(world: &World, variety: usize) -> GrammarView {
                     description: match category {
                         Category::Plural => "Plural marks more than one countable thing.",
                         Category::Past => "Past marks an event before the present.",
-                        Category::Object => "Object marking distinguishes the object of a verb—for example, the dog in “the child saw the dog”. Here it is modelled for count nouns.",
+                        Category::Object => "Object marking distinguishes the object of a verb. It applies to count nouns and personal pronouns.",
                         Category::Future => "Future marks an event after the present.",
                         Category::Progressive => "Progressive marks an event in progress.",
                         Category::Genitive => "Genitive marks a countable possessor.",
@@ -4270,6 +4301,7 @@ fn grammar_sample(variety: &Variety, generation: u32) -> Option<GrammarSample> {
         sentence,
         possession,
         future,
+        pronoun: grammar_pronoun_sample(variety, generation),
     })
 }
 
@@ -4297,6 +4329,47 @@ fn grammar_sentence(
         sample_word(variety, concept, category, generation, &mut sentence)?;
     }
     Some(sentence)
+}
+
+fn grammar_pronoun_sample(variety: &Variety, generation: u32) -> Option<PronounSample> {
+    let render = |subject, object, translation| {
+        let words = [
+            (subject, None),
+            ("see", Some(Category::Past)),
+            (object, Some(Category::Object)),
+        ];
+        let order = match variety.grammar.order {
+            WordOrder::SOV => [0, 2, 1],
+            WordOrder::SVO => [0, 1, 2],
+            WordOrder::VSO => [1, 0, 2],
+        };
+        let mut sentence = GrammarRendering {
+            translation,
+            ..Default::default()
+        };
+        for index in order {
+            let (concept, category) = words[index];
+            let word = variety
+                .lexicon
+                .word_for(umran_sim::concepts::by_id(concept)?)?;
+            if category.is_some_and(|category| {
+                !word.paradigms.iter().any(|p| {
+                    p.category == category
+                        && p.realizations
+                            .iter()
+                            .any(|r| r.born <= generation && r.retired.is_none() && r.share > 0.0)
+                })
+            }) {
+                return None;
+            }
+            sample_word(variety, concept, category, generation, &mut sentence)?;
+        }
+        Some(sentence)
+    };
+    Some(PronounSample {
+        first: render("1sg", "2sg", "I saw you.")?,
+        second: render("2sg", "1sg", "You saw me.")?,
+    })
 }
 
 fn sample_determiner(
@@ -4331,6 +4404,11 @@ fn sample_word(
     let word = variety
         .lexicon
         .word_for(umran_sim::concepts::by_id(concept)?)?;
+    let gloss_base = match concept {
+        "1sg" => "1SG",
+        "2sg" => "2SG",
+        _ => concept,
+    };
     let realization = category.and_then(|category| {
         word.paradigms
             .iter()
@@ -4369,17 +4447,26 @@ fn sample_word(
             let gloss = match marker.kind {
                 // A bound mark that sound change has worn to nothing is no
                 // longer audible; the sample says so by glossing it bare.
-                MarkerKind::Bound | MarkerKind::Pattern if form.segs == word.form.segs => {
-                    concept.into()
+                MarkerKind::Bound | MarkerKind::Pattern
+                    if !variety
+                        .grammar
+                        .audible(&word.form, realization, variety.stress()) =>
+                {
+                    gloss_base.into()
                 }
-                MarkerKind::Bound | MarkerKind::Pattern => format!("{concept}-{label}"),
+                MarkerKind::Bound | MarkerKind::Pattern
+                    if umran_sim::pronouns::is_pronoun(word.first_sense) =>
+                {
+                    format!("{gloss_base}.{label}")
+                }
+                MarkerKind::Bound | MarkerKind::Pattern => format!("{gloss_base}-{label}"),
                 MarkerKind::Particle
                     if (marker.side == Side::Prefix && index == 0)
                         || (marker.side == Side::Suffix && index == 1) =>
                 {
                     label.into()
                 }
-                _ => concept.into(),
+                _ => gloss_base.into(),
             };
             append(rendering, form, gloss);
         }
@@ -4387,7 +4474,7 @@ fn sample_word(
         if word.form.segs.is_empty() {
             return None;
         }
-        append(rendering, &word.form, concept.into());
+        append(rendering, &word.form, gloss_base.into());
     }
     Some(())
 }
@@ -4907,6 +4994,8 @@ struct GrammarView {
     order: WordOrder,
     possessor: PossessorOrder,
     marking: &'static str,
+    #[serde(rename = "pronounCase")]
+    pronoun_case: umran_sim::grammar::PronounCase,
     #[serde(skip_serializing_if = "Option::is_none")]
     sample: Option<GrammarSample>,
     markers: Vec<GrammarMarkerView>,
@@ -4936,6 +5025,13 @@ struct GrammarSample {
     sentence: GrammarRendering,
     possession: GrammarRendering,
     future: GrammarRendering,
+    pronoun: Option<PronounSample>,
+}
+
+#[derive(Serialize)]
+struct PronounSample {
+    first: GrammarRendering,
+    second: GrammarRendering,
 }
 
 #[derive(Default, Serialize)]
@@ -4963,6 +5059,7 @@ struct GrammarMarkerView {
     id: u32,
     category: &'static str,
     kind: &'static str,
+    scope: umran_sim::grammar::MarkerScope,
     #[serde(skip_serializing_if = "Option::is_none")]
     template: Option<String>,
     side: &'static str,
@@ -7411,6 +7508,7 @@ mod tests {
                 id: 0,
                 category: Category::Plural,
                 kind: MarkerKind::Bound,
+                scope: umran_sim::grammar::MarkerScope::All,
                 side: Side::Suffix,
                 form: form("i"),
                 template: None,
@@ -7425,6 +7523,7 @@ mod tests {
                 id: 1,
                 category: Category::Plural,
                 kind: MarkerKind::Particle,
+                scope: umran_sim::grammar::MarkerScope::All,
                 side: Side::Suffix,
                 form: form("meme"),
                 template: None,
@@ -7589,6 +7688,7 @@ mod tests {
                 id: 0,
                 category: Category::Plural,
                 kind: MarkerKind::Bound,
+                scope: umran_sim::grammar::MarkerScope::All,
                 side: Side::Suffix,
                 form: form("ta"),
                 template: None,
@@ -7603,6 +7703,7 @@ mod tests {
                 id: 1,
                 category: Category::Plural,
                 kind: MarkerKind::Particle,
+                scope: umran_sim::grammar::MarkerScope::All,
                 side: Side::Suffix,
                 form: form("mamimi"),
                 template: None,
@@ -7959,6 +8060,113 @@ mod tests {
             view.sample.unwrap().sentence.gloss,
             ["child", "dog", "see-PAST"]
         );
+    }
+    #[test]
+    fn pronoun_case_view_and_samples_use_real_object_forms_without_determiners() {
+        for choice in [
+            GrammarChoice::Suffix,
+            GrammarChoice::Prefix,
+            GrammarChoice::Particle,
+            GrammarChoice::None,
+        ] {
+            for order in [WordOrder::SOV, WordOrder::SVO, WordOrder::VSO] {
+                let world = grammar_world(choice, order);
+                let v = &world.varieties[0];
+                let sample = grammar_sample(v, 0).unwrap().pronoun.unwrap();
+                assert_eq!(sample.first.translation, "I saw you.");
+                assert_eq!(sample.second.translation, "You saw me.");
+                assert!(sample.first.gloss.iter().all(|g| !g.starts_with("DEM")));
+                for (sentence, subject, object) in [
+                    (&sample.first, "1SG", "2SG"),
+                    (&sample.second, "2SG", "1SG"),
+                ] {
+                    assert!(sentence.gloss.iter().any(|g| g == subject));
+                    match choice {
+                        GrammarChoice::Suffix | GrammarChoice::Prefix => {
+                            assert!(sentence.gloss.contains(&format!("{object}.OBJ")))
+                        }
+                        GrammarChoice::Particle => assert!(
+                            sentence.gloss.contains(&"OBJ".to_owned())
+                                && sentence.gloss.contains(&object.to_owned())
+                        ),
+                        GrammarChoice::None => assert!(
+                            sentence.gloss.contains(&object.to_owned())
+                                && !sentence.gloss.iter().any(|g| g.contains("OBJ"))
+                        ),
+                    }
+                    let subject_at = sentence.gloss.iter().position(|g| g == subject).unwrap();
+                    let object_at = sentence
+                        .gloss
+                        .iter()
+                        .position(|g| g.starts_with(object))
+                        .unwrap();
+                    let verb_at = sentence
+                        .gloss
+                        .iter()
+                        .position(|g| g.starts_with("see"))
+                        .unwrap();
+                    assert!(match order {
+                        WordOrder::SOV => subject_at < object_at && object_at < verb_at,
+                        WordOrder::SVO => subject_at < verb_at && verb_at < object_at,
+                        WordOrder::VSO => verb_at < subject_at && subject_at < object_at,
+                    });
+                }
+                for cell in pronoun_view(v) {
+                    assert_eq!(cell.object.is_some(), choice != GrammarChoice::None);
+                    if let Some(object) = cell.object {
+                        assert_eq!(object.since, 0);
+                    }
+                }
+                let value = serde_json::to_value(grammar_view(&world, 0)).unwrap();
+                assert_eq!(
+                    value["pronounCase"],
+                    if choice == GrammarChoice::None {
+                        "none"
+                    } else {
+                        "like-nouns"
+                    }
+                );
+            }
+        }
+        let mut world = grammar_world(GrammarChoice::Suffix, WordOrder::SVO);
+        let v = &mut world.varieties[0];
+        let concept = umran_sim::concepts::by_id("2sg").unwrap();
+        v.lexicon.slot_mut(concept).variants.clear();
+        assert!(grammar_sample(v, 0).unwrap().pronoun.is_none());
+    }
+
+    #[test]
+    fn pronoun_case_notices_reach_annals_with_exact_event_ids() {
+        use umran_sim::grammar::{GrammarNotice, NoticeKind};
+        let mut world = grammar_world(GrammarChoice::Particle, WordOrder::SVO);
+        world.varieties[0].grammar.events.extend([
+            GrammarNotice {
+                generation: 0,
+                category: Category::Object,
+                event: NoticeKind::PronounFusion {
+                    particle: 2,
+                    marker: 2,
+                },
+            },
+            GrammarNotice {
+                generation: 0,
+                category: Category::Object,
+                event: NoticeKind::PronounRelic {
+                    cells: vec!["1sg", "2sg"],
+                },
+            },
+        ]);
+        let events: Vec<_> = annals(&world)
+            .iter()
+            .filter_map(|a| a.grammar.as_ref().map(|g| serde_json::to_value(g).unwrap()))
+            .collect();
+        for id in ["pronoun-fusion", "pronoun-relic"] {
+            assert!(
+                events
+                    .iter()
+                    .any(|e| e["category"] == "object" && e["event"] == id)
+            );
+        }
     }
 }
 

@@ -76,13 +76,15 @@ pub enum Class {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct CategoryEligibility {
     pub plural: bool,
+    pub object: bool,
     pub past: bool,
 }
 
 impl CategoryEligibility {
     pub const fn allows(self, category: Category) -> bool {
         match category {
-            Category::Plural | Category::Object | Category::Genitive => self.plural,
+            Category::Plural | Category::Genitive => self.plural,
+            Category::Object => self.object,
             Category::Past | Category::Future | Category::Progressive => self.past,
         }
     }
@@ -260,14 +262,22 @@ use Tier::*;
 
 const COUNT: CategoryEligibility = CategoryEligibility {
     plural: true,
+    object: true,
     past: false,
 };
 const VERB: CategoryEligibility = CategoryEligibility {
     plural: false,
+    object: false,
     past: true,
 };
 const UNMARKED: CategoryEligibility = CategoryEligibility {
     plural: false,
+    object: false,
+    past: false,
+};
+const PRONOUN: CategoryEligibility = CategoryEligibility {
+    plural: false,
+    object: true,
     past: false,
 };
 
@@ -281,7 +291,7 @@ pub static CONCEPTS: &[Concept] = &[
     iconic(core(6, "tongue", "tongue", Body, E, COUNT), Iconic::Lateral),
     core(7, "blood", "blood", Body, E, UNMARKED),
     core(8, "bone", "bone", Body, E, COUNT),
-    core(9, "2sg", "you (singular)", Function, F, UNMARKED),
+    core(9, "2sg", "you (singular)", Function, F, PRONOUN),
     core(10, "root", "root", Agriculture, E, COUNT),
     core(11, "come", "to come", Motion, V, VERB),
     iconic(
@@ -289,7 +299,7 @@ pub static CONCEPTS: &[Concept] = &[
         Iconic::LabialNasal,
     ),
     core(13, "rain", "rain", PhysicalWorld, E, UNMARKED),
-    core(14, "1sg", "I, me", Function, F, UNMARKED),
+    core(14, "1sg", "I, me", Function, F, PRONOUN),
     core(15, "name", "name", Speech, E, COUNT),
     expressive(core(16, "louse", "louse", Animals, E, COUNT)),
     core(17, "wing", "wing", Animals, E, COUNT),
@@ -310,7 +320,7 @@ pub static CONCEPTS: &[Concept] = &[
     core(32, "big", "big", Spatial, P, UNMARKED),
     core(33, "one", "one", Quantity, P, UNMARKED),
     core(34, "who", "who?", Function, F, UNMARKED),
-    core(35, "3sg", "he, she, it", Function, F, UNMARKED),
+    core(35, "3sg", "he, she, it", Function, F, PRONOUN),
     core(36, "hit", "to hit, beat", BasicActions, V, VERB),
     core(37, "foot", "leg, foot", Body, E, COUNT),
     core(38, "horn", "horn", Animals, E, COUNT),
@@ -499,16 +509,16 @@ pub static CONCEPTS: &[Concept] = &[
     culture(Basic, "all", "all", Quantity, P, UNMARKED),
     culture(Basic, "finish", "to finish", BasicActions, V, VERB),
     culture(Basic, "have", "to have", Possession, V, VERB),
-    culture(Basic, "1pl", "we, us", Function, F, UNMARKED),
-    culture(Basic, "2pl", "you (plural)", Function, F, UNMARKED),
-    culture(Basic, "3pl", "they, them", Function, F, UNMARKED),
+    culture(Basic, "1pl", "we, us", Function, F, PRONOUN),
+    culture(Basic, "2pl", "you (plural)", Function, F, PRONOUN),
+    culture(Basic, "3pl", "they, them", Function, F, PRONOUN),
     culture(
         Basic,
         "2sg-polite",
         "you (respectful singular)",
         Function,
         F,
-        UNMARKED,
+        PRONOUN,
     ),
     culture(
         Basic,
@@ -516,7 +526,7 @@ pub static CONCEPTS: &[Concept] = &[
         "we (including you)",
         Function,
         F,
-        UNMARKED,
+        PRONOUN,
     ),
     culture(
         Basic,
@@ -524,7 +534,7 @@ pub static CONCEPTS: &[Concept] = &[
         "we (excluding you)",
         Function,
         F,
-        UNMARKED,
+        PRONOUN,
     ),
 ];
 

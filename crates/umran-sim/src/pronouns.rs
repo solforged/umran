@@ -513,12 +513,13 @@ impl World {
                     word.id,
                     word.form.clone(),
                     after,
+                    contact.intensity * r.openness,
                     self.contact_loan_cause(contact, donor, recipient),
                     self.contact_cause(recipient, donor),
                 ));
             }
         }
-        for (v, (cell, from, source, source_form, after, provenance, cause)) in loans {
+        for (v, (cell, from, source, source_form, after, intensity, provenance, cause)) in loans {
             let variety = &mut self.varieties[v];
             let (new, before) = replace(
                 variety,
@@ -551,6 +552,8 @@ impl World {
                 },
                 cause,
             });
+            variety.sync_grammar(self.generation);
+            self.import_grammar_pairs(v, from, intensity, vec![new]);
         }
     }
 }

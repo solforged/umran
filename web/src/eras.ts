@@ -114,7 +114,8 @@ export function languageEraChange(era: Pick<Era, "start" | "end">, annals: reado
       case "grammar": {
         // The facade records grammar events structurally; never recognise them from prose.
         const grammar = (annal as Annal & { grammar?: { event: string } }).grammar;
-        if (grammar?.event === "new-marker" || grammar?.event === "fusion") score = 30;
+        if (grammar?.event === "new-marker" || grammar?.event === "fusion" || grammar?.event === "pronoun-fusion") score = 30;
+        if (grammar?.event === "pronoun-relic") score = 35;
         break;
       }
       case "law": score = annal.specimen.filter((word) => word.was !== null || word.wasIpa !== null).length; break;

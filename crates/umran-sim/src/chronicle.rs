@@ -47,7 +47,9 @@ use std::collections::BTreeMap;
 /// Revision 57 gives epithet-named peoples no further epithet and fuses
 /// identical consonants into one long consonant.
 /// Revision 58 never gives two continents the same chart heading.
-pub const ENGINE_REVISION: u32 = 58;
+/// Revision 59 gives pronouns object forms that fuse ahead of nouns and
+/// outlive the nouns' marking, and stops pronouns lending senses to nouns.
+pub const ENGINE_REVISION: u32 = 59;
 /// Revision 33 replaces flat geography and its region identities with a sphere.
 /// Earlier region-targeted actions cannot be replayed on the spherical mesh.
 pub const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;

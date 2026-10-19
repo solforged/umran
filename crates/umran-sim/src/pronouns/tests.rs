@@ -10,6 +10,50 @@ fn put(v: &mut Variety, cell: &str, ipa: &str) {
     v.lexicon.get_mut(id).form = Form::from_ipa(ipa).unwrap();
 }
 
+fn assert_current_object(v: &Variety, cell: &str, born: u32) {
+    use crate::grammar::{Category, GrammarEvent};
+    let word = word(v, cell);
+    let paradigm = word
+        .paradigms
+        .iter()
+        .find(|p| p.category == Category::Object)
+        .unwrap();
+    let native = paradigm
+        .realizations
+        .iter()
+        .find(|r| {
+            r.retired.is_none()
+                && !r
+                    .history
+                    .iter()
+                    .any(|e| matches!(e.event, GrammarEvent::Imported { .. }))
+        })
+        .unwrap();
+    assert_eq!(native.born, born);
+    let expected = v.grammar.materialize(
+        native.marker,
+        &word.form,
+        &v.morphology,
+        v.stress(),
+        born,
+        native.share,
+    );
+    assert_eq!(native.form, expected.form);
+    for r in &paradigm.realizations {
+        if matches!(
+            v.grammar.marker(r.marker).origin,
+            crate::grammar::MarkerOrigin::Imported { .. }
+        ) {
+            assert!(!v.grammar.marker(r.marker).productive);
+            assert!(
+                r.history
+                    .iter()
+                    .any(|e| matches!(e.event, GrammarEvent::Imported { .. }))
+            );
+        }
+    }
+}
+
 #[test]
 fn founding_cells_are_distinct_and_use_the_founding_sounds() {
     for seed in 0..12 {
@@ -114,10 +158,12 @@ fn court_address_needs_an_old_standing_state_and_records_its_cause() {
     assert!(!world.varieties[0].pronouns.polite);
     world.generation = 8;
     world.polite_pronouns();
+    world.varieties[0].sync_grammar(8);
     let v = &world.varieties[0];
     assert_eq!(word(v, "2sg").id, familiar);
     assert_eq!(v.lexicon.get(familiar).obsolete, None);
     assert_eq!(word(v, "2sg-polite").id, word(v, "2pl").id);
+    assert_current_object(v, "2sg-polite", 0);
     assert_ne!(word(v, "2sg").form, word(v, "2sg-polite").form);
     assert!(v.pronouns.polite);
     assert!(!clashes(v, "2sg", &word(v, "2sg").form));
@@ -170,10 +216,12 @@ fn respectful_address_generalises_only_after_a_long_distinct_stage() {
     assert!(world.varieties[0].pronouns.polite);
     world.params.pronoun_rate = 2.0;
     world.generalise_address(&[true]);
+    world.varieties[0].sync_grammar(32);
     let v = &world.varieties[0];
     assert!(!v.pronouns.polite);
     assert!(v.pronouns.generalised);
     assert_eq!(word(v, "2sg").form, respectful);
+    assert_current_object(v, "2sg", 32);
     assert_eq!(v.lexicon.get(familiar).obsolete, Some(32));
     assert!(v.lexicon.word_for(by_id("2sg-polite").unwrap()).is_none());
     assert!(word(v, "2pl").obsolete.is_none());
@@ -237,6 +285,7 @@ fn borrowing_requires_intense_sustained_intimate_contact() {
         let notice = v.pronouns.events.last().expect("loan at forced rate");
         assert!(matches!(notice.event, NoticeKind::Borrowed { .. }));
         assert_eq!(notice.cause.unwrap().mechanism, Mechanism::Contact);
+        assert_current_object(v, notice.cell, 8);
         assert!(matches!(
             word(v, notice.cell).origin,
             Origin::Borrowed { .. }

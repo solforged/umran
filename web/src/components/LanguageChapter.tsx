@@ -2,7 +2,7 @@ import { use, useState, type ReactNode } from "react";
 import { Feather } from "lucide-react";
 import type { GrammarMarker, HistoryLine, LawOccurrence, LawOccurrenceRef, LexiconRow, LoanCause, Overview, ReadEngine, Subject, Variant, Variety, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { CONTACT_NAME, landCardLabel, MARKING_PHRASE, peopleLabel, POSSESSOR_PHRASE, stateLabel, STRESS_RULE, WORD_ORDER_PHRASE } from "../lore";
+import { CONTACT_NAME, landCardLabel, MARKING_PHRASE, peopleLabel, POSSESSOR_PHRASE, PRONOUN_CASE_PHRASE, stateLabel, STRESS_RULE, WORD_ORDER_PHRASE } from "../lore";
 import { individualAnnals, findAnnal } from "../history";
 import { Dictionary, INITIAL_DICTIONARY, type DictionaryView } from "./Dictionary";
 import { FamilyTree } from "./FamilyTree";
@@ -183,13 +183,18 @@ export function GrammarSketch({ variety: v, ctx }: SectionProps) {
       <Sample rendering={grammar.sample.possession} label="Sample possession" />
       <p className="muted small">“Child — fish” and “fish — child” both mean “the child’s fish”; possessor placement sets the order, while genitive marking is shown separately.</p>
       <Sample rendering={grammar.sample.future} label="Sample future" />
+      {grammar.sample.pronoun ? <>
+        <Sample rendering={grammar.sample.pronoun.first} label="Sample with pronouns" />
+        <Sample rendering={grammar.sample.pronoun.second} label="Sample with pronouns reversed" />
+      </> : null}
     </> : null}
+    {PRONOUN_CASE_PHRASE[grammar.pronounCase] ? <p className="muted small">{PRONOUN_CASE_PHRASE[grammar.pronounCase]}.</p> : null}
     <p className="muted small">Grammatical forms can change through <Explained term="grammaticalization">grammaticalization</Explained>, <Explained term="fusion">fusion</Explained>, and <Explained term="analogy">analogy</Explained>.</p>
     {grammar.categories.map((category) => <GrammarCategory key={category.category} category={category} variety={v} ctx={ctx} />)}
-    {v.pronouns.length ? <section className="grammar-category"><h5>Pronouns</h5><ul className="roster">{v.pronouns.map((p) => <li key={p.cell}><span className="word">{p.spelled}</span> <span className="ipa">/{p.ipa}/</span> · {PERSON[p.person]} person {p.number === "sg" ? "singular" : "plural"}{p.clusivity ? <>, <Explained term="clusivity">{p.clusivity}</Explained></> : null}{p.polite ? `, respectful address since ${year(p.since)}` : p.origin === "renewed" ? `; renewed in ${year(p.since)}` : p.origin === "borrowed" ? `; borrowed in ${year(p.since)}` : ""}.</li>)}</ul></section> : null}
+    {v.pronouns.length ? <section className="grammar-category"><h5>Pronouns</h5><ul className="roster">{v.pronouns.map((p) => <li key={p.cell}><span className="word">{p.spelled}</span> <span className="ipa">/{p.ipa}/</span>{p.object ? <>, as object <span className="word">{p.object.spelled}</span> <span className="ipa">/{p.object.ipa}/</span></> : null} · {PERSON[p.person]} person {p.number === "sg" ? "singular" : "plural"}{p.clusivity ? <>, <Explained term="clusivity">{p.clusivity}</Explained></> : null}{p.polite ? `, respectful address since ${year(p.since)}` : p.origin === "renewed" ? `; renewed in ${year(p.since)}` : p.origin === "borrowed" ? `; borrowed in ${year(p.since)}` : ""}.</li>)}</ul></section> : null}
     {grammar.classes.some((c) => c.mergedInto === null && c.members > 0) ? <section className="grammar-category"><h5>Noun classes</h5><p>Every noun belongs to a class, and the word for “this” agrees with it.</p><ul className="roster">{grammar.classes.filter((c) => c.mergedInto === null && c.members > 0).map((c) => <li key={c.id}>{c.marker ? <><span className="word">{c.marker.spelled}</span> <span className="ipa">/{c.marker.ipa}/</span> · </> : null}{CLASS_BASIS[c.basis]}, {c.members} {c.members === 1 ? "noun" : "nouns"}; since {year(c.born)}.</li>)}</ul></section> : null}
     <h4>Not yet modelled</h4>
-    <p className="muted">Agreement beyond the word for “this”, and tenses beyond past and future.</p>
+    <p className="muted">Agreement beyond the word for “this”, possessive pronouns, and tenses beyond past and future.</p>
   </div>;
 }
 
@@ -238,7 +243,7 @@ function GrammarInventoryMarker({ marker: m, variety, ctx }: { marker: GrammarMa
   const alternants = [...new Set(m.alternants?.map((form) => form.spelled).filter((spelled) => spelled !== m.spelled))];
   return <li>
     <span className="word">{m.spelled || "∅"}</span>{m.said !== null ? <> · said <span className="word">{m.said}</span></> : null} <span className="ipa">/{m.ipa}/</span>
-    {alternants.length ? <> · by vowel harmony also {alternants.join(", ")}</> : null} · {m.kind === "pattern" ? <>vowel pattern <span className="ipa">{m.template}</span></> : m.kind === "none" ? "no overt marker" : m.kind === "particle" ? <Explained term="particle">separate word {m.side === "prefix" ? "before" : "after"} the stem</Explained> : <Explained term="affix">{m.side === "prefix" ? "prefix" : "suffix"}</Explained>}, {Math.round(m.share * 100)}% of uses; <Explained term="productive">{m.productive ? "used to form new words in this category" : "not used to form new words in this category"}</Explained>.
+    {alternants.length ? <> · by vowel harmony also {alternants.join(", ")}</> : null} · {m.kind === "pattern" ? <>vowel pattern <span className="ipa">{m.template}</span></> : m.kind === "none" ? "no overt marker" : m.kind === "particle" ? <Explained term="particle">separate word {m.side === "prefix" ? "before" : "after"} the stem</Explained> : <Explained term="affix">{m.side === "prefix" ? "prefix" : "suffix"}</Explained>}, {Math.round(m.share * 100)}% of uses; {m.scope === "pronouns" ? "on pronouns only" : <Explained term="productive">{m.productive ? "used to form new words in this category" : "not used to form new words in this category"}</Explained>}.
     {" "}Since {year(m.born)}{m.retired !== null ? `; retired in ${year(m.retired)}` : ""}.
     {m.origin.kind === "grammaticalized" ? <> From {ctx.link({ kind: "word", variety, concept: m.origin.concept }, `“${m.origin.gloss}”`)} through <Explained term="grammaticalization">grammaticalization</Explained>.</> : m.origin.kind === "imported" ? <> Imported from {language(m.origin.from, ctx)}.</> : m.origin.kind === "fused" ? <> Through <Explained term="fusion">fusion</Explained> from a <Explained term="particle">particle</Explained>.</> : " Founding marker."}
     {m.retired !== null ? <ol className="history">{m.history.map((line, i) => <li key={i}><span className="gen">{line.generation * YEARS}</span><span>{line.text}</span></li>)}</ol> : null}

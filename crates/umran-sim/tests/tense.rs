@@ -169,8 +169,10 @@ fn eroded_fused_tenses_are_renewed_without_erasing_the_old_competitor() {
             &mut variety.lexicon,
             &variety.morphology,
             StressRule::Initial,
-            64,
-            true,
+            &Params {
+                speakers: 64,
+                ..Params::default()
+            },
         );
         let renewed = variety
             .grammar

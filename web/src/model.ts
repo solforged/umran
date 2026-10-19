@@ -404,13 +404,17 @@ export interface Variety {
     since: number;
     origin: "founding" | "renewed" | "borrowed";
     source: string | null;
+    /// The dominant object form at this reading, or null without an audible object contrast.
+    object: { spelled: string; ipa: string; kind: "bound" | "particle" | "pattern"; since: number } | null;
   }[];
   harmony: { feature: "backness" | "rounding" | "atr"; since: number; lost: number | null } | null;
   grammar: {
     order: WordOrder;
     possessor: PossessorOrder;
     marking: "case" | "order";
-    sample?: { sentence: GrammarRendering; possession: GrammarRendering; future: GrammarRendering };
+    sample?: { sentence: GrammarRendering; possession: GrammarRendering; future: GrammarRendering; pronoun: { first: GrammarRendering; second: GrammarRendering } | null };
+    /// Where the pronouns stand against the nouns on object marking.
+    pronounCase: PronounCase;
     markers: GrammarMarker[];
     classes: NounClass[];
     categories: {
@@ -1254,6 +1258,10 @@ export type GrammarCategory = "plural" | "past" | "object" | "future" | "progres
 export type GrammarChoice = "suffix" | "prefix" | "particle" | "none";
 export type WordOrder = "SOV" | "SVO" | "VSO";
 export type PossessorOrder = "before" | "after";
+/// none: no pronoun has an audible object form; like-nouns: pronouns mark the
+/// object as nouns do; ahead: pronouns carry a bound form while nouns still
+/// use a separate word; relic: pronouns keep a contrast the nouns have lost.
+export type PronounCase = "none" | "like-nouns" | "ahead" | "relic";
 
 export interface GrammarDesign {
   plural: GrammarChoice;
@@ -1306,5 +1314,7 @@ export interface GrammarMarker {
   born: number;
   retired: number | null;
   productive: boolean;
+  /// A marker on pronouns only never spreads to nouns.
+  scope: "all" | "pronouns";
   history: HistoryLine[];
 }

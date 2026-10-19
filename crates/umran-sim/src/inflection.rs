@@ -258,18 +258,20 @@ impl Grammar {
             .iter()
             .filter(|m| {
                 m.category == category
+                    && m.scope == crate::grammar::MarkerScope::All
                     && m.kind != MarkerKind::Pattern
                     && m.productive
                     && m.retired.is_none()
             })
             .max_by(|a, b| {
-                self.marker_share(a.id)
-                    .total_cmp(&self.marker_share(b.id))
+                self.productivity_share(a)
+                    .total_cmp(&self.productivity_share(b))
                     .then(b.id.cmp(&a.id))
             })?
             .id;
         for marker in self.markers.iter().filter(|m| {
             m.category == category
+                && m.scope == crate::grammar::MarkerScope::All
                 && m.kind == MarkerKind::Pattern
                 && m.productive
                 && m.retired.is_none()
