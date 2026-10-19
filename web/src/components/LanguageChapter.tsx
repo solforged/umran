@@ -3,7 +3,7 @@ import { Download, Feather } from "lucide-react";
 import type { GrammarMarker, HistoryLine, LawOccurrence, LawOccurrenceRef, LexiconRow, LoanCause, Overview, ReadEngine, Subject, Variant, Variety, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { download, fileName, nameQuarryCsv } from "../takeout";
-import { agreementPhrase, AGREEMENT_STEP, CONTACT_NAME, landCardLabel, MARKING_PHRASE, peopleLabel, POSSESSOR_PHRASE, PRONOUN_CASE_PHRASE, stateLabel, STRESS_RULE, WORD_ORDER_PHRASE } from "../lore";
+import { agreementPhrase, agreementStep, CONTACT_NAME, landCardLabel, MARKING_PHRASE, peopleLabel, POSSESSOR_PHRASE, PRONOUN_CASE_PHRASE, stateLabel, STRESS_RULE, WORD_ORDER_PHRASE } from "../lore";
 import { individualAnnals, findAnnal } from "../history";
 import { Dictionary, INITIAL_DICTIONARY, type DictionaryView } from "./Dictionary";
 import { FamilyTree } from "./FamilyTree";
@@ -190,19 +190,22 @@ export function GrammarSketch({ variety: v, ctx }: SectionProps) {
       </> : null}
     </> : null}
     {PRONOUN_CASE_PHRASE[grammar.pronounCase] ? <p className="muted small">{PRONOUN_CASE_PHRASE[grammar.pronounCase]}.</p> : null}
-    {agreementPhrase(grammar.agreement.stage, grammar.agreement.proDrop) ? <p className="muted small">{agreementPhrase(grammar.agreement.stage, grammar.agreement.proDrop)}{grammar.agreement.since !== null ? `, since ${year(grammar.agreement.since)}` : ""}.</p> : null}
+    {[grammar.agreement, grammar.objectAgreement].map((a) => agreementPhrase(a) ? <p key={a.role} className="muted small">{agreementPhrase(a)}{a.since !== null ? `, since ${year(a.since)}` : ""}.</p> : null)}
     <p className="muted small">Grammatical forms can change through <Explained term="grammaticalization">grammaticalization</Explained>, <Explained term="fusion">fusion</Explained>, and <Explained term="analogy">analogy</Explained>.</p>
     {grammar.categories.map((category) => <GrammarCategory key={category.category} category={category} variety={v} ctx={ctx} />)}
     {v.pronouns.length ? <section className="grammar-category"><h5>Pronouns</h5><ul className="roster">{v.pronouns.map((p) => <li key={p.cell}><span className="word">{p.spelled}</span> <span className="ipa">/{p.ipa}/</span>{p.object ? <>, as object <span className="word">{p.object.spelled}</span> <span className="ipa">/{p.object.ipa}/</span></> : null} · {PERSON[p.person]} person {p.number === "sg" ? "singular" : "plural"}{p.clusivity ? <>, <Explained term="clusivity">{p.clusivity}</Explained></> : null}{p.polite ? `, respectful address since ${year(p.since)}` : p.origin === "renewed" ? `; renewed in ${year(p.since)}` : p.origin === "borrowed" ? `; borrowed in ${year(p.since)}` : ""}.</li>)}</ul></section> : null}
     {grammar.classes.some((c) => c.mergedInto === null && c.members > 0) ? <section className="grammar-category"><h5>Noun classes</h5><p>Every noun belongs to a class, and the word for “this” agrees with it.</p><ul className="roster">{grammar.classes.filter((c) => c.mergedInto === null && c.members > 0).map((c) => <li key={c.id}>{c.marker ? <><span className="word">{c.marker.spelled}</span> <span className="ipa">/{c.marker.ipa}/</span> · </> : null}{CLASS_BASIS[c.basis]}, {c.members} {c.members === 1 ? "noun" : "nouns"}; since {year(c.born)}.</li>)}</ul></section> : null}
-    {grammar.agreement.stage !== "none" || grammar.agreement.history.length ? <section className="grammar-category"><h5>Person on the verb</h5>
-      {grammar.agreement.stage !== "none" ? <ul className="roster">{grammar.agreement.cells.map((cell) => <li key={cell.cell}>
-        <span className="word">{grammar.agreement.side === "prefix" ? `${cell.spelled}${grammar.agreement.stage === "clitic" ? "=" : "-"}` : `${grammar.agreement.stage === "clitic" ? "=" : "-"}${cell.spelled}`}</span> <span className="ipa">/{cell.ipa}/</span> · {PERSON[cell.person]} person {cell.number === "sg" ? "singular" : "plural"}{cell.cell.endsWith("-inclusive") ? ", inclusive" : cell.cell.endsWith("-exclusive") ? ", exclusive" : ""}, from <span className="word">{cell.source.spelled}</span>{cell.distinct ? "" : "; no longer distinct"}.
-      </li>)}</ul> : null}
-      {grammar.agreement.history.length ? <ol className="history">{grammar.agreement.history.map((step, i) => <li key={i}><span className="gen">{step.generation * YEARS}</span><span>{AGREEMENT_STEP[step.kind].replace(/^./, (c) => c.toUpperCase())}.</span></li>)}</ol> : null}
+    {[grammar.agreement, grammar.objectAgreement].some((a) => a.stage !== "none" || a.history.length) ? <section className="grammar-category"><h5>Person on the verb</h5>
+      {[grammar.agreement, grammar.objectAgreement].filter((a) => a.stage !== "none").map((a) => <ul key={a.role} className="roster">{a.cells.map((cell) => <li key={cell.cell}>
+        <span className="word">{a.side === "prefix" ? `${cell.spelled}${a.stage === "clitic" ? "=" : "-"}` : `${a.stage === "clitic" ? "=" : "-"}${cell.spelled}`}</span> <span className="ipa">/{cell.ipa}/</span> · {PERSON[cell.person]} person {cell.number === "sg" ? "singular" : "plural"}{cell.cell.endsWith("-inclusive") ? ", inclusive" : cell.cell.endsWith("-exclusive") ? ", exclusive" : ""}{a.role === "object" ? " as object" : ""}, from <span className="word">{cell.source.spelled}</span>{cell.distinct ? "" : "; no longer distinct"}.
+      </li>)}</ul>)}
+      {(() => {
+        const steps = [grammar.agreement, grammar.objectAgreement].flatMap((a) => a.history.map((step) => ({ ...step, role: a.role }))).sort((x, y) => x.generation - y.generation);
+        return steps.length ? <ol className="history">{steps.map((step, i) => <li key={i}><span className="gen">{step.generation * YEARS}</span><span>{agreementStep(step.role, step.kind).replace(/^./, (c) => c.toUpperCase())}.</span></li>)}</ol> : null;
+      })()}
     </section> : null}
     <h4>Not yet modelled</h4>
-    <p className="muted">Object clitics on the verb, possessive pronouns, and tenses beyond past and future.</p>
+    <p className="muted">Possessive pronouns, and tenses beyond past and future.</p>
   </div>;
 }
 

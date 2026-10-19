@@ -38,7 +38,7 @@ import {
   WholeWord,
   type LucideIcon,
 } from "lucide-react";
-import type { AgreementKind, AgreementStage, Annal, ClimateView, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Mechanism, Overview, PlaceExonym, PlaceName, PronounCase, ReadEngine, ReligionView, Rendering, SchismCause, Seasons, StateView, StressRule, Tenet, Terrain, TravelLeg, WorldMap } from "./model";
+import type { AgreementKind, AgreementRole, AgreementView, Annal, ClimateView, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Mechanism, Overview, PlaceExonym, PlaceName, PronounCase, ReadEngine, ReligionView, Rendering, SchismCause, Seasons, StateView, StressRule, Tenet, Terrain, TravelLeg, WorldMap } from "./model";
 import { YEARS } from "./model";
 import { findAnnal } from "./history";
 
@@ -465,23 +465,36 @@ export const PRONOUN_CASE_PHRASE: Record<PronounCase, string | null> = {
   relic: "The nouns have lost their object marking, but the pronouns keep theirs, as English keeps me and him",
 };
 
-/** What the verb says about who acts, by stage and pro-drop. */
-export function agreementPhrase(stage: AgreementStage, proDrop: boolean): string | null {
-  switch (stage) {
-    case "none": return null;
-    case "clitic": return "The subject pronoun leans on the verb as a clitic, shortened and unable to stand alone";
-    case "affix": return proDrop
+/** What the verb says about who acts, or whom it is done to, by stage and pro-drop. */
+export function agreementPhrase({ role, stage, proDrop }: AgreementView): string | null {
+  if (stage === "none") return null;
+  if (role === "subject") {
+    if (stage === "clitic") return "The subject pronoun is said as a clitic leaning on the verb, shortened, and stands free only for emphasis, as French je";
+    return proDrop
       ? "The verb carries a person affix that says who acts, so the pronoun is left out unless it is stressed, as in Spanish"
-      : "The verb carries a person affix that says who acts, beside the pronoun";
+      : "The verb carries a person affix that says who acts, beside the pronoun, as German -e, -st, -t";
   }
+  if (stage === "clitic") return "The object pronoun is said as a clitic on the verb, as Spanish lo in lo veo";
+  return proDrop
+    ? "The verb carries an affix for its object too, so the object pronoun is left out, as in Swahili"
+    : "The verb carries an affix for its object too, beside the object pronoun";
 }
 
-export const AGREEMENT_STEP: Record<AgreementKind, string> = {
+const SUBJECT_STEP: Record<AgreementKind, string> = {
   clitics: "the pronouns became clitics on the verb",
   affixes: "the clitics fused into person affixes",
   "pro-drop": "the pronoun fell silent before the verb",
   loss: "the affixes wore away and the pronoun returned",
 };
+const OBJECT_STEP: Record<AgreementKind, string> = {
+  clitics: "the object pronouns became clitics on the verb",
+  affixes: "the object clitics fused into affixes",
+  "pro-drop": "the object pronoun fell silent beside the verb",
+  loss: "the object affixes wore away and the pronoun returned",
+};
+export function agreementStep(role: AgreementRole, kind: AgreementKind): string {
+  return (role === "subject" ? SUBJECT_STEP : OBJECT_STEP)[kind];
+}
 
 /// The chronicle's quiet apparatus shares its nouns with cards and the book.
 export const CHRONICLE = {

@@ -454,15 +454,9 @@ export interface Variety {
     sample?: { sentence: GrammarRendering; possession: GrammarRendering; future: GrammarRendering; pronoun: { first: GrammarRendering; second: GrammarRendering } | null };
     /// Where the pronouns stand against the nouns on object marking.
     pronounCase: PronounCase;
-    /// Where the verb stands on marking its subject's person.
-    agreement: {
-      stage: AgreementStage;
-      proDrop: boolean;
-      side: "prefix" | "suffix";
-      since: number | null;
-      cells: { cell: string; person: 1 | 2 | 3; number: "sg" | "pl"; spelled: string; ipa: string; source: { spelled: string; ipa: string }; distinct: boolean }[];
-      history: { generation: number; kind: AgreementKind }[];
-    };
+    /// Where the verb stands on marking its subject's person, and its object's.
+    agreement: AgreementView;
+    objectAgreement: AgreementView;
     markers: GrammarMarker[];
     classes: NounClass[];
     categories: {
@@ -1348,6 +1342,16 @@ export type PronounCase = "none" | "like-nouns" | "ahead" | "relic";
 /// The verb's person marking: none, a clitic pronoun leaning on it, or an affix.
 export type AgreementStage = "none" | "clitic" | "affix";
 export type AgreementKind = "clitics" | "affixes" | "pro-drop" | "loss";
+export type AgreementRole = "subject" | "object";
+export interface AgreementView {
+  role: AgreementRole;
+  stage: AgreementStage;
+  proDrop: boolean;
+  side: "prefix" | "suffix";
+  since: number | null;
+  cells: { cell: string; person: 1 | 2 | 3; number: "sg" | "pl"; spelled: string; ipa: string; source: { spelled: string; ipa: string }; distinct: boolean }[];
+  history: { generation: number; kind: AgreementKind }[];
+}
 
 export interface GrammarDesign {
   plural: GrammarChoice;
