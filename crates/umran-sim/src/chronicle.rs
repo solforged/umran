@@ -55,7 +55,9 @@ use std::collections::BTreeMap;
 /// person affixes, license pro-drop, and wear away to start the cycle over.
 /// Revision 62 keeps the author's own roots at founding, adds wolf, song,
 /// peace, death, and dream, and keys founding prosody draws by word.
-pub const ENGINE_REVISION: u32 = 62;
+/// Revision 63 lets object pronouns lean on a verb that already marks its
+/// subject, fuse into object affixes, and license unsaid objects.
+pub const ENGINE_REVISION: u32 = 63;
 /// Revision 33 replaces flat geography and its region identities with a sphere.
 /// Earlier region-targeted actions cannot be replayed on the spherical mesh.
 pub const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;

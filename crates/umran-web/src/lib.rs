@@ -22,9 +22,9 @@ use umran_sim::geography::{
     geographic,
 };
 use umran_sim::grammar::{
-    AgreementForm, AgreementKind, AgreementStage, Category, GrammarChoice, GrammarEntry,
-    GrammarEvent, Marker as GrammarMarker, MarkerKind, MarkerOrigin, PossessorOrder, Side,
-    WordOrder,
+    Agreement, AgreementForm, AgreementKind, AgreementRole, AgreementStage, Category,
+    GrammarChoice, GrammarEntry, GrammarEvent, Marker as GrammarMarker, MarkerKind, MarkerOrigin,
+    PossessorOrder, Side, WordOrder,
 };
 use umran_sim::ideas::{NEEDS, Need, SacredKind};
 use umran_sim::morphology::Slot;
@@ -4482,7 +4482,8 @@ fn grammar_view(world: &World, variety: usize) -> GrammarView {
             "order"
         },
         pronoun_case: v.grammar.pronoun_case(),
-        agreement: agreement_view(v, world.generation),
+        agreement: agreement_view(v, v.grammar.agreement(), world.generation),
+        object_agreement: agreement_view(v, v.grammar.object_agreement(), world.generation),
         sample: grammar_sample(v, world.generation),
         classes: v
             .gender
@@ -4590,10 +4591,10 @@ fn grammar_view(world: &World, variety: usize) -> GrammarView {
     }
 }
 
-fn agreement_view(v: &Variety, generation: u32) -> AgreementView {
-    let agreement = v.grammar.agreement();
+fn agreement_view(v: &Variety, agreement: &Agreement, generation: u32) -> AgreementView {
     let stress = v.stress();
     AgreementView {
+        role: agreement.role.id(),
         stage: agreement.stage,
         pro_drop: agreement.pro_drop,
         side: agreement.side.id(),
@@ -4607,7 +4608,10 @@ fn agreement_view(v: &Variety, generation: u32) -> AgreementView {
                     .find(|(_, _, id)| *id == cell.cell)
                     .expect("agreement cells are pronoun cells");
                 let form = cell.form_at(generation);
-                let source = v.lexicon.get(cell.source).form_at(cell.born);
+                let source = cell
+                    .source_form
+                    .as_ref()
+                    .unwrap_or_else(|| v.lexicon.get(cell.source).form_at(cell.born));
                 AgreementCellView {
                     cell: cell.cell,
                     person,
@@ -4648,13 +4652,26 @@ fn agreement_gloss(cell: &str) -> &'static str {
     }
 }
 
-/// The verb's agreement with a subject cell, where the language marks it.
-fn subject_agreement<'a>(variety: &'a Variety, subject: &str) -> Option<&'a AgreementForm> {
-    let agreement = variety.grammar.agreement();
-    if agreement.stage == AgreementStage::None {
-        return None;
+/// Clitics stand for pronouns; only affixes double nouns.
+fn agreement_cell<'a>(
+    agreement: &'a Agreement,
+    cell: &str,
+    pronoun: bool,
+) -> Option<&'a AgreementForm> {
+    match agreement.stage {
+        AgreementStage::None => None,
+        AgreementStage::Clitic if !pronoun => None,
+        _ => agreement.cell(cell),
     }
-    agreement.cell(subject)
+}
+
+fn omitted_pronoun(agreement: &Agreement, cell: Option<&AgreementForm>) -> bool {
+    cell.is_some()
+        && match agreement.stage {
+            AgreementStage::Clitic => true,
+            AgreementStage::Affix => agreement.pro_drop,
+            AgreementStage::None => false,
+        }
 }
 
 fn grammar_sample(variety: &Variety, generation: u32) -> Option<GrammarSample> {
@@ -4681,7 +4698,7 @@ fn grammar_sample(variety: &Variety, generation: u32) -> Option<GrammarSample> {
             category,
             generation,
             &mut possession,
-            None,
+            [None, None],
         )?;
     }
     Some(GrammarSample {
@@ -4692,8 +4709,7 @@ fn grammar_sample(variety: &Variety, generation: u32) -> Option<GrammarSample> {
     })
 }
 
-/// The noun subject stays even where pronouns drop: the verb's person mark
-/// doubles it, as in Spanish.
+/// Nouns stay: affixes double them, but clitics do not.
 fn grammar_sentence(
     variety: &Variety,
     generation: u32,
@@ -4709,14 +4725,21 @@ fn grammar_sentence(
         WordOrder::SVO => [0, 1, 2],
         WordOrder::VSO => [1, 0, 2],
     };
-    let agreement = subject_agreement(variety, "3sg");
+    let agreement = [
+        agreement_cell(variety.grammar.agreement(), "3sg", false),
+        agreement_cell(variety.grammar.object_agreement(), "3sg", false),
+    ];
     let mut sentence = GrammarRendering::default();
     for index in order {
         let (concept, category) = words[index];
         if concept != "see" {
             sample_determiner(variety, concept, generation, &mut sentence)?;
         }
-        let agreement = (concept == "see").then_some(agreement).flatten();
+        let agreement = if concept == "see" {
+            agreement
+        } else {
+            [None, None]
+        };
         sample_word(
             variety,
             concept,
@@ -4741,15 +4764,21 @@ fn grammar_pronoun_sample(variety: &Variety, generation: u32) -> Option<PronounS
             WordOrder::SVO => [0, 1, 2],
             WordOrder::VSO => [1, 0, 2],
         };
-        let agreement = subject_agreement(variety, subject);
-        // Audible person marks on the verb leave the free pronoun unsaid.
-        let dropped = agreement.is_some() && variety.grammar.agreement().pro_drop;
+        let agreement = [
+            agreement_cell(variety.grammar.agreement(), subject, true),
+            agreement_cell(variety.grammar.object_agreement(), object, true),
+        ];
+        let omitted = [
+            omitted_pronoun(variety.grammar.agreement(), agreement[0]),
+            false,
+            omitted_pronoun(variety.grammar.object_agreement(), agreement[1]),
+        ];
         let mut sentence = GrammarRendering {
             translation,
             ..Default::default()
         };
         for index in order {
-            if index == 0 && dropped {
+            if omitted[index] {
                 continue;
             }
             let (concept, category) = words[index];
@@ -4766,7 +4795,11 @@ fn grammar_pronoun_sample(variety: &Variety, generation: u32) -> Option<PronounS
             }) {
                 return None;
             }
-            let agreement = (concept == "see").then_some(agreement).flatten();
+            let agreement = if concept == "see" {
+                agreement
+            } else {
+                [None, None]
+            };
             sample_word(
                 variety,
                 concept,
@@ -4813,44 +4846,92 @@ struct SampleToken {
     gloss: String,
 }
 
-/// The verb with its person mark outside its other marking: a clitic as its
-/// own piece joined by `=`, an affix within one word, both glossed by Leipzig.
+/// Affixes sit inside clitics. Within the word and between clitics the marks
+/// keep the order the free words stood in: S-O-V, S-V-O, V-S-O.
 fn agree_token(
     variety: &Variety,
     verb: &Form,
     gloss: &str,
-    cell: &str,
-    form: &Form,
+    subject: Option<(&str, &Form)>,
+    object: Option<(&str, &Form)>,
 ) -> SampleToken {
     let grammar = &variety.grammar;
-    let agreement = grammar.agreement();
     let stress = variety.stress();
-    let label = agreement_gloss(cell);
-    if agreement.stage == AgreementStage::Affix {
-        let joined = grammar.affix_agreement(verb, form, &variety.morphology, stress);
-        return SampleToken {
-            text: variety.spell(&joined),
-            ipa: joined.ipa_stressed(stress),
-            gloss: match agreement.side {
-                Side::Prefix => format!("{label}-{gloss}"),
-                Side::Suffix => format!("{gloss}-{label}"),
-            },
+    let subject_state = grammar.agreement();
+    let object_state = grammar.object_agreement();
+    let subject_affix = subject
+        .filter(|_| subject_state.stage == AgreementStage::Affix)
+        .map(|(_, f)| f);
+    let object_affix = object
+        .filter(|_| object_state.stage == AgreementStage::Affix)
+        .map(|(_, f)| f);
+    let joined = if subject_affix.is_some() || object_affix.is_some() {
+        std::borrow::Cow::Owned(grammar.affix_agreement(
+            verb,
+            subject_affix,
+            object_affix,
+            &variety.morphology,
+            stress,
+        ))
+    } else {
+        std::borrow::Cow::Borrowed(verb)
+    };
+    let mut token = SampleToken {
+        text: variety.spell(&joined),
+        ipa: joined.ipa_stressed(stress),
+        gloss: gloss.into(),
+    };
+    let label = |role, cell| match role {
+        AgreementRole::Subject => agreement_gloss(cell).to_owned(),
+        AgreementRole::Object => format!("{}.OBJ", agreement_gloss(cell)),
+    };
+    // Prefixes join object then subject; suffixes join subject then object.
+    for side in [Side::Prefix, Side::Suffix] {
+        let pieces = match side {
+            Side::Prefix => [(object_state, object), (subject_state, subject)],
+            Side::Suffix => [(subject_state, subject), (object_state, object)],
         };
+        for (state, piece) in pieces {
+            if let Some((cell, _)) =
+                piece.filter(|_| state.stage == AgreementStage::Affix && state.side == side)
+            {
+                let label = label(state.role, cell);
+                token.gloss = match side {
+                    Side::Prefix => format!("{label}-{}", token.gloss),
+                    Side::Suffix => format!("{}-{label}", token.gloss),
+                };
+            }
+        }
     }
-    let (clitic, verb_text) = (variety.spell(form), variety.spell(verb));
-    let (clitic_ipa, verb_ipa) = (form.ipa_stressed(stress), verb.ipa_stressed(stress));
-    match agreement.side {
-        Side::Prefix => SampleToken {
-            text: format!("{clitic}={verb_text}"),
-            ipa: format!("{clitic_ipa}={verb_ipa}"),
-            gloss: format!("{label}={gloss}"),
-        },
-        Side::Suffix => SampleToken {
-            text: format!("{verb_text}={clitic}"),
-            ipa: format!("{verb_ipa}={clitic_ipa}"),
-            gloss: format!("{gloss}={label}"),
-        },
+    // Clitics the same way, outside the word.
+    for side in [Side::Prefix, Side::Suffix] {
+        let pieces = match side {
+            Side::Prefix => [(object_state, object), (subject_state, subject)],
+            Side::Suffix => [(subject_state, subject), (object_state, object)],
+        };
+        for (state, piece) in pieces {
+            if let Some((cell, form)) =
+                piece.filter(|_| state.stage == AgreementStage::Clitic && state.side == side)
+            {
+                let text = variety.spell(form);
+                let ipa = form.ipa_stressed(stress);
+                let label = label(state.role, cell);
+                match side {
+                    Side::Prefix => {
+                        token.text = format!("{text}={}", token.text);
+                        token.ipa = format!("{ipa}={}", token.ipa);
+                        token.gloss = format!("{label}={}", token.gloss);
+                    }
+                    Side::Suffix => {
+                        token.text = format!("{}={text}", token.text);
+                        token.ipa = format!("{}={ipa}", token.ipa);
+                        token.gloss = format!("{}={label}", token.gloss);
+                    }
+                }
+            }
+        }
     }
+    token
 }
 
 fn sample_word(
@@ -4859,7 +4940,7 @@ fn sample_word(
     category: Option<Category>,
     generation: u32,
     rendering: &mut GrammarRendering,
-    agreement: Option<&AgreementForm>,
+    agreement: [Option<&AgreementForm>; 2],
 ) -> Option<()> {
     let word = variety
         .lexicon
@@ -4939,13 +5020,15 @@ fn sample_word(
             gloss: gloss.clone(),
         })
         .collect();
-    if let Some(cell) = agreement {
+    let [subject, object] = agreement.map(|cell| {
+        let cell = cell?;
         let form = cell.form_at(generation);
-        // A mark worn to nothing is unsaid and unglossed, like a worn affix.
-        if !form.segs.is_empty() {
-            let (verb, gloss) = &pieces[host];
-            tokens[host] = agree_token(variety, verb, gloss, cell.cell, form);
-        }
+        // Worn marks are unsaid and unglossed, independently for each role.
+        (!form.segs.is_empty()).then_some((cell.cell, form))
+    });
+    if subject.is_some() || object.is_some() {
+        let (verb, gloss) = &pieces[host];
+        tokens[host] = agree_token(variety, verb, gloss, subject, object);
     }
     for token in tokens {
         if !rendering.gloss.is_empty() {
@@ -5479,6 +5562,8 @@ struct GrammarView {
     #[serde(rename = "pronounCase")]
     pronoun_case: umran_sim::grammar::PronounCase,
     agreement: AgreementView,
+    #[serde(rename = "objectAgreement")]
+    object_agreement: AgreementView,
     #[serde(skip_serializing_if = "Option::is_none")]
     sample: Option<GrammarSample>,
     markers: Vec<GrammarMarkerView>,
@@ -5489,6 +5574,7 @@ struct GrammarView {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AgreementView {
+    role: &'static str,
     stage: AgreementStage,
     pro_drop: bool,
     side: &'static str,
@@ -8710,7 +8796,7 @@ mod tests {
         }
     }
 
-    fn grammar_world(object: GrammarChoice, order: WordOrder) -> World {
+    pub(super) fn grammar_world(object: GrammarChoice, order: WordOrder) -> World {
         use umran_sim::grammar::{GrammarDesign, GrammarPrior};
         let mut profile = umran_sim::SoundProfile::by_id("germanic").unwrap();
         profile.grammar = GrammarPrior::fixed(GrammarDesign {
@@ -9006,20 +9092,20 @@ mod tests {
             (
                 WordOrder::SVO,
                 "prefix",
-                ["1SG", "1SG=see-PAST", "2SG.OBJ"],
+                ["1SG=see-PAST", "2SG.OBJ"],
                 ["1SG", "1SG-see-PAST", "2SG.OBJ"],
                 ["1SG-see-PAST", "2SG.OBJ"],
                 ["child", "3SG-see-PAST", "dog-OBJ"],
-                ["child", "3SG=see-PAST", "dog-OBJ"],
+                ["child", "see-PAST", "dog-OBJ"],
             ),
             (
                 WordOrder::VSO,
                 "suffix",
-                ["see-PAST=1SG", "1SG", "2SG.OBJ"],
+                ["see-PAST=1SG", "2SG.OBJ"],
                 ["see-PAST-1SG", "1SG", "2SG.OBJ"],
                 ["see-PAST-1SG", "2SG.OBJ"],
                 ["see-PAST-3SG", "child", "dog-OBJ"],
-                ["see-PAST=3SG", "child", "dog-OBJ"],
+                ["see-PAST", "child", "dog-OBJ"],
             ),
         ] {
             let mut world = grammar_world(GrammarChoice::Suffix, order);
@@ -9078,7 +9164,7 @@ mod tests {
             let pronoun = sample.pronoun.unwrap();
             assert_eq!(pronoun.first.gloss, clitic);
             assert_eq!(pronoun.first.translation, "I saw you.");
-            assert_eq!(pronoun.first.text.split(' ').count(), 3);
+            assert_eq!(pronoun.first.text.split(' ').count(), 2);
             assert_eq!(pronoun.first.ipa.matches('=').count(), 1);
             assert_eq!(sample.sentence.gloss, sentence_clitic);
             assert!(
@@ -9086,7 +9172,7 @@ mod tests {
                     .future
                     .gloss
                     .iter()
-                    .any(|g| g.contains("3SG") && g.contains('='))
+                    .all(|g| !g.contains("3SG") && !g.contains('='))
             );
             let v = &mut world.varieties[0];
             evolve(v, 9);
@@ -9169,3 +9255,7 @@ mod polite_address_tests {
         assert_eq!(polite.since, 8);
     }
 }
+
+#[cfg(test)]
+#[path = "agreement/tests.rs"]
+mod agreement_tests;

@@ -281,23 +281,51 @@ This bookkeeping makes no random draws and does not itself change replay.
   apart, the contrast is lost, the forms retire, the pronoun is obligatory
   again, and after twelve generations the renewed pronouns can start over.
   One draw a generation comes from the `agreement` stream, keyed by variety
-  and generation, after every other grammar draw; `static_society()` zeroes
-  the three rates; daughters inherit the state with its history; contact
-  does not transfer it. The language card renders the stage on the verb,
-  a clitic joined by `=` and an affix within the word, and leaves the free
-  pronoun out of the pronoun samples under pro-drop while the noun subject
-  stays, doubled by the verb, as in Spanish.
-  The brief's starting rates, 0.0025, 0.004, and 0.004, left 17% of the
-  40-seed, five-profile, 4,000-year cohort with clitics or affixes and 1%
-  with pro-drop, so the rates were raised to the calibration band. At the
-  chosen rates 45.0% of the 200 founders end with clitics or affixes (6.5%
-  clitics, 38.5% affixes), 28.5% with pro-drop, 93 cliticized at some point,
-  and three lost the contrast; [WALS 101A](https://wals.info/feature/101A)
-  counts 437 of 711 languages, 61%, with pronominal subject affixes. The
-  unchanged workbench recipe ends with five languages of its Polynesian
-  lineage marking agreement, clitics from generation 24 and affixes from
-  123, reported separately. The release band with the sample runs in about
-  a minute.
+  and generation, after the other grammar draws.
+  Object pronouns follow the same cycle on an independent `object-agreement`
+  stream, immediately after subjects. Cliticization requires existing subject
+  marking, following the tendency in [WALS 102A](https://wals.info/feature/102A);
+  already established object marks survive a later loss of subject marking.
+  The source is the pronoun's surfaced object form where it is one word,
+  otherwise the free pronoun. Its birth form stays in the record even if
+  case marking later changes. Object proclitics precede the verb in SOV;
+  object enclitics follow it in SVO and VSO. The clitic orders are S=O=V,
+  S=V=O, and V=S=O respectively. Affixes keep the same order: on the
+  prefix side the object is nearer the stem (S-O-V, as Bantu SUBJ-OBJ-stem),
+  on the suffix side the subject is (V-S-O, as Arabic katab-tu-hu), both
+  outside tense; each piece takes the stem's harmony value and preserves
+  free stress.
+  Object fusion waits eight generations, object pro-drop needs two thirds
+  of cells to remain distinct, loss occurs below one half, and restarting
+  waits twelve generations, independently of the subject state.
+  `static_society()` zeroes all six rates; daughters, classical languages,
+  and shifts inherit both states and their histories; contact does not
+  transfer them.
+  A clitic replaces a free pronoun: it is not said beside a noun. An affix
+  always marks the verb, including beside a noun; the free pronoun remains
+  until that role's pro-drop. Subject and object stages are independent.
+  The samples join clitics with `=` and affix glosses with `-`, adding `.OBJ`
+  to object person labels. These stages model the change from Romance-like
+  object clitics to Bantu- or Semitic-like object agreement, not obligatory
+  clitic doubling as a separate intermediate stage.
+  At the subject rates, 46.0% of the 200 independent founders (40 seeds ×
+  five presets × 4,000 years) end with clitics or affixes (7.0% clitics,
+  39.0% affixes), 29.5% with subject pro-drop, 94 cliticized at some point,
+  and two lost the contrast. Subject outcomes are unchanged by the object
+  cycle. [WALS 101A](https://wals.info/feature/101A) counts 437 of 711
+  languages, 61%, with pronominal subject affixes. The workbench sample
+  is reported separately, including three sentences before and after each
+  recorded agreement transition in one lineage.
+  The object rates are `object_agreement_rate` 0.02,
+  `object_fusion_rate` 0.02, and `object_drop_rate` 0.015 per generation.
+  The initial object-drop rate of 0.02 left 22 of 51 languages marking
+  both roles (43.1%) dropping objects, above the 10–40% calibration band.
+  At the chosen rates, 51 of the 92 subject-marking languages also mark
+  objects (55.4%): 13 with clitics and 38 with affixes. Sixteen of those
+  51 drop object pronouns (31.4%, or 17.4% of subject-marking languages).
+  Across all 200 founders, 52 acquired object marks and one lost them.
+  The unchanged workbench recipe ends with eight object-marking languages
+  and eight subject-marking languages.
 - Noun classes (`gender.rs`) sort nouns into groups that other words must
   agree with, following Corbett, *Gender* (1991): agreement is how a class
   becomes visible. Founding draws presence and semantic basis separately
@@ -2467,8 +2495,8 @@ can refuse this fixed recipe; the report counts those refusals separately.
 Subregional river meanders, changing lake extents, lake salinity, resolved travel times,
 purism in speech rather than writing, spelling reform as a purist act,
 inflection beyond count noun plural, noun and pronoun object marking, the genitive,
-and verb past, future, and progressive, agreement beyond the determiner, combined
-tense–aspect forms, modal readings and clitic stages, possessive pronouns,
+and verb past, future, and progressive, agreement beyond subject and object person
+and the determiner, combined tense–aspect forms, modal readings and tense–aspect clitic stages, possessive pronouns,
 tone beyond the word (sandhi), vowel harmony beyond the word, syllabic
 consonants and productive cluster repair, prenasalized stops, syntax beyond fixed word
 and possessor order, alignment beyond this object contrast, and doctrine

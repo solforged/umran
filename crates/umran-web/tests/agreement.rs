@@ -11,7 +11,8 @@ fn agreement_stages_and_pro_drop_hold_their_bands() {
         defaults.agreement_fusion_rate,
         defaults.pro_drop_rate,
     );
-    let counts = report::study(40, &params);
+    let study = report::study(40, &params);
+    let counts = study.subject;
     assert_eq!(counts.languages, 200);
     let marked = counts.marked() as f64 / counts.languages as f64;
     assert!(
@@ -25,10 +26,24 @@ fn agreement_stages_and_pro_drop_hold_their_bands() {
     );
     assert!(counts.losses >= 1, "at least one loss of the contrast");
     assert!(counts.clitic >= 1 && counts.affix >= 1);
-    let sample = report::sample_report();
+    let objects = study.both.marked() as f64 / study.both.languages as f64;
+    assert!(
+        (0.30..=0.60).contains(&objects),
+        "object marking among subject-marking languages: {objects:.3}"
+    );
+    let object_drop = study.both.pro_drop as f64 / study.both.marked() as f64;
+    assert!(
+        (0.10..=0.40).contains(&object_drop),
+        "object pro-drop among languages marking both roles: {object_drop:.3}"
+    );
+    let (sample, sample_objects) = report::sample_report();
     assert!(
         sample >= 1,
         "the workbench sample must end with a language marking agreement"
+    );
+    assert!(
+        sample_objects >= 1,
+        "the workbench sample must end with a language marking objects"
     );
     println!(
         "agreement bands passed; elapsed {:.2}s",

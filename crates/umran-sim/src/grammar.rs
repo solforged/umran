@@ -18,7 +18,9 @@ use std::collections::{BTreeMap, HashMap};
 mod agreement;
 #[path = "pronoun_case.rs"]
 mod pronoun_case;
-pub use agreement::{Agreement, AgreementForm, AgreementKind, AgreementNotice, AgreementStage};
+pub use agreement::{
+    Agreement, AgreementForm, AgreementKind, AgreementNotice, AgreementRole, AgreementStage,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -454,8 +456,10 @@ pub struct GrammarSummary {
     pub pronoun_case: PronounCase,
     pub agreement: AgreementStage,
     pub pro_drop: bool,
+    pub object_agreement: AgreementStage,
+    pub object_pro_drop: bool,
 }
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Grammar {
     pub order: WordOrder,
     pub possessor: PossessorOrder,
@@ -473,6 +477,29 @@ pub struct Grammar {
     pub(crate) pronoun_case_enabled: bool,
     pronoun_relic_recorded: bool,
     agreement: Agreement,
+    object_agreement: Agreement,
+}
+
+impl Default for Grammar {
+    fn default() -> Self {
+        Self {
+            order: WordOrder::default(),
+            possessor: PossessorOrder::default(),
+            markers: Vec::new(),
+            events: Vec::new(),
+            summary: GrammarSummary::default(),
+            contact_generations: BTreeMap::new(),
+            harmony: None,
+            pattern_seed: 0,
+            usage: Vec::new(),
+            pronoun_usage: Vec::new(),
+            noun_object_shares: Vec::new(),
+            pronoun_case_enabled: false,
+            pronoun_relic_recorded: false,
+            agreement: Agreement::new(AgreementRole::Subject),
+            object_agreement: Agreement::new(AgreementRole::Object),
+        }
+    }
 }
 
 fn historical<'a>(form: &'a Form, history: &'a [GrammarEntry], generation: u32) -> &'a Form {
@@ -1519,6 +1546,7 @@ impl Grammar {
             );
         }
         self.evolve_agreement(seed, variety, generation, lexicon, stress, params);
+        self.evolve_object_agreement(seed, variety, generation, lexicon, stress, params);
         self.refresh(lexicon, stress, generation);
     }
     #[allow(clippy::too_many_arguments)]

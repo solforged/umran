@@ -328,12 +328,12 @@ fn affixes_join_the_verb_outside_its_marking_and_take_harmony() {
     let verb = Form::from_ipa("putum").unwrap();
     let plain = v
         .grammar
-        .affix_agreement(&verb, &affix, &v.morphology, stress);
+        .affix_agreement(&verb, Some(&affix), None, &v.morphology, stress);
     assert_eq!(plain.ipa(), "putumka");
     v.grammar.harmony = Some(crate::harmony::Feature::Backness);
     let agreed = v
         .grammar
-        .affix_agreement(&verb, &affix, &v.morphology, stress);
+        .affix_agreement(&verb, Some(&affix), None, &v.morphology, stress);
     assert_eq!(agreed.ipa(), "putumkɑ");
     assert_eq!(v.grammar.agreement().cell("1sg").unwrap().form, affix);
     let mut prefixing = variety(WordOrder::SVO);
@@ -341,9 +341,10 @@ fn affixes_join_the_verb_outside_its_marking_and_take_harmony() {
     set_pronouns(&mut prefixing, &[("1sg", "ka")]);
     evolve(&mut prefixing, 1, &forced());
     prefixing.grammar.harmony = Some(crate::harmony::Feature::Backness);
-    let joined = prefixing
-        .grammar
-        .affix_agreement(&verb, &affix, &prefixing.morphology, stress);
+    let joined =
+        prefixing
+            .grammar
+            .affix_agreement(&verb, Some(&affix), None, &prefixing.morphology, stress);
     assert_eq!(joined.ipa(), "kɑputum");
 }
 
@@ -362,4 +363,322 @@ fn daughters_inherit_agreement_and_its_draws_shift_no_other_grammar() {
     let daughter = v.fork(0, 2);
     assert_eq!(daughter.grammar.agreement(), v.grammar.agreement());
     assert_eq!(daughter.grammar, v.grammar);
+}
+
+fn both_forced() -> Params {
+    Params {
+        object_agreement_rate: 1.0,
+        object_fusion_rate: 1.0,
+        object_drop_rate: 1.0,
+        ..forced()
+    }
+}
+
+#[test]
+fn objects_require_subject_marking_but_keep_their_own_cycle_after_subject_loss() {
+    let mut v = variety(WordOrder::SOV);
+    set_pronouns(&mut v, &PRONOUNS);
+    let only_objects = Params {
+        agreement_rate: 0.0,
+        ..both_forced()
+    };
+    for generation in 1..20 {
+        evolve(&mut v, generation, &only_objects);
+    }
+    assert_eq!(v.grammar.object_agreement().role, AgreementRole::Object);
+    assert_eq!(v.grammar.object_agreement().stage, AgreementStage::None);
+    assert!(v.grammar.object_agreement().events.is_empty());
+    evolve(&mut v, 20, &both_forced());
+    assert_eq!(v.grammar.object_agreement().stage, AgreementStage::Clitic);
+    evolve(&mut v, 27, &both_forced());
+    assert_eq!(v.grammar.object_agreement().stage, AgreementStage::Clitic);
+    let objects = v.grammar.object_agreement().clone();
+    for cell in &mut v.grammar.agreement.cells {
+        cell.form = Form::from_ipa("ta").unwrap();
+    }
+    v.grammar.refresh_agreement(v.stress(), 27);
+    assert_eq!(v.grammar.agreement().stage, AgreementStage::None);
+    assert_eq!(v.grammar.object_agreement(), &objects);
+    evolve(&mut v, 28, &only_objects);
+    assert_eq!(v.grammar.object_agreement().stage, AgreementStage::Affix);
+    assert!(!v.grammar.object_agreement().pro_drop);
+    evolve(&mut v, 29, &only_objects);
+    assert!(v.grammar.object_agreement().pro_drop);
+    assert!(v.grammar.summary.object_pro_drop);
+    assert_eq!(v.grammar.summary.object_agreement, AgreementStage::Affix);
+    assert_eq!(
+        v.grammar
+            .object_agreement()
+            .events
+            .iter()
+            .map(|e| e.kind)
+            .collect::<Vec<_>>(),
+        [
+            AgreementKind::Clitics,
+            AgreementKind::Affixes,
+            AgreementKind::ProDrop
+        ]
+    );
+    assert_eq!(v.grammar.object_agreement().since, Some(28));
+}
+
+#[test]
+fn object_sources_are_surfaced_case_forms_and_particles_fall_back_to_pronouns() {
+    for choice in [
+        GrammarChoice::Suffix,
+        GrammarChoice::Particle,
+        GrammarChoice::None,
+    ] {
+        let mut profile = profile(WordOrder::SVO);
+        profile.grammar = GrammarPrior::fixed(GrammarDesign {
+            object: Some(choice),
+            order: Some(WordOrder::SVO),
+            ..GrammarDesign::default()
+        });
+        let mut v = Variety::found(9, &profile, Livelihood::Farming, Ethos::default());
+        set_pronouns(&mut v, &PRONOUNS);
+        // Distinct object stems whose final syllables differ from the subjects.
+        let object_forms = ["mala", "neto", "saku", "lima", "tase", "pani"];
+        for ((cell, _), form) in PRONOUNS.iter().zip(object_forms) {
+            let id = v.lexicon.word_for(by_id(cell).unwrap()).unwrap().id;
+            for r in v
+                .lexicon
+                .get_mut(id)
+                .paradigms
+                .iter_mut()
+                .filter(|p| p.category == Category::Object)
+                .flat_map(|p| &mut p.realizations)
+            {
+                r.form = (choice == GrammarChoice::Suffix).then(|| Form::from_ipa(form).unwrap());
+            }
+        }
+        let candidates = v
+            .grammar
+            .object_clitic_candidates(&v.lexicon, v.stress())
+            .unwrap();
+        for (candidate, ((_, pronoun), object)) in
+            candidates.iter().zip(PRONOUNS.iter().zip(object_forms))
+        {
+            let expected = Form::from_ipa(if choice == GrammarChoice::Suffix {
+                object
+            } else {
+                pronoun
+            })
+            .unwrap();
+            assert_eq!(
+                candidate.form,
+                clitic_form(&expected, Side::Suffix),
+                "{choice:?}"
+            );
+            assert_eq!(
+                candidate.source_form.as_ref(),
+                (choice == GrammarChoice::Suffix).then_some(&expected)
+            );
+        }
+        evolve(&mut v, 1, &both_forced());
+        assert_eq!(v.grammar.object_agreement().stage, AgreementStage::Clitic);
+        if choice == GrammarChoice::Suffix {
+            let cell = v.grammar.object_agreement().cell("1sg").unwrap();
+            assert_eq!(cell.source_form.as_ref().unwrap().ipa(), "mala");
+            assert_eq!(cell.form.ipa(), "la");
+            let id = cell.source;
+            v.lexicon.get_mut(id).paradigms.clear();
+            assert_eq!(
+                v.grammar
+                    .object_agreement()
+                    .cell("1sg")
+                    .unwrap()
+                    .source_form
+                    .as_ref()
+                    .unwrap()
+                    .ipa(),
+                "mala"
+            );
+        }
+    }
+}
+
+#[test]
+fn object_candidate_contrasts_and_drop_threshold_match_the_subject_rules() {
+    let mut v = variety(WordOrder::SOV);
+    set_pronouns(&mut v, &PRONOUNS);
+    // Use free pronouns, without case forms from the founding paradigm.
+    for word in &mut v.lexicon.lexemes {
+        word.paradigms.retain(|p| p.category != Category::Object);
+    }
+    set_pronouns(&mut v, &[("1sg", "kami"), ("1pl", "kamu")]);
+    let candidates = v
+        .grammar
+        .object_clitic_candidates(&v.lexicon, v.stress())
+        .unwrap();
+    assert_eq!(candidates[0].form.ipa(), "kami");
+    assert_eq!(candidates[1].form.ipa(), "kamu");
+    let mut short = v.clone();
+    set_pronouns(&mut short, &[("3sg", "a")]);
+    assert!(
+        short
+            .grammar
+            .object_clitic_candidates(&short.lexicon, short.stress())
+            .is_none()
+    );
+    let mut merged = v.clone();
+    set_pronouns(&mut merged, &[("3sg", "tunu")]);
+    assert!(
+        merged
+            .grammar
+            .object_clitic_candidates(&merged.lexicon, merged.stress())
+            .is_none()
+    );
+    evolve(&mut v, 1, &both_forced());
+    evolve(&mut v, 9, &both_forced());
+    for cell in v.grammar.object_agreement.cells.iter_mut().take(3) {
+        cell.form = Form::from_ipa("ta").unwrap();
+    }
+    evolve(&mut v, 10, &both_forced());
+    assert_eq!(v.grammar.object_agreement().stage, AgreementStage::Affix);
+    assert!(!v.grammar.object_agreement().pro_drop);
+    assert!(v.grammar.agreement().pro_drop);
+}
+
+#[test]
+fn object_loss_is_independent_and_forks_carry_both_roles() {
+    let mut v = variety(WordOrder::SOV);
+    set_pronouns(&mut v, &PRONOUNS);
+    evolve(&mut v, 1, &both_forced());
+    evolve(&mut v, 9, &both_forced());
+    evolve(&mut v, 10, &both_forced());
+    let daughter = v.fork(0, 11);
+    assert_eq!(
+        daughter.grammar.object_agreement(),
+        v.grammar.object_agreement()
+    );
+    assert_eq!(daughter.grammar, v.grammar);
+    let subject = v.grammar.agreement().clone();
+    for cell in &mut v.grammar.object_agreement.cells {
+        cell.form = Form::from_ipa("ta").unwrap();
+    }
+    v.grammar.refresh_agreement(v.stress(), 20);
+    assert_eq!(v.grammar.agreement(), &subject);
+    let objects = v.grammar.object_agreement();
+    assert_eq!(objects.stage, AgreementStage::None);
+    assert!(!objects.pro_drop);
+    assert_eq!(objects.events.last().unwrap().kind, AgreementKind::Loss);
+    assert!(objects.cells.iter().all(|c| c.retired == Some(20)));
+    evolve(&mut v, 31, &both_forced());
+    assert_eq!(v.grammar.object_agreement().stage, AgreementStage::None);
+    evolve(&mut v, 32, &both_forced());
+    assert_eq!(v.grammar.object_agreement().stage, AgreementStage::Clitic);
+    assert!(v.grammar.object_agreement().living().all(|c| c.born == 32));
+}
+
+#[test]
+fn static_society_never_marks_objects_even_with_subject_agreement() {
+    let params = Params::static_society();
+    assert_eq!(
+        (
+            params.object_agreement_rate,
+            params.object_fusion_rate,
+            params.object_drop_rate
+        ),
+        (0.0, 0.0, 0.0)
+    );
+    let mut v = variety(WordOrder::SVO);
+    set_pronouns(&mut v, &PRONOUNS);
+    evolve(&mut v, 1, &forced());
+    for generation in 2..162 {
+        evolve(&mut v, generation, &params);
+    }
+    assert_eq!(v.grammar.agreement().stage, AgreementStage::Clitic);
+    assert_eq!(v.grammar.object_agreement().stage, AgreementStage::None);
+    assert!(v.grammar.object_agreement().events.is_empty());
+}
+
+#[test]
+fn both_affixes_keep_the_free_word_order_with_harmony_and_free_stress() {
+    let verb = Form::from_ipa("putum").unwrap();
+    let subject = Form::from_ipa("ka").unwrap();
+    let object = Form::from_ipa("sy").unwrap();
+    for (order, expected) in [
+        (WordOrder::SOV, "kɑsuputum"),
+        (WordOrder::SVO, "kɑputumsu"),
+        (WordOrder::VSO, "putumkɑsu"),
+    ] {
+        let mut v = variety(order);
+        v.grammar.agreement.side = Grammar::agreement_side(order);
+        v.grammar.object_agreement.side = Grammar::object_side(order);
+        v.grammar.harmony = Some(crate::harmony::Feature::Backness);
+        let joined = v.grammar.affix_agreement(
+            &verb,
+            Some(&subject),
+            Some(&object),
+            &v.morphology,
+            StressRule::Free,
+        );
+        assert_eq!(joined.ipa(), expected);
+        assert_eq!(
+            joined.stress,
+            Some(match order {
+                WordOrder::SOV => 2,
+                WordOrder::SVO => 1,
+                WordOrder::VSO => 0,
+            })
+        );
+    }
+}
+
+#[test]
+fn sound_laws_wear_both_roles_without_touching_object_source_snapshots() {
+    let mut v = variety(WordOrder::SOV);
+    set_pronouns(&mut v, &PRONOUNS);
+    evolve(&mut v, 1, &both_forced());
+    let before = v.grammar.object_agreement().clone();
+    let law = Law {
+        id: "object-test-raising",
+        label: "Test raising",
+        commonness: 1.0,
+        stress: None,
+        rules: vec![crate::SoundChange {
+            id: "object-test-raising".into(),
+            target: crate::Matcher::Phone(crate::CATALOG.id_by_ipa("a").unwrap()),
+            result: crate::Rewrite::Phone(crate::CATALOG.id_by_ipa("i").unwrap()),
+            left: crate::Env::Any,
+            right: crate::Env::Any,
+        }],
+    };
+    v.grammar.wear_agreement(&law, v.stress(), 2);
+    for (old, now) in before.cells.iter().zip(&v.grammar.object_agreement().cells) {
+        assert_eq!(now.source_form, old.source_form);
+        assert_eq!(now.form_at(1), &old.form);
+    }
+    assert!(
+        v.grammar
+            .object_agreement()
+            .cells
+            .iter()
+            .any(|c| c.history.len() > 1)
+    );
+    assert!(
+        v.grammar
+            .agreement()
+            .cells
+            .iter()
+            .any(|c| c.history.len() > 1)
+    );
+}
+
+#[test]
+fn default_grammar_identifies_roles_and_their_serialized_ids() {
+    let grammar = Grammar::default();
+    assert_eq!(grammar.agreement().role, AgreementRole::Subject);
+    assert_eq!(grammar.object_agreement().role, AgreementRole::Object);
+    assert_eq!(AgreementRole::Subject.id(), "subject");
+    assert_eq!(AgreementRole::Object.id(), "object");
+    assert_eq!(
+        serde_json::to_string(&AgreementRole::Subject).unwrap(),
+        "\"subject\""
+    );
+    assert_eq!(
+        serde_json::from_str::<AgreementRole>("\"object\"").unwrap(),
+        AgreementRole::Object
+    );
 }

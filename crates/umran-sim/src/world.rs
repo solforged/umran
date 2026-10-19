@@ -328,6 +328,13 @@ pub struct Params {
     /// Chance per generation that audible person affixes let the free
     /// subject pronoun drop.
     pub pro_drop_rate: f32,
+    /// Chance per generation that object pronouns cliticize where subjects
+    /// are already marked on the verb.
+    pub object_agreement_rate: f32,
+    /// Chance per generation, after eight generations, of object clitic fusion.
+    pub object_fusion_rate: f32,
+    /// Chance per generation that distinct object affixes license null objects.
+    pub object_drop_rate: f32,
 }
 
 impl Default for Params {
@@ -405,6 +412,9 @@ impl Default for Params {
             agreement_rate: 0.01,
             agreement_fusion_rate: 0.02,
             pro_drop_rate: 0.02,
+            object_agreement_rate: 0.02,
+            object_fusion_rate: 0.02,
+            object_drop_rate: 0.015,
         }
     }
 }
@@ -466,6 +476,9 @@ impl Params {
             agreement_rate: 0.0,
             agreement_fusion_rate: 0.0,
             pro_drop_rate: 0.0,
+            object_agreement_rate: 0.0,
+            object_fusion_rate: 0.0,
+            object_drop_rate: 0.0,
             ..Self::default()
         }
     }
