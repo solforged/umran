@@ -161,8 +161,8 @@ function LoanRoad({ trail, variety, overview, renderLink }: { trail: LoanTrail; 
         {renderLink({ kind: "language", variety: trail.donor.variety }, overview.varieties[trail.donor.variety]?.name ?? "An unrecorded language")}
         <span><EvidenceForm form={trail.donor.form} /></span>
       </li>
-      <li><span className="loan-trail-label">Meeting · year {trail.since * YEARS}</span>
-        {event ? renderLink({ kind: "event", id: event }, "Read the meeting") : <span className="muted">Meeting not recorded</span>}
+      <li><span className="loan-trail-label">Borrowed · year {trail.since * YEARS}</span>
+        {event ? renderLink({ kind: "event", id: event }, trail.cause.kind === "contact" ? `Read the meeting · year ${trail.cause.since * YEARS}` : "Read the meeting") : <span className="muted">Meeting not recorded</span>}
       </li>
       <li><span className="loan-trail-label">Heard</span><EvidenceForm form={trail.heard} /></li>
       <li><span className="loan-trail-label">First said here</span><EvidenceForm form={trail.adapted} /></li>

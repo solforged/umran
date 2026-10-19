@@ -479,14 +479,25 @@ fn telling_delta_uses_exact_divergence_and_existing_decision_views() {
     assert_eq!(delta["languages"][0]["variety"], 0);
     assert_eq!(delta["languages"][0]["onlyLeft"], json!([law["id"]]));
     assert_eq!(delta["languages"][0]["onlyRight"], json!([]));
-    let decisions: Value =
-        serde_json::from_str(&bench.read(right, "").unwrap().decisions().unwrap()).unwrap();
+    // Each side branched with its own decision at the split; the side being
+    // read names its own, and reading the other way round names the other's.
+    let left_decisions: Value =
+        serde_json::from_str(&bench.read(left, "").unwrap().decisions().unwrap()).unwrap();
     assert_eq!(
         delta["decision"],
-        decisions.as_array().unwrap().last().unwrap().clone()
+        left_decisions.as_array().unwrap().last().unwrap().clone()
     );
     assert_eq!(delta["decision"]["index"], point.action);
-    assert_eq!(delta["decision"]["kind"], "found");
+    assert_eq!(delta["decision"]["kind"], "law");
+    let mirrored: Value =
+        serde_json::from_str(&bench.speech_delta(right, left, 0).unwrap()).unwrap();
+    let right_decisions: Value =
+        serde_json::from_str(&bench.read(right, "").unwrap().decisions().unwrap()).unwrap();
+    assert_eq!(
+        mirrored["decision"],
+        right_decisions.as_array().unwrap().last().unwrap().clone()
+    );
+    assert_eq!(mirrored["decision"]["kind"], "found");
     assert_eq!(bench.save().unwrap(), saved, "reads cannot alter a telling");
     assert!(bench.speech_delta(left, right, 1).is_err());
     assert!(bench.speech_delta(left, 999, 0).is_err());
@@ -495,6 +506,45 @@ fn telling_delta_uses_exact_divergence_and_existing_decision_views() {
     assert!(identical["decision"].is_null());
     assert_eq!(identical["languages"][0]["onlyLeft"], json!([]));
     assert_eq!(identical["languages"][0]["changedWords"], json!([]));
+}
+
+#[test]
+fn a_law_decided_mid_run_names_the_divergence_from_either_side() {
+    let mut bench = Bench::new(5, "small").unwrap();
+    bench.act(&found()).unwrap();
+    bench.act(r#"{"kind":"run","generations":40}"#).unwrap();
+    let parent = bench.chronicle.active();
+    let point = umran_sim::HistoryPoint {
+        action: 1,
+        offset: 37,
+    };
+    let choices: Value =
+        serde_json::from_str(&bench.law_choices(&to_json(&point).unwrap(), 0).unwrap()).unwrap();
+    let law = choices
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|choice| choice["words"].as_u64().unwrap() > 0)
+        .unwrap();
+    bench
+        .act_at(
+            &to_json(&ReadingRef {
+                telling: parent,
+                point,
+            })
+            .unwrap(),
+            bench.mutation,
+            &json!({"kind": "law", "variety": 0, "law": law["id"]}).to_string(),
+        )
+        .unwrap();
+    let child = bench.chronicle.active();
+    for (left, right) in [(child, parent), (parent, child)] {
+        let delta: Value =
+            serde_json::from_str(&bench.speech_delta(left, right, 37).unwrap()).unwrap();
+        assert_eq!(delta["diverged"], 37);
+        assert_eq!(delta["decision"]["kind"], "law", "{left:?} vs {right:?}");
+        assert_eq!(delta["decision"]["generation"], 37);
+    }
 }
 
 #[test]

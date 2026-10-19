@@ -546,26 +546,33 @@ impl Bench {
             None
         } else {
             // An action at the split year can be the divergent decision. Compare
-            // exact action positions rather than throwing that year away.
+            // exact action positions rather than throwing that year away. The
+            // decision lives on whichever telling branched, so look on the side
+            // being read first, then the other.
             let after = common.point.action + usize::from(common.point.offset > 0);
-            let world = b.world(generation);
-            let first = world
-                .decisions
-                .iter()
-                .find(|d| d.action >= after)
-                .map(|d| d.action);
-            // Tip reads do not replace an older cached historical world.
-            let world = if generation == b.latest() {
-                b.chronicle.latest()
-            } else {
-                b.cached
-                    .as_ref()
-                    .expect("the past reading was cached above")
-            };
-            first.and_then(|index| {
-                b.decision_views(world)
+            drop(b);
+            [left, right].into_iter().find_map(|side| {
+                let scope = self.scope(side, "").ok()?;
+                let mut scope = scope.borrow_mut();
+                let first = scope
+                    .world(generation)
+                    .decisions
+                    .iter()
+                    .find(|d| d.action >= after)
+                    .map(|d| d.action)?;
+                // Tip reads do not replace an older cached historical world.
+                let world = if generation == scope.latest() {
+                    scope.chronicle.latest()
+                } else {
+                    scope
+                        .cached
+                        .as_ref()
+                        .expect("the past reading was cached above")
+                };
+                scope
+                    .decision_views(world)
                     .into_iter()
-                    .find(|d| d.index == index)
+                    .find(|d| d.index == first)
             })
         };
         to_json(&SpeechDelta {
