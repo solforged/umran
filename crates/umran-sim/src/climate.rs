@@ -425,7 +425,6 @@ impl World {
             if change != ClimateChange::Recovery {
                 for &c in &peoples {
                     self.climate.exposure[c] = Some(self.generation);
-                    self.communities[c].ethos_challenged = self.generation;
                     self.hardship_ethos(c, true);
                 }
             }

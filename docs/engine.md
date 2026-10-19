@@ -1223,18 +1223,38 @@ Language shift keeps ethos. Townsfolk inherit the population-weighted
 mean of the actual residents contributing to the koiné, before those
 residents are debited from their sources.
 
-Challenges and responses add small, clamped steps:
+Challenges and responses are small steps scaled by the room left toward
+the end they push to, so repeated challenges approach an end without
+reaching it, and each one that only rose now has a pull the other way
+tied to the condition passing (Toynbee's response, not a ratchet):
 
-- Hardship: +0.06 pious; -0.04 roving, or +0.06 roving when the people's
-  lands were at least 90% full before that generation's hardship.
+- Hardship, once per hard year however many of a people's lands it
+  struck: `+0.08 × (1 − pious)`; `+0.06 × (1 − roving)` when the people's
+  lands were at least 90% full before that generation's hardship, else
+  `−0.04 × (1 + roving)`.
+- Plenty: in a generation a people's lands feed it (crowd below food)
+  and no response moved its temper (no hardship, liberation, faith,
+  seafaring, or parting) nor a conqueror arrived, piety eases by 15% of
+  what lies above neutral (`−0.15 × pious` while positive). A land still
+  short of its old yield does not count against a people its lands feed.
+- Settling: in such a generation, a farming people or a city's townsfolk
+  that neither migrated nor lost a land also loses 6% of the roving above
+  its way of life's founding prior (farming −0.35, foraging +0.15,
+  herding +0.4; `−0.06 × (roving − prior)` while above it). Herders and
+  foragers keep their restlessness; the prior, not the people's own
+  founding draw, is the rest because daughters and townsfolk have no draw
+  of their own and a parent's current value would carry a ratchet down
+  its line.
 - Throwing off a rule contact: +0.12 martial for the former subjects.
-- Ruling at least one subject for twelve generations: +0.004 hierarchical
-  per generation thereafter.
-- Twelve generations without a challenge: -0.003 martial and -0.003 pious
-  per generation. Hardship, displacement, overcrowding, and ongoing rule
-  restart the quiet-span clock.
+- Ruling at least one subject for twelve generations:
+  `+0.004 × (1 − hierarchical)` per generation thereafter.
+- Twelve generations without a challenge: `−0.003 × (1 + martial)` per
+  generation. Hardship, displacement, overcrowding, lands left short by
+  climate, and conquest restart the quiet-span clock; being ruled does
+  not, so a long-ruled people that has not fought grows comfortable like
+  any other.
 - Learning seafaring: +0.12 seaward.
-- Founding a faith: +0.12 pious; conversion: +0.08 pious.
+- Founding a faith: `+0.12 × (1 − pious)`; conversion: `+0.08 × (1 − pious)`.
 
 A leaning becomes notable when an axis reaches ±0.5 and stays so until it
 falls back inside ±0.35, so drift around the line is not retold. Each
@@ -1243,9 +1263,10 @@ entered or left it, and cause; a jump from one pole to the other records
 the leaving first. Founding leanings are marked without an event, and a
 daughter starts from its own marks before its inheritance drift. Causes
 are `drift`, `inheritance`, `contact`, `hardship`, `freed`, `long-rule`,
-`comfort`, `seafaring`, `faith`, and `fate`. The `Temper { community,
-axis, amount }` recipe action nudges rather than overrides; its signed
-amount must be finite and in [-1, 1], and the people must still live.
+`comfort`, `ease`, `settled`, `seafaring`, `faith`, and `fate`. The
+`Temper { community, axis, amount }` recipe action nudges rather than
+overrides; its signed amount must be finite and in [-1, 1], and the
+people must still live.
 Annal kind `temper` exposes `{ axis, pole: "high" | "low", entered,
 cause }`, and other annals expose `temper: null`. End-of-generation ethos
 snapshots use at most one 28-byte entry per changed generation per
@@ -1279,29 +1300,37 @@ challenge responses, and authored nudges. `Params { ethos_enabled: false,
 strict baseline. With `ethos_shifts: false` separately, authored zero
 axes exercise every multiplier as exact floating-point 1.
 
-In the 40-seed, 4,000-year band (`ethos -- --band 40 160`), all worlds
-completed. Each entry below is pooled standard deviation across living
-peoples / mean of each world's within-world standard deviation:
+In the 40-seed, 4,000-year band (`ethos -- --band 40 160`), every
+three-founder world completed; sample seeds whose founders ended before
+the recipe's year-100 and year-130 actions (5 and 33) are skipped and
+counted in the printout. Each entry below is pooled standard deviation
+across living peoples / mean of each world's within-world standard
+deviation, with the pooled mean in brackets:
 
 | Setup | Martial | Open | Pious | Hierarchical | Roving | Seaward |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Three-founder | .1623 / .0929 | .1531 / .0802 | .1951 / .1125 | .2297 / .1122 | .2183 / .1229 | .2388 / .1199 |
-| Sample recipe | .1805 / .1035 | .1608 / .0798 | .1781 / .1151 | .2626 / .1424 | .2274 / .1494 | .2416 / .1262 |
+| Three-founder | .1276 / .0640 (+.02) | .1355 / .0576 (+.02) | .1550 / .1234 (+.24) | .1121 / .0510 (+.33) | .1985 / .1583 (+.10) | .3458 / .0626 (+.09) |
+| Sample recipe | .1213 / .0613 (+.01) | .1335 / .0587 (+.02) | .1503 / .1211 (+.24) | .1106 / .0496 (+.33) | .1945 / .1553 (+.10) | .3513 / .0644 (+.12) |
 
-Temper events per world: three-founder mean 3.6, median 3, range 0–15
-(144 total); sample mean 4.9, median 5, range 0–15 (196).
-Event means per world, launch HEAD baseline → ethos:
+No living people ends beyond ±0.9 on any axis. Before the pulls, pious
+and roving had pooled standard deviations of .010 and .018 with every
+people at the +1 clamp; hierarchical's spread is the founding draw after
+acculturation and has no response of its own beyond long rule, so it
+sits just under .12 before and after. Peoples whose temper left a pole
+on some axis: three-founder 237 of 1,238 (194 on pious, 72 on roving);
+sample 209 of 1,143 (168 and 66). The band test in `ethos.rs` holds the
+same floors over 20 seeds × 160 generations.
+
+Temper events per world: three-founder mean 22.1, median 19.5, range
+1–58 (882 total); sample mean 21.6, median 18, range 1–57 (819).
+Event means per world, neutral baseline → ethos, in the same band:
 
 | Setup | Conquests | Migrations | Schisms |
 | --- | ---: | ---: | ---: |
-| Three-founder | 2.350 → 2.025 | .625 → .775 | .025 → .025 |
-| Sample recipe | 1.275 → 1.300 | .275 → .400 | .225 → .250 |
+| Three-founder | 8.325 → 9.000 | 1.700 → 2.150 | .200 → .325 |
+| Sample recipe | 6.800 → 7.211 | 1.750 → 1.842 | .425 → .526 |
 
-These measurements precede the physical-travel cutover. The baseline was
-built separately at `616cc3c`, without ethos. Neutral `audit 3 160`,
-`history 42 160`, and `cities 42 160` reports were byte-identical to that
-HEAD, including names and event ordering (11,044, 19,072, and 3,369 bytes).
-The examples now place authored-contact founders within physical reach.
+The examples place authored-contact founders within physical reach.
 Their `--neutral` switch still disables ethos, not the newer geography.
 
 ## Physical travel and map scale

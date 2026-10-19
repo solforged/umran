@@ -882,7 +882,7 @@ impl World {
         self.religions[index].name_variety = self.religions[index].sacred;
         self.religions[index].shrine.variety = self.religions[index].sacred;
         self.religions[index].name = self.coin_faith_name(community, &founder, &mut rng);
-        self.nudge_ethos(community, Axis::Pious, 0.12, TemperCause::Faith);
+        self.respond(community, Axis::Pious, 0.12, TemperCause::Faith);
         // He teaches in his own speech, as the Buddha did in a vernacular
         // rather than Sanskrit; written down, it is written in its own right.
         if self.religions[index].scripture {
@@ -1135,7 +1135,7 @@ impl World {
             religion,
             from,
         });
-        self.nudge_ethos(community, Axis::Pious, 0.08, TemperCause::Faith);
+        self.respond(community, Axis::Pious, 0.08, TemperCause::Faith);
         let r = &self.religions[religion];
         let (sacred, translates, scripture) = (r.sacred, r.translates, r.scripture);
         let v = self.communities[community].variety;

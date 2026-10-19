@@ -308,7 +308,6 @@ impl World {
         }
         for &c in &peoples {
             self.climate.exposure[c] = Some(self.generation);
-            self.communities[c].ethos_challenged = self.generation;
             self.hardship_ethos(c, true);
         }
         let event = self.events.len();

@@ -1375,7 +1375,7 @@ impl World {
     }
 
     /// Population living on each region.
-    fn occupation(&self) -> Vec<f32> {
+    pub(crate) fn occupation(&self) -> Vec<f32> {
         let mut out = vec![0.0; self.map.regions.len()];
         for c in self.living() {
             for (r, n) in self.presence_iter(c) {
@@ -2322,7 +2322,7 @@ impl World {
 
     /// Each people's lands: how many they feed it, with what ruling a
     /// state adds, and how many live on them, of every people.
-    fn fed_and_crowd(&self, community: usize, occupied: &[f32]) -> (f32, f32) {
+    pub(crate) fn fed_and_crowd(&self, community: usize, occupied: &[f32]) -> (f32, f32) {
         let k = &self.communities[community];
         let fed = k
             .lands

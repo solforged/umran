@@ -49,7 +49,9 @@ use std::collections::BTreeMap;
 /// Revision 58 never gives two continents the same chart heading.
 /// Revision 59 gives pronouns object forms that fuse ahead of nouns and
 /// outlive the nouns' marking, and stops pronouns lending senses to nouns.
-pub const ENGINE_REVISION: u32 = 59;
+/// Revision 60 scales every ethos response by its headroom and pulls piety
+/// back in years of plenty and restlessness back once a people has settled.
+pub const ENGINE_REVISION: u32 = 60;
 /// Revision 33 replaces flat geography and its region identities with a sphere.
 /// Earlier region-targeted actions cannot be replayed on the spherical mesh.
 pub const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;

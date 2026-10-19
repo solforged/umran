@@ -308,6 +308,8 @@ fn temper_cause(cause: TemperCause) -> &'static str {
         TemperCause::Freed => "Free of foreign rule",
         TemperCause::LongRule => "After long rule over others",
         TemperCause::Comfort => "After long years of ease",
+        TemperCause::Ease => "In years of plenty",
+        TemperCause::Settled => "Long settled in one place",
         TemperCause::Seafaring => "Taking to the sea",
         TemperCause::Faith => "Moved by their faith",
         TemperCause::Fate => "By fate's hand",

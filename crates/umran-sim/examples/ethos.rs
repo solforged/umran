@@ -76,22 +76,18 @@ fn founders(seed: u64, sample: bool, neutral: bool) -> World {
     world
 }
 
-/// An older sample-inspired sequence, with founders placed together.
-fn sample_action(world: &mut World) {
-    if world.generation == 100 {
-        assert!(
-            world.communities[0].living() && world.communities[2].living(),
-            "sample founders ended, seed {}",
-            world.seed
-        );
-        world.connect(0, 2, 0.8, ContactKind::Rule).unwrap();
+/// An older sample-inspired sequence, with founders placed together. False
+/// once a founder it needs has ended, so the band can skip that seed.
+fn sample_action(world: &mut World) -> bool {
+    if world.generation != 100 && world.generation != 130 {
+        return true;
     }
-    if world.generation == 130 {
-        assert!(
-            world.communities[0].living() && world.communities[2].living(),
-            "sample founders ended, seed {}",
-            world.seed
-        );
+    if !(world.communities[0].living() && world.communities[2].living()) {
+        return false;
+    }
+    if world.generation == 100 {
+        world.connect(0, 2, 0.8, ContactKind::Rule).unwrap();
+    } else {
         world.found_religion(2, Revelation::Proclaimed);
         assert_ne!(
             world.communities[2].variety, world.communities[0].variety,
@@ -99,6 +95,7 @@ fn sample_action(world: &mut World) {
         );
         world.shift(2, 0);
     }
+    true
 }
 
 fn show(world: &World) {
@@ -132,11 +129,20 @@ fn main() {
                 let mut band = Band::default();
                 for seed in 0..seeds {
                     let mut world = founders(seed, sample, neutral);
+                    let mut ended = None;
                     for _ in 0..generations {
                         world.step();
-                        if sample {
-                            sample_action(&mut world);
+                        if sample && !sample_action(&mut world) {
+                            ended = Some(world.generation);
+                            break;
                         }
+                    }
+                    if let Some(generation) = ended {
+                        println!(
+                            "seed {seed}: sample founders ended at generation {generation}, skipped"
+                        );
+                        band.skipped += 1;
+                        continue;
                     }
                     band.record(&world);
                 }
@@ -214,7 +220,15 @@ impl Moments {
 struct Band {
     pooled: [Moments; 6],
     within: [Moments; 6],
+    /// Living peoples at |value| > 0.9 on each axis.
+    saturated: [usize; 6],
     counts: Vec<[usize; 4]>,
+    /// Peoples, living or ended, whose temper left a pole on each axis,
+    /// and on any axis.
+    left_pole: [usize; 6],
+    left_any: usize,
+    peoples: usize,
+    skipped: usize,
 }
 impl Band {
     fn record(&mut self, world: &World) {
@@ -225,14 +239,27 @@ impl Band {
                 let value = f64::from(ethos.get(axis));
                 self.pooled[i].add(value);
                 within[i].add(value);
+                if value.abs() > 0.9 {
+                    self.saturated[i] += 1;
+                }
             }
         }
         for (i, axis) in within.iter().enumerate() {
             self.within[i].add(axis.sd());
         }
         let mut counts = [0; 4];
+        let mut left = vec![[false; 6]; world.communities.len()];
         for (_, event) in &world.events {
             let i = match event {
+                WorldEvent::Temper {
+                    community,
+                    axis,
+                    entered: false,
+                    ..
+                } => {
+                    left[*community][*axis as usize] = true;
+                    0
+                }
                 WorldEvent::Temper { .. } => 0,
                 WorldEvent::Conquered { .. } => 1,
                 WorldEvent::Migrated { .. } => 2,
@@ -242,24 +269,39 @@ impl Band {
             counts[i] += 1;
         }
         self.counts.push(counts);
+        self.peoples += world.communities.len();
+        for axes in left {
+            for (i, &left) in axes.iter().enumerate() {
+                self.left_pole[i] += usize::from(left);
+            }
+            self.left_any += usize::from(axes.contains(&true));
+        }
     }
 
     fn print(&self, setup: &str, neutral: bool, generations: u32) {
         println!(
-            "BAND {setup} {}: {} seeds x {} years; {} living peoples pooled",
+            "BAND {setup} {}: {} seeds ({} skipped) x {} years; {} living peoples pooled",
             if neutral { "baseline-neutral" } else { "ethos" },
             self.counts.len(),
+            self.skipped,
             generations * 25,
             self.pooled[0].n
         );
         for (i, axis) in Axis::ALL.into_iter().enumerate() {
             println!(
-                "  {}: pooled sd {:.4}; mean within-world sd {:.4}",
+                "  {}: mean {:+.4}; pooled sd {:.4}; mean within-world sd {:.4}; beyond 0.9: {:.1}%; left a pole: {}",
                 axis.id(),
+                self.pooled[i].mean,
                 self.pooled[i].sd(),
-                self.within[i].mean
+                self.within[i].mean,
+                100.0 * self.saturated[i] as f64 / self.pooled[i].n.max(1) as f64,
+                self.left_pole[i]
             );
         }
+        println!(
+            "  peoples whose temper left a pole on any axis: {} of {}",
+            self.left_any, self.peoples
+        );
         for (i, label) in ["temper", "conquests", "migrations", "schisms"]
             .into_iter()
             .enumerate()
