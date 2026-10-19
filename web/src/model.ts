@@ -30,7 +30,45 @@ export interface LanguageDesign {
   suffixing: number;
   derivation: number;
   grammar?: GrammarDesign;
+  /// The author's own words for catalog meanings, kept verbatim at founding.
+  roots?: Root[];
   spelling: Spelling;
+}
+
+export interface Root {
+  concept: string;
+  ipa: string;
+}
+
+/// One line of the author's roots, checked against a design by the engine.
+export interface RootCheck {
+  line: number;
+  meaning: string;
+  ipa: string;
+  concept: string | null;
+  gloss: string | null;
+  spelled: string | null;
+  status: "ok" | "warned" | "unknown-meaning" | "bad-ipa" | "outside-inventory" | "duplicate";
+  detail: string | null;
+  suggestions: string[];
+  warnings: ("cluster" | "length" | "final")[];
+}
+
+export interface RootsReport {
+  roots: RootCheck[];
+  design: LanguageDesign;
+}
+
+/// A catalog meaning, for pickers and quarries.
+export interface ConceptView {
+  id: string;
+  gloss: string;
+  field: string;
+  class: string;
+  pronoun: boolean;
+  /// In the desk's core set (a stability tier is recorded).
+  core: boolean;
+  specimen: boolean;
 }
 
 export interface SoundInfo {
@@ -49,6 +87,7 @@ export interface PreviewWord {
   spelled: string;
   ipa: string;
   from: string | null;
+  authored: boolean;
 }
 
 /// What a people's name means, which decides how it is built from their words.
@@ -415,6 +454,15 @@ export interface Variety {
     sample?: { sentence: GrammarRendering; possession: GrammarRendering; future: GrammarRendering; pronoun: { first: GrammarRendering; second: GrammarRendering } | null };
     /// Where the pronouns stand against the nouns on object marking.
     pronounCase: PronounCase;
+    /// Where the verb stands on marking its subject's person.
+    agreement: {
+      stage: AgreementStage;
+      proDrop: boolean;
+      side: "prefix" | "suffix";
+      since: number | null;
+      cells: { cell: string; person: 1 | 2 | 3; number: "sg" | "pl"; spelled: string; ipa: string; source: { spelled: string; ipa: string }; distinct: boolean }[];
+      history: { generation: number; kind: AgreementKind }[];
+    };
     markers: GrammarMarker[];
     classes: NounClass[];
     categories: {
@@ -714,6 +762,8 @@ export interface Origin {
   generation: number;
   fromVariety: number | null;
   cause: LoanCause | null;
+  /// A founding word the author gave, kept verbatim.
+  authored: boolean;
 }
 
 export interface Coined {
@@ -1043,6 +1093,37 @@ export interface WordMap {
   }[];
 }
 
+/// Chosen meanings across chosen languages in one sheet, with each word's
+/// root numbered the same wherever it appears.
+export interface WordTable {
+  generation: number;
+  varieties: { id: number; name: string }[];
+  rows: {
+    concept: string;
+    gloss: string;
+    cells: ({
+      spelled: string;
+      ipa: string;
+      root: number;
+      origin: Origin;
+      authored: boolean;
+      competitors: number;
+    } | null)[];
+  }[];
+  roots: { variety: number; spelled: string; ipa: string; born: number }[];
+}
+
+/// Every name a language has in use: given names, peoples, places, states, faiths.
+export interface NameQuarry {
+  generation: number;
+  variety: number;
+  given: { name: string; ipa: string; meaning: string; from: number | null }[];
+  peoples: { community: number; name: string; ipa: string; meaning: string; since: number }[];
+  places: { feature: "land" | "river" | "lake" | "continent" | "city"; id: number; name: string; ipa: string; meaning: string; since: number; origin: "coined" | "inherited" | "kept" | "borrowed" | "exonym" }[];
+  states: { state: number; name: string; ipa: string; meaning: string }[];
+  faiths: { religion: number; name: string; ipa: string; meaning: string }[];
+}
+
 /// Pure year-zero travel evidence for the founding accounts.
 export interface FoundingPreview {
   pairs: {
@@ -1098,6 +1179,8 @@ export interface ReadEngine {
   lakes(generation: number): Read<LakeNamesView[]>;
   map(): Read<WorldMap>;
   wordMap(generation: number, concept: string): Read<WordMap>;
+  wordTable(generation: number, varieties: number[], concepts: string[]): Read<WordTable>;
+  nameQuarry(generation: number, variety: number): Read<NameQuarry>;
   save(): string;
   /// The author's decisions in this reading's telling, up to its point.
   decisions(): Read<DecisionView[]>;
@@ -1262,6 +1345,9 @@ export type PossessorOrder = "before" | "after";
 /// object as nouns do; ahead: pronouns carry a bound form while nouns still
 /// use a separate word; relic: pronouns keep a contrast the nouns have lost.
 export type PronounCase = "none" | "like-nouns" | "ahead" | "relic";
+/// The verb's person marking: none, a clitic pronoun leaning on it, or an affix.
+export type AgreementStage = "none" | "clitic" | "affix";
+export type AgreementKind = "clitics" | "affixes" | "pro-drop" | "loss";
 
 export interface GrammarDesign {
   plural: GrammarChoice;

@@ -213,8 +213,10 @@ keeps your place. Read the lands, peoples, languages, and chronicle in chapter
 order; long ledgers stay folded until wanted. **Take it elsewhere** makes an
 edition with every chapter opened: print just the book, save a self-contained
 web page with its fonts, chart, and chapter links, or take the complete text
-as Markdown. A save file keeps the world, its tellings, and the author's notes
-for further work.
+as Markdown, with every word's evidence opened too if asked. A save file
+keeps the world, its tellings, and the author's notes for further work.
+**Words compared** takes any list of meanings and leaves as a CSV sheet with
+each word's root numbered, and a language's names leave the same way.
 
 ![The book on its own screen: the contents rail beside the sample's frontispiece, its chart, the year read, and the seed and engine revision](docs/images/book.jpg)
 
@@ -229,7 +231,7 @@ the method's evidence. The comparative method never reads that history.
 | | |
 |---|---|
 | ![Founding, their speech: three kin peoples on a new world's chart, and beside it every sound preset as a card of the words this people would have](docs/images/setup.png) | ![Words compared: a table of basic words across related languages, shaded by shared root](docs/images/cognates.png) |
-| **Founding a world.** Five steps over the chart. The coasts form from the engine's own plate-drift history; then a homeland; then one people, kin who parted with shared ancestral speech, or neighbours with languages of their own; then their speech, where every sound preset is a card of this people's own words; then the title page. Writing the chronicle runs the years at once. | **Words compared.** Basic words across the living languages, shaded alike when they come from one root (cognates). |
+| **Founding a world.** Five steps over the chart. The coasts form from the engine's own plate-drift history; then a homeland; then one people, kin who parted with shared ancestral speech, or neighbours with languages of their own; then their speech, where every sound preset is a card of this people's own words and the author may give roots of their own; then the title page. Writing the chronicle runs the years at once. | **Words compared.** Basic words across the living languages, shaded alike when they come from one root (cognates). |
 | ![Language families branching through four thousand years, including ended and classical languages](docs/images/family.png) | ![Ēfwfīlon's sound laws opened wide: bands of meanings through the years above a dated law ledger, with an inherited change's recorded words before and after](docs/images/law.png) |
 | **Family trees.** The world's languages branch as peoples part; ended languages and classical forms keep their places in the record. Each language also has a card for its sounds, grammar, and word-building patterns. | **A language's evidence.** Six meanings through the years trace the words that held them and their changing forms. The dated law ledger links each application to its recorded words, grammar, and names before and after, and to the chronicle entry behind it. |
 

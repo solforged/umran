@@ -5,8 +5,10 @@ import printCss from "./print.css?raw";
 import { parse } from "./route";
 import type { ReadEngine } from "./model";
 
-export interface EditionMode { complete: boolean }
-export const EditionContext = createContext<EditionMode>({ complete: false });
+/// `complete` opens every chapter for an edition; `apparatus` also opens
+/// every word's evidence, which multiplies the text by the lexicon.
+export interface EditionMode { complete: boolean; apparatus: boolean }
+export const EditionContext = createContext<EditionMode>({ complete: false, apparatus: false });
 
 /** An edition outlives the reading's bounded card cache. Keep its exact
  * promises until the offscreen book is disposed, including on Suspense retries. */

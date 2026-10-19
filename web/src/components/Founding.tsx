@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, ChevronDown, Feather, LocateFixed, Plus, RefreshCw } from "lucide-react";
-import { attempt, createEngine, message, presetDesign, preview } from "../engine";
-import type { Action, Catalog, Craft, Engine, EthosAxis, Forming, FoundingPreview, FoundingTraits, GrammarChoice, GrammarDesign, LakeNamesView, Livelihood, MapSize, Naming, Overview, PossessorOrder, RiverNamesView, Variety, WordOrder, WorldMap } from "../model";
+import { attempt, checkRoots, createEngine, message, presetDesign, preview } from "../engine";
+import type { Action, Catalog, Craft, Engine, EthosAxis, Forming, FoundingPreview, FoundingTraits, GrammarChoice, GrammarDesign, LakeNamesView, LanguageDesign, Livelihood, MapSize, Naming, Overview, PossessorOrder, RiverNamesView, RootCheck, Variety, WordOrder, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { countWord, ETHOS_AXES, ETHOS_DRIVES, ETHOS_POLES, hue, landCardLabel, LIVELIHOOD_DRIVES, LIVELIHOOD_NAME, MARKING_PHRASE, MILD, OPENNESS, OPENNESS_DRIVES, peopleLabel, POSSESSOR_PHRASE, STANDING, STANDING_DRIVES, STRONG, TERRAIN_NAME, WORD_ORDER_PHRASE } from "../lore";
 import { newBookId, readDraft, saveDraft, worldName, type DraftEntry } from "../shelf";
@@ -171,6 +171,66 @@ function drawFounder(catalog: Catalog, key: number, region: number): Founder {
 function markerChoice(speech: Variety, category: "plural" | "past" | "object"): GrammarChoice {
   const marker = speech.grammar.markers.find((m) => m.category === category && m.productive && m.retired === null);
   return !marker || marker.kind === "none" ? "none" : marker.kind === "particle" ? "particle" : marker.side;
+}
+
+/// Why a root was refused, with the engine's detail: the unreadable
+/// character, the missing sound, or the earlier line.
+function rootTrouble(root: RootCheck): string {
+  switch (root.status) {
+    case "unknown-meaning": return "no such meaning in the catalog";
+    case "bad-ipa": return root.detail === "no-vowel" ? "has no vowel" : root.detail ? `cannot be read at “${root.detail}”` : "cannot be read";
+    case "outside-inventory": return `uses ${root.detail ?? "a sound"} this speech does not have`;
+    case "duplicate": return root.detail ? `already given on line ${root.detail}` : "given twice";
+    default: return "";
+  }
+}
+const ROOT_WARNING: Record<RootCheck["warnings"][number], string> = {
+  cluster: "a cluster their shape avoids",
+  length: "longer than their words run",
+  final: "an ending their shape avoids",
+};
+
+/// The author's own words, one `meaning form` to a line, checked against
+/// the speech's sounds as they are typed. Accepted roots go into the design;
+/// the rest of the vocabulary is drawn around them.
+function RootsBox({ founder, update }: { founder: Founder; update: (key: number, patch: Partial<Founder>) => void }) {
+  const [text, setText] = useState(() => (founder.design.roots ?? []).map((root) => `${root.concept} ${root.ipa}`).join("\n"));
+  const [open, setOpen] = useState(() => (founder.design.roots?.length ?? 0) > 0);
+  const bare = JSON.stringify({ ...founder.design, roots: [] });
+  const report = useMemo(() => text.trim() ? checkRoots(JSON.parse(bare) as LanguageDesign, text) : null, [bare, text]);
+  const accepted = report?.design.roots ?? [];
+  useEffect(() => {
+    if (JSON.stringify(accepted) !== JSON.stringify(founder.design.roots ?? [])) {
+      const { roots: _, ...design } = founder.design;
+      update(founder.key, { design: accepted.length ? { ...design, roots: accepted } : design });
+    }
+  }, [accepted, founder, update]);
+  const trouble = report?.roots.filter((root) => root.status !== "ok" && root.status !== "warned") ?? [];
+  const replaceMeaning = (root: RootCheck, concept: string) => {
+    const lines = text.split("\n");
+    lines[root.line - 1] = `${concept} ${root.ipa}`;
+    setText(lines.join("\n"));
+  };
+  return <section className="founding-roots">
+    <h4>Their own words</h4>
+    {open ? <>
+      <p>Give any meanings their words, one to a line, in the catalog’s sounds: <code>water nara</code>, <code>king kaːr</code>. The rest of the vocabulary is drawn around them, and sound change wears them like any word.</p>
+      <textarea className="founding-roots-text" aria-label="The author’s roots" value={text} rows={Math.min(12, Math.max(3, text.split("\n").length + 1))}
+        spellCheck={false} autoCapitalize="off" autoCorrect="off" onChange={(event) => setText(event.target.value)} />
+      {report ? <>
+        <p className={trouble.length ? "notice" : "muted small"}>
+          {accepted.length} {accepted.length === 1 ? "root" : "roots"} given{trouble.length ? ` · ${trouble.length} ${trouble.length === 1 ? "needs" : "need"} attention` : ""}
+        </p>
+        <ul className="founding-roots-check">{report.roots.map((root) => <li key={root.line} className={root.status === "ok" ? "ok" : root.status === "warned" ? "warned" : "trouble"}>
+          <span className="founding-roots-meaning">{root.gloss ?? root.meaning}</span>
+          {root.spelled !== null ? <span><i className="word">{root.spelled}</i> <span className="muted">/{root.ipa}/</span></span> : <span className="muted">/{root.ipa}/</span>}
+          {root.status === "warned" ? <span className="muted small">{root.warnings.map((warning) => ROOT_WARNING[warning]).join(", ")}</span> : null}
+          {root.status !== "ok" && root.status !== "warned" ? <span className="small">{rootTrouble(root)}
+            {root.suggestions.length ? <> · try {root.suggestions.map((concept, index) => <span key={concept}>{index ? ", " : ""}<button type="button" className="link" onClick={() => replaceMeaning(root, concept)}>{concept}</button></span>)}</> : null}</span> : null}
+        </li>)}</ul>
+      </> : null}
+    </> : <p className="founding-roots-closed">The words are drawn from their sounds. <button type="button" className="link" onClick={() => setOpen(true)}>Give them words of your own…</button></p>}
+  </section>;
 }
 
 /// Draft on the real engine, one step at a time: the coasts, a homeland,
@@ -609,24 +669,30 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
     const grammar = speechOwner.design.grammar ?? { plural: markerChoice(speech, "plural"), past: markerChoice(speech, "past") };
     update(speechOwner.key, { design: { ...speechOwner.design, grammar: { ...grammar, ...patch } } });
   };
+  /// A preset's sounds, keeping the grammar and roots the author chose.
+  const redesign = (owner: Founder, design: LanguageDesign): LanguageDesign =>
+    ({ ...design, ...(owner.design.grammar ? { grammar: owner.design.grammar } : {}), ...(owner.design.roots?.length ? { roots: owner.design.roots } : {}) });
   const choosePreset = (owner: Founder, key: string) => {
     if (key === owner.preset) return;
-    update(owner.key, { preset: key, design: { ...presetDesign(key, owner.seed), ...(owner.design.grammar ? { grammar: owner.design.grammar } : {}) } });
+    update(owner.key, { preset: key, design: redesign(owner, presetDesign(key, owner.seed)) });
   };
   const adjustingFounder = founders.find((founder) => founder.key === adjusting);
 
   // Every voice card is the engine's own preview of this people's words
-  // under that preset, with the seed founding would use.
+  // under that preset, with the seed founding would use; the chosen voice
+  // also carries the author's own roots.
+  const roots = speechOwner?.design.roots;
   const voices = useMemo(() => {
     if (!currentBuild || step !== "speech" || !speechOwner) return [];
     return catalog.presets.map((preset) => {
-      const result = preview(presetDesign(preset.id, speechOwner.seed), speechOwner.seed, speechOwner.naming);
+      const design = presetDesign(preset.id, speechOwner.seed);
+      const result = preview(preset.id === speechOwner.preset && roots?.length ? { ...design, roots } : design, speechOwner.seed, speechOwner.naming);
       const words = typeof result === "string" ? [] : VOICE_WORDS
         .map((gloss) => result.words.find((word) => word.gloss.split(",")[0] === gloss))
         .filter((word) => word !== undefined);
       return { preset, words };
     });
-  }, [currentBuild, step, catalog, speechOwner?.key, speechOwner?.seed, speechOwner?.naming]);
+  }, [currentBuild, step, catalog, speechOwner?.key, speechOwner?.seed, speechOwner?.naming, speechOwner?.preset, roots]);
 
   const stepIndex = STEPS.findIndex((s) => s.id === step);
   const reachable = (id: Step) => id === "world" || (chartReady && (id === "homeland" || (id === "peoples" ? (inspected !== null || founders.length > 0) : founders.length > 0)));
@@ -874,7 +940,7 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
             </button>)}
           </div>
           <div className="founding-speech-actions">
-            <button type="button" className="link" title="Draw a new vocabulary and names" onClick={() => { const seed = randomSeed(); update(speechOwner.key, { seed, design: speechOwner.preset === null ? speechOwner.design : { ...presetDesign(speechOwner.preset, seed), ...(speechOwner.design.grammar ? { grammar: speechOwner.design.grammar } : {}) } }); }}>Draw other words</button>
+            <button type="button" className="link" title="Draw a new vocabulary and names" onClick={() => { const seed = randomSeed(); update(speechOwner.key, { seed, design: speechOwner.preset === null ? speechOwner.design : redesign(speechOwner, presetDesign(speechOwner.preset, seed)) }); }}>Draw other words</button>
             <button type="button" className="link" onClick={() => setAdjusting(speechOwner.key)}>Shape the sounds by hand…</button>
           </div>
           <section className="founding-grammar">
@@ -897,6 +963,7 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
               <Sample rendering={speech.grammar.sample.possession} label="Sample possession" />
               <Sample rendering={speech.grammar.sample.future} label="Sample future" /></> : null}
           </section>
+          <RootsBox key={speechOwner.key} founder={speechOwner} update={update} />
         </> : null}
       </div>
     </>;

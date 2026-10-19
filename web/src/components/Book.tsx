@@ -743,6 +743,7 @@ function FrontispieceMetadata({ overview, catalog, generation }: { overview: Ove
 /** The edition uses the same fixed-reading props as the Book on screen. */
 function EditionActions({ reading }: { reading: Parameters<typeof Book>[0] }) {
   const { complete } = use(EditionContext);
+  const [apparatus, setApparatus] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number; phase: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const job = useRef<AbortController | null>(null);
@@ -764,7 +765,7 @@ function EditionActions({ reading }: { reading: Parameters<typeof Book>[0] }) {
     setProgress({ done: 0, total, phase: "Opening every chapter…" });
     try {
       const fixedReading = editionReading(engine);
-      const mode = { complete: true };
+      const mode = { complete: true, apparatus };
       const render = (opened: number) => rendered.render(<EditionContext.Provider value={mode}>
         <Pending reading={fixedReading}><Book {...reading} engine={fixedReading} editionLanguages={Math.min(total, opened + 2)} /></Pending>
       </EditionContext.Provider>);
@@ -813,6 +814,7 @@ function EditionActions({ reading }: { reading: Parameters<typeof Book>[0] }) {
       <li><button type="button" disabled={progress !== null} onClick={() => void make("print")}>Print</button>{" "}<span className="muted">Every chapter opened, with the chart; only the book prints.</span></li>
       <li><button type="button" disabled={progress !== null} onClick={() => void make("html")}>As a web page</button>{" "}<span className="muted">One self-contained page, with its fonts, chart, and links between chapters.</span></li>
       <li><button type="button" disabled={progress !== null} onClick={() => void make("markdown")}>As text</button>{" "}<span className="muted">The same complete book as Markdown, with every recorded entry.</span></li>
+      <li className="takeout-choice"><label><input type="checkbox" checked={apparatus} onChange={(event) => setApparatus(event.currentTarget.checked)} /> With every word’s evidence</label>{" "}<span className="muted">Origins, senses, paradigms, and cognates opened under every word of every language; the ledgers alone otherwise. Many times longer.</span></li>
       <li><button type="button" onClick={() => download(fileName(title, "json"), engine.save(), "application/json")}>As a save file</button>{" "}<span className="muted">The world, every telling, and all the author’s notes; open it from the chart room.</span></li>
     </ul> : null}
     {error ? <p role="alert">{error}</p> : null}

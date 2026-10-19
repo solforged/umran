@@ -50,6 +50,11 @@
 .compared-language-choice summary { cursor: pointer; color: var(--ink-soft); }
 .compared-language-choice fieldset { display: flex; flex-wrap: wrap; gap: .3rem 1rem; margin: .5rem 0; padding: .5rem; border: 1px solid var(--line); }
 .compared-language-choice legend { color: var(--ink-soft); }
+.compared-own textarea { display: block; width: min(100%, 24rem); margin: 0 0 .3rem; padding: .35rem .5rem; border: 1px solid var(--line); border-radius: 2px; background: transparent; color: var(--ink); font: inherit; font-family: var(--mono); line-height: 1.5; resize: vertical; box-shadow: none; }
+.compared-own textarea:focus { outline: 1px solid var(--accent); outline-offset: 1px; }
+.compared-unknown b { font-weight: 500; }
+.compared-take { display: flex; flex-wrap: wrap; gap: .3rem .6rem; align-items: baseline; margin: .6rem 0 0; font-size: var(--dense-size); }
+.compared-take svg { vertical-align: -2px; margin-right: .2rem; }
 .compared-language-choice label { display: flex; align-items: center; gap: .35rem; }
 .compared .compared-desk-action { background: none; min-width: 7.5rem; }
 .stage .compared .compared-desk-action button.link { color: var(--accent); font-style: normal; text-decoration: underline; }

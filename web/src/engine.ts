@@ -44,6 +44,10 @@ import type {
   Truth,
   MeaningSet,
   SpeechDelta,
+  WordTable,
+  NameQuarry,
+  RootsReport,
+  ConceptView,
 } from "./model";
 import type { EngineReply, EngineRequest, EngineStatus, Opened, ReadMethod, WriteMethod, Written } from "./engineProtocol";
 
@@ -175,6 +179,8 @@ class Reading implements ReadEngine {
   lakes(generation: number) { return this.each<LakeNamesView>("lake", generation, (map) => map.lakes.length); }
   map() { return this.world.map(); }
   wordMap(generation: number, concept: string) { return this.ask<WordMap>("wordMap", generation, concept); }
+  wordTable(generation: number, varieties: number[], concepts: string[]) { return this.ask<WordTable>("wordTable", generation, JSON.stringify(varieties), JSON.stringify(concepts)); }
+  nameQuarry(generation: number, variety: number) { return this.ask<NameQuarry>("nameQuarry", generation, variety); }
   save() { return this.world.save(); }
   decisions() { return this.ask<DecisionView[]>("decisions"); }
 }
@@ -345,6 +351,19 @@ export function preview(design: LanguageDesign, seed: number, naming: Naming): P
   } catch (error) {
     return message(error);
   }
+}
+
+/// The author's roots, one `meaning form` to a line, checked against the
+/// design's sounds; the returned design carries the accepted roots.
+export function checkRoots(design: LanguageDesign, text: string): RootsReport {
+  return JSON.parse(Workbench.checkRoots(JSON.stringify(design), text)) as RootsReport;
+}
+
+let conceptList: ConceptView[] | null = null;
+/// Every catalog meaning; the catalog is fixed for the page's module.
+export function concepts(): ConceptView[] {
+  conceptList ??= JSON.parse(Workbench.concepts()) as ConceptView[];
+  return conceptList;
 }
 
 export function message(error: unknown): string {

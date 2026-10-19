@@ -21,10 +21,13 @@ import {
   Waves,
   CloudSunRain,
   X,
+  Download,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, Catalog, CityView, Community, Craft, CraftView, DecisionView, ReadEngine, Ethos, HistoryPoint, HolyLand, LakeNamesView, LawOccurrenceRef, MeaningSet, NotebookNote, Overview, Read, ReligionView, RenderingRow, RiverNamesView, ShrineKind, StateView, Subject, Variety, WordMap, WorldMap } from "../model";
+import type { Annal, Catalog, CityView, Community, Craft, CraftView, DecisionView, ReadEngine, Ethos, HistoryPoint, HolyLand, LakeNamesView, LawOccurrenceRef, MeaningSet, NotebookNote, Overview, Read, ReligionView, RenderingRow, RiverNamesView, ShrineKind, StateView, Subject, Variety, WordMap, WordTable, WorldMap } from "../model";
 import { YEARS } from "../model";
+import { resolveMeanings } from "../quarry";
+import { download, fileName, wordTableCsv } from "../takeout";
 import { causePhrase, CHRONICLE, CONTACT_NAME, countWord, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, faithTeaching, FAITH_HOW, FAITH_NAME, FALL_NAME, howCame, howNamed, hue, landCardLabel, LEG_BY, LIVELIHOOD_NAME, otherNames, peopleLabel, peoplePhrases, RISE_NAME, SCHISM_CAUSE, seasonalPhrase, stateLabel, STRONG, temperament, TENET_NOUN, TERRAIN_NAME, unnamedName, weatherDeparture } from "../lore";
 import { cityLabel, continentLabel, waterLabel, weatherZoneLabel } from "../lore";
 import { filterHistory, findAnnal, individualAnnals, relatedMoments, searchText, subjectHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
@@ -47,7 +50,7 @@ import { CHAPTER, ChapterSummary, LawEvidence, LoanCauseText, WordOrigin, type C
 import { Margin } from "./Margin";
 import { Pending } from "./Pending";
 import { Desk } from "./Desk";
-import { attempt } from "../engine";
+import { attempt, concepts } from "../engine";
 import "./chronicle.css";
 
 /// What the encyclopedia is open at.
@@ -1139,16 +1142,22 @@ function LanguageSpecimen({ variety, context }: { variety: number; context: Cont
   );
 }
 
-/// The record's word list, with roots labelled, and a way into a blind study.
+/// The record's word list over chosen meanings, with roots labelled, a way
+/// into a blind study, and a sheet to take away.
 function WordsCompared({ spoken, context, onOpenDesk }: { spoken: Variety[]; context: Context; onOpenDesk: (first: number, second: number, meanings: string) => void }) {
   const [meanings, setMeanings] = useState("specimen");
+  const [own, setOwn] = useState("");
   const [excluded, setExcluded] = useState<number[]>([]);
   const [chosenReference, setChosenReference] = useState(spoken[0].id);
   const rows = spoken.filter((variety) => !excluded.includes(variety.id)).sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
   const reference = rows.find((variety) => variety.id === chosenReference) ?? rows[0];
-  const other = rows.find((variety) => variety.id !== reference?.id) ?? spoken.find((variety) => variety.id !== reference?.id);
   const sets = context.engine.meaningSets();
+  const catalog = concepts();
+  const listed = useMemo(() => meanings === "own" ? resolveMeanings(own, catalog)
+    : { concepts: catalog.filter((concept) => meanings === "core" ? concept.core : meanings === "specimen" ? concept.specimen : concept.field === meanings).map((concept) => concept.id), unknown: [] },
+  [meanings, own, catalog]);
   const id = useId();
+  const table = rows.length && listed.concepts.length ? context.engine.wordTable(context.generation, rows.map((variety) => variety.id), listed.concepts) : null;
   return <>
     <div className="compared-choices">
       <Pending reading={sets} label="Reading the meaning sets…">
@@ -1161,6 +1170,12 @@ function WordsCompared({ spoken, context, onOpenDesk }: { spoken: Variety[]; con
         </select>
       </label>
     </div>
+    {meanings === "own" ? <div className="compared-own">
+      <textarea aria-label="Meanings of your own" placeholder={"water\nfire\nking\nwolf"} rows={4} value={own} spellCheck={false} onChange={(event) => setOwn(event.currentTarget.value)} />
+      <p className="muted small">{listed.concepts.length} {listed.concepts.length === 1 ? "meaning" : "meanings"} found in the catalog.
+        {listed.unknown.map((entry) => <span key={entry.meaning} className="compared-unknown"> <b>{entry.meaning}</b>: {entry.suggestions.length ? <>not a meaning here; try {entry.suggestions.map((concept, index) => <span key={concept}>{index ? ", " : ""}<button type="button" className="link" onClick={() => setOwn(own.replace(entry.meaning, concept))}>{concept}</button></span>)}</> : "not a meaning here"}.</span>)}
+      </p>
+    </div> : null}
     <details className="compared-language-choice">
       <summary>Languages in the list · {rows.length} of {spoken.length}</summary>
       <fieldset><legend>Living languages</legend>{[...spoken].sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id).map((variety) => <label key={variety.id}>
@@ -1168,9 +1183,9 @@ function WordsCompared({ spoken, context, onOpenDesk }: { spoken: Variety[]; con
       </label>)}</fieldset>
     </details>
     <p className="muted small"><strong>Recorded roots.</strong> Words shaded alike share a root in the record. Open a pair in the desk to study its current sounds before revealing that history.</p>
-    {reference && other ? <Pending reading={context.engine.correspondences(context.generation, reference.id, other.id, meanings)} label="Reading the words in these meanings…">
-      <WordsComparedTable spoken={rows} reference={reference} other={other.id} meanings={meanings} context={context} onOpenDesk={onOpenDesk} />
-    </Pending> : <p className="muted">Choose at least one language for the list, and two to open a pair in the desk.</p>}
+    {table && reference ? <Pending reading={table} label="Reading the words in these meanings…">
+      <WordsComparedTable reading={table} reference={reference} meanings={meanings === "own" ? "core" : meanings} context={context} onOpenDesk={onOpenDesk} />
+    </Pending> : <p className="muted">{rows.length ? "Name at least one meaning the catalog knows." : "Choose at least one language for the list, and two to open a pair in the desk."}</p>}
   </>;
 }
 
@@ -1178,28 +1193,32 @@ function ComparedMeanings({ reading, meanings, onChange, id }: { reading: Read<M
   const sets = use(reading);
   return <label htmlFor={id}>Meanings<select id={id} value={meanings} onChange={(event) => onChange(event.currentTarget.value)}>
     {sets.map((set) => <option key={set.id} value={set.id}>{set.label}</option>)}
+    <option value="own">A list of your own…</option>
   </select></label>;
 }
 
-function WordsComparedTable({ spoken, reference, other, meanings, context, onOpenDesk }: { spoken: Variety[]; reference: Variety; other: number; meanings: string; context: Context; onOpenDesk: (first: number, second: number, meanings: string) => void }) {
-  const comparison = use(context.engine.correspondences(context.generation, reference.id, other, meanings));
-  const maps = comparison.rows.map((row) => context.engine.wordMap(context.generation, row.concept));
-  return <div className="compared"><table>
-    <thead><tr><th scope="col">Language</th>{comparison.rows.map((row) => <th key={row.concept} scope="col">{row.gloss}</th>)}<th scope="col">With {reference.name}</th></tr></thead>
-    <tbody>{spoken.map((variety) => <tr key={variety.id}>
-      <th scope="row"><LanguageLink variety={variety.id} context={context} /></th>
-      {comparison.rows.map((row, index) => <td key={row.concept} className="compared-cell"><Pending reading={maps[index]} label="Reading…">
-        <ComparedWord reading={maps[index]} variety={variety.id} context={context} />
-      </Pending></td>)}
-      <td className="compared-desk-action">{variety.id === reference.id ? <span className="muted small">Reference language</span> : <button type="button" className="link" aria-label={`Open ${reference.name} and ${variety.name} in the desk`} onClick={() => onOpenDesk(reference.id, variety.id, meanings)}>Open in the desk</button>}</td>
-    </tr>)}</tbody>
-  </table>{!comparison.rows.length ? <p className="muted">No word pairs are recorded for these meanings in the reference languages.</p> : null}</div>;
-}
-
-function ComparedWord({ reading, variety, context }: { reading: Read<WordMap>; variety: number; context: Context }) {
-  const map = use(reading);
-  const word = map.words.find((word) => context.overview.communities[word.community]?.variety === variety);
-  return <span className="compared-root" style={word ? ({ "--root": hue(word.group) } as CSSProperties) : undefined}>{word ? <button type="button" className="link word" title={`/${word.ipa}/`} onClick={() => context.go({ kind: "word", variety, concept: map.concept })}>{word.spelled}</button> : <span className="muted">–</span>}</span>;
+function WordsComparedTable({ reading, reference, meanings, context, onOpenDesk }: { reading: Read<WordTable>; reference: Variety; meanings: string; context: Context; onOpenDesk: (first: number, second: number, meanings: string) => void }) {
+  const table = use(reading);
+  return <div className="compared">
+    <table>
+      <thead><tr><th scope="col">Language</th>{table.rows.map((row) => <th key={row.concept} scope="col">{row.gloss}</th>)}<th scope="col">With {reference.name}</th></tr></thead>
+      <tbody>{table.varieties.map((variety, column) => <tr key={variety.id}>
+        <th scope="row"><LanguageLink variety={variety.id} context={context} /></th>
+        {table.rows.map((row) => {
+          const word = row.cells[column];
+          return <td key={row.concept} className="compared-cell">
+            <span className="compared-root" style={word ? ({ "--root": hue(word.root) } as CSSProperties) : undefined}>{word
+              ? <button type="button" className="link word" title={`/${word.ipa}/${word.authored ? " · the author's root" : ""}`} onClick={() => context.go({ kind: "word", variety: variety.id, concept: row.concept })}>{word.spelled}</button>
+              : <span className="muted">–</span>}</span>
+          </td>;
+        })}
+        <td className="compared-desk-action">{variety.id === reference.id ? <span className="muted small">Reference language</span> : <button type="button" className="link" aria-label={`Open ${reference.name} and ${variety.name} in the desk`} onClick={() => onOpenDesk(reference.id, variety.id, meanings)}>Open in the desk</button>}</td>
+      </tr>)}</tbody>
+    </table>
+    {!table.rows.length ? <p className="muted">No words are recorded for these meanings.</p> : null}
+    <p className="compared-take"><button type="button" className="link" onClick={() => download(fileName(`${context.title ?? "umran"}-words`, "csv"), wordTableCsv(table), "text/csv;charset=utf-8")}>
+      <Download size={13} aria-hidden="true" /> Take this sheet as CSV</button> <span className="muted small">{table.rows.length} meanings × {table.varieties.length} languages, with root numbers.</span></p>
+  </div>;
 }
 
 

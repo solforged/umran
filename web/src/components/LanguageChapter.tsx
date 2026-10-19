@@ -1,8 +1,9 @@
 import { use, useState, type ReactNode } from "react";
-import { Feather } from "lucide-react";
+import { Download, Feather } from "lucide-react";
 import type { GrammarMarker, HistoryLine, LawOccurrence, LawOccurrenceRef, LexiconRow, LoanCause, Overview, ReadEngine, Subject, Variant, Variety, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { CONTACT_NAME, landCardLabel, MARKING_PHRASE, peopleLabel, POSSESSOR_PHRASE, PRONOUN_CASE_PHRASE, stateLabel, STRESS_RULE, WORD_ORDER_PHRASE } from "../lore";
+import { download, fileName, nameQuarryCsv } from "../takeout";
+import { agreementPhrase, AGREEMENT_STEP, CONTACT_NAME, landCardLabel, MARKING_PHRASE, peopleLabel, POSSESSOR_PHRASE, PRONOUN_CASE_PHRASE, stateLabel, STRESS_RULE, WORD_ORDER_PHRASE } from "../lore";
 import { individualAnnals, findAnnal } from "../history";
 import { Dictionary, INITIAL_DICTIONARY, type DictionaryView } from "./Dictionary";
 import { FamilyTree } from "./FamilyTree";
@@ -189,12 +190,19 @@ export function GrammarSketch({ variety: v, ctx }: SectionProps) {
       </> : null}
     </> : null}
     {PRONOUN_CASE_PHRASE[grammar.pronounCase] ? <p className="muted small">{PRONOUN_CASE_PHRASE[grammar.pronounCase]}.</p> : null}
+    {agreementPhrase(grammar.agreement.stage, grammar.agreement.proDrop) ? <p className="muted small">{agreementPhrase(grammar.agreement.stage, grammar.agreement.proDrop)}{grammar.agreement.since !== null ? `, since ${year(grammar.agreement.since)}` : ""}.</p> : null}
     <p className="muted small">Grammatical forms can change through <Explained term="grammaticalization">grammaticalization</Explained>, <Explained term="fusion">fusion</Explained>, and <Explained term="analogy">analogy</Explained>.</p>
     {grammar.categories.map((category) => <GrammarCategory key={category.category} category={category} variety={v} ctx={ctx} />)}
     {v.pronouns.length ? <section className="grammar-category"><h5>Pronouns</h5><ul className="roster">{v.pronouns.map((p) => <li key={p.cell}><span className="word">{p.spelled}</span> <span className="ipa">/{p.ipa}/</span>{p.object ? <>, as object <span className="word">{p.object.spelled}</span> <span className="ipa">/{p.object.ipa}/</span></> : null} · {PERSON[p.person]} person {p.number === "sg" ? "singular" : "plural"}{p.clusivity ? <>, <Explained term="clusivity">{p.clusivity}</Explained></> : null}{p.polite ? `, respectful address since ${year(p.since)}` : p.origin === "renewed" ? `; renewed in ${year(p.since)}` : p.origin === "borrowed" ? `; borrowed in ${year(p.since)}` : ""}.</li>)}</ul></section> : null}
     {grammar.classes.some((c) => c.mergedInto === null && c.members > 0) ? <section className="grammar-category"><h5>Noun classes</h5><p>Every noun belongs to a class, and the word for “this” agrees with it.</p><ul className="roster">{grammar.classes.filter((c) => c.mergedInto === null && c.members > 0).map((c) => <li key={c.id}>{c.marker ? <><span className="word">{c.marker.spelled}</span> <span className="ipa">/{c.marker.ipa}/</span> · </> : null}{CLASS_BASIS[c.basis]}, {c.members} {c.members === 1 ? "noun" : "nouns"}; since {year(c.born)}.</li>)}</ul></section> : null}
+    {grammar.agreement.stage !== "none" || grammar.agreement.history.length ? <section className="grammar-category"><h5>Person on the verb</h5>
+      {grammar.agreement.stage !== "none" ? <ul className="roster">{grammar.agreement.cells.map((cell) => <li key={cell.cell}>
+        <span className="word">{grammar.agreement.side === "prefix" ? `${cell.spelled}${grammar.agreement.stage === "clitic" ? "=" : "-"}` : `${grammar.agreement.stage === "clitic" ? "=" : "-"}${cell.spelled}`}</span> <span className="ipa">/{cell.ipa}/</span> · {PERSON[cell.person]} person {cell.number === "sg" ? "singular" : "plural"}{cell.cell.endsWith("-inclusive") ? ", inclusive" : cell.cell.endsWith("-exclusive") ? ", exclusive" : ""}, from <span className="word">{cell.source.spelled}</span>{cell.distinct ? "" : "; no longer distinct"}.
+      </li>)}</ul> : null}
+      {grammar.agreement.history.length ? <ol className="history">{grammar.agreement.history.map((step, i) => <li key={i}><span className="gen">{step.generation * YEARS}</span><span>{AGREEMENT_STEP[step.kind].replace(/^./, (c) => c.toUpperCase())}.</span></li>)}</ol> : null}
+    </section> : null}
     <h4>Not yet modelled</h4>
-    <p className="muted">Agreement beyond the word for “this”, possessive pronouns, and tenses beyond past and future.</p>
+    <p className="muted">Object clitics on the verb, possessive pronouns, and tenses beyond past and future.</p>
   </div>;
 }
 
@@ -271,7 +279,7 @@ export function WordOrigin({ word: { origin, coined }, ctx }: { word: Pick<Varia
     {coined ? coined.kind === "calque"
       ? <>Translated part by part from {language(coined.from!, ctx)} in {year(coined.generation)}.</>
       : <>{coined.kind === "compound" ? "Made" : "Derived"} in {year(coined.generation)} from {coined.parts.map((part, i) => <span key={i}>{i ? " and " : ""}<span className="word">{part.spelled}</span> “{part.gloss}”</span>)}.</>
-      : <>{origin.kind === "borrowed" ? <>Borrowed from {origin.fromVariety !== null ? language(origin.fromVariety, ctx) : origin.from ?? "an unrecorded source"}</> : origin.kind === "kept" ? <>Kept from {origin.fromVariety !== null ? language(origin.fromVariety, ctx) : origin.from ?? "an earlier tongue"}</> : origin.kind === "derived" ? <>Built from “{origin.from}”</> : origin.kind === "coined" ? "Coined" : "Inherited"}, {year(origin.generation)}.</>}
+      : <>{origin.kind === "borrowed" ? <>Borrowed from {origin.fromVariety !== null ? language(origin.fromVariety, ctx) : origin.from ?? "an unrecorded source"}</> : origin.kind === "kept" ? <>Kept from {origin.fromVariety !== null ? language(origin.fromVariety, ctx) : origin.from ?? "an earlier tongue"}</> : origin.kind === "derived" ? <>Built from “{origin.from}”</> : origin.kind === "coined" ? "Coined" : origin.authored ? "The author’s own root" : "Inherited"}, {year(origin.generation)}.</>}
     {coined?.opaqueSince !== null && coined?.opaqueSince !== undefined ? <> Its parts were no longer heard in it after {year(coined.opaqueSince)}.</> : null}
     {origin.cause ? <LoanCauseText cause={origin.cause} ctx={ctx} /> : null}
   </span>;
@@ -294,20 +302,21 @@ function LexicalEvidence({ row, variety, ctx }: SectionProps & { row: LexiconRow
 
 export function Lexicon({ variety, ctx }: SectionProps) {
   const [view, setView] = useState(INITIAL_DICTIONARY);
-  const { complete } = use(EditionContext);
+  const { complete, apparatus } = use(EditionContext);
   return <div className="language-section">
     <p className="muted small">Every current meaning, with spelling, speech, and origin. Search and origin filters include every current competing word; matching forms appear beneath their meaning. Open a word’s evidence for competitors, stretched senses, <Explained term="paradigm">paradigms</Explained>, and family cognates.</p>
     <Dictionary engine={ctx.engine} version={ctx.version} generation={ctx.generation} variety={variety.id}
       view={complete ? INITIAL_DICTIONARY : ctx.dictionaryView ?? view} onView={ctx.onDictionaryView ?? setView}
       onConcept={(concept) => ctx.open({ kind: "word", variety: variety.id, concept })}
       renderOrigin={(word) => <WordOrigin word={word} ctx={ctx} />}
-      renderEvidence={(row) => <LexicalEvidence row={row} variety={variety} ctx={ctx} />}
+      renderEvidence={complete && !apparatus ? undefined : (row) => <LexicalEvidence row={row} variety={variety} ctx={ctx} />}
       evidenceBelow={complete}
       rowId={ctx.wordAnchor ? (row) => ctx.wordAnchor!(variety.id, row.concept) : undefined} />
   </div>;
 }
 
 export function Names({ variety: v, ctx }: SectionProps) {
+  const { complete } = use(EditionContext);
   const lands = ctx.overview.places.flatMap((p) => p.names.filter((n) => n.variety === v.id).map((n) => ({ region: p.region, name: n })));
   const peoples = ctx.overview.communities.filter((c) => c.variety === v.id);
   const otherNames = ctx.overview.communities.flatMap((c) => c.exonyms
@@ -336,6 +345,8 @@ export function Names({ variety: v, ctx }: SectionProps) {
         <span className="word">{name.name}</span> for {people(community, ctx)}, as {people(name.by, ctx)} call them.
       </li>)}
     </ul></> : null}
+    {!complete ? <p className="compared-take" data-edition-omit><button type="button" className="link" onClick={() => void ctx.engine.nameQuarry(ctx.generation, v.id).then((quarry) => download(fileName(`${v.name}-names`, "csv"), nameQuarryCsv(quarry), "text/csv;charset=utf-8"))}>
+      <Download size={13} aria-hidden="true" /> Take every name as CSV</button> <span className="muted small">Given names, peoples, lands, rivers, lakes, cities, states, and faiths, with what each meant.</span></p> : null}
   </div>;
 }
 

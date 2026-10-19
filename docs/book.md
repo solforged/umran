@@ -258,7 +258,14 @@ one draft on the real engine, saved on the shelf with *Resume*.
    *Draw other words* draws another seed; *Shape the sounds by hand…*
    opens the full sound chart. Grammar follows as phrases with sample
    sentences. Related peoples share their ancestral sound and grammar
-   choices.
+   choices. *Their own words* takes the author's roots, one `meaning
+   form` to a line in the catalog's sounds; the engine checks each line
+   as it is typed (`checkRoots`), refuses whole with a reason (no such
+   meaning, unreadable sound, a sound this speech lacks, given twice) and
+   offers the nearest meanings, and warns about shapes the knobs would
+   not draw without refusing them. Accepted roots ride on the design, so
+   the chosen voice card and the founded words carry them, kin inherit
+   them, and the recipe replays them; every other word is drawn as before.
 5. **The title page.** Set like a printed book's opening over the
    dimmed chart: the world's name, the author, the peoples, the seed, and
    the year the chronicle runs to (4000 by default). Its verb is *Write
@@ -314,7 +321,16 @@ The chart, the cards, the chronicle, and the time bar. What changes:
   languages' common ancestor and parting year. Differences between
   recurring support and root history are explained, never graded.
   *Words compared* chooses its meaning set, living-language subset, and
-  reference language; its shading is labelled *Recorded roots*.
+  reference language; its shading is labelled *Recorded roots*. *A list
+  of your own…* takes any meanings by id or gloss, names the ones the
+  catalog lacks with the nearest ids, and the sheet leaves as CSV with
+  each word's sounds, root number, and origin (`wordTable`). A language's
+  *Names* section likewise leaves as CSV with every name it uses
+  (`nameQuarry`).
+- *Take it elsewhere* makes the edition with the ledgers alone unless
+  *With every word's evidence* is chosen, which opens every word's
+  origins, senses, paradigms, and cognates and multiplies the text by
+  the lexicon.
 - A decision is taken from a card (*Decide…*), dated, and marked in the
   chronicle as the author's. It opens another telling if it is not at
   the tip.

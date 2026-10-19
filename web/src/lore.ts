@@ -38,7 +38,7 @@ import {
   WholeWord,
   type LucideIcon,
 } from "lucide-react";
-import type { Annal, ClimateView, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Mechanism, Overview, PlaceExonym, PlaceName, PronounCase, ReadEngine, ReligionView, Rendering, SchismCause, Seasons, StateView, StressRule, Tenet, Terrain, TravelLeg, WorldMap } from "./model";
+import type { AgreementKind, AgreementStage, Annal, ClimateView, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Mechanism, Overview, PlaceExonym, PlaceName, PronounCase, ReadEngine, ReligionView, Rendering, SchismCause, Seasons, StateView, StressRule, Tenet, Terrain, TravelLeg, WorldMap } from "./model";
 import { YEARS } from "./model";
 import { findAnnal } from "./history";
 
@@ -463,6 +463,24 @@ export const PRONOUN_CASE_PHRASE: Record<PronounCase, string | null> = {
   "like-nouns": "The pronouns mark the object as the nouns do",
   ahead: "The pronouns have fused their object marker onto the word, ahead of the nouns, which still use a separate one",
   relic: "The nouns have lost their object marking, but the pronouns keep theirs, as English keeps me and him",
+};
+
+/** What the verb says about who acts, by stage and pro-drop. */
+export function agreementPhrase(stage: AgreementStage, proDrop: boolean): string | null {
+  switch (stage) {
+    case "none": return null;
+    case "clitic": return "The subject pronoun leans on the verb as a clitic, shortened and unable to stand alone";
+    case "affix": return proDrop
+      ? "The verb carries a person affix that says who acts, so the pronoun is left out unless it is stressed, as in Spanish"
+      : "The verb carries a person affix that says who acts, beside the pronoun";
+  }
+}
+
+export const AGREEMENT_STEP: Record<AgreementKind, string> = {
+  clitics: "the pronouns became clitics on the verb",
+  affixes: "the clitics fused into person affixes",
+  "pro-drop": "the pronoun fell silent before the verb",
+  loss: "the affixes wore away and the pronoun returned",
 };
 
 /// The chronicle's quiet apparatus shares its nouns with cards and the book.

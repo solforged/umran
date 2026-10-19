@@ -901,6 +901,85 @@
   font-size: var(--dense-size);
 }
 
+/* The author's own words: a ruled slip under the grammar, checked as typed. */
+.founding-roots {
+  margin-top: 1rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--line);
+}
+
+.founding-roots h4 {
+  margin: 0 0 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 400;
+  font-variant: small-caps;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+}
+
+.founding-roots p {
+  margin: 0.3rem 0 0.6rem;
+  line-height: 1.4;
+}
+
+.founding-roots code {
+  font-family: var(--mono);
+  font-style: italic;
+}
+
+.founding-roots-text {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-family: var(--mono);
+  line-height: 1.6;
+  resize: vertical;
+  box-shadow: none;
+}
+
+.founding-roots-text:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.founding-roots-check {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--dense-size);
+}
+
+.founding-roots-check li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.6rem;
+  align-items: baseline;
+  padding: 0.15rem 0;
+  border-top: 1px dotted var(--line);
+}
+
+.founding-roots-check li.trouble {
+  color: var(--ink-soft);
+}
+
+.founding-roots-check li.trouble .founding-roots-meaning {
+  text-decoration: underline dotted;
+}
+
+.founding-roots-meaning {
+  min-width: 6rem;
+}
+
+.founding-roots-closed {
+  font-size: var(--dense-size);
+}
+
 /* The title page: set like the opening of a printed book. */
 .founding-title-page {
   display: grid;

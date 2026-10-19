@@ -42,7 +42,8 @@ describe("harmony marker presentation", () => {
   const render = (spellings: string[]) => {
     const variety = {
       grammar: {
-        order: "SOV", marking: "case", possessor: "before", sample: null, classes: [],
+        order: "SOV", marking: "case", possessor: "before", sample: null, classes: [], pronounCase: "none",
+        agreement: { stage: "none", proDrop: false, side: "prefix", since: null, cells: [], history: [] },
         categories: [{ category: "past", label: "Past", description: "Past time.", eligible: 1, howSynthetic: 1, contrastRetention: 1 }],
         markers: [{ id: 0, category: "past", spelled: "ry", ipa: "ry", said: null, kind: "bound", side: "suffix", share: 1, productive: true, born: 0, retired: null, history: [], origin: { kind: "founding" }, alternants: spellings.map((spelled) => ({ spelled, ipa: spelled })) }],
       }, pronouns: [],

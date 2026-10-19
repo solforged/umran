@@ -981,6 +981,12 @@ table.preview tr {
   gap: 0.6rem;
 }
 
+.takeout-choice label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 
 /* Terrain is a tint of the paper, so it suits day and lamplight alike. */
 
