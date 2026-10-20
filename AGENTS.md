@@ -79,8 +79,11 @@ Read further when the task touches it:
   apparatus (facts boxes, rosters, ledgers) sits at the dense scale
   set by the `--dense-*` properties while prose keeps its measure;
   `LanguageChapter` holds the language sections the card and book share,
-  with `LifeRibbon`, law ledgers, loan roads, grammar stories, and
-  word-building examples from the facade's `evidence.rs` reads;
+  with `SoundChart` (the inventory on the catalog's grid, weighed by the
+  facade's `soundChart` read), `FamilyTree` ticked with each branch's
+  own laws, `Dictionary`'s field map, `LifeRibbon`, law ledgers, loan
+  roads, grammar stories, and word-building examples from the facade's
+  `evidence.rs` reads;
   `Desk` reads blind correspondences from `desk.rs`, with recorded truth
   kept a separate read); and the book (`Book`: a full-window reading in
   chapter order, with a contents rail, saved bookmark, and the author

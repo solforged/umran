@@ -433,7 +433,7 @@ export function Book(props: {
   }, [complete, contentsOpen, onBack]);
   const ctx = useMemo(() => {
     const context: ChapterContext = {
-      engine, version, generation, overview, map,
+      engine, version, generation, overview, map, catalog,
       link: (subject, label) => <a data-book-target={subjectId(subject)} href={format({ kind: "world", id: worldId, page: "book", chapter: subjectChapter(subject) })} onClick={(event) => {
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
         event.preventDefault(); context.open(subject);
@@ -460,7 +460,7 @@ export function Book(props: {
       wordAnchor: (variety, concept) => `word-${variety}-${concept}`,
     };
     return context;
-  }, [engine, version, generation, overview, map, worldId, seek]);
+  }, [engine, version, generation, overview, map, catalog, worldId, seek]);
   const recorded = useAnswer(engine.decisions());
   const decisions = useMemo(() => (recorded ?? []).filter((decision) => decision.generation <= generation), [recorded, generation]);
   const chronicle = useMemo(() => {

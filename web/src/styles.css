@@ -451,16 +451,10 @@ tbody tr.selected {
   font-size: 1.8rem;
 }
 
-.ipa,
-.segments {
+.ipa {
   font-family: var(--mono);
   font-size: 0.85rem;
   color: var(--ink-soft);
-}
-
-.segments {
-  font-size: 1rem;
-  letter-spacing: 0.15em;
 }
 
 .num {
@@ -2038,6 +2032,40 @@ button.icon,
 .family-tree .axis text[text-anchor="end"] {
   text-anchor: end;
 }
+
+/* Sound laws along a branch: a tick the language's own, a ring a wave from
+   elsewhere, a dot the author's. */
+.family-tree .mark { cursor: pointer; }
+.family-tree .mark line, .family-tree .mark circle { pointer-events: none; }
+.family-tree .mark .hit { fill: transparent; }
+.family-tree .mark line {
+  stroke: var(--ink);
+  stroke-width: 1;
+}
+.family-tree .mark.wave circle {
+  fill: var(--paper);
+  stroke: var(--ink-soft);
+  stroke-width: 0.8;
+}
+.family-tree .mark.authored circle {
+  fill: var(--accent);
+}
+.family-tree .mark:hover line,
+.family-tree .mark:hover circle {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.family-tree .silent .mark { opacity: 0.55; }
+.family-tree-legend { max-width: 34rem; margin: -0.4rem 0 0.8rem; }
+.family-tree-key {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.75rem;
+  vertical-align: -0.1em;
+}
+.family-tree-key .mark line, .family-tree-key .mark circle { stroke: var(--ink); stroke-width: 1; }
+.family-tree-key .mark.wave circle { fill: var(--paper); }
+.family-tree-key .mark.authored circle { fill: var(--accent); }
 
 
 /* Time, along the bottom. */

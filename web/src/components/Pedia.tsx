@@ -1316,6 +1316,7 @@ function FamilyTrees({ context }: { context: Context }) {
         overview={overview}
         families={families}
         onOpen={(id) => context.go({ kind: "language", variety: id })}
+        onOpenLaw={context.go}
       />
     </Leaf>
   );
@@ -1963,7 +1964,7 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
 function languageChapterContext(context: Context, variety: number): ChapterContext {
   return {
     engine: context.engine, version: context.version, generation: context.generation,
-    overview: context.overview, map: context.map,
+    overview: context.overview, map: context.map, catalog: context.catalog,
     link: (subject, label) => <button type="button" className="link" onClick={() => context.go(subject)}>{label}</button>,
     open: context.go, onYear: context.onScrub,
     dictionaryView: context.dictionaryViews[variety] ?? INITIAL_DICTIONARY,

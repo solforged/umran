@@ -80,10 +80,18 @@ the engine, not a second source. Blank where the engine has nothing yet.
 4. **The languages.** The centre of the book and the reason for it. One
    chapter per language, living or silent, grouped by family; a silent
    language keeps its specimen with its chapter folded:
-   - *Position*: parent, daughters, the family tree, kin by core-word
-     sound similarity, chance-corrected and not a count of shared roots
-     (`Variety.parent/fork/family`, `kin`).
-   - *Sounds*: the inventories, the minimal word, stress, geminates.
+   - *Position*: parent, daughters, the family tree with each branch
+     ticked by the sound laws the language took up on it (a ring for a
+     wave from elsewhere, a dot for the author's; ticks before a parting
+     are shared by every daughter, as the engine's ledger owner counts
+     them), kin by core-word sound similarity, chance-corrected and not
+     a count of shared roots (`Variety.parent/fork/family`,
+     `Variety.laws`, `kin`).
+   - *Sounds*: the inventory on the catalog's chart, consonants by place
+     and manner and vowels by height and backness, each chip darker the
+     more words say it, with the sounds gained and lost since the
+     language arose and a word that says each (`soundChart`); then the
+     minimal word, stress, geminates.
    - *Sound laws*: a dated ledger, each law with the words it changed,
      before and after, and where it came from if it spread as a wave
      (`Variety.laws`, `Annal.specimen`, `word` history).
@@ -102,7 +110,10 @@ the engine, not a second source. Blank where the engine has nothing yet.
    - *Phrasebook*: a few fixed things to say, "I saw you", "my house",
      "their children", rendered by the grammar as it stands, each with
      the grammar it exercised (`phrasebook`).
-   - *Lexicon*: every word with its origin (inherited, borrowed with its
+   - *Lexicon*: the vocabulary by field first, one row a semantic field,
+     each word a chip tinted by its origin so the texture of the
+     vocabulary shows before any word is read (`lexicon`, `fieldOrder`);
+     then every word with its origin (inherited, borrowed with its
      source and the contact behind it, coined, stretched), competitors,
      and cognates across the family (`lexicon`, `word`).
    - *Names*: given names and their style; the lands and peoples named

@@ -1,12 +1,13 @@
 import { use, useState, type ReactNode } from "react";
 import { Download, Feather } from "lucide-react";
-import type { GrammarMarker, HistoryLine, LawOccurrence, LawOccurrenceRef, LexiconRow, LoanCause, Overview, PhraseNote, ReadEngine, Subject, Variant, Variety, WorldMap } from "../model";
+import type { Catalog, GrammarMarker, HistoryLine, LawOccurrence, LawOccurrenceRef, LexiconRow, LoanCause, Overview, PhraseNote, ReadEngine, Subject, Variant, Variety, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { download, fileName, nameQuarryCsv } from "../takeout";
 import { agreementPhrase, agreementStep, CONTACT_NAME, landCardLabel, MARKING_PHRASE, peopleLabel, POSSESSIVE_PHRASE, POSSESSOR_PHRASE, PRONOUN_CASE_PHRASE, stateLabel, STRESS_RULE, WORD_ORDER_PHRASE } from "../lore";
 import { individualAnnals, findAnnal } from "../history";
 import { Dictionary, INITIAL_DICTIONARY, type DictionaryView } from "./Dictionary";
 import { FamilyTree } from "./FamilyTree";
+import { SoundChart } from "./SoundChart";
 import { Sample } from "./Sample";
 import { WordGloss } from "./WordGloss";
 import { Explained } from "./Explained";
@@ -23,6 +24,7 @@ export interface ChapterContext {
   generation: number;
   overview: Overview;
   map: WorldMap;
+  catalog: Catalog;
   link: (subject: Subject, label: ReactNode) => ReactNode;
   open: (subject: Subject) => void;
   dictionaryView?: DictionaryView;
@@ -60,7 +62,7 @@ export function Position({ variety: v, ctx }: SectionProps) {
   return <div className="language-section">
     <p>{v.parent === null ? <>A founding language of its family, first spoken in {year(v.born)}.</> : <>Descended from {language(v.parent, ctx)}, parted in {year(v.forkedAt ?? v.born)}.</>} {v.spoken ? "Spoken now." : `Silent${v.silentSince === null ? " now" : ` since ${year(v.silentSince)}`}.`}</p>
     <p>Family: {language(v.family, ctx)}. Daughters: {daughters.length ? daughters.map((d, i) => <span key={d.id}>{i ? ", " : ""}{language(d.id, ctx)}</span>) : "none recorded"}.</p>
-    <FamilyTree overview={ctx.overview} family={v.family} chosen={v.id} onOpen={(id) => ctx.open({ kind: "language", variety: id })} />
+    <FamilyTree overview={ctx.overview} family={v.family} chosen={v.id} onOpen={(id) => ctx.open({ kind: "language", variety: id })} onOpenLaw={ctx.open} />
     <h4>Core-word sound similarity</h4>
     <p className="muted small">This compares the current forms for the same core meanings, corrects for chance, and is not a count of shared roots.</p>
     {kin.length ? <ul className="roster">{kin.map((k) => <li key={k.other} className="meter-row">{language(k.other, ctx)} <meter min={0} max={1} value={k.score} /> <span>{Math.round(k.score * 100)}%</span></li>)}</ul> : <p className="muted">No other spoken language has a core-word sound similarity of at least 5%.</p>}
@@ -84,8 +86,7 @@ export function LanguageFortunes({ variety, ctx }: SectionProps) {
 
 export function Sounds({ variety: v, ctx }: SectionProps) {
   return <div className="language-section">
-    <h4>{v.consonants.length === 1 ? "Consonant" : "Consonants"} · {v.consonants.length}</h4><p className="segments">{v.consonants.join(" ")}</p>
-    <h4>{v.vowels.length === 1 ? "Vowel" : "Vowels"} · {v.vowels.length}</h4><p className="segments">{v.vowels.join(" ")}</p>
+    <Pending reading={ctx.engine} label="Charting its sounds…"><SoundChart variety={v} ctx={ctx} /></Pending>
     {v.harmony ? <p>{v.harmony.lost === null ? <>Vowel harmony: within a word, vowels agree {HARMONY[v.harmony.feature]}, since {year(v.harmony.since)}.</> : <>Vowel harmony, {HARMONY[v.harmony.feature]}, from {year(v.harmony.since)} until {year(v.harmony.lost)}.</>}</p> : null}
     {v.tonal ? <p>{v.tonal.lost === null ? <>Tone: {v.tones} pitch {v.tones === 1 ? "pattern tells" : "patterns tell"} words apart, since {year(v.tonal.since)}. Spelling marks tones with vowel diacritics; IPA uses Chao tone letters after the vowel.</> : <>Tonal from {year(v.tonal.since)} until {year(v.tonal.lost)}.</>}</p> : null}
     <dl className="chapter-facts"><div><dt><Explained term="minimal word">Minimal word</Explained></dt><dd>{v.minimalWord.includes("heavy") ? <Explained term="heavy syllable">{v.minimalWord}</Explained> : v.minimalWord}; words founded short or borrowed may sit below it, but sound change never wears a word below it or further below it.</dd></div><div><dt><Explained term="stress">Stress</Explained></dt><dd>{v.stress === "weight" ? <>on a <Explained term="heavy syllable">heavy</Explained> next-to-last syllable, otherwise the syllable before it; on the first syllable in a two-syllable word</> : STRESS_RULE[v.stress]}.</dd></div><div><dt><Explained term="geminate">Geminates</Explained></dt><dd>{v.geminates ? "Long consonants occur in living words." : "No long consonants in living words."}</dd></div></dl>
@@ -331,14 +332,15 @@ export function Lexicon({ variety, ctx }: SectionProps) {
   const [view, setView] = useState(INITIAL_DICTIONARY);
   const { complete, apparatus } = use(EditionContext);
   return <div className="language-section">
-    <p className="muted small">Every current meaning, with spelling, speech, and origin. Search and origin filters include every current competing word; matching forms appear beneath their meaning. Open a word’s evidence for competitors, stretched senses, <Explained term="paradigm">paradigms</Explained>, and family cognates.</p>
+    <p className="muted small">The vocabulary by field first, each word tinted by where it came from; then every current meaning, with spelling, speech, and origin. Search and origin filters include every current competing word; matching forms appear beneath their meaning. Open a word’s evidence for competitors, stretched senses, <Explained term="paradigm">paradigms</Explained>, and family cognates.</p>
     <Dictionary engine={ctx.engine} version={ctx.version} generation={ctx.generation} variety={variety.id}
       view={complete ? INITIAL_DICTIONARY : ctx.dictionaryView ?? view} onView={ctx.onDictionaryView ?? setView}
       onConcept={(concept) => ctx.open({ kind: "word", variety: variety.id, concept })}
       renderOrigin={(word) => <WordOrigin word={word} ctx={ctx} />}
       renderEvidence={complete && !apparatus ? undefined : (row) => <LexicalEvidence row={row} variety={variety} ctx={ctx} />}
       evidenceBelow={complete}
-      rowId={ctx.wordAnchor ? (row) => ctx.wordAnchor!(variety.id, row.concept) : undefined} />
+      rowId={ctx.wordAnchor ? (row) => ctx.wordAnchor!(variety.id, row.concept) : undefined}
+      fieldMap />
   </div>;
 }
 
