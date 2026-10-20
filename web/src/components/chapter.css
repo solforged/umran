@@ -72,6 +72,38 @@
 .loan-trail-strip > li:not(:last-child)::after { content: "→"; position: absolute; inset-inline-end: 0; top: 1.5rem; color: var(--ink-soft); }
 .loan-trail-label { color: var(--ink-soft); font-family: var(--display); }
 .loan-trail-companions { margin: .3rem 0; line-height: 1.4; }
+/* The sound chart: a chip's ink deepens with the share of words that say it. */
+.sound-chart .chart-wrap { margin-block: .2rem .4rem; }
+.sound-grid { width: auto; }
+.sound-grid td { min-width: 2.4rem; }
+:root .chip.sound { cursor: default; color: var(--ink); border: 1px solid var(--line); background: color-mix(in srgb, var(--ink) calc(var(--share, 0) * 38%), transparent); }
+:root button.chip.sound { cursor: pointer; }
+:root .chip.sound.gained { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+:root .chip.sound.lost { opacity: .5; border-style: dashed; color: var(--ink-soft); }
+:root .chip.sound[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+:root .chip.sound.legend { font-size: var(--dense-size); min-width: 1.2rem; padding: 0 .2rem; margin: 0 .1rem; }
+.sound-legend { margin-block: .4rem; }
+.sound-caption { margin: .3rem 0 .6rem; font-size: var(--dense-size); line-height: 1.4; padding: .4rem .6rem; border-inline-start: 2px solid var(--accent); background: color-mix(in srgb, var(--accent-mute) 45%, transparent); }
+/* The vocabulary by field: one row a field, its words as chips tinted by origin. */
+.field-map { margin: .6rem 0 1rem; border-block: 1px solid var(--line); padding-block: .3rem; }
+.field-map-row { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: var(--dense-gap); padding: .3rem 0; border-bottom: 1px dotted var(--line); }
+.field-map-row:last-of-type { border-bottom: 0; }
+.field-map-row h5 { margin: .15rem 0 0; font-size: var(--dense-size); line-height: 1.3; }
+.field-map-row h5 small { display: block; font-size: .72rem; font-family: var(--serif); }
+.field-map-words { display: flex; flex-wrap: wrap; gap: .2rem .25rem; align-content: start; }
+:root .word-chip { font-family: var(--serif); font-size: var(--dense-size); font-variant: normal; letter-spacing: 0; text-transform: none; line-height: 1.25; padding: .05rem .35rem; margin: 0; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--ink); cursor: pointer; }
+:root .word-chip.legend { cursor: default; margin-inline-end: .3rem; }
+:root .word-chip.origin-derived { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+:root .word-chip.origin-coined { border-color: var(--coined); background: color-mix(in srgb, var(--coined) 18%, transparent); }
+:root .word-chip.origin-borrowed { border-color: var(--loan); background: color-mix(in srgb, var(--loan) 20%, transparent); }
+:root .word-chip.origin-kept { border-color: var(--event); border-style: dashed; background: color-mix(in srgb, var(--loan) 12%, transparent); }
+:root .word-chip.origin-authored { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 22%, transparent); }
+:root .word-chip[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+:root .word-chip.competing { font-style: italic; border-style: dotted; }
+.field-map-legend { margin: .5rem 0 0; line-height: 1.8; }
+@media (max-width: 599px) {
+  .field-map-row { grid-template-columns: 1fr; gap: .15rem; }
+}
 @media (prefers-reduced-motion: reduce) {
   .life-ribbon-scroll { scroll-behavior: auto; }
   .life-ribbon *, .loan-trail * { transition: none !important; animation: none !important; }

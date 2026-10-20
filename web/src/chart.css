@@ -80,8 +80,7 @@
   color: var(--accent);
 }
 
-:root .ipa,
-:root .segments {
+:root .ipa {
   font-size: 0.95rem;
 }
 

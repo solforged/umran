@@ -233,9 +233,17 @@ first new choice starts another telling.
 
 Each language has sections for sounds, grammar, word building, names,
 and a phrasebook of fixed phrases rendered by its current grammar.
-Family trees include living, ended, and classical languages.
+Family trees include living, ended, and classical languages. Each branch
+carries its sound laws as ticks, with a ring where a change came in a wave
+from another language. Ticks before a parting are shared by every
+daughter, and a tick opens the change.
 
-![Languages branching through four thousand years](images/family.png)
+![Languages branching through four thousand years, each branch ticked with its sound laws](images/family.png)
+
+A language's sounds are charted by place and manner. A sound is darker
+the more words say it, and marked where it was gained or lost since the
+language arose. The lexicon opens with the vocabulary by field, every
+word tinted by its origin.
 
 Six meanings trace their words through the years above the dated sound-law
 ledger. Each application links to its recorded words, grammatical forms,

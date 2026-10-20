@@ -15,7 +15,7 @@ use annals::{Annal, annals};
 use notebook::{Document, Note, Subject};
 use provenance::{LoanCauseView, cause_view, origin_cause};
 use serde::Serialize;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::{cell::RefCell, rc::Rc};
 use umran_sim::climate::ClimateCause;
 use umran_sim::compare::intelligibility;
@@ -301,6 +301,13 @@ impl Workbench {
             .map_err(fail)
     }
 
+    #[wasm_bindgen(js_name = soundChart)]
+    pub fn sound_chart(&mut self, generation: u32, variety: f64) -> Result<String, JsValue> {
+        self.bench
+            .sound_chart(generation, entity_id(variety).map_err(fail)?)
+            .map_err(fail)
+    }
+
     pub fn word(
         &mut self,
         generation: u32,
@@ -427,6 +434,13 @@ impl ReadView {
         self.bench
             .borrow_mut()
             .kin(generation, entity_id(variety).map_err(fail)?)
+            .map_err(fail)
+    }
+    #[wasm_bindgen(js_name = soundChart)]
+    pub fn sound_chart(&mut self, generation: u32, variety: f64) -> Result<String, JsValue> {
+        self.bench
+            .borrow_mut()
+            .sound_chart(generation, entity_id(variety).map_err(fail)?)
             .map_err(fail)
     }
     pub fn word(
@@ -2191,6 +2205,7 @@ impl Bench {
                     concept: &world.concepts[slot.concept].id,
                     gloss: &world.concepts[slot.concept].gloss,
                     field: world.concepts[slot.concept].field.label(),
+                    field_order: world.concepts[slot.concept].field as u8,
                     rank: world.concepts[slot.concept].stability,
                     class: v.gender.class_of(word.id),
                     form: lexicon_form(world, variety, word),
@@ -2205,6 +2220,64 @@ impl Bench {
             })
             .collect();
         to_json(&rows)
+    }
+
+    /// Every sound of `variety` at `generation` with how many current
+    /// dominant words use it and the most basic word among them, beside the
+    /// sounds it had when it arose and has since lost. The baseline is the
+    /// language's own inventory in the generation it arose, which for a
+    /// daughter is its parent's at the parting.
+    pub fn sound_chart(&mut self, generation: u32, variety: usize) -> Result<String, String> {
+        let born = {
+            let world = self.world(generation);
+            let v = world
+                .varieties
+                .get(variety)
+                .ok_or("No such language variety.")?;
+            v.parent.map_or(0, |f| f.generation).min(generation)
+        };
+        let at_birth = {
+            let world = self.world(born);
+            world.varieties.get(variety).map(|v| sound_uses(world, v))
+        };
+        let world = self.world(generation);
+        let v = &world.varieties[variety];
+        let now = sound_uses(world, v);
+        let segments: Vec<SoundUseView> = now
+            .iter()
+            .map(|(id, (words, example))| SoundUseView {
+                ipa: CATALOG.get(umran_sim::PhonemeId(*id)).ipa(),
+                vowel: CATALOG.get(umran_sim::PhonemeId(*id)).is_vowel(),
+                words: *words,
+                example: example.clone(),
+                new: at_birth
+                    .as_ref()
+                    .is_some_and(|birth| !birth.contains_key(id)),
+            })
+            .collect();
+        let lost: Vec<SoundUseView> = at_birth
+            .iter()
+            .flatten()
+            .filter(|(id, _)| !now.contains_key(id))
+            .map(|(id, (words, example))| SoundUseView {
+                ipa: CATALOG.get(umran_sim::PhonemeId(*id)).ipa(),
+                vowel: CATALOG.get(umran_sim::PhonemeId(*id)).is_vowel(),
+                words: *words,
+                example: example.clone(),
+                new: false,
+            })
+            .collect();
+        to_json(&SoundChartView {
+            words: v
+                .lexicon
+                .slots
+                .iter()
+                .filter(|s| s.dominant().is_some())
+                .count(),
+            since: born,
+            segments,
+            lost,
+        })
     }
 
     /// The words competing for `concept` in `variety`, their histories, and
@@ -5304,6 +5377,125 @@ fn grammar_history(
     out
 }
 
+/// How many dominant words of `v` use each of its sounds, with the most
+/// basic word among them: the lowest stability rank, then the catalog's
+/// order, so the example stays the same word across years. Sounds heard
+/// only in a competing word, an inflected form, or a particle count no
+/// word but keep their place in the inventory with that form as example.
+fn sound_uses(world: &World, v: &Variety) -> BTreeMap<u16, (usize, SoundExampleView)> {
+    let mut slots: Vec<&umran_sim::lexicon::Slot> = v
+        .lexicon
+        .slots
+        .iter()
+        .filter(|slot| slot.dominant().is_some())
+        .collect();
+    slots.sort_by_key(|slot| {
+        let rank = world.concepts[slot.concept].stability;
+        (rank.is_none(), rank, slot.concept)
+    });
+    let stress = v.stress();
+    let example =
+        |concept: Option<umran_sim::ConceptId>, word: Option<&Lexeme>, form: &Form, gloss: &str| {
+            let spelled = match word {
+                Some(word) => {
+                    let (spelled, said) = written_and_said(v, word);
+                    said.unwrap_or(spelled)
+                }
+                None => v.spell(form),
+            };
+            SoundExampleView {
+                concept: concept.map(|c| world.concepts[c].id.to_string()),
+                gloss: gloss.to_string(),
+                spelled,
+                ipa: form.ipa_stressed(stress),
+            }
+        };
+    // The first form to use a sound is its example.
+    let mut uses: BTreeMap<u16, (usize, SoundExampleView)> = BTreeMap::new();
+    let mut note = |form: &Form, counts: bool, make: &dyn Fn() -> SoundExampleView| {
+        let mut seen = BTreeSet::new();
+        for phone in form.phones().map(|p| p.0) {
+            if seen.insert(phone) {
+                let entry = uses.entry(phone).or_insert_with(|| (0, make()));
+                if counts {
+                    entry.0 += 1;
+                }
+            }
+        }
+    };
+    for slot in &slots {
+        let word = v.lexicon.get(slot.dominant().expect("filtered"));
+        let gloss = &world.concepts[slot.concept].gloss;
+        note(&word.form, true, &|| {
+            example(Some(slot.concept), Some(word), &word.form, gloss)
+        });
+    }
+    for slot in &slots {
+        let gloss = &world.concepts[slot.concept].gloss;
+        for variant in &slot.variants {
+            let word = v.lexicon.get(variant.lexeme);
+            let dominant = slot.dominant() == Some(variant.lexeme);
+            if !dominant {
+                note(&word.form, false, &|| {
+                    example(Some(slot.concept), Some(word), &word.form, gloss)
+                });
+            }
+            for form in word
+                .paradigms
+                .iter()
+                .flat_map(|p| p.realizations.iter())
+                .filter(|r| r.retired.is_none())
+                .filter_map(|r| r.form.as_ref())
+            {
+                note(form, false, &|| {
+                    example(Some(slot.concept), None, form, gloss)
+                });
+            }
+        }
+    }
+    for marker in v.grammar.markers.iter().filter(|m| {
+        m.kind == umran_sim::grammar::MarkerKind::Particle
+            && m.retired.is_none()
+            && v.grammar.marker_share(m.id) > 0.0
+    }) {
+        let gloss = format!("the {} particle", marker.category.label());
+        note(&marker.form, false, &|| {
+            example(None, None, &marker.form, &gloss)
+        });
+    }
+    uses
+}
+
+#[derive(Serialize)]
+struct SoundChartView {
+    /// Current dominant words, the chart's whole.
+    words: usize,
+    /// The generation the baseline inventory is taken from.
+    since: u32,
+    segments: Vec<SoundUseView>,
+    /// Sounds the language had at `since` and no current word keeps.
+    lost: Vec<SoundUseView>,
+}
+
+#[derive(Serialize)]
+struct SoundUseView {
+    ipa: &'static str,
+    vowel: bool,
+    words: usize,
+    example: SoundExampleView,
+    /// Not in the inventory at `since`.
+    new: bool,
+}
+
+#[derive(Serialize, Clone)]
+struct SoundExampleView {
+    /// The meaning whose word this is; a particle has none.
+    concept: Option<String>,
+    gloss: String,
+    spelled: String,
+    ipa: String,
+}
+
 /// A word as written and, when writing has fallen behind speech, as said.
 fn written_and_said(variety: &Variety, word: &Lexeme) -> (String, Option<String>) {
     let written = variety.written_word(word);
@@ -5541,6 +5733,8 @@ struct LexiconRow<'a> {
     concept: &'a str,
     gloss: &'a str,
     field: &'static str,
+    /// The field's place in the catalog's order of fields.
+    field_order: u8,
     rank: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     class: Option<u32>,
@@ -8352,6 +8546,65 @@ mod tests {
             !word["cognates"].as_array().unwrap().is_empty(),
             "Upland's water is cognate with Hill's"
         );
+    }
+
+    #[test]
+    fn sound_chart_counts_words_against_the_inventory_at_birth() {
+        let mut w = bench();
+        let overview: serde_json::Value = serde_json::from_str(&w.overview(22).unwrap()).unwrap();
+        let variety = overview["varieties"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| !v["parent"].is_null())
+            .map(|v| v["id"].as_u64().unwrap() as usize)
+            .expect("a daughter language by generation 22");
+        let chart: serde_json::Value =
+            serde_json::from_str(&w.sound_chart(22, variety).unwrap()).unwrap();
+        let born = overview["varieties"][variety]["born"].as_u64().unwrap();
+        assert_eq!(chart["since"], born);
+        let segments = chart["segments"].as_array().unwrap();
+        let inventory: Vec<&str> = overview["varieties"][variety]["consonants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .chain(overview["varieties"][variety]["vowels"].as_array().unwrap())
+            .map(|s| s.as_str().unwrap())
+            .collect();
+        let mut charted: Vec<&str> = segments
+            .iter()
+            .map(|s| s["ipa"].as_str().unwrap())
+            .collect();
+        charted.sort_unstable();
+        let mut expected = inventory.clone();
+        expected.sort_unstable();
+        assert_eq!(charted, expected, "the chart is the inventory");
+        let words = chart["words"].as_u64().unwrap();
+        for segment in segments {
+            let used = segment["words"].as_u64().unwrap();
+            assert!(used <= words, "{segment}");
+            let example = &segment["example"];
+            assert!(
+                example["ipa"]
+                    .as_str()
+                    .unwrap()
+                    .contains(segment["ipa"].as_str().unwrap())
+                    || segment["vowel"] == true,
+                "the example says the sound: {segment}"
+            );
+        }
+        // The baseline is the language's own inventory in the year it arose.
+        let birth: serde_json::Value =
+            serde_json::from_str(&w.sound_chart(born as u32, variety).unwrap()).unwrap();
+        assert!(birth["lost"].as_array().unwrap().is_empty());
+        assert!(
+            birth["segments"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|s| s["new"] == false)
+        );
+        assert!(w.sound_chart(22, 99).is_err());
     }
 
     #[test]

@@ -99,6 +99,9 @@ Read further when the task touches it:
 - `LanguageChapter` holds the language sections shared by cards and the
   book: `LifeRibbon`, law ledgers, loan roads, grammar stories, and
   word-building examples from the facade's `evidence.rs` reads.
+  `SoundChart` lays the inventory on the catalog's grid, weighed by the
+  facade's `soundChart` read. `FamilyTree` ticks each branch with its own
+  laws, and `Dictionary` opens with a map of the vocabulary by field.
 - `Desk` reads blind correspondences from `desk.rs`. Recorded truth stays
   a separate read.
 

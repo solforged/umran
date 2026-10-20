@@ -28,6 +28,7 @@ import type {
   Overview,
   Preview,
   SettlementIntent,
+  SoundChart,
   Subject,
   WordDetail,
   WordMap,
@@ -173,6 +174,7 @@ class Reading implements ReadEngine {
   overview(generation: number) { return this.year<Overview>("overview", generation); }
   lexicon(generation: number, variety: number) { return this.ask<LexiconRow[]>("lexicon", generation, variety); }
   kin(generation: number, variety: number) { return this.ask<Kin[]>("kin", generation, variety); }
+  soundChart(generation: number, variety: number) { return this.ask<SoundChart>("soundChart", generation, variety); }
   word(generation: number, variety: number, concept: string) { return this.ask<WordDetail>("word", generation, variety, concept); }
   lawOccurrences(generation: number, variety: number, law: string) { return this.ask<LawOccurrence[]>("lawOccurrences", generation, variety, law); }
   specimenLives(generation: number, variety: number) { return this.ask<WordLife[]>("specimenLives", generation, variety); }

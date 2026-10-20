@@ -1024,10 +1024,36 @@ export interface LexiconForm {
   changes: number;
 }
 
+/// A language's sounds weighed by the words that use them, against its
+/// inventory in the generation it arose.
+export interface SoundChart {
+  /// Current dominant words, the chart's whole.
+  words: number;
+  /// The generation the baseline inventory is taken from.
+  since: number;
+  segments: SoundUse[];
+  /// Sounds the language had at `since` and no current word keeps.
+  lost: SoundUse[];
+}
+
+export interface SoundUse {
+  ipa: string;
+  vowel: boolean;
+  words: number;
+  /// The most basic word that says it; a sound heard only in a competing
+  /// word, an inflected form, or a particle counts no word and shows that
+  /// form, a particle with no meaning to open.
+  example: { concept: string | null; gloss: string; spelled: string; ipa: string };
+  /// Not in the inventory at `since`.
+  new: boolean;
+}
+
 export interface LexiconRow extends LexiconForm {
   concept: string;
   gloss: string;
   field: string;
+  /// The field's place in the catalog's order of fields.
+  fieldOrder: number;
   rank: number | null;
   class?: number;
   /// Current competing forms other than the dominant word above.
@@ -1266,6 +1292,7 @@ export interface ReadEngine {
   overview(generation: number): Read<Overview>;
   lexicon(generation: number, variety: number): Read<LexiconRow[]>;
   kin(generation: number, variety: number): Read<Kin[]>;
+  soundChart(generation: number, variety: number): Read<SoundChart>;
   word(generation: number, variety: number, concept: string): Read<WordDetail>;
   lawOccurrences(generation: number, variety: number, law: string): Read<LawOccurrence[]>;
   specimenLives(generation: number, variety: number): Read<WordLife[]>;

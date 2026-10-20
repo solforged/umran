@@ -1,4 +1,4 @@
-import type { Overview, Variety } from "../model";
+import type { Law, Overview, Subject, Variety } from "../model";
 import { YEARS } from "../model";
 import { hue } from "../lore";
 
@@ -22,6 +22,17 @@ export interface Lineage {
   tone: string;
   /// How it reads to a screen reader and in its tooltip.
   label: string;
+  /// Changes undertaken on this branch, drawn as ticks along its bar.
+  marks?: Mark[];
+}
+
+/// One change on a branch: a sound law the language took up on its own, one
+/// that reached it in a wave from another language, or the author's.
+export interface Mark {
+  generation: number;
+  id: string;
+  label: string;
+  kind: "own" | "wave" | "authored";
 }
 
 /// Members born by now, with roots and daughters eldest first.
@@ -64,12 +75,14 @@ function Rows({
   chosen,
   x,
   onOpen,
+  onOpenMark,
 }: {
   rows: Lineage[];
   now: number;
   chosen?: number;
   x: (generation: number) => number;
   onOpen: (id: number) => void;
+  onOpenMark?: (id: number, mark: Mark) => void;
 }) {
   const y = (i: number) => ROW * i + ROW / 2;
   const row = new Map(rows.map((l, i) => [l.id, i]));
@@ -83,6 +96,26 @@ function Rows({
         ) : null}
         <line className="bar" x1={x(l.born)} y1={y(i)} x2={Math.max(x(end), x(l.born) + 2)} y2={y(i)} stroke={l.tone} />
         <circle cx={x(l.born)} cy={y(i)} r={2.5} fill={l.tone} />
+        {l.marks?.map((mark, m) => {
+          const marks = l.marks!;
+          const at = x(mark.generation);
+          // Laws of one year stack upward instead of hiding one another, and
+          // each mark's hit region reaches halfway to its neighbours.
+          const stack = Math.min(marks.slice(0, m).filter((earlier) => earlier.generation === mark.generation).length, 2);
+          const top = y(i) - 3 - stack * 3;
+          const before = marks.slice(0, m).reverse().find((other) => other.generation !== mark.generation);
+          const after = marks.slice(m + 1).find((other) => other.generation !== mark.generation);
+          const left = before ? Math.min(3, (at - x(before.generation)) / 2) : 3;
+          const right = after ? Math.min(3, (x(after.generation) - at) / 2) : 3;
+          const title = `Year ${mark.generation * YEARS}: ${mark.label}${mark.kind === "wave" ? " (a wave from another language)" : mark.kind === "authored" ? " (the author’s)" : ""}`;
+          return <g key={m} className={`mark ${mark.kind}`} onClick={onOpenMark ? () => onOpenMark(l.id, mark) : undefined}>
+            <title>{title}</title>
+            <rect className="hit" x={at - left} y={top - 5} width={left + right} height={stack === 2 ? 5 : 3} />
+            {mark.kind === "own"
+              ? <line x1={at} y1={top - 5} x2={at} y2={top} />
+              : <circle cx={at} cy={top - 2.5} r={1.4} />}
+          </g>;
+        })}
         <text
           x={LABEL}
           y={y(i)}
@@ -139,6 +172,7 @@ export function DescentChart({
   chosen,
   what,
   onOpen,
+  onOpenMark,
 }: {
   lineages: Lineage[];
   now: number;
@@ -147,6 +181,7 @@ export function DescentChart({
   /// What the rows are, for the chart's label: "languages", "faiths".
   what: string;
   onOpen: (id: number) => void;
+  onOpenMark?: (id: number, mark: Mark) => void;
 }) {
   const rows = orderRows(lineages, now);
   if (rows.length < 2) return null;
@@ -159,10 +194,21 @@ export function DescentChart({
       role="img"
       aria-label={`${rows.length} ${what}, from year ${start * YEARS} to year ${now * YEARS}`}
     >
-      <Rows rows={rows} now={now} chosen={chosen} x={timeScale(start, now)} onOpen={onOpen} />
+      <Rows rows={rows} now={now} chosen={chosen} x={timeScale(start, now)} onOpen={onOpen} onOpenMark={onOpenMark} />
       <Axis start={start} now={now} height={height} />
     </svg>
   );
+}
+
+/// Which of a language's ledger entries are its own: those after the prefix
+/// it shares with its parent, as the engine's `ledger_owner` counts them.
+function ownLaws(overview: Overview, v: Variety): Law[] {
+  const parent = v.parent === null ? undefined : overview.varieties[v.parent];
+  if (!parent) return v.laws;
+  let shared = 0;
+  while (shared < v.laws.length && shared < parent.laws.length
+    && v.laws[shared].id === parent.laws[shared].id && v.laws[shared].generation === parent.laws[shared].generation) shared++;
+  return v.laws.slice(shared);
 }
 
 function familyLineages(overview: Overview, family: number): Lineage[] {
@@ -179,22 +225,51 @@ function familyLineages(overview: Overview, family: number): Lineage[] {
       label: `${v.name}: arose in year ${v.born * YEARS}${
         v.silentSince !== null ? `, silent since year ${v.silentSince * YEARS}` : ", spoken now"
       }`,
+      marks: ownLaws(overview, v).map((law) => ({
+        generation: law.generation,
+        id: law.id,
+        label: law.label,
+        kind: law.decision !== null ? "authored" : law.from !== null ? "wave" : "own",
+      })),
     }));
 }
 
-/// A language family as a chart of descent.
+const lawSubjectOf = (variety: number, mark: Mark): Subject => ({ kind: "law", id: mark.id, variety, generation: mark.generation });
+
+/// The legend for the marks on a family's branches.
+function MarkLegend({ lineages }: { lineages: Lineage[] }) {
+  const marks = lineages.flatMap((l) => l.marks ?? []);
+  if (!marks.length) return null;
+  const kinds = new Set(marks.map((mark) => mark.kind));
+  return <p className="muted small family-tree-legend">
+    <svg className="family-tree-key" viewBox="0 0 8 10" aria-hidden="true"><g className="mark own"><line x1={4} y1={1} x2={4} y2={7} /></g></svg> A sound law the language took up on its own branch; those before a parting are shared by every daughter.
+    {kinds.has("wave") ? <> <svg className="family-tree-key" viewBox="0 0 8 10" aria-hidden="true"><g className="mark wave"><circle cx={4} cy={4.5} r={2.2} /></g></svg> One that reached it in a wave from another language.</> : null}
+    {kinds.has("authored") ? <> <svg className="family-tree-key" viewBox="0 0 8 10" aria-hidden="true"><g className="mark authored"><circle cx={4} cy={4.5} r={2.2} /></g></svg> The author’s.</> : null}
+    {" "}Choose a mark to read the change.
+  </p>;
+}
+
+/// A language family as a chart of descent, each branch ticked with the
+/// sound laws it underwent.
 export function FamilyTree({
   overview,
   family,
   chosen,
   onOpen,
+  onOpenLaw,
 }: {
   overview: Overview;
   family: number;
   chosen: number;
   onOpen: (variety: number) => void;
+  onOpenLaw?: (subject: Subject) => void;
 }) {
-  return <DescentChart lineages={familyLineages(overview, family)} now={overview.generation} chosen={chosen} what="languages" onOpen={onOpen} />;
+  const lineages = familyLineages(overview, family);
+  if (orderRows(lineages, overview.generation).length < 2) return null;
+  return <>
+    <DescentChart lineages={lineages} now={overview.generation} chosen={chosen} what="languages" onOpen={onOpen} onOpenMark={onOpenLaw && ((id, mark) => onOpenLaw(lawSubjectOf(id, mark)))} />
+    <MarkLegend lineages={lineages} />
+  </>;
 }
 
 /// Families sharing a time axis, ordered by their earliest birth.
@@ -202,10 +277,12 @@ export function FamilyForest({
   overview,
   families,
   onOpen,
+  onOpenLaw,
 }: {
   overview: Overview;
   families: number[];
   onOpen: (variety: number) => void;
+  onOpenLaw?: (subject: Subject) => void;
 }) {
   const now = overview.generation;
   const groups = families
@@ -231,7 +308,7 @@ export function FamilyForest({
         offset += rows.length * ROW + ROW / 2;
         return (
           <g key={family} className="family" transform={`translate(0 ${top})`}>
-            <Rows rows={rows} now={now} x={x} onOpen={onOpen} />
+            <Rows rows={rows} now={now} x={x} onOpen={onOpen} onOpenMark={onOpenLaw && ((id, mark) => onOpenLaw(lawSubjectOf(id, mark)))} />
           </g>
         );
       })}
