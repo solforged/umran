@@ -38,7 +38,7 @@ fn loan_shares(world: &World) -> BTreeMap<Field, (f32, f32)> {
     let lexicon = &world.variety_of(1).lexicon;
     let mut out: BTreeMap<Field, (f32, f32)> = BTreeMap::new();
     for slot in &lexicon.slots {
-        let entry = out.entry(slot.concept.field).or_default();
+        let entry = out.entry(lexicon.concepts[slot.concept].field).or_default();
         entry.1 += 1.0;
         if slot
             .dominant()
@@ -123,8 +123,8 @@ fn main() {
         if shown < 24 {
             println!(
                 "  {:<10} {:<10} {:>8} → {:<8} → {:<8} gen {}",
-                slot.concept.id,
-                format!("{:?}", slot.concept.field),
+                lexicon.concepts[slot.concept].id,
+                format!("{:?}", lexicon.concepts[slot.concept].field),
                 source.ipa(),
                 adapted.ipa(),
                 l.form.ipa(),

@@ -7,17 +7,16 @@ use crate::{
 };
 use serde::Serialize;
 use umran_sim::adapt::Adapter;
-use umran_sim::concepts::by_id;
 use umran_sim::rng::{key, stream};
 use umran_sim::{LexemeId, Name, PlaceName, PlaceOrigin, Variety, World};
 use wasm_bindgen::prelude::*;
 
 #[derive(Serialize)]
-struct WordTable {
+struct WordTable<'a> {
     generation: u32,
     /// In the order asked.
     varieties: Vec<TableVariety>,
-    rows: Vec<TableRow>,
+    rows: Vec<TableRow<'a>>,
     /// Indexed by every cell's `root`, stable across the whole table.
     roots: Vec<TableRoot>,
 }
@@ -29,9 +28,9 @@ struct TableVariety {
 }
 
 #[derive(Serialize)]
-struct TableRow {
-    concept: &'static str,
-    gloss: &'static str,
+struct TableRow<'a> {
+    concept: &'a str,
+    gloss: &'a str,
     /// One per variety; `None` when the language has no word for the concept.
     cells: Vec<Option<TableCell>>,
 }
@@ -58,7 +57,11 @@ struct TableRoot {
     born: u32,
 }
 
-fn word_table(world: &World, varieties: &[usize], concepts: &[&str]) -> Result<WordTable, String> {
+fn word_table<'a>(
+    world: &'a World,
+    varieties: &[usize],
+    concepts: &[&str],
+) -> Result<WordTable<'a>, String> {
     let spoken = world.spoken();
     let varieties: Vec<TableVariety> = varieties
         .iter()
@@ -77,14 +80,19 @@ fn word_table(world: &World, varieties: &[usize], concepts: &[&str]) -> Result<W
         .collect::<Result<_, _>>()?;
     let concepts = concepts
         .iter()
-        .map(|id| by_id(id).ok_or_else(|| format!("Unknown concept: {id}.")))
+        .map(|id| {
+            world
+                .concepts
+                .by_id(id)
+                .ok_or_else(|| format!("Unknown concept: {id}."))
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let mut roots: Vec<(usize, LexemeId)> = Vec::new();
     let rows = concepts
         .iter()
-        .map(|concept| TableRow {
-            concept: concept.id,
-            gloss: concept.gloss,
+        .map(|&concept| TableRow {
+            concept: &world.concepts[concept].id,
+            gloss: &world.concepts[concept].gloss,
             cells: varieties
                 .iter()
                 .map(|variety| {

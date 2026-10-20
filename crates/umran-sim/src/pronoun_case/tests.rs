@@ -11,7 +11,13 @@ fn profile(choice: GrammarChoice) -> SoundProfile {
     profile
 }
 fn variety(choice: GrammarChoice) -> Variety {
-    Variety::found(9, &profile(choice), Livelihood::Farming, Ethos::default())
+    Variety::found(
+        &crate::ConceptTable::default(),
+        9,
+        &profile(choice),
+        Livelihood::Farming,
+        Ethos::default(),
+    )
 }
 fn object(word: &crate::Lexeme) -> &Realization {
     word.paradigms
@@ -52,8 +58,8 @@ fn pronouns_gain_object_paradigms_from_replaced_founding_stems() {
         let v = variety(choice);
         for (_, _, cell) in v.pronouns.cells() {
             let word = v.lexicon.word_for(by_id(cell).unwrap()).unwrap();
-            assert!(!word.first_sense.categories.plural);
-            assert!(word.first_sense.categories.object);
+            assert!(!v.lexicon.concepts[word.first_sense].categories.plural);
+            assert!(v.lexicon.concepts[word.first_sense].categories.object);
             let r = object(word);
             let expected =
                 v.grammar
@@ -297,7 +303,7 @@ fn retention_stream_skips_only_pronoun_object_analogy() {
     let mut v = variety(GrammarChoice::Suffix);
     // One eligible word makes the existing analogy selection deterministic.
     let concept = by_id("1sg").unwrap();
-    v.lexicon = Lexicon::found(std::iter::empty());
+    v.lexicon = Lexicon::found(&crate::ConceptTable::default(), std::iter::empty());
     let id = v
         .lexicon
         .coin(Form::from_ipa("ka").unwrap(), Origin::Founding, concept, 0);

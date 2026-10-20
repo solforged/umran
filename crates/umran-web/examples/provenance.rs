@@ -58,8 +58,9 @@ fn main() {
                     continue;
                 }
                 for concept in variety.lexicon.senses(word.id) {
+                    let concept = &world.concepts[concept];
                     let detail: Value =
-                        serde_json::from_str(&bench.word(160, v, concept.id).unwrap()).unwrap();
+                        serde_json::from_str(&bench.word(160, v, &concept.id).unwrap()).unwrap();
                     let Some(variant) =
                         detail["variants"]
                             .as_array()

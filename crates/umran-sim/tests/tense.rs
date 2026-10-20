@@ -43,8 +43,9 @@ fn tense_particles_preserve_their_lexical_sources_and_verb_only_eligibility() {
             panic!("a periphrastic tense must have a lexical source");
         };
         assert!(match category {
-            Category::Future => ["go", "come", "have"].contains(&concept.id),
-            Category::Progressive => concept.id == "stand",
+            Category::Future =>
+                ["go", "come", "have"].contains(&variety.lexicon.concepts[*concept].id.as_ref()),
+            Category::Progressive => variety.lexicon.concepts[*concept].id == "stand",
             _ => unreachable!(),
         });
         assert_eq!(variety.lexicon.get(*source).form, *source_form);

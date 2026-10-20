@@ -305,7 +305,7 @@ fn main() {
             } => println!(
                 "  gen {generation:>3}  {} replace taboo {}",
                 name(*community),
-                concept.id,
+                world.concepts[*concept].id,
             ),
             WorldEvent::Pilgrimage {
                 religion, from, to, ..
@@ -341,8 +341,8 @@ fn main() {
                 "  gen {generation:>3}  among {}, {} turns from {} to {}",
                 name(*community),
                 world.varieties[*variety].spell(&world.varieties[*variety].lexicon.get(*word).form),
-                from.gloss,
-                to.gloss
+                world.concepts[*from].gloss,
+                world.concepts[*to].gloss
             ),
             WorldEvent::Respelled { variety } => println!(
                 "  gen {generation:>3}  {} is spelled anew",
@@ -369,7 +369,7 @@ fn main() {
                 let word = &world.varieties[*variety].purism[*episode].replaced[*replacement];
                 println!(
                     "  gen {generation:>3}  {}: {} replaces {}",
-                    word.concept, word.native_form, word.loan_form
+                    world.concepts[word.concept].id, word.native_form, word.loan_form
                 );
             }
             WorldEvent::Temper {
@@ -398,7 +398,7 @@ fn main() {
                     "  gen {generation:>3}  {}: {} for {} (calque donor {from:?})",
                     world.language_title(*variety),
                     v.spell(word.form_at(*generation)),
-                    word.first_sense.gloss
+                    world.concepts[word.first_sense].gloss
                 );
             }
             WorldEvent::FleetBuilt { community } => {
@@ -416,6 +416,19 @@ fn main() {
                 name(*community),
                 place(*from, *generation),
                 place(*to, *generation)
+            ),
+            WorldEvent::MeaningDefined { concept } => println!(
+                "  gen {generation:>3}  meaning {}",
+                world.concepts[*concept].id
+            ),
+            WorldEvent::WordAuthored {
+                variety,
+                concept,
+                word,
+            } => println!(
+                "  gen {generation:>3}  authored {}: {}",
+                world.concepts[*concept].id,
+                world.varieties[*variety].lexicon.get(*word).form.ipa()
             ),
         }
     }

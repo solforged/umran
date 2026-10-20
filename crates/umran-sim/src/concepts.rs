@@ -1,9 +1,12 @@
 use crate::grammar::Category;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
+use std::sync::Arc;
 
 /// Semantic fields, following the World Loanword Database's chapters
 /// (Haspelmath and Tadmor, 2009). Assignments below are approximate.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Field {
     PhysicalWorld,
     Kinship,
@@ -62,7 +65,8 @@ impl Field {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Class {
     Entity,
     Event,
@@ -82,6 +86,15 @@ pub struct CategoryEligibility {
 }
 
 impl CategoryEligibility {
+    pub const fn for_class(class: Class, countable: bool) -> Self {
+        Self {
+            plural: matches!(class, Class::Entity) && countable,
+            object: matches!(class, Class::Entity),
+            past: matches!(class, Class::Event),
+            genitive: matches!(class, Class::Entity) && countable,
+        }
+    }
+
     pub const fn allows(self, category: Category) -> bool {
         match category {
             Category::Plural => self.plural,
@@ -116,10 +129,10 @@ pub enum Iconic {
     NurseryFather,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Concept {
-    pub id: &'static str,
-    pub gloss: &'static str,
+    pub id: Cow<'static, str>,
+    pub gloss: Cow<'static, str>,
     pub field: Field,
     pub class: Class,
     /// Explicit per-meaning eligibility: count nouns, not mass or collective
@@ -140,7 +153,8 @@ pub struct Concept {
 /// How culture-bound a concept outside the core list is. Judged per
 /// concept by what kind of thing it names, never per semantic field, so
 /// field-level borrowing patterns have to emerge rather than be assumed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Tier {
     /// Universal experience: sun, mother, heart, to sing.
     Basic,
@@ -159,7 +173,7 @@ impl Concept {
         if self.class != Class::Entity {
             return None;
         }
-        Some(match self.id {
+        Some(match self.id.as_ref() {
             "mother" => Female,
             "father" => Male,
             "child" | "person" | "people" | "chief" | "friend" | "stranger" | "priest"
@@ -211,8 +225,8 @@ const fn core(
     categories: CategoryEligibility,
 ) -> Concept {
     Concept {
-        id,
-        gloss,
+        id: Cow::Borrowed(id),
+        gloss: Cow::Borrowed(gloss),
         field,
         class,
         categories,
@@ -232,8 +246,8 @@ const fn culture(
     categories: CategoryEligibility,
 ) -> Concept {
     Concept {
-        id,
-        gloss,
+        id: Cow::Borrowed(id),
+        gloss: Cow::Borrowed(gloss),
         field,
         class,
         categories,
@@ -244,18 +258,14 @@ const fn culture(
     }
 }
 
-const fn iconic(concept: Concept, iconic: Iconic) -> Concept {
-    Concept {
-        iconic: Some(iconic),
-        ..concept
-    }
+const fn iconic(mut concept: Concept, iconic: Iconic) -> Concept {
+    concept.iconic = Some(iconic);
+    concept
 }
 
-const fn expressive(concept: Concept) -> Concept {
-    Concept {
-        expressive: true,
-        ..concept
-    }
+const fn expressive(mut concept: Concept) -> Concept {
+    concept.expressive = true;
+    concept
 }
 
 use Class::{Entity as E, Event as V, Function as F, Property as P};
@@ -550,8 +560,12 @@ pub static CONCEPTS: &[Concept] = &[
     culture(Basic, "dream", "dream", Body, E, COUNT),
 ];
 
-pub fn by_id(id: &str) -> Option<&'static Concept> {
-    CONCEPTS.iter().find(|c| c.id == id)
+/// A built-in lookup. Runtime meanings must be resolved in their world's table.
+pub fn by_id(id: &str) -> Option<ConceptId> {
+    CONCEPTS
+        .iter()
+        .position(|c| c.id == id)
+        .map(|i| ConceptId(i as u32))
 }
 
 /// Pairs of concepts where one word plausibly comes to cover the other:
@@ -649,7 +663,8 @@ pub static RELATED: &[(&str, &str)] = &[
 ];
 
 /// How a derived word's meaning relates to its base's.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Relation {
     /// A group of the base: person > people.
     Collective,
@@ -716,7 +731,7 @@ pub static FAMILIES: &[(&str, &str, Relation)] = &[
 ];
 
 /// Concepts a word for `concept` could plausibly extend to, or come from.
-pub fn related(concept: &Concept) -> impl Iterator<Item = &'static Concept> + '_ {
+pub fn related(concept: &Concept) -> impl Iterator<Item = ConceptId> + '_ {
     RELATED.iter().filter_map(move |&(a, b)| {
         let other = if a == concept.id {
             b
@@ -729,6 +744,172 @@ pub fn related(concept: &Concept) -> impl Iterator<Item = &'static Concept> + '_
     })
 }
 
+/// An index in one world's append-only meaning table.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ConceptId(pub u32);
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Derivation {
+    pub base: String,
+    pub relation: Relation,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Meaning {
+    pub id: String,
+    pub gloss: String,
+    pub field: Field,
+    pub class: Class,
+    pub countable: bool,
+    pub tier: Tier,
+    pub from: Option<Derivation>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MeaningError {
+    BadId,
+    Taken,
+    BadGloss,
+    BadClass,
+    UnknownBase,
+}
+
+impl MeaningError {
+    pub fn status(self) -> &'static str {
+        match self {
+            Self::BadId => "bad-id",
+            Self::Taken => "taken",
+            Self::BadGloss => "bad-gloss",
+            Self::BadClass => "bad-class",
+            Self::UnknownBase => "unknown-base",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CustomConcept {
+    concept: Concept,
+    from: Option<(ConceptId, Relation)>,
+}
+
+/// Built-ins are borrowed; custom definitions belong to this world's replay.
+/// Lexicons share immutable snapshots so lexical readers need no global state.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ConceptTable {
+    custom: Option<Arc<Vec<CustomConcept>>>,
+}
+
+impl ConceptTable {
+    fn customs(&self) -> &[CustomConcept] {
+        self.custom.as_deref().map_or(&[], Vec::as_slice)
+    }
+
+    pub fn len(&self) -> usize {
+        CONCEPTS.len() + self.customs().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn ids(&self) -> impl Iterator<Item = ConceptId> + use<> {
+        (0..self.len()).map(|i| ConceptId(i as u32))
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (ConceptId, &Concept)> {
+        self.ids().map(|id| (id, &self[id]))
+    }
+
+    pub fn by_id(&self, id: &str) -> Option<ConceptId> {
+        by_id(id).or_else(|| {
+            self.customs()
+                .iter()
+                .position(|c| c.concept.id == id)
+                .map(|i| ConceptId((CONCEPTS.len() + i) as u32))
+        })
+    }
+
+    pub fn is_custom(&self, id: ConceptId) -> bool {
+        id.0 as usize >= CONCEPTS.len()
+    }
+
+    pub fn derivation(&self, id: ConceptId) -> Option<(ConceptId, Relation)> {
+        (id.0 as usize)
+            .checked_sub(CONCEPTS.len())
+            .and_then(|i| self.customs().get(i))
+            .and_then(|c| c.from)
+    }
+
+    pub fn check(&self, meaning: &Meaning) -> Result<(), MeaningError> {
+        if meaning.id.is_empty()
+            || meaning.id.len() > 32
+            || !meaning
+                .id
+                .bytes()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
+        {
+            return Err(MeaningError::BadId);
+        }
+        if self.by_id(&meaning.id).is_some() {
+            return Err(MeaningError::Taken);
+        }
+        if !(1..=40).contains(&meaning.gloss.chars().count()) || meaning.gloss.trim().is_empty() {
+            return Err(MeaningError::BadGloss);
+        }
+        if meaning.class == Class::Function {
+            return Err(MeaningError::BadClass);
+        }
+        if let Some(from) = &meaning.from
+            && self
+                .by_id(&from.base)
+                .is_none_or(crate::pronouns::is_pronoun)
+        {
+            return Err(MeaningError::UnknownBase);
+        }
+        Ok(())
+    }
+
+    pub fn append(&mut self, meaning: Meaning) -> Result<ConceptId, MeaningError> {
+        self.check(&meaning)?;
+        let id = ConceptId(self.len() as u32);
+        let from = meaning
+            .from
+            .map(|from| (self.by_id(&from.base).expect("checked base"), from.relation));
+        Arc::make_mut(self.custom.get_or_insert_with(|| Arc::new(Vec::new()))).push(
+            CustomConcept {
+                concept: Concept {
+                    id: Cow::Owned(meaning.id),
+                    gloss: Cow::Owned(meaning.gloss),
+                    field: meaning.field,
+                    class: meaning.class,
+                    categories: CategoryEligibility::for_class(meaning.class, meaning.countable),
+                    stability: None,
+                    tier: Some(meaning.tier),
+                    iconic: None,
+                    expressive: false,
+                },
+                from,
+            },
+        );
+        Ok(id)
+    }
+}
+
+impl std::ops::Index<ConceptId> for ConceptTable {
+    type Output = Concept;
+
+    fn index(&self, id: ConceptId) -> &Concept {
+        let i = id.0 as usize;
+        if i < CONCEPTS.len() {
+            &CONCEPTS[i]
+        } else {
+            &self.customs()[i - CONCEPTS.len()].concept
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -736,7 +917,7 @@ mod tests {
 
     #[test]
     fn ids_are_unique() {
-        let ids: HashSet<_> = CONCEPTS.iter().map(|c| c.id).collect();
+        let ids: HashSet<_> = CONCEPTS.iter().map(|c| c.id.as_ref()).collect();
         assert_eq!(ids.len(), CONCEPTS.len());
     }
 
@@ -746,7 +927,10 @@ mod tests {
             assert!(by_id(a).is_some() && by_id(b).is_some(), "{a}/{b}");
             assert_ne!(a, b);
         }
-        let sun: Vec<_> = related(by_id("sun").unwrap()).map(|c| c.id).collect();
+        let table = ConceptTable::default();
+        let sun: Vec<_> = related(&table[by_id("sun").unwrap()])
+            .map(|c| table[c].id.as_ref())
+            .collect();
         assert_eq!(sun, ["day"]);
     }
 

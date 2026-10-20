@@ -119,7 +119,9 @@ fn show(world: &World, label: &str) {
             {
                 let origin = match marker.origin {
                     MarkerOrigin::Founding => "founding".into(),
-                    MarkerOrigin::Grammaticalized { concept, .. } => format!("from {}", concept.id),
+                    MarkerOrigin::Grammaticalized { concept, .. } => {
+                        format!("from {}", variety.lexicon.concepts[concept].id)
+                    }
                     MarkerOrigin::Fused { particle } => format!("fused from #{particle}"),
                     MarkerOrigin::Imported { from, .. } => format!("imported from language {from}"),
                 };

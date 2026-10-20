@@ -379,7 +379,7 @@ impl Gender {
         self.nouns.resize(lexicon.lexemes.len(), None);
         self.nouns.fill(None);
         for slot in &lexicon.slots {
-            if let Some(noun) = slot.concept.noun_semantics() {
+            if let Some(noun) = lexicon.concepts[slot.concept].noun_semantics() {
                 for variant in &slot.variants {
                     // The earliest current noun sense wins when a word is polysemous.
                     self.nouns[variant.lexeme.0 as usize].get_or_insert(noun);

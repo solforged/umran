@@ -22,7 +22,13 @@ fn main() {
     let profile = flavors.iter().fold(profile, |p, id| {
         p.flavored(&Flavor::by_id(id).unwrap_or_else(|| panic!("unknown flavor {id}")))
     });
-    let variety = Variety::found(seed, &profile, Livelihood::Farming, Default::default());
+    let variety = Variety::found(
+        &umran_sim::ConceptTable::default(),
+        seed,
+        &profile,
+        Livelihood::Farming,
+        Default::default(),
+    );
 
     let ipa = |ids: &[umran_sim::PhonemeId]| -> Vec<&str> {
         ids.iter().map(|id| CATALOG.get(*id).ipa()).collect()
@@ -41,12 +47,12 @@ fn main() {
             let note = match word.origin {
                 Origin::Derived { base, relation } => format!(
                     "  ← {} ({})",
-                    lexicon.get(base).first_sense.gloss,
+                    lexicon.concepts[lexicon.get(base).first_sense].gloss,
                     relation.label()
                 ),
                 _ => String::new(),
             };
-            Some((s.concept, &word.form, note))
+            Some((&lexicon.concepts[s.concept], &word.form, note))
         })
         .collect();
     words.sort_by_key(|(concept, _, _)| concept.field);
@@ -68,7 +74,7 @@ fn main() {
 
     let mut by_form: HashMap<&Form, Vec<&str>> = HashMap::new();
     for (concept, form, _) in &words {
-        by_form.entry(form).or_default().push(concept.id);
+        by_form.entry(form).or_default().push(concept.id.as_ref());
     }
     let mut homophones: Vec<_> = by_form
         .into_iter()

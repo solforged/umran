@@ -11,7 +11,11 @@ fn kept(lexicon: &Lexicon, ranks: std::ops::RangeInclusive<u8>) -> f32 {
     let slots: Vec<_> = lexicon
         .slots
         .iter()
-        .filter(|s| s.concept.stability.is_some_and(|r| ranks.contains(&r)))
+        .filter(|s| {
+            lexicon.concepts[s.concept]
+                .stability
+                .is_some_and(|r| ranks.contains(&r))
+        })
         .collect();
     let kept = slots
         .iter()
@@ -152,7 +156,7 @@ fn main() {
         let culture: Vec<_> = lexicon
             .slots
             .iter()
-            .filter(|s| s.concept.stability.is_none())
+            .filter(|s| lexicon.concepts[s.concept].stability.is_none())
             .collect();
         let culture_kept = culture
             .iter()

@@ -13,7 +13,13 @@ fn profile(order: WordOrder) -> SoundProfile {
     profile
 }
 fn variety(order: WordOrder) -> Variety {
-    Variety::found(9, &profile(order), Livelihood::Farming, Ethos::default())
+    Variety::found(
+        &crate::ConceptTable::default(),
+        9,
+        &profile(order),
+        Livelihood::Farming,
+        Ethos::default(),
+    )
 }
 /// Every transition open, so one `evolve` takes the next step of the cycle.
 fn forced() -> Params {
@@ -436,7 +442,13 @@ fn object_sources_are_surfaced_case_forms_and_particles_fall_back_to_pronouns() 
             order: Some(WordOrder::SVO),
             ..GrammarDesign::default()
         });
-        let mut v = Variety::found(9, &profile, Livelihood::Farming, Ethos::default());
+        let mut v = Variety::found(
+            &crate::ConceptTable::default(),
+            9,
+            &profile,
+            Livelihood::Farming,
+            Ethos::default(),
+        );
         set_pronouns(&mut v, &PRONOUNS);
         // Distinct object stems whose final syllables differ from the subjects.
         let object_forms = ["mala", "neto", "saku", "lima", "tase", "pani"];

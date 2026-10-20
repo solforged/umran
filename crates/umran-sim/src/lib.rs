@@ -70,6 +70,7 @@ pub use chronicle::{
 };
 pub use climate::{Climate, ClimateCause, ClimateChange, RegionClimate, ZoneClimate};
 pub use concepts::{CONCEPTS, Class, Concept, FAMILIES, Field, Iconic, Relation, Tier};
+pub use concepts::{ConceptId, ConceptTable, Derivation, Meaning, MeaningError};
 pub use design::{LanguageDesign, Root, RootError, Sound};
 pub use diglossia::{Classical, Fixing, Vernacular};
 pub use ethos::{Axis, Effect, Ethos, FoundingEthos, Pole, TemperCause};
@@ -94,3 +95,4 @@ pub use prosody::{MinimalWord, StressRule};
 pub use provenance::LoanCause;
 pub use variety::{Fork, Variety};
 pub use world::{Community, Contact, ContactKind, Journey, Params, World, WorldEvent};
+pub mod meanings;

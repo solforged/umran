@@ -30,7 +30,7 @@ fn main() {
                 for word in episode.replaced.iter().take(4) {
                     println!(
                         "    {}: {} -> {}",
-                        word.concept, word.loan_form, word.native_form
+                        world.concepts[word.concept].id, word.loan_form, word.native_form
                     );
                 }
             }

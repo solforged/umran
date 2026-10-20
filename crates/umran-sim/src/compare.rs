@@ -4,7 +4,7 @@
 //! votes. Neither lexical nor marker ancestry, origins, or history is read.
 
 use crate::adapt::distance;
-use crate::concepts::Concept;
+use crate::concepts::ConceptId;
 use crate::form::{Form, Seg};
 use crate::grammar::{Category, Grammar, MarkerKind, Realization};
 use crate::lexicon::{Lexeme, Lexicon};
@@ -62,10 +62,11 @@ pub fn similarity(a: &Form, b: &Form) -> f32 {
 /// chance by the similarity of words for different concepts (as in ASJP's
 /// LDND). Built only from what speakers hear, never from lineage.
 pub fn intelligibility(a: &Lexicon, b: &Lexicon) -> f32 {
-    let core: Vec<(&Form, &Form)> = crate::concepts::CONCEPTS
+    let core: Vec<(&Form, &Form)> = a
+        .concepts
         .iter()
-        .filter(|c| c.stability.is_some())
-        .filter_map(|c| Some((&a.word_for(c)?.form, &b.word_for(c)?.form)))
+        .filter(|(_, c)| c.stability.is_some())
+        .filter_map(|(c, _)| Some((&a.word_for(c)?.form, &b.word_for(c)?.form)))
         .collect();
     if core.len() < 2 {
         return 0.0;
@@ -138,7 +139,7 @@ fn align_segments(xa: &[Seg], xb: &[Seg]) -> (Vec<Pair>, f32) {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Row {
-    pub concept: &'static Concept,
+    pub concept: ConceptId,
     pub a: Form,
     pub b: Form,
     pub alignment: Vec<Pair>,
@@ -195,14 +196,14 @@ pub fn regular_correspondences<'a>(
 /// Compares dominant words and current bound segment contrasts.
 /// Lexicons have no stress rule. Use [`compare_varieties`] to include audible
 /// stress contrasts and separately stored particles.
-pub fn compare(a: &Lexicon, b: &Lexicon, concepts: &[&'static Concept]) -> Comparison {
+pub fn compare(a: &Lexicon, b: &Lexicon, concepts: &[ConceptId]) -> Comparison {
     compare_with(a, b, concepts, &Settings::default())
 }
 
 pub fn compare_with(
     a: &Lexicon,
     b: &Lexicon,
-    concepts: &[&'static Concept],
+    concepts: &[ConceptId],
     settings: &Settings,
 ) -> Comparison {
     compare_current(a, b, None, None, concepts, settings)
@@ -211,14 +212,14 @@ pub fn compare_with(
 /// Compares current speech, including bound realizations and shared particles.
 /// Marker IDs only cap repeated evidence within each inventory; they are
 /// never compared as a claim of common descent.
-pub fn compare_varieties(a: &Variety, b: &Variety, concepts: &[&'static Concept]) -> Comparison {
+pub fn compare_varieties(a: &Variety, b: &Variety, concepts: &[ConceptId]) -> Comparison {
     compare_varieties_with(a, b, concepts, &Settings::default())
 }
 
 pub fn compare_varieties_with(
     a: &Variety,
     b: &Variety,
-    concepts: &[&'static Concept],
+    concepts: &[ConceptId],
     settings: &Settings,
 ) -> Comparison {
     compare_current(
@@ -339,7 +340,7 @@ fn compare_current(
     b: &Lexicon,
     speech_a: Option<(&Grammar, StressRule)>,
     speech_b: Option<(&Grammar, StressRule)>,
-    concepts: &[&'static Concept],
+    concepts: &[ConceptId],
     settings: &Settings,
 ) -> Comparison {
     let mut rows = Vec::with_capacity(concepts.len());
@@ -352,7 +353,7 @@ fn compare_current(
         };
         let row = rows.len();
         for category in Category::ALL {
-            if !concept.categories.allows(category) {
+            if !a.concepts[concept].categories.allows(category) {
                 continue;
             }
             let (Some(ra), Some(rb)) = (
@@ -426,7 +427,6 @@ fn compare_current(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::concepts::CONCEPTS;
     use crate::grammar::{GrammarEntry, GrammarEvent, Marker, MarkerOrigin, Paradigm, Side};
     use crate::lexicon::{Entry, Event, Origin};
     use crate::livelihood::Livelihood;
@@ -445,16 +445,17 @@ mod tests {
             .join(" ")
     }
 
-    fn nouns(n: usize) -> Vec<&'static Concept> {
-        CONCEPTS
+    fn nouns(n: usize) -> Vec<ConceptId> {
+        crate::ConceptTable::default()
             .iter()
-            .filter(|c| c.categories.allows(Category::Plural))
+            .filter(|(_, c)| c.categories.allows(Category::Plural))
+            .map(|(id, _)| id)
             .take(n)
             .collect()
     }
 
-    fn with_endings(concepts: &[&'static Concept], bases: &[&str], ending: &str) -> Lexicon {
-        let mut lexicon = Lexicon::found([]);
+    fn with_endings(concepts: &[ConceptId], bases: &[&str], ending: &str) -> Lexicon {
+        let mut lexicon = Lexicon::found(&crate::ConceptTable::default(), []);
         for (i, &concept) in concepts.iter().enumerate() {
             let base = bases[i % bases.len()];
             let id = lexicon.coin(Form::from_ipa(base).unwrap(), Origin::Founding, concept, 0);
@@ -476,7 +477,7 @@ mod tests {
         lexicon
     }
 
-    fn evidence_fixture() -> (Vec<&'static Concept>, Lexicon, Lexicon) {
+    fn evidence_fixture() -> (Vec<ConceptId>, Lexicon, Lexicon) {
         let concepts = nouns(5);
         let a = with_endings(&concepts, &["pa", "pa", "ta", "ta", "ta"], "pi");
         let b = with_endings(&concepts, &["fa", "fa", "ta", "ta", "ta"], "fi");
@@ -485,6 +486,7 @@ mod tests {
 
     fn varieties(a: Lexicon, b: Lexicon, kind: MarkerKind) -> (Variety, Variety) {
         let mut va = Variety::found(
+            &crate::ConceptTable::default(),
             17,
             &SoundProfile::base(),
             Livelihood::Farming,

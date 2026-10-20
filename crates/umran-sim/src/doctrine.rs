@@ -375,13 +375,17 @@ impl World {
         if v == sacred {
             return;
         }
-        for concept in crate::CONCEPTS {
-            if need(concept) != Some(Need::Faith) || taboo == Some(concept.id) {
+        for concept in self.concepts.ids() {
+            if need(&self.concepts[concept]) != Some(Need::Faith)
+                || taboo == Some(self.concepts[concept].id.as_ref())
+            {
                 continue;
             }
-            let mut rng =
-                self.at(v)
-                    .rng(&[key("doctrine vocabulary"), religion as u64, key(concept.id)]);
+            let mut rng = self.at(v).rng(&[
+                key("doctrine vocabulary"),
+                religion as u64,
+                key(&self.concepts[concept].id),
+            ]);
             if rng.r#gen::<f32>() >= 0.04 * stance {
                 continue;
             }

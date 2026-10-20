@@ -141,7 +141,10 @@ fn measure(world: &World, v: usize, variety: &Variety) -> Row {
     let words: Vec<_> = lexicon
         .slots
         .iter()
-        .filter_map(|s| s.dominant().map(|id| (s.concept, lexicon.get(id))))
+        .filter_map(|s| {
+            s.dominant()
+                .map(|id| (&lexicon.concepts[s.concept], lexicon.get(id)))
+        })
         .collect();
     let n = words.len() as f32;
     let share = |f: &dyn Fn(&(&umran_sim::Concept, &umran_sim::Lexeme)) -> bool| {

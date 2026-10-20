@@ -59,6 +59,7 @@ fn founding_cells_are_distinct_and_use_the_founding_sounds() {
     for seed in 0..12 {
         for profile in ["germanic", "semitic", "polynesian", "finnic"] {
             let v = Variety::found(
+                &crate::ConceptTable::default(),
                 seed,
                 &SoundProfile::by_id(profile).unwrap(),
                 Livelihood::Farming,

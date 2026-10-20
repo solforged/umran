@@ -187,9 +187,10 @@ fn sacred_vocabulary_records_faith_and_never_duplicates_a_source() {
     }
     let lexicon = &world.variety_of(other).lexicon;
     let mut borrowed = 0;
-    for concept in crate::CONCEPTS
-        .iter()
-        .filter(|c| need(c) == Some(Need::Faith))
+    for concept in world
+        .concepts
+        .ids()
+        .filter(|id| need(&world.concepts[*id]) == Some(Need::Faith))
     {
         let words: Vec<_> = lexicon.slot(concept).variants.iter().filter_map(|variant| {
             let word = lexicon.get(variant.lexeme);

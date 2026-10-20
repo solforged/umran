@@ -86,11 +86,15 @@ fn main() {
                         "  {profile} seed 0 year {}: {} '{}' {:?}, from {} -> now {}; opaque since {:?}",
                         generation * 25,
                         v.spell(w.form_at(*generation)),
-                        w.first_sense.id,
+                        v.lexicon.concepts[w.first_sense].id,
                         c.kind,
                         c.parts
                             .iter()
-                            .map(|p| format!("{} '{}'", v.spell(&p.form), p.concept.id))
+                            .map(|p| format!(
+                                "{} '{}'",
+                                v.spell(&p.form),
+                                v.lexicon.concepts[p.concept].id
+                            ))
                             .collect::<Vec<_>>()
                             .join(" + "),
                         v.spell(&w.form),

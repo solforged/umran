@@ -1,5 +1,5 @@
 //! Productive native word building and contact-driven loan translations.
-use crate::concepts::{CONCEPTS, Concept, FAMILIES, by_id};
+use crate::concepts::{ConceptId, FAMILIES, by_id};
 use crate::ideas::{BUILDS, need};
 use crate::lexicon::{LexemeId, Lexicon, Origin};
 use crate::morphology::Morphology;
@@ -20,7 +20,7 @@ pub enum CoinageKind {
 /// Compound parts are modifier then head, independently of surface order.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Part {
-    pub concept: &'static Concept,
+    pub concept: ConceptId,
     pub form: Form,
 }
 
@@ -65,7 +65,7 @@ pub(crate) struct Build {
     from: Option<usize>,
 }
 
-fn part(lexicon: &Lexicon, concept: &'static Concept) -> Option<(LexemeId, Part)> {
+fn part(lexicon: &Lexicon, concept: ConceptId) -> Option<(LexemeId, Part)> {
     let word = lexicon.word_for(concept)?;
     Some((
         word.id,
@@ -79,8 +79,8 @@ fn part(lexicon: &Lexicon, concept: &'static Concept) -> Option<(LexemeId, Part)
 fn compound(
     world: &World,
     v: usize,
-    modifier: &'static Concept,
-    head: &'static Concept,
+    modifier: ConceptId,
+    head: ConceptId,
     from: Option<usize>,
 ) -> Option<Build> {
     let variety = &world.varieties[v];
@@ -112,19 +112,22 @@ fn skeleton(lexicon: &Lexicon, mut id: LexemeId) -> Option<[crate::PhonemeId; 3]
 }
 
 impl World {
-    fn derived_coinage(
-        &self,
-        v: usize,
-        concept: &'static Concept,
-        productive: bool,
-    ) -> Option<Build> {
+    fn derived_coinage(&self, v: usize, concept: ConceptId, productive: bool) -> Option<Build> {
         let variety = &self.varieties[v];
-        BUILDS
-            .iter()
-            .chain(FAMILIES.iter().filter(|_| productive))
-            .filter(|(_, target, _)| *target == concept.id)
-            .find_map(|&(base, _, relation)| {
-                let (base, part) = part(&variety.lexicon, by_id(base)?)?;
+        self.concepts
+            .derivation(concept)
+            .into_iter()
+            .chain(
+                BUILDS
+                    .iter()
+                    .chain(FAMILIES.iter().filter(|_| productive))
+                    .filter(|(_, target, _)| *target == self.concepts[concept].id)
+                    .filter_map(|&(base, _, relation)| {
+                        Some((self.concepts.by_id(base)?, relation))
+                    }),
+            )
+            .find_map(|(base, relation)| {
+                let (base, part) = part(&variety.lexicon, base)?;
                 let root = if productive {
                     skeleton(&variety.lexicon, base)
                 } else {
@@ -147,20 +150,27 @@ impl World {
     pub(crate) fn plan_coinage(
         &self,
         v: usize,
-        concept: &'static Concept,
+        concept: ConceptId,
         donor: Option<usize>,
     ) -> Option<Build> {
         if self.params.coinage_rate <= 0.0 {
             return self.derived_coinage(v, concept, false);
         }
-        let mut rng = self.at(v).rng(&[key("coinage-build"), key(concept.id)]);
+        if self.concepts.derivation(concept).is_some()
+            && let Some(build) = self.derived_coinage(v, concept, true)
+        {
+            return Some(build);
+        }
+        let mut rng = self
+            .at(v)
+            .rng(&[key("coinage-build"), key(&self.concepts[concept].id)]);
         let start = index(&mut rng, 3);
         for offset in 0..3 {
             let build = match (start + offset) % 3 {
                 0 => self.derived_coinage(v, concept, true),
                 1 => COMPOUNDS
                     .iter()
-                    .filter(|(_, _, target)| *target == concept.id)
+                    .filter(|(_, _, target)| *target == self.concepts[concept].id)
                     .find_map(|&(modifier, head, _)| {
                         compound(self, v, by_id(modifier)?, by_id(head)?, None)
                     }),
@@ -201,7 +211,7 @@ impl World {
     pub(crate) fn install_coinage(
         &mut self,
         community: usize,
-        concept: &'static Concept,
+        concept: ConceptId,
         build: Build,
     ) -> LexemeId {
         let v = self.communities[community].variety;
@@ -216,7 +226,7 @@ impl World {
                 from: build.from,
                 opaque_since: None,
             });
-            let cause = need(concept)
+            let cause = need(&self.concepts[concept])
                 .and_then(|need| self.word_need_cause(community, need))
                 .or_else(|| {
                     build
@@ -247,15 +257,17 @@ impl World {
             return;
         };
         let rate = self.params.coinage_rate * (1.0 + self.purism(v));
-        for concept in CONCEPTS {
+        for concept in self.concepts.ids() {
             let slot = self.varieties[v].lexicon.slot(concept);
             if slot.variants.is_empty()
                 || slot.variants.len() >= crate::world::MAX_VARIANTS
-                || need(concept).is_some_and(|n| !self.holds(community, n))
+                || need(&self.concepts[concept]).is_some_and(|n| !self.holds(community, n))
             {
                 continue;
             }
-            let mut rng = self.at(v).rng(&[key("coinage-turnover"), key(concept.id)]);
+            let mut rng = self
+                .at(v)
+                .rng(&[key("coinage-turnover"), key(&self.concepts[concept].id)]);
             if rng.r#gen::<f32>() >= rate {
                 continue;
             }

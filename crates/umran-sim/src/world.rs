@@ -1,5 +1,7 @@
 use crate::adapt::Adapter;
-use crate::concepts::{CONCEPTS, Concept, Field, related};
+#[cfg(test)]
+use crate::concepts::CONCEPTS;
+use crate::concepts::{Concept, Field, related};
 use crate::diglossia::{CLASSICAL_PRESTIGE, Vernacular};
 use crate::ethos::{Axis, Effect, Ethos, FoundingEthos, Pole, TemperCause};
 use crate::form::Form;
@@ -919,7 +921,7 @@ pub enum WorldEvent {
         religion: usize,
         community: usize,
         variety: usize,
-        concept: &'static Concept,
+        concept: crate::ConceptId,
         old: LexemeId,
         word: LexemeId,
     },
@@ -952,8 +954,8 @@ pub enum WorldEvent {
         community: usize,
         variety: usize,
         word: LexemeId,
-        from: &'static Concept,
-        to: &'static Concept,
+        from: crate::ConceptId,
+        to: crate::ConceptId,
     },
     /// The state whose standard variety `variety` is spelled it anew, as
     /// it now sounds.
@@ -1008,6 +1010,14 @@ pub enum WorldEvent {
         community: usize,
         from: usize,
         to: usize,
+    },
+    MeaningDefined {
+        concept: crate::ConceptId,
+    },
+    WordAuthored {
+        variety: usize,
+        concept: crate::ConceptId,
+        word: LexemeId,
     },
 }
 
@@ -1089,6 +1099,7 @@ pub struct World {
     laws: Vec<Law>,
     /// Stored authored laws are wave sources, never automatic candidates.
     pub authored: Vec<Law>,
+    pub concepts: crate::ConceptTable,
 }
 
 /// Per-variety random streams for one generation.
@@ -1158,6 +1169,7 @@ impl World {
             sea_routes: Default::default(),
             laws: catalog(),
             authored: Vec::new(),
+            concepts: crate::ConceptTable::default(),
         }
     }
 
@@ -1208,7 +1220,7 @@ impl World {
         let region = region.unwrap_or_else(|| self.homeland(index));
         let livelihood = livelihood.unwrap_or_else(|| self.default_livelihood(region));
         let ethos = self.founding_ethos(index, region, livelihood, ethos);
-        let mut variety = Variety::found(variety_seed, profile, livelihood, ethos);
+        let mut variety = Variety::found(&self.concepts, variety_seed, profile, livelihood, ethos);
         let name = self.coin(&variety, naming, None);
         variety.name = self.language_name(&variety, &name);
         self.register_founder(
@@ -1989,7 +2001,7 @@ impl World {
 
     /// Whether the dominant words for `concept` in two varieties are
     /// cognate by descent.
-    pub fn cognate(&self, a: usize, b: usize, concept: &Concept) -> bool {
+    pub fn cognate(&self, a: usize, b: usize, concept: crate::ConceptId) -> bool {
         let word = |v: usize| self.varieties[v].lexicon.slot(concept).dominant();
         match (word(a), word(b)) {
             (Some(x), Some(y)) => self.root_of(a, x) == self.root_of(b, y),
@@ -4043,7 +4055,8 @@ impl World {
         }
 
         let new_index = self.varieties.len();
-        for (i, concept) in CONCEPTS.iter().enumerate() {
+        for (concept_id, concept) in self.concepts.iter() {
+            let i = concept_id.0 as usize;
             let local = match concept.field {
                 Field::PhysicalWorld | Field::Animals | Field::Agriculture | Field::FoodDrink => {
                     2.0
@@ -4054,7 +4067,7 @@ impl World {
             if rng.r#gen::<f32>() >= keep || new.lexicon.slots[i].variants.len() >= MAX_VARIANTS {
                 continue;
             }
-            if crate::pronouns::is_pronoun(concept) {
+            if crate::pronouns::is_pronoun(concept_id) {
                 continue;
             }
             let Some(word) = self.varieties[old].lexicon.slots[i].dominant() else {
@@ -4070,7 +4083,9 @@ impl World {
                 source: word,
                 cause,
             };
-            let id = new.lexicon.coin(form.clone(), origin, concept, generation);
+            let id = new
+                .lexicon
+                .coin(form.clone(), origin, concept_id, generation);
             new.lexicon.get_mut(id).log.push(Entry {
                 generation,
                 event: Event::Borrowed {
@@ -4625,10 +4640,11 @@ impl World {
                 * r.ethos.factor(Effect::Borrowing);
             let donor_lexicon = &self.varieties[channel.donor].lexicon;
             let recipient_lexicon = &self.varieties[r.variety].lexicon;
-            for (i, concept) in CONCEPTS.iter().enumerate() {
+            for (concept_id, concept) in self.concepts.iter() {
+                let i = concept_id.0 as usize;
                 // Each concept has its own stream. Reject impossible loans
                 // before constructing it; accepted loans keep the same draws.
-                if crate::pronouns::is_pronoun(concept)
+                if crate::pronouns::is_pronoun(concept_id)
                     || recipient_lexicon.slots[i].variants.is_empty()
                 {
                     continue;
@@ -4658,9 +4674,11 @@ impl World {
                     concept.borrowability()
                 };
                 let hazard = base * channel.kind.affinity(concept.field) * borrowability;
-                let mut rng =
-                    self.at(r.variety)
-                        .rng(&[key("borrow"), channel.donor as u64, key(concept.id)]);
+                let mut rng = self.at(r.variety).rng(&[
+                    key("borrow"),
+                    channel.donor as u64,
+                    key(&concept.id),
+                ]);
                 if rng.r#gen::<f32>() >= hazard {
                     continue;
                 }
@@ -4689,7 +4707,7 @@ impl World {
             if lexicon.slots[loan.concept].variants.len() >= MAX_VARIANTS {
                 continue;
             }
-            let concept = &CONCEPTS[loan.concept];
+            let concept = crate::ConceptId(loan.concept as u32);
             let origin = Origin::Borrowed {
                 from: loan.from,
                 source: loan.source,
@@ -4971,7 +4989,11 @@ impl World {
     fn innovate(&mut self, v: usize, clashes: &HashSet<LexemeId>) {
         let generation = self.generation;
         let step = self.at(v);
-        let hazards: Vec<f32> = CONCEPTS.iter().map(|c| self.innovation_hazard(c)).collect();
+        let hazards: Vec<f32> = self
+            .concepts
+            .iter()
+            .map(|(_, c)| self.innovation_hazard(c))
+            .collect();
         // A standard takes up new words slowly, and a purist one replaces
         // its loans with words of its own.
         let pace = self.pace(v);
@@ -4985,11 +5007,12 @@ impl World {
         let minimal = self.varieties[v].minimal;
         let lexicon = &mut self.varieties[v].lexicon;
         let observed = Phonotactics::observe(lexicon.living().map(|l| &l.form));
-        for (i, concept) in CONCEPTS.iter().enumerate() {
-            if crate::pronouns::is_pronoun(concept) {
+        for (concept_id, concept) in self.concepts.iter() {
+            let i = concept_id.0 as usize;
+            if crate::pronouns::is_pronoun(concept_id) {
                 continue;
             }
-            let mut rng = step.rng(&[key("innovate"), key(concept.id)]);
+            let mut rng = step.rng(&[key("innovate"), key(&concept.id)]);
             let dominant = lexicon.slots[i].dominant();
             let clash = dominant.is_some_and(|id| clashes.contains(&id));
             let worn = dominant.is_some_and(|id| minimal.worn(&lexicon.get(id).form));
@@ -5011,13 +5034,13 @@ impl World {
                 .filter(|_| clash || worn)
                 .and_then(|base| renewal(lexicon, &morphology, &step, concept, base, params));
             if let Some((form, origin)) = renewed {
-                let id = lexicon.coin(form, origin, concept, generation);
+                let id = lexicon.coin(form, origin, concept_id, generation);
                 lexicon.slots[i].introduce(id, params.newcomer_share);
                 continue;
             }
             let mut donors: Vec<LexemeId> = related(concept)
                 .chain(living_related(concept, livelihood))
-                .filter(|other| !crate::pronouns::is_pronoun(other))
+                .filter(|other| !crate::pronouns::is_pronoun(*other))
                 .filter_map(|other| lexicon.slot(other).dominant())
                 .filter(|id| !lexicon.slots[i].has(*id))
                 .collect();
@@ -5033,7 +5056,7 @@ impl World {
                 let id = donors[crate::rng::index(&mut rng, donors.len())];
                 lexicon.get_mut(id).log.push(Entry {
                     generation,
-                    event: Event::Extended { to: concept },
+                    event: Event::Extended { to: concept_id },
                 });
                 id
             } else {
@@ -5041,7 +5064,7 @@ impl World {
                 let field: HashSet<Form> = lexicon
                     .slots
                     .iter()
-                    .filter(|s| s.concept.field == concept.field)
+                    .filter(|s| self.concepts[s.concept].field == concept.field)
                     .flat_map(|s| s.variants.iter())
                     .map(|v| lexicon.get(v.lexeme).form.clone())
                     .collect();
@@ -5054,7 +5077,7 @@ impl World {
                     &used,
                     &field,
                 );
-                lexicon.coin(form, Origin::Expressive, concept, generation)
+                lexicon.coin(form, Origin::Expressive, concept_id, generation)
             };
             let share = if apt.contains(&newcomer) {
                 APT_SHARE
@@ -5103,11 +5126,12 @@ impl World {
                 clash * worn * loan
             })
             .collect();
-        for (i, concept) in CONCEPTS.iter().enumerate() {
+        for (concept_id, concept) in self.concepts.iter() {
+            let i = concept_id.0 as usize;
             if lexicon.slots[i].variants.len() < 2 {
                 continue;
             }
-            let mut rng = step.rng(&[key("drift"), key(concept.id)]);
+            let mut rng = step.rng(&[key("drift"), key(&concept.id)]);
             let slot = &mut lexicon.slots[i];
             let mut counts = vec![0u32; slot.variants.len()];
             for _ in 0..n {
@@ -5130,7 +5154,7 @@ impl World {
             for id in lost {
                 lexicon.get_mut(id).log.push(Entry {
                     generation,
-                    event: Event::Lost { sense: concept },
+                    event: Event::Lost { sense: concept_id },
                 });
             }
         }
@@ -5167,11 +5191,11 @@ fn renewal(
     lexicon: &Lexicon,
     morphology: &Morphology,
     step: &Step,
-    concept: &'static Concept,
+    concept: &Concept,
     base: LexemeId,
     params: &Params,
 ) -> Option<(Form, Origin)> {
-    let mut rng = step.rng(&[key("renew"), key(concept.id)]);
+    let mut rng = step.rng(&[key("renew"), key(&concept.id)]);
     if rng.r#gen::<f32>() >= params.renewal_share {
         return None;
     }
@@ -5912,7 +5936,7 @@ mod tests {
             assert!(
                 slot.variants.is_empty() || (total - 1.0).abs() < 1e-4,
                 "{} sums to {total}",
-                slot.concept.id
+                sim.concepts[slot.concept].id
             );
         }
         for lexeme in sim.varieties[0].lexicon.living() {
@@ -5943,7 +5967,11 @@ mod tests {
                 lexicon
                     .slots
                     .iter()
-                    .filter(|s| s.concept.stability.is_some_and(|r| (lo..=hi).contains(&r)))
+                    .filter(|s| {
+                        lexicon.concepts[s.concept]
+                            .stability
+                            .is_some_and(|r| (lo..=hi).contains(&r))
+                    })
                     .filter(|s| lexicon.keeps_founding_word(s.concept))
                     .count() as f32
                     / 20.0
@@ -6099,7 +6127,7 @@ mod tests {
             let ids: Vec<&str> = CONCEPTS
                 .iter()
                 .filter(|c| c.field == field && crate::ideas::need(c).is_none())
-                .map(|c| c.id)
+                .map(|c| c.id.as_ref())
                 .collect();
             let loans: usize = worlds
                 .iter()
@@ -6157,7 +6185,12 @@ mod tests {
         let (mut down, mut up) = (0, 0);
         for seed in 0..20 {
             let world = pair(seed, ContactKind::Neighbours);
-            let count = |c: usize| CONCEPTS.iter().filter(|k| is_loan(&world, c, k.id)).count();
+            let count = |c: usize| {
+                CONCEPTS
+                    .iter()
+                    .filter(|k| is_loan(&world, c, &k.id))
+                    .count()
+            };
             down += count(1);
             up += count(0);
         }
@@ -6236,7 +6269,7 @@ mod tests {
     fn comparative_method_recovers_correspondences_and_flags_loans() {
         use crate::compare::{Settings, compare_varieties, regular_correspondences};
         let profiles = SoundProfile::presets();
-        let concepts: Vec<&'static Concept> = CONCEPTS.iter().collect();
+        let concepts: Vec<crate::ConceptId> = crate::ConceptTable::default().ids().collect();
         let (mut kept, mut cognates, mut loans_flagged, mut loans) = (0, 0, 0, 0);
         let (mut recovered, mut true_total, mut correct, mut found_total) = (0, 0, 0, 0);
         for seed in 0..30u64 {
@@ -6327,17 +6360,22 @@ mod tests {
             world.communities[0].variety,
             world.communities[east].variety,
         );
-        let known: Vec<&Concept> = CONCEPTS
-            .iter()
-            .filter(|c| world.varieties[a].lexicon.word_for(c).is_some())
+        let known: Vec<crate::ConceptId> = world
+            .concepts
+            .ids()
+            .filter(|&c| world.varieties[a].lexicon.word_for(c).is_some())
             .collect();
         assert!(
-            known.iter().all(|c| world.cognate(a, b, c)),
+            known.iter().all(|&c| world.cognate(a, b, c)),
             "identical at the split"
         );
         assert_eq!(world.varieties[b].parent.map(|f| f.variety), Some(a));
         world.run(40);
-        let shared = CONCEPTS.iter().filter(|c| world.cognate(a, b, c)).count();
+        let shared = world
+            .concepts
+            .ids()
+            .filter(|&c| world.cognate(a, b, c))
+            .count();
         assert!(
             shared < CONCEPTS.len(),
             "independent change after the split"
@@ -7444,6 +7482,7 @@ mod tests {
         // The chart's present local record is not what these speakers remember.
         let outsider = world.varieties.len();
         world.varieties.push(Variety::found(
+            &crate::ConceptTable::default(),
             17,
             &SoundProfile::base(),
             Livelihood::Farming,

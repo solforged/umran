@@ -180,7 +180,7 @@ fn unrelated_length_mismatches_keep_gaps_but_not_cognate_votes() {
     let method = compare::compare_varieties(
         &world.varieties[0],
         &world.varieties[1],
-        &concepts("specimen").unwrap(),
+        &concepts(&world.concepts, "specimen").unwrap(),
     );
     assert!(
         view.regular
@@ -196,7 +196,7 @@ fn unrelated_length_mismatches_keep_gaps_but_not_cognate_votes() {
     assert_eq!(fire.regularity, 0.5);
     assert!(!fire.cognate);
     for (shown, inferred) in view.rows.iter().zip(&method.rows) {
-        assert_eq!(shown.concept, inferred.concept.id);
+        assert_eq!(shown.concept, world.concepts[inferred.concept].id);
         assert_eq!(shown.regularity, inferred.regularity);
         assert_eq!(
             shown.cognate, inferred.cognate,
@@ -267,7 +267,7 @@ fn grammar_observations_are_the_methods_current_contrasts() {
     let method = compare::compare_varieties(
         &world.varieties[0],
         &world.varieties[1],
-        &concepts("specimen").unwrap(),
+        &concepts(&world.concepts, "specimen").unwrap(),
     );
     assert!(method.grammar.iter().any(|g| g.regular));
     assert!(!compared.grammar.is_empty());
@@ -288,22 +288,22 @@ fn meaning_sets_cover_catalog_fields_and_reject_unknown_inputs() {
     let sets = meaning_sets();
     assert_eq!((sets[0].id, sets[1].id), ("core", "specimen"));
     assert_eq!(
-        concepts("core").unwrap().len(),
+        concepts(&world.concepts, "core").unwrap().len(),
         CONCEPTS.iter().filter(|c| c.stability.is_some()).count()
     );
     assert_eq!(
-        concepts("specimen")
+        concepts(&world.concepts, "specimen")
             .unwrap()
             .iter()
-            .map(|c| c.id)
+            .map(|c| world.concepts[*c].id.as_ref())
             .collect::<Vec<_>>(),
         SPECIMEN
     );
     let mut covered = HashSet::new();
     for set in &sets[2..] {
         assert!(!set.label.is_empty());
-        for concept in concepts(set.id).unwrap() {
-            assert!(covered.insert(concept.id));
+        for concept in concepts(&world.concepts, set.id).unwrap() {
+            assert!(covered.insert(concept));
         }
     }
     assert_eq!(covered.len(), CONCEPTS.len());
@@ -626,4 +626,22 @@ fn fixed_readings_do_not_leak_later_desk_evidence() {
     assert_eq!(shown["meanings"], "specimen");
     let sets: Value = serde_json::from_str(&reading.meaning_sets().unwrap()).unwrap();
     assert_eq!(sets[0]["id"], "core");
+}
+
+#[test]
+fn custom_meanings_belong_to_custom_and_field_sets() {
+    let mut world = pair();
+    let id = world
+        .define_meaning(umran_sim::Meaning {
+            id: "hearth".into(),
+            gloss: "hearth".into(),
+            field: Field::House,
+            class: umran_sim::Class::Entity,
+            countable: true,
+            tier: umran_sim::Tier::Everyday,
+            from: None,
+        })
+        .unwrap();
+    assert_eq!(concepts(&world.concepts, "custom").unwrap(), vec![id]);
+    assert!(concepts(&world.concepts, "house").unwrap().contains(&id));
 }

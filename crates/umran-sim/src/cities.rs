@@ -454,7 +454,9 @@ impl World {
             })
             .collect();
         for i in 0..out.lexicon.slots.len() {
-            if out.lexicon.slots[i].concept.stability.is_none()
+            if self.concepts[out.lexicon.slots[i].concept]
+                .stability
+                .is_none()
                 || crate::pronouns::is_pronoun(out.lexicon.slots[i].concept)
             {
                 continue;

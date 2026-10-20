@@ -32,8 +32,8 @@ struct Rule {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Word {
-    concept: &'static str,
-    gloss: &'static str,
+    concept: String,
+    gloss: String,
     before: String,
     after: String,
     spelled_before: String,
@@ -132,9 +132,10 @@ fn preview(world: &World, variety: usize, law: &Law) -> Preview {
                 unchanged_words += 1;
                 continue;
             }
+            let concept = &speech.lexicon.concepts[slot.concept];
             words.push(Word {
-                concept: slot.concept.id,
-                gloss: slot.concept.gloss,
+                concept: concept.id.to_string(),
+                gloss: concept.gloss.to_string(),
                 before: word.form.ipa_stressed(stress),
                 after: after.ipa_stressed(next.stress()),
                 spelled_before: speech.spell(&word.form),

@@ -1,4 +1,4 @@
-use crate::concepts::{CONCEPTS, Concept, Relation};
+use crate::concepts::{ConceptId, ConceptTable, Relation};
 use crate::form::Form;
 use crate::grammar::Paradigm;
 use crate::provenance::LoanCause;
@@ -32,6 +32,8 @@ pub enum Origin {
         base: LexemeId,
         with: Option<LexemeId>,
     },
+    /// A word the author gave this language during its history.
+    Authored,
 }
 
 impl Origin {
@@ -50,7 +52,7 @@ pub struct Lexeme {
     pub form: Form,
     pub origin: Origin,
     /// The concept the word first expressed.
-    pub first_sense: &'static Concept,
+    pub first_sense: ConceptId,
     pub born: u32,
     /// Generation the word stopped being used for any concept.
     pub obsolete: Option<u32>,
@@ -59,7 +61,7 @@ pub struct Lexeme {
     pub paradigms: Vec<Paradigm>,
     /// Post-founding native construction and its historical transparency.
     pub coined: Option<crate::coinage::Coinage>,
-    /// A founding root the author gave, kept verbatim at year 0.
+    /// A form the author gave, kept verbatim when installed.
     pub authored: bool,
 }
 
@@ -97,11 +99,11 @@ pub enum Event {
     },
     /// The word began to be used for another concept as well.
     Extended {
-        to: &'static Concept,
+        to: ConceptId,
     },
     /// The word fell out of use for a concept.
     Lost {
-        sense: &'static Concept,
+        sense: ConceptId,
     },
     Obsolete,
 }
@@ -116,7 +118,7 @@ pub struct Variant {
 /// The words competing to express one concept.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Slot {
-    pub concept: &'static Concept,
+    pub concept: ConceptId,
     pub variants: Vec<Variant>,
 }
 
@@ -151,22 +153,24 @@ impl Slot {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Lexicon {
     pub lexemes: Vec<Lexeme>,
-    /// Parallel to `CONCEPTS`.
+    /// Parallel to this world's concept table.
     pub slots: Vec<Slot>,
+    pub concepts: ConceptTable,
 }
 
 impl Lexicon {
-    /// One founding word per concept, in `CONCEPTS` order.
-    pub fn found(roots: impl IntoIterator<Item = Minted>) -> Self {
+    /// One founding word per known concept, in table order.
+    pub fn found(concepts: &ConceptTable, roots: impl IntoIterator<Item = Minted>) -> Self {
         let mut lexicon = Self {
             lexemes: Vec::new(),
-            slots: CONCEPTS
-                .iter()
+            slots: concepts
+                .ids()
                 .map(|concept| Slot {
                     concept,
                     variants: Vec::new(),
                 })
                 .collect(),
+            concepts: concepts.clone(),
         };
         let roots: Vec<Minted> = roots.into_iter().collect();
         for minted in &roots {
@@ -176,7 +180,7 @@ impl Lexicon {
                 Some((base, relation)) => {
                     let base = roots
                         .iter()
-                        .position(|m| m.concept.id == base.id)
+                        .position(|m| m.concept == base)
                         .expect("bases are minted");
                     Origin::Derived {
                         base: LexemeId(base as u32),
@@ -192,13 +196,17 @@ impl Lexicon {
         lexicon
     }
 
-    pub fn coin(
-        &mut self,
-        form: Form,
-        origin: Origin,
-        sense: &'static Concept,
-        born: u32,
-    ) -> LexemeId {
+    /// Append empty slots and share the latest immutable table snapshot.
+    pub fn extend(&mut self, concepts: &ConceptTable) {
+        self.slots
+            .extend((self.slots.len()..concepts.len()).map(|i| Slot {
+                concept: ConceptId(i as u32),
+                variants: Vec::new(),
+            }));
+        self.concepts = concepts.clone();
+    }
+
+    pub fn coin(&mut self, form: Form, origin: Origin, sense: ConceptId, born: u32) -> LexemeId {
         let id = LexemeId(self.lexemes.len() as u32);
         self.lexemes.push(Lexeme {
             id,
@@ -223,20 +231,12 @@ impl Lexicon {
         &mut self.lexemes[id.0 as usize]
     }
 
-    pub fn slot(&self, concept: &Concept) -> &Slot {
-        let i = CONCEPTS
-            .iter()
-            .position(|c| c.id == concept.id)
-            .expect("known concept");
-        &self.slots[i]
+    pub fn slot(&self, concept: ConceptId) -> &Slot {
+        &self.slots[concept.0 as usize]
     }
 
-    pub fn slot_mut(&mut self, concept: &Concept) -> &mut Slot {
-        let i = CONCEPTS
-            .iter()
-            .position(|c| c.id == concept.id)
-            .expect("known concept");
-        &mut self.slots[i]
+    pub fn slot_mut(&mut self, concept: ConceptId) -> &mut Slot {
+        &mut self.slots[concept.0 as usize]
     }
 
     pub fn living(&self) -> impl Iterator<Item = &Lexeme> {
@@ -244,12 +244,12 @@ impl Lexicon {
     }
 
     /// The dominant word for a concept, if any.
-    pub fn word_for(&self, concept: &Concept) -> Option<&Lexeme> {
+    pub fn word_for(&self, concept: ConceptId) -> Option<&Lexeme> {
         self.slot(concept).dominant().map(|id| self.get(id))
     }
 
     /// Concepts a word currently expresses.
-    pub fn senses(&self, id: LexemeId) -> impl Iterator<Item = &'static Concept> + '_ {
+    pub fn senses(&self, id: LexemeId) -> impl Iterator<Item = ConceptId> + '_ {
         self.slots
             .iter()
             .filter(move |s| s.has(id))
@@ -281,7 +281,7 @@ impl Lexicon {
         let core: Vec<&Slot> = self
             .slots
             .iter()
-            .filter(|s| s.concept.stability.is_some())
+            .filter(|s| self.concepts[s.concept].stability.is_some())
             .collect();
         let kept = core
             .iter()
@@ -293,7 +293,7 @@ impl Lexicon {
     /// Whether `concept` is still dominated by the word it was founded with,
     /// a root or a word derived at founding. A renewed word keeps its old
     /// root, as French oreille keeps Latin auris, so it counts as kept.
-    pub fn keeps_founding_word(&self, concept: &Concept) -> bool {
+    pub fn keeps_founding_word(&self, concept: ConceptId) -> bool {
         let mut word = self.word_for(concept);
         while let Some(Origin::Renewed { base, .. }) = word.map(|l| l.origin) {
             word = Some(self.get(base));
@@ -301,7 +301,7 @@ impl Lexicon {
         word.is_some_and(|l| {
             l.born == 0
                 && matches!(l.origin, Origin::Founding | Origin::Derived { .. })
-                && l.first_sense.id == concept.id
+                && l.first_sense == concept
         })
     }
 }

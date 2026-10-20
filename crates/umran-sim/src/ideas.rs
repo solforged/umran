@@ -19,7 +19,7 @@
 //! priests into sorcerers, as Greek daimōn became the Christian demon.
 
 use crate::adapt::Adapter;
-use crate::concepts::{CONCEPTS, Concept, Relation, by_id, related};
+use crate::concepts::{Concept, Relation, by_id, related};
 use crate::diglossia::Vernacular;
 use crate::ethos::{Axis, Effect, TemperCause};
 use crate::form::Form;
@@ -155,7 +155,7 @@ pub static LIVING_RELATED: &[(Livelihood, &str, &str)] = &[
 pub fn living_related(
     concept: &Concept,
     livelihood: Livelihood,
-) -> impl Iterator<Item = &'static Concept> + '_ {
+) -> impl Iterator<Item = crate::ConceptId> + '_ {
     LIVING_RELATED
         .iter()
         .filter(move |(l, _, to)| *l == livelihood && *to == concept.id)
@@ -482,9 +482,11 @@ impl World {
             if self.holds(c, Need::Craft(Craft::Writing)) {
                 self.begin_writing(v);
             }
-            for concept in CONCEPTS {
-                if need(concept).map_or(self.params.coinage_rate > 0.0, |need| self.holds(c, need))
-                    && self.varieties[v].lexicon.slot(concept).variants.is_empty()
+            for concept in self.concepts.ids() {
+                if need(&self.concepts[concept]).map_or(
+                    self.concepts.is_custom(concept) && self.params.coinage_rate > 0.0,
+                    |need| self.holds(c, need),
+                ) && self.varieties[v].lexicon.slot(concept).variants.is_empty()
                 {
                     self.find_word(c, concept);
                 }
@@ -497,7 +499,7 @@ impl World {
     /// faith keeps it), stretched from a word for a related meaning or one
     /// its way of life links, built from a word it has, or coined. Open
     /// peoples borrow; purist standards and translating faiths build.
-    fn find_word(&mut self, community: usize, concept: &'static Concept) {
+    fn find_word(&mut self, community: usize, concept: crate::ConceptId) {
         let k = &self.communities[community];
         let v = k.variety;
         let purpose = if self.params.coinage_rate > 0.0 {
@@ -505,9 +507,11 @@ impl World {
         } else {
             "learn"
         };
-        let mut rng = self.at(v).rng(&[key(purpose), key(concept.id)]);
+        let mut rng = self
+            .at(v)
+            .rng(&[key(purpose), key(&self.concepts[concept].id)]);
         let purism = self.purism(v);
-        let faith = match need(concept) {
+        let faith = match need(&self.concepts[concept]) {
             Some(Need::Faith) => k.faith.map(|r| &self.religions[r]),
             _ => None,
         };
@@ -527,7 +531,7 @@ impl World {
                 .filter(|&(o, _, _)| {
                     let ov = self.communities[o].variety;
                     ov != v
-                        && need(concept).is_none_or(|need| self.holds(o, need))
+                        && need(&self.concepts[concept]).is_none_or(|need| self.holds(o, need))
                         && self.varieties[ov]
                             .lexicon
                             .slot(concept)
@@ -550,8 +554,8 @@ impl World {
                     )
                 }),
         };
-        let mut donors: Vec<LexemeId> = related(concept)
-            .chain(living_related(concept, k.livelihood))
+        let mut donors: Vec<LexemeId> = related(&self.concepts[concept])
+            .chain(living_related(&self.concepts[concept], k.livelihood))
             .filter_map(|other| lexicon.slot(other).dominant())
             .collect();
         donors.sort();
@@ -619,7 +623,7 @@ impl World {
                 let field: HashSet<Form> = lexicon
                     .slots
                     .iter()
-                    .filter(|s| s.concept.field == concept.field)
+                    .filter(|s| self.concepts[s.concept].field == self.concepts[concept].field)
                     .flat_map(|s| s.variants.iter())
                     .map(|var| lexicon.get(var.lexeme).form.clone())
                     .collect();
@@ -628,7 +632,7 @@ impl World {
                     &observed,
                     &variety.profile.spelling,
                     Some(&variety.morphology),
-                    concept,
+                    &self.concepts[concept],
                     &used,
                     &field,
                 );
@@ -653,7 +657,7 @@ impl World {
         &mut self,
         v: usize,
         from: usize,
-        concept: &'static Concept,
+        concept: crate::ConceptId,
         cause: LoanCause,
         rng: &mut impl Rng,
     ) -> Option<LexemeId> {
@@ -867,8 +871,8 @@ impl World {
                 self.pejorate(community, "god", "demon", lord);
             }
         }
-        for concept in CONCEPTS {
-            if need(concept) == Some(Need::Faith)
+        for concept in self.concepts.ids() {
+            if need(&self.concepts[concept]) == Some(Need::Faith)
                 && self.varieties[v].lexicon.slot(concept).variants.is_empty()
             {
                 self.find_word(community, concept);
@@ -1020,7 +1024,7 @@ impl World {
             event: Event::Extended { to },
         });
         if !lexicon.slot(from).has(new) {
-            if lexicon.get(new).first_sense.id != from.id {
+            if lexicon.get(new).first_sense != from {
                 lexicon.get_mut(new).log.push(Entry {
                     generation,
                     event: Event::Extended { to: from },
@@ -1428,7 +1432,7 @@ mod tests {
                         .iter()
                         .any(|v| {
                             lexicon.get(v.lexeme).log.iter().any(
-                                |e| matches!(e.event, Event::Extended { to } if to.id == "wealth"),
+                                |e| matches!(e.event, Event::Extended { to } if lexicon.concepts[to].id == "wealth"),
                             )
                         })
                 })

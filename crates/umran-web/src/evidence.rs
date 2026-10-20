@@ -15,7 +15,7 @@ use crate::{
 use serde::Serialize;
 use std::collections::{BTreeMap, HashSet};
 use umran_sim::coinage::CoinageKind;
-use umran_sim::concepts::{Concept, Relation, by_id};
+use umran_sim::concepts::{ConceptId, Relation, by_id};
 use umran_sim::grammar::{Category, GrammarEntry, GrammarEvent, Marker, MarkerOrigin};
 use umran_sim::names::Name;
 use umran_sim::{
@@ -45,7 +45,7 @@ struct LawOccurrenceRef {
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-enum ChangeCause {
+enum ChangeCause<'a> {
     Law {
         law: std::borrow::Cow<'static, str>,
         label: String,
@@ -55,7 +55,7 @@ enum ChangeCause {
         cause: LoanCauseView,
     },
     Coined {
-        coined: CoinedView,
+        coined: CoinedView<'a>,
     },
     Inherited {
         from: usize,
@@ -65,9 +65,10 @@ enum ChangeCause {
         from: usize,
     },
     Extended {
-        from: &'static str,
+        from: &'a str,
     },
     Expressive,
+    Authored,
     Marker {
         origin: crate::GrammarOriginView,
     },
@@ -90,7 +91,7 @@ enum Arrival {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct LawOccurrence {
+struct LawOccurrence<'a> {
     #[serde(rename = "ref")]
     reference: LawOccurrenceRef,
     /// Position in the requested language's ledger, including inherited entries.
@@ -100,16 +101,16 @@ struct LawOccurrence {
     rules: Vec<String>,
     arrival: Arrival,
     annal: Option<String>,
-    words: Vec<LawWord>,
+    words: Vec<LawWord<'a>>,
     markers: Vec<LawMarker>,
     names: Vec<LawName>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct LawWord {
-    concept: &'static str,
-    gloss: &'static str,
+struct LawWord<'a> {
+    concept: &'a str,
+    gloss: &'a str,
     before: FormView,
     after: FormView,
     dominant: bool,
@@ -134,24 +135,24 @@ struct LawName {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct FormPoint {
+struct FormPoint<'a> {
     generation: u32,
     form: FormView,
-    cause: ChangeCause,
+    cause: ChangeCause<'a>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct WordLife {
-    concept: &'static str,
-    gloss: &'static str,
-    holders: Vec<Holder>,
+struct WordLife<'a> {
+    concept: &'a str,
+    gloss: &'a str,
+    holders: Vec<Holder<'a>>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct Holder {
-    forms: Vec<FormPoint>,
+struct Holder<'a> {
+    forms: Vec<FormPoint<'a>>,
     entered: u32,
     dominant_from: Option<u32>,
     until: Option<u32>,
@@ -160,9 +161,9 @@ struct Holder {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct MeaningForm {
-    concept: &'static str,
-    gloss: &'static str,
+struct MeaningForm<'a> {
+    concept: &'a str,
+    gloss: &'a str,
     form: FormView,
 }
 
@@ -175,37 +176,37 @@ struct Donor {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct LoanTrail {
-    concept: &'static str,
+struct LoanTrail<'a> {
+    concept: &'a str,
     donor: Donor,
     cause: LoanCauseView,
     heard: FormView,
     adapted: FormView,
     since: u32,
-    after: Vec<FormPoint>,
-    same_meeting: Vec<MeaningForm>,
+    after: Vec<FormPoint<'a>>,
+    same_meeting: Vec<MeaningForm<'a>>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct GrammarStory {
+struct GrammarStory<'a> {
     category: &'static str,
     label: &'static str,
-    markers: Vec<MarkerStory>,
+    markers: Vec<MarkerStory<'a>>,
     agreement: Option<AgreementView>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct MarkerStory {
+struct MarkerStory<'a> {
     marker: String,
     kind: &'static str,
     scope: umran_sim::grammar::MarkerScope,
-    source: Option<MeaningForm>,
+    source: Option<MeaningForm<'a>>,
     born: u32,
     retired: Option<u32>,
     shares: Vec<SharePoint>,
-    forms: Vec<GrammarPoint>,
+    forms: Vec<GrammarPoint<'a>>,
 }
 
 #[derive(Serialize)]
@@ -217,25 +218,25 @@ struct SharePoint {
 
 #[derive(Serialize)]
 #[serde(untagged)]
-enum GrammarCause {
-    Change(ChangeCause),
+enum GrammarCause<'a> {
+    Change(ChangeCause<'a>),
     Analogy { kind: &'static str },
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct GrammarPoint {
+struct GrammarPoint<'a> {
     generation: u32,
     form: FormView,
-    cause: GrammarCause,
+    cause: GrammarCause<'a>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct BuilderExample {
+struct BuilderExample<'a> {
     builder: &'static str,
-    base: MeaningForm,
-    built: MeaningForm,
+    base: MeaningForm<'a>,
+    built: MeaningForm<'a>,
 }
 
 fn speech(world: &World, variety: usize) -> Result<&Variety, String> {
@@ -400,7 +401,7 @@ fn law_cause(
     world: &World,
     law: std::borrow::Cow<'static, str>,
     occurrence: Option<LawOccurrenceRef>,
-) -> ChangeCause {
+) -> ChangeCause<'static> {
     ChangeCause::Law {
         label: law_label(world, &law),
         law,
@@ -512,7 +513,11 @@ fn marker_occurrence(
     })
 }
 
-fn law_occurrences(world: &World, variety: usize, law: &str) -> Result<Vec<LawOccurrence>, String> {
+fn law_occurrences<'a>(
+    world: &'a World,
+    variety: usize,
+    law: &str,
+) -> Result<Vec<LawOccurrence<'a>>, String> {
     let v = speech(world, variety)?;
     let mut records = BTreeMap::new();
     let mut counts = BTreeMap::new();
@@ -601,8 +606,8 @@ fn law_occurrences(world: &World, variety: usize, law: &str) -> Result<Vec<LawOc
             // Include historical meanings too, not just surviving slots.
             for concept in word_meanings_at(word, i) {
                 record.words.push(LawWord {
-                    concept: concept.id,
-                    gloss: concept.gloss,
+                    concept: &world.concepts[concept].id,
+                    gloss: &world.concepts[concept].gloss,
                     before: form_view(&world.varieties[reference.variety], before, prior),
                     after: form_view(
                         &world.varieties[reference.variety],
@@ -819,22 +824,23 @@ fn occurrence_names(world: &World, occurrence: &mut LawOccurrence) {
     }
 }
 
-fn word_meanings_at(word: &Lexeme, at: usize) -> Vec<&'static Concept> {
+fn word_meanings_at(word: &Lexeme, at: usize) -> Vec<ConceptId> {
     let mut meanings = vec![word.first_sense];
     for entry in &word.log[..at] {
         match entry.event {
-            Event::Extended { to } if !meanings.iter().any(|c| c.id == to.id) => meanings.push(to),
-            Event::Lost { sense } => meanings.retain(|c| c.id != sense.id),
+            Event::Extended { to } if !meanings.contains(&to) => meanings.push(to),
+            Event::Lost { sense } => meanings.retain(|c| *c != sense),
             _ => {}
         }
     }
     meanings
 }
 
-fn origin_cause(world: &World, variety: usize, word: &Lexeme) -> Option<ChangeCause> {
+fn origin_cause<'a>(world: &'a World, variety: usize, word: &Lexeme) -> Option<ChangeCause<'a>> {
     let v = &world.varieties[variety];
     match word.origin {
         Origin::Founding => Some(ChangeCause::Founding),
+        Origin::Authored => Some(ChangeCause::Authored),
         Origin::Borrowed {
             from,
             cause: umran_sim::LoanCause::Shift { .. },
@@ -864,8 +870,8 @@ fn origin_cause(world: &World, variety: usize, word: &Lexeme) -> Option<ChangeCa
                         .map(|base| {
                             let base = v.lexicon.get(base);
                             CoinedPartView {
-                                concept: base.first_sense.id,
-                                gloss: base.first_sense.gloss,
+                                concept: &world.concepts[base.first_sense].id,
+                                gloss: &world.concepts[base.first_sense].gloss,
                                 spelled: v.spell(base.form_at(word.born)),
                             }
                         })
@@ -882,7 +888,7 @@ fn origin_cause(world: &World, variety: usize, word: &Lexeme) -> Option<ChangeCa
     }
 }
 
-fn word_forms(world: &World, variety: usize, word: &Lexeme) -> Vec<FormPoint> {
+fn word_forms<'a>(world: &'a World, variety: usize, word: &Lexeme) -> Vec<FormPoint<'a>> {
     let v = &world.varieties[variety];
     let mut out = Vec::new();
     if let Some(cause) = origin_cause(world, variety, word) {
@@ -918,7 +924,7 @@ fn word_forms(world: &World, variety: usize, word: &Lexeme) -> Vec<FormPoint> {
                 // The log records the new sense, not which intermediate sense
                 // motivated it. `from` is the word's recorded first meaning.
                 cause: ChangeCause::Extended {
-                    from: word.first_sense.id,
+                    from: &world.concepts[word.first_sense].id,
                 },
             }),
             _ => {}
@@ -962,7 +968,7 @@ fn word_forms(world: &World, variety: usize, word: &Lexeme) -> Vec<FormPoint> {
     out
 }
 
-fn word_life(world: &World, variety: usize, concept: &'static Concept) -> Result<WordLife, String> {
+fn word_life(world: &World, variety: usize, concept: ConceptId) -> Result<WordLife<'_>, String> {
     let v = speech(world, variety)?;
     let current = v.lexicon.slot(concept).dominant();
     // The id accompanies a witnessed holder only inside this reader. It is not
@@ -970,7 +976,7 @@ fn word_life(world: &World, variety: usize, concept: &'static Concept) -> Result
     let mut witnessed: Vec<(LexemeId, Option<u32>, Option<u32>)> = Vec::new();
     if let Some(word) = v.lexicon.lexemes.iter().find(|word| {
         word.born == 0
-            && word.first_sense.id == concept.id
+            && word.first_sense == concept
             && matches!(word.origin, Origin::Founding | Origin::Derived { .. })
     }) {
         witnessed.push((word.id, Some(0), None));
@@ -985,7 +991,7 @@ fn word_life(world: &World, variety: usize, concept: &'static Concept) -> Result
             ..
         } = *event
         {
-            if sense.id != concept.id {
+            if sense != concept {
                 continue;
             }
             let mut inherited = variety;
@@ -1008,7 +1014,7 @@ fn word_life(world: &World, variety: usize, concept: &'static Concept) -> Result
         }
     }
     for episode in &v.purism {
-        for replacement in episode.replaced.iter().filter(|r| r.concept == concept.id) {
+        for replacement in episode.replaced.iter().filter(|r| r.concept == concept) {
             replacements.push((episode.since, replacement.loan, replacement.native));
         }
     }
@@ -1036,7 +1042,7 @@ fn word_life(world: &World, variety: usize, concept: &'static Concept) -> Result
                 until.or_else(|| {
                     word.log.iter().find_map(|e| {
                         (dominant_from.is_none_or(|from| e.generation >= from)
-                            && matches!(e.event, Event::Lost { sense } if sense.id == concept.id))
+                            && matches!(e.event, Event::Lost { sense } if sense == concept))
                         .then_some(e.generation)
                     })
                 })
@@ -1065,8 +1071,8 @@ fn word_life(world: &World, variety: usize, concept: &'static Concept) -> Result
         })
         .collect();
     Ok(WordLife {
-        concept: concept.id,
-        gloss: concept.gloss,
+        concept: &world.concepts[concept].id,
+        gloss: &world.concepts[concept].gloss,
         holders,
     })
 }
@@ -1074,8 +1080,8 @@ fn word_life(world: &World, variety: usize, concept: &'static Concept) -> Result
 fn loan_trail(
     world: &World,
     variety: usize,
-    concept: &'static Concept,
-) -> Result<Option<LoanTrail>, String> {
+    concept: ConceptId,
+) -> Result<Option<LoanTrail<'_>>, String> {
     let v = speech(world, variety)?;
     let Some(word) = v
         .lexicon
@@ -1114,16 +1120,16 @@ fn loan_trail(
     if let Some(meeting) = meeting {
         let mut seen = HashSet::new();
         for other in &v.lexicon.lexemes {
-            if other.id == word.id || other.first_sense.id == concept.id {
+            if other.id == word.id || other.first_sense == concept {
                 continue;
             }
             if let Origin::Borrowed { cause, .. } = other.origin
                 && event_position(world, cause, other.born) == Some(meeting)
-                && seen.insert(other.first_sense.id)
+                && seen.insert(other.first_sense)
             {
                 same_meeting.push(MeaningForm {
-                    concept: other.first_sense.id,
-                    gloss: other.first_sense.gloss,
+                    concept: &world.concepts[other.first_sense].id,
+                    gloss: &world.concepts[other.first_sense].gloss,
                     form: form_view(
                         v,
                         &other.form,
@@ -1143,7 +1149,7 @@ fn loan_trail(
         })
         .collect();
     Ok(Some(LoanTrail {
-        concept: concept.id,
+        concept: &world.concepts[concept].id,
         donor: Donor {
             variety: from,
             form: form_view(donor, source, donor.stress_at(entry.generation)),
@@ -1165,7 +1171,7 @@ fn grammar_story(
     world: &World,
     variety: usize,
     category: Category,
-) -> Result<GrammarStory, String> {
+) -> Result<GrammarStory<'_>, String> {
     let v = speech(world, variety)?;
     let mut markers = Vec::new();
     for marker in v.grammar.markers.iter().filter(|m| m.category == category) {
@@ -1175,8 +1181,8 @@ fn grammar_story(
                 source_form,
                 ..
             } => Some(MeaningForm {
-                concept: concept.id,
-                gloss: concept.gloss,
+                concept: &world.concepts[*concept].id,
+                gloss: &world.concepts[*concept].gloss,
                 form: form_view(v, source_form, v.stress_at(marker.born)),
             }),
             _ => None,
@@ -1245,7 +1251,7 @@ fn grammar_story(
     })
 }
 
-fn builder_examples(world: &World, variety: usize) -> Result<Vec<BuilderExample>, String> {
+fn builder_examples(world: &World, variety: usize) -> Result<Vec<BuilderExample<'_>>, String> {
     let v = speech(world, variety)?;
     let mut examples = Vec::new();
     let mut seen = HashSet::new();
@@ -1275,13 +1281,13 @@ fn builder_examples(world: &World, variety: usize) -> Result<Vec<BuilderExample>
         examples.push(BuilderExample {
             builder,
             base: MeaningForm {
-                concept: base.first_sense.id,
-                gloss: base.first_sense.gloss,
+                concept: &world.concepts[base.first_sense].id,
+                gloss: &world.concepts[base.first_sense].gloss,
                 form: form_view(v, base_form, v.stress_at(word.born)),
             },
             built: MeaningForm {
-                concept: word.first_sense.id,
-                gloss: word.first_sense.gloss,
+                concept: &world.concepts[word.first_sense].id,
+                gloss: &world.concepts[word.first_sense].gloss,
                 form: form_view(v, built_form, initial_stress(world, variety, word)),
             },
         });
@@ -1318,8 +1324,9 @@ impl Bench {
         variety: usize,
         concept: &str,
     ) -> Result<String, String> {
-        let concept = by_id(concept).ok_or("Unknown concept.")?;
-        to_json(&word_life(self.world(generation), variety, concept)?)
+        let world = self.world(generation);
+        let concept = world.concepts.by_id(concept).ok_or("Unknown concept.")?;
+        to_json(&word_life(world, variety, concept)?)
     }
     pub fn loan_trail(
         &mut self,
@@ -1327,8 +1334,9 @@ impl Bench {
         variety: usize,
         concept: &str,
     ) -> Result<String, String> {
-        let concept = by_id(concept).ok_or("Unknown concept.")?;
-        to_json(&loan_trail(self.world(generation), variety, concept)?)
+        let world = self.world(generation);
+        let concept = world.concepts.by_id(concept).ok_or("Unknown concept.")?;
+        to_json(&loan_trail(world, variety, concept)?)
     }
     pub fn grammar_story(
         &mut self,

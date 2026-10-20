@@ -1,7 +1,7 @@
 //! Grammatical contrasts and their changing spoken realizations.
 //! Inflection changes a word for grammar. Particles remain separate words.
 
-use crate::concepts::{Concept, by_id};
+use crate::concepts::by_id;
 use crate::form::{Form, Seg};
 use crate::laws::Law;
 use crate::lexicon::{LexemeId, Lexicon};
@@ -316,7 +316,7 @@ pub enum MarkerOrigin {
     Founding,
     Grammaticalized {
         source: LexemeId,
-        concept: &'static Concept,
+        concept: crate::ConceptId,
         source_form: Form,
     },
     Fused {
@@ -723,7 +723,7 @@ impl Grammar {
                 }
             }
             for category in Category::ALL {
-                if slot.concept.categories.allows(category)
+                if lexicon.concepts[slot.concept].categories.allows(category)
                     && !(category == Category::Genitive
                         && crate::pronouns::is_pronoun(slot.concept)
                         && !self.possessive_case_enabled)
@@ -1810,7 +1810,13 @@ mod tests {
         });
         profile.stress = Some(StressRule::Initial);
         profile.phonotactics.open_medial = false;
-        let mut variety = Variety::found(9, &profile, Livelihood::Farming, crate::Ethos::default());
+        let mut variety = Variety::found(
+            &crate::ConceptTable::default(),
+            9,
+            &profile,
+            Livelihood::Farming,
+            crate::Ethos::default(),
+        );
         variety.minimal = MinimalWord::Syllable;
         let particle = variety
             .grammar
@@ -1871,6 +1877,7 @@ mod tests {
     #[test]
     fn bound_forms_carry_free_lexical_stress_across_prefixes_and_hiatus() {
         let variety = Variety::found(
+            &crate::ConceptTable::default(),
             9,
             &SoundProfile::base(),
             Livelihood::Farming,
@@ -1927,7 +1934,7 @@ mod tests {
 
     #[test]
     fn stress_only_laws_record_grammar_history_and_refresh_derived_contrast() {
-        let mut lexicon = Lexicon::found(std::iter::empty());
+        let mut lexicon = Lexicon::found(&crate::ConceptTable::default(), std::iter::empty());
         let concept = by_id("person").unwrap();
         let mut base = Form::from_ipa("kata").unwrap();
         base.stress = Some(0);
@@ -2012,6 +2019,7 @@ mod tests {
         use crate::change::{Env, Matcher, Rewrite, SoundChange};
 
         let variety = Variety::found(
+            &crate::ConceptTable::default(),
             9,
             &SoundProfile::base(),
             Livelihood::Farming,
@@ -2027,7 +2035,7 @@ mod tests {
             true,
             0,
         );
-        let mut lexicon = Lexicon::found(std::iter::empty());
+        let mut lexicon = Lexicon::found(&crate::ConceptTable::default(), std::iter::empty());
         let words: Vec<_> = [("person", "kata"), ("stone", "pata")]
             .into_iter()
             .map(|(id, ipa)| {
@@ -2130,8 +2138,13 @@ mod tests {
                 let mut profile = SoundProfile::base();
                 profile.grammar.order = Some(order);
                 profile.grammar.possessor = Some(possessor);
-                let parent =
-                    Variety::found(42, &profile, Livelihood::Farming, crate::Ethos::default());
+                let parent = Variety::found(
+                    &crate::ConceptTable::default(),
+                    42,
+                    &profile,
+                    Livelihood::Farming,
+                    crate::Ethos::default(),
+                );
                 let mut daughter = parent.fork(0, 5);
                 let stress = daughter.stress();
                 for generation in 6..40 {

@@ -11,8 +11,8 @@ use umran_sim::compare::{compare, compare_varieties, intelligibility};
 use umran_sim::grammar::{GrammarEntry, GrammarEvent, MarkerKind, MarkerOrigin};
 use umran_sim::prosody::moras;
 use umran_sim::{
-    Action, CATALOG, CONCEPTS, Chronicle, ContactKind, Entry, Env, Event, Form, LanguageDesign,
-    Law, LexemeId, Lexicon, MapSize, Matcher, MinimalWord, Name, Naming, Origin, Params, PhonemeId,
+    Action, CATALOG, Chronicle, ContactKind, Entry, Env, Event, Form, LanguageDesign, Law,
+    LexemeId, Lexicon, MapSize, Matcher, MinimalWord, Name, Naming, Origin, Params, PhonemeId,
     Recipe, Revelation, Rewrite, Rise, Seg, Segment, SoundChange, SoundProfile, StressRule,
     Syllable, Variety, World,
 };
@@ -522,14 +522,14 @@ fn assert_slots(lexicon: &Lexicon, seed: u64, year: u32) {
         assert!(
             slot.variants.is_empty() || (total - 1.0).abs() < 1e-4,
             "seed {seed}, year {year}: {} usage sums to {total}",
-            slot.concept.id
+            lexicon.concepts[slot.concept].id
         );
         let mut unique = HashSet::new();
         for variant in &slot.variants {
             assert!(
                 variant.weight.is_finite() && variant.weight > 0.0 && variant.weight <= 1.0,
                 "seed {seed}, year {year}: invalid usage for {}",
-                slot.concept.id
+                lexicon.concepts[slot.concept].id
             );
             assert!(
                 unique.insert(variant.lexeme),
@@ -1102,7 +1102,11 @@ fn scramble_descent(variety: &mut Variety) {
 #[test]
 fn comparative_method_ignores_hidden_and_scrambled_descent() {
     let start = Instant::now();
-    let core: Vec<_> = CONCEPTS.iter().filter(|c| c.stability.is_some()).collect();
+    let core: Vec<_> = umran_sim::ConceptTable::default()
+        .iter()
+        .filter(|(_, c)| c.stability.is_some())
+        .map(|(id, _)| id)
+        .collect();
     let profiles = SoundProfile::presets();
     for seed in 0..SEEDS {
         let mut world = World::solo(

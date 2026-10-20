@@ -6,6 +6,7 @@ mod desk;
 mod evidence;
 mod extract;
 mod law_preview;
+mod meanings;
 mod notebook;
 mod phrasebook;
 mod provenance;
@@ -146,8 +147,8 @@ impl Workbench {
     /// Reads an author's roots, one per line, against a design: each line's
     /// verdict and the design with the accepted roots merged in.
     #[wasm_bindgen(js_name = checkRoots)]
-    pub fn check_roots(design: &str, text: &str) -> Result<String, JsValue> {
-        Bench::check_roots(design, text).map_err(fail)
+    pub fn check_roots(design: &str, text: &str, meanings: &str) -> Result<String, JsValue> {
+        Bench::check_roots(design, text, meanings).map_err(fail)
     }
 
     /// Sample words from a design, and the names its people would take,
@@ -828,6 +829,29 @@ impl Bench {
                     vec![*community],
                     None,
                 ),
+                Action::Meaning { meaning } => (
+                    "meaning",
+                    format!(
+                        "The author set a new meaning before every people: “{}”.",
+                        meaning.gloss
+                    ),
+                    Vec::new(),
+                    None,
+                ),
+                Action::Word {
+                    variety,
+                    concept,
+                    ipa,
+                } => (
+                    "word",
+                    format!(
+                        "The author gave *{}* a word of their own for “{concept}”: /{ipa}/.",
+                        world.varieties[*variety]
+                            .title(world.varieties[*variety].name.form_at(generation)),
+                    ),
+                    Vec::new(),
+                    Some(*variety),
+                ),
                 Action::Run { .. } => unreachable!("runs are not decisions"),
             };
             views.push(DecisionView {
@@ -898,7 +922,7 @@ impl Bench {
             Subject::Craft { .. } => true,
             Subject::Language { variety } => world.varieties.get(*variety).is_some(),
             Subject::Word { variety, concept } => {
-                world.varieties.get(*variety).is_some() && by_id(concept).is_some()
+                world.varieties.get(*variety).is_some() && world.concepts.by_id(concept).is_some()
             }
             Subject::Land { region } => world.map.regions.get(*region).is_some(),
             Subject::Continent { landmass } => world.map.landmasses.get(*landmass).is_some(),
@@ -1043,11 +1067,12 @@ impl Bench {
     pub fn preview(design: &str, seed: u32, naming: &str) -> Result<String, String> {
         let design: LanguageDesign =
             serde_json::from_str(design).map_err(|e| format!("Malformed design: {e}"))?;
-        design.validate()?;
+        design.validate(&umran_sim::ConceptTable::default())?;
         let naming: Naming =
             serde_json::from_str(naming).map_err(|e| format!("Malformed naming: {e}"))?;
         naming.validate()?;
         let variety = Variety::found(
+            &umran_sim::ConceptTable::default(),
             u64::from(seed),
             &design.profile(),
             Livelihood::Farming,
@@ -1057,18 +1082,18 @@ impl Bench {
         let spelled = variety.title(&people.form);
         let language = umran_sim::names::language_name(&variety, &people, &spelled, 0);
         let lexicon = &variety.lexicon;
-        let row = |concept: &'static umran_sim::Concept| {
+        let row = |concept: umran_sim::ConceptId| {
             let word = lexicon.word_for(concept)?;
             let from = match word.origin {
                 Origin::Derived { base, relation } => Some(format!(
                     "{} ({})",
-                    lexicon.get(base).first_sense.gloss,
+                    lexicon.concepts[lexicon.get(base).first_sense].gloss,
                     relation.label()
                 )),
                 _ => None,
             };
             Some(PreviewWord {
-                gloss: concept.gloss,
+                gloss: &lexicon.concepts[concept].gloss,
                 spelled: variety.spell(&word.form),
                 ipa: word.form.ipa_stressed(variety.stress()),
                 from,
@@ -1125,18 +1150,23 @@ impl Bench {
     /// a language may lack, nor meanings that wait for a craft, a way of
     /// life, or a faith); `core` and `specimen` name the desk's sets.
     pub fn concepts() -> Result<String, String> {
-        let views: Vec<ConceptView> = CONCEPTS.iter().map(concept_view).collect();
+        let table = umran_sim::ConceptTable::default();
+        let views: Vec<ConceptView<'_>> = table
+            .iter()
+            .map(|(id, c)| concept_view(id, c, false))
+            .collect();
         to_json(&views)
     }
 
     /// Reads an author's roots from `text`, one per line, against `design`:
     /// a verdict for each line, and the design with the accepted roots
     /// merged in (replacing its earlier root for the same meaning).
-    pub fn check_roots(design: &str, text: &str) -> Result<String, String> {
+    pub fn check_roots(design: &str, text: &str, meanings: &str) -> Result<String, String> {
         let mut design: LanguageDesign =
             serde_json::from_str(design).map_err(|e| format!("Malformed design: {e}"))?;
-        let mut roots: Vec<RootCheck> = Vec::new();
-        let mut accepted: Vec<(&'static str, usize)> = Vec::new();
+        let concepts = meanings::table(meanings)?;
+        let mut roots: Vec<RootCheck<'_>> = Vec::new();
+        let mut accepted: Vec<(&str, usize)> = Vec::new();
         for (i, line) in text.lines().enumerate() {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {
@@ -1155,7 +1185,7 @@ impl Bench {
                 suggestions: Vec::new(),
                 warnings: Vec::new(),
             };
-            let concept = match resolve_meaning(meaning) {
+            let concept = match resolve_meaning(&concepts, meaning) {
                 Resolved::One(concept) => concept,
                 Resolved::Many(ids) => {
                     check.detail = Some(ids.join("|"));
@@ -1169,13 +1199,13 @@ impl Bench {
                     continue;
                 }
             };
-            check.concept = Some(concept.id);
-            check.gloss = Some(concept.gloss);
+            check.concept = Some(&concept.id);
+            check.gloss = Some(&concept.gloss);
             let root = umran_sim::Root {
                 concept: concept.id.to_string(),
                 ipa: ipa.to_string(),
             };
-            match design.check_root(&root) {
+            match design.check_root(&root, &concepts) {
                 Err(umran_sim::RootError::UnknownConcept | umran_sim::RootError::Duplicate) => {
                     check.concept = None;
                     check.gloss = None;
@@ -1204,7 +1234,7 @@ impl Bench {
                             "warned"
                         };
                         check.spelled = Some(design.spelling.write(&form));
-                        accepted.push((concept.id, i + 1));
+                        accepted.push((&concept.id, i + 1));
                         let canonical = umran_sim::Root {
                             concept: concept.id.to_string(),
                             ipa: form.ipa(),
@@ -2048,7 +2078,7 @@ impl Bench {
                                     .replaced
                                     .iter()
                                     .map(|word| PuristWordView {
-                                        concept: word.concept,
+                                        concept: &world.concepts[word.concept].id,
                                         loan: word.loan_form.clone(),
                                         native: word.native_form.clone(),
                                     })
@@ -2158,10 +2188,10 @@ impl Bench {
                 let dominant = slot.dominant()?;
                 let word = v.lexicon.get(dominant);
                 Some(LexiconRow {
-                    concept: slot.concept.id,
-                    gloss: slot.concept.gloss,
-                    field: slot.concept.field.label(),
-                    rank: slot.concept.stability,
+                    concept: &world.concepts[slot.concept].id,
+                    gloss: &world.concepts[slot.concept].gloss,
+                    field: world.concepts[slot.concept].field.label(),
+                    rank: world.concepts[slot.concept].stability,
                     class: v.gender.class_of(word.id),
                     form: lexicon_form(world, variety, word),
                     competing_forms: slot
@@ -2185,8 +2215,8 @@ impl Bench {
         variety: usize,
         concept: &str,
     ) -> Result<String, String> {
-        let concept = umran_sim::concepts::by_id(concept).ok_or("Unknown concept.")?;
         let world = self.world(generation);
+        let concept = world.concepts.by_id(concept).ok_or("Unknown concept.")?;
         let v = world
             .varieties
             .get(variety)
@@ -2206,7 +2236,11 @@ impl Bench {
                     class: v.gender.class_of(word.id),
                     origin: origin_view(world, variety, word),
                     coined: coined_view(v, word),
-                    senses: v.lexicon.senses(word.id).map(|c| c.gloss).collect(),
+                    senses: v
+                        .lexicon
+                        .senses(word.id)
+                        .map(|c| world.concepts[c].gloss.as_ref())
+                        .collect(),
                     history: history(world, variety, word),
                     paradigms: paradigm_views(world, variety, word),
                 }
@@ -2228,11 +2262,13 @@ impl Bench {
             })
             .collect();
         to_json(&WordView {
-            concept: concept.id,
-            gloss: concept.gloss,
-            field: concept.field.label(),
-            rank: concept.stability,
-            related: related(concept).map(|c| c.gloss).collect(),
+            concept: &world.concepts[concept].id,
+            gloss: &world.concepts[concept].gloss,
+            field: world.concepts[concept].field.label(),
+            rank: world.concepts[concept].stability,
+            related: related(&world.concepts[concept])
+                .map(|c| world.concepts[c].gloss.as_ref())
+                .collect(),
             variants,
             cognates,
         })
@@ -2442,8 +2478,8 @@ impl Bench {
     /// dialect atlas shows it: words descended from one root share a
     /// group, numbered in order of first appearance.
     pub fn word_map(&mut self, generation: u32, concept: &str) -> Result<String, String> {
-        let concept = umran_sim::concepts::by_id(concept).ok_or("Unknown concept.")?;
         let world = self.world(generation);
+        let concept = world.concepts.by_id(concept).ok_or("Unknown concept.")?;
         let mut roots = Vec::new();
         let words = world
             .communities
@@ -2468,8 +2504,8 @@ impl Bench {
             })
             .collect();
         to_json(&WordMapView {
-            concept: concept.id,
-            gloss: concept.gloss,
+            concept: &world.concepts[concept].id,
+            gloss: &world.concepts[concept].gloss,
             words,
         })
     }
@@ -2516,6 +2552,8 @@ impl Bench {
                 | Action::Temper { .. }
                 | Action::Law { .. }
                 | Action::Authored { .. }
+                | Action::Meaning { .. }
+                | Action::Word { .. }
                 | Action::Craft { .. } => continue,
             };
             let kind = match action {
@@ -2668,6 +2706,12 @@ impl Bench {
                 WorldEvent::Fixed { state } => {
                     format!("{} fixed in writing", latest.states[*state].name.meaning)
                 }
+                WorldEvent::MeaningDefined { concept } => {
+                    format!("Meaning defined: {}", latest.concepts[*concept].gloss)
+                }
+                WorldEvent::WordAuthored { concept, .. } => {
+                    format!("Word authored: {}", latest.concepts[*concept].gloss)
+                }
                 // Too frequent to mark: told in the annals instead.
                 WorldEvent::Spread { .. }
                 | WorldEvent::Displaced { .. }
@@ -2760,8 +2804,8 @@ pub(crate) fn specimen(variety: &Variety, generation: u32) -> Vec<SpecimenWord> 
             let ipa = form.ipa_stressed(stress);
             let was_ipa = before.ipa_stressed(variety.stress_at(generation.saturating_sub(1)));
             Some(SpecimenWord {
-                concept: concept.id,
-                gloss: concept.gloss,
+                concept: CONCEPTS[concept.0 as usize].id.as_ref(),
+                gloss: CONCEPTS[concept.0 as usize].gloss.as_ref(),
                 was: (was != spelled).then_some(was),
                 was_ipa: (was_ipa != ipa).then_some(was_ipa),
                 ipa,
@@ -2789,8 +2833,8 @@ fn law_specimen(variety: &Variety, law: &umran_sim::laws::Law) -> Vec<SpecimenWo
             let was = variety.spell(&word.form);
             let was_ipa = word.form.ipa_stressed(stress);
             Some(SpecimenWord {
-                concept: concept.id,
-                gloss: concept.gloss,
+                concept: CONCEPTS[concept.0 as usize].id.as_ref(),
+                gloss: CONCEPTS[concept.0 as usize].gloss.as_ref(),
                 was: (was != spelled).then_some(was),
                 was_ipa: (was_ipa != ipa).then_some(was_ipa),
                 spelled,
@@ -3037,16 +3081,16 @@ fn kept_through_shift(word: &Lexeme) -> bool {
 }
 
 #[derive(Serialize)]
-struct CoinedPartView {
-    concept: &'static str,
-    gloss: &'static str,
+struct CoinedPartView<'a> {
+    concept: &'a str,
+    gloss: &'a str,
     spelled: String,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct CoinedView {
-    parts: Vec<CoinedPartView>,
+struct CoinedView<'a> {
+    parts: Vec<CoinedPartView<'a>>,
     kind: umran_sim::coinage::CoinageKind,
     generation: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -3054,15 +3098,15 @@ struct CoinedView {
     opaque_since: Option<u32>,
 }
 
-fn coined_view(variety: &Variety, word: &Lexeme) -> Option<CoinedView> {
+fn coined_view<'a>(variety: &'a Variety, word: &Lexeme) -> Option<CoinedView<'a>> {
     let coined = word.coined.as_ref()?;
     Some(CoinedView {
         parts: coined
             .parts
             .iter()
             .map(|part| CoinedPartView {
-                concept: part.concept.id,
-                gloss: part.concept.gloss,
+                concept: &variety.lexicon.concepts[part.concept].id,
+                gloss: &variety.lexicon.concepts[part.concept].gloss,
                 spelled: variety.spell(&part.form),
             })
             .collect(),
@@ -3088,6 +3132,14 @@ fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
         };
     }
     match word.origin {
+        Origin::Authored => OriginView {
+            kind: "authored",
+            from: None,
+            generation: word.born,
+            from_variety: None,
+            cause: None,
+            authored: true,
+        },
         Origin::Founding => OriginView {
             kind: "inherited",
             from: None,
@@ -3116,7 +3168,7 @@ fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
             kind: "derived",
             from: Some(format!(
                 "{} ({})",
-                world.varieties[variety].lexicon.get(base).first_sense.gloss,
+                world.concepts[world.varieties[variety].lexicon.get(base).first_sense].gloss,
                 relation.label()
             )),
             generation: word.born,
@@ -3125,7 +3177,8 @@ fn origin_view(world: &World, variety: usize, word: &Lexeme) -> OriginView {
             authored: false,
         },
         Origin::Renewed { base, with } => {
-            let gloss = |id| world.varieties[variety].lexicon.get(id).first_sense.gloss;
+            let gloss =
+                |id| &world.concepts[world.varieties[variety].lexicon.get(id).first_sense].gloss;
             OriginView {
                 kind: "derived",
                 from: Some(match with {
@@ -3165,18 +3218,24 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
         generation: word.born,
         cause: origin_cause(world, word),
         text: match word.origin {
+            Origin::Authored => format!(
+                "Given by the author in year {}, in their own hand",
+                word.born * 25
+            ),
             Origin::Founding => format!(
                 "A root of the founding language, for “{}”",
-                word.first_sense.gloss
+                world.concepts[word.first_sense].gloss
             ),
-            Origin::Expressive => format!("Coined for “{}”", word.first_sense.gloss),
+            Origin::Expressive => {
+                format!("Coined for “{}”", world.concepts[word.first_sense].gloss)
+            }
             Origin::Compound { modifier, head } => {
                 let v = &world.varieties[variety];
                 format!(
                     "From {} + {}, for “{}”",
                     v.spell(v.lexicon.get(modifier).form_at(word.born)),
                     v.spell(v.lexicon.get(head).form_at(word.born)),
-                    word.first_sense.gloss
+                    world.concepts[word.first_sense].gloss
                 )
             }
             Origin::Derived { base, relation } => {
@@ -3203,7 +3262,7 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
                 };
                 format!(
                     "Built from “{}” with {how}, for “{}”",
-                    base.first_sense.gloss, word.first_sense.gloss
+                    world.concepts[base.first_sense].gloss, world.concepts[word.first_sense].gloss
                 )
             }
             Origin::Renewed { base, with } => {
@@ -3213,8 +3272,8 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
                 match with {
                     Some(with) => format!(
                         "Compounded from “{}” and the old word {worn}, for “{}”",
-                        v.lexicon.get(with).first_sense.gloss,
-                        word.first_sense.gloss
+                        world.concepts[v.lexicon.get(with).first_sense].gloss,
+                        world.concepts[word.first_sense].gloss
                     ),
                     None => {
                         let affix = &v.morphology.renewing;
@@ -3226,7 +3285,7 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
                         };
                         format!(
                             "The old word {worn} made fuller with {affix}, for “{}”",
-                            word.first_sense.gloss
+                            world.concepts[word.first_sense].gloss
                         )
                     }
                 }
@@ -3234,12 +3293,12 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
             Origin::Borrowed { from, .. } if kept_through_shift(word) => format!(
                 "Kept from {} when its speakers changed language, for “{}”",
                 world.language_title(from),
-                word.first_sense.gloss
+                world.concepts[word.first_sense].gloss
             ),
             Origin::Borrowed { from, .. } => format!(
                 "Borrowed from {} for “{}”",
                 world.language_title(from),
-                word.first_sense.gloss
+                world.concepts[word.first_sense].gloss
             ),
         },
     }];
@@ -3259,11 +3318,14 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
                     generation: entry.generation,
                     cause: None,
                     text: if times == 1 {
-                        format!("For a few generations also used for “{}”", concept.gloss)
+                        format!(
+                            "For a few generations also used for “{}”",
+                            world.concepts[concept].gloss
+                        )
                     } else {
                         format!(
                             "Now and then used for “{}” too, never for long ({times} times)",
-                            concept.gloss
+                            world.concepts[concept].gloss
                         )
                     },
                 });
@@ -3292,8 +3354,10 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
                         .ipa_stressed(world.varieties[variety].stress_at(entry.generation))
                 )
             }
-            Event::Extended { to } => format!("Also came to mean “{}”", to.gloss),
-            Event::Lost { sense } => format!("No longer used for “{}”", sense.gloss),
+            Event::Extended { to } => format!("Also came to mean “{}”", world.concepts[*to].gloss),
+            Event::Lost { sense } => {
+                format!("No longer used for “{}”", world.concepts[*sense].gloss)
+            }
             Event::Obsolete => "Fell out of use".into(),
         };
         out.push(HistoryLine {
@@ -3323,8 +3387,13 @@ const PASSING_SENSE: u32 = 10;
 /// Senses `word` took up and dropped again within `PASSING_SENSE`
 /// generations: per concept, how many times, keyed by the log index of its
 /// first such use; and every log index those uses span, to fold away.
-fn passing_senses(word: &Lexeme) -> (BTreeMap<usize, (&'static Concept, usize)>, HashSet<usize>) {
-    let mut first: HashMap<&'static str, usize> = HashMap::new();
+fn passing_senses(
+    word: &Lexeme,
+) -> (
+    BTreeMap<usize, (umran_sim::ConceptId, usize)>,
+    HashSet<usize>,
+) {
+    let mut first: HashMap<umran_sim::ConceptId, usize> = HashMap::new();
     let mut passing = BTreeMap::new();
     let mut folded = HashSet::new();
     for (i, entry) in word.log.iter().enumerate() {
@@ -3333,14 +3402,14 @@ fn passing_senses(word: &Lexeme) -> (BTreeMap<usize, (&'static Concept, usize)>,
         };
         let lost = word.log[i + 1..]
             .iter()
-            .position(|e| matches!(e.event, Event::Lost { sense } if sense.id == to.id))
+            .position(|e| matches!(e.event, Event::Lost { sense } if sense == to))
             .map(|k| i + 1 + k);
         let Some(j) = lost else { continue };
         if word.log[j].generation - entry.generation > PASSING_SENSE {
             continue;
         }
         folded.extend([i, j]);
-        let head = *first.entry(to.id).or_insert(i);
+        let head = *first.entry(to).or_insert(i);
         passing.entry(head).or_insert((to, 0)).1 += 1;
     }
     (passing, folded)
@@ -3489,8 +3558,8 @@ const PREVIEW: &[&str] = &[
 ];
 
 #[derive(Serialize)]
-struct PreviewWord {
-    gloss: &'static str,
+struct PreviewWord<'a> {
+    gloss: &'a str,
     spelled: String,
     ipa: String,
     from: Option<String>,
@@ -3500,9 +3569,9 @@ struct PreviewWord {
 
 /// One catalog meaning, for pickers.
 #[derive(Serialize)]
-struct ConceptView {
-    id: &'static str,
-    gloss: &'static str,
+struct ConceptView<'a> {
+    id: &'a str,
+    gloss: &'a str,
     /// The field's meaning-set id (`desk.rs`), e.g. "physical-world".
     field: &'static str,
     /// "count" or "mass" for things, "verb", "property", or "function".
@@ -3513,13 +3582,15 @@ struct ConceptView {
     core: bool,
     /// One of the specimen words every language view carries.
     specimen: bool,
+    custom: bool,
+    tier: Option<umran_sim::Tier>,
 }
 
-fn concept_view(concept: &'static Concept) -> ConceptView {
+fn concept_view(id: umran_sim::ConceptId, concept: &Concept, custom: bool) -> ConceptView<'_> {
     use umran_sim::Class;
     ConceptView {
-        id: concept.id,
-        gloss: concept.gloss,
+        id: &concept.id,
+        gloss: &concept.gloss,
         field: desk::field_id(concept.field),
         class: match concept.class {
             Class::Entity if concept.categories.plural => "count",
@@ -3528,24 +3599,26 @@ fn concept_view(concept: &'static Concept) -> ConceptView {
             Class::Property => "property",
             Class::Function => "function",
         },
-        pronoun: umran_sim::pronouns::is_pronoun(concept),
+        pronoun: umran_sim::pronouns::is_pronoun(id),
         foundable: umran_sim::design::foundable(concept),
         core: concept.stability.is_some(),
-        specimen: SPECIMEN.contains(&concept.id),
+        specimen: SPECIMEN.contains(&concept.id.as_ref()),
+        custom,
+        tier: concept.tier,
     }
 }
 
 /// One line of an author's root list, read against a design.
 #[derive(Serialize)]
-struct RootCheck {
+struct RootCheck<'a> {
     /// 1-based line in the text.
     line: usize,
     /// The meaning as typed.
     meaning: String,
     /// The form as typed, without its `/…/` or `[…]`.
     ipa: String,
-    concept: Option<&'static str>,
-    gloss: Option<&'static str>,
+    concept: Option<&'a str>,
+    gloss: Option<&'a str>,
     /// The design's spelling of an accepted form.
     spelled: Option<String>,
     /// "ok", "warned", "unknown-meaning", "bad-ipa", "outside-inventory",
@@ -3556,15 +3629,15 @@ struct RootCheck {
     /// or the earlier line a duplicate repeats.
     detail: Option<String>,
     /// Meanings whose id or gloss contains the text, up to six.
-    suggestions: Vec<&'static str>,
+    suggestions: Vec<&'a str>,
     /// "cluster", "length", or "final": shapes the design's knobs never
     /// draw, accepted all the same.
     warnings: Vec<&'static str>,
 }
 
 #[derive(Serialize)]
-struct RootsReport {
-    roots: Vec<RootCheck>,
+struct RootsReport<'a> {
+    roots: Vec<RootCheck<'a>>,
     design: LanguageDesign,
 }
 
@@ -3595,40 +3668,45 @@ fn split_root_line(line: &str) -> (&str, &str) {
     (meaning.trim(), form.trim())
 }
 
-enum Resolved {
-    One(&'static Concept),
+enum Resolved<'a> {
+    One(&'a Concept),
     /// Two or more meanings claim the text.
-    Many(Vec<&'static str>),
+    Many(Vec<&'a str>),
     /// Nothing does; meanings whose id or gloss contains it, up to six.
-    None(Vec<&'static str>),
+    None(Vec<&'a str>),
 }
 
 /// A typed meaning against the foundable catalog: an exact id, then an
 /// exact gloss, then one alternative of a gloss that lists several
 /// ("chief, king"), case-insensitively.
-fn resolve_meaning(text: &str) -> Resolved {
+fn resolve_meaning<'a>(concepts: &'a umran_sim::ConceptTable, text: &str) -> Resolved<'a> {
     let wanted = text.trim().to_lowercase();
     if wanted.is_empty() {
         return Resolved::None(Vec::new());
     }
-    let pool = || CONCEPTS.iter().filter(|c| umran_sim::design::foundable(c));
+    let pool = || {
+        concepts
+            .iter()
+            .map(|(_, c)| c)
+            .filter(|c| umran_sim::design::foundable(c))
+    };
     let levels: [&dyn Fn(&Concept) -> bool; 3] = [
         &|c| c.id == wanted,
         &|c| c.gloss.to_lowercase() == wanted,
         &|c| c.gloss.split(", ").any(|alt| alt.to_lowercase() == wanted),
     ];
     for level in levels {
-        let hits: Vec<&'static Concept> = pool().filter(|c| level(c)).collect();
+        let hits: Vec<&Concept> = pool().filter(|c| level(c)).collect();
         match hits.as_slice() {
             [] => continue,
             [one] => return Resolved::One(one),
-            _ => return Resolved::Many(hits.iter().map(|c| c.id).collect()),
+            _ => return Resolved::Many(hits.iter().map(|c| c.id.as_ref()).collect()),
         }
     }
     Resolved::None(
         pool()
             .filter(|c| c.id.contains(&wanted) || c.gloss.to_lowercase().contains(&wanted))
-            .map(|c| c.id)
+            .map(|c| c.id.as_ref())
             .take(6)
             .collect(),
     )
@@ -3678,11 +3756,11 @@ fn root_warnings(design: &LanguageDesign, form: &Form) -> Vec<&'static str> {
 }
 
 #[derive(Serialize)]
-struct Preview {
+struct Preview<'a> {
     people: NameView,
     language: NameView,
-    words: Vec<PreviewWord>,
-    families: Vec<PreviewWord>,
+    words: Vec<PreviewWord<'a>>,
+    families: Vec<PreviewWord<'a>>,
     /// Concepts sharing a form with another concept.
     homophones: usize,
     /// Mean syllables per word.
@@ -3792,7 +3870,7 @@ fn sound_view(id: PhonemeId, seg: Segment) -> SoundView {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct Overview {
+struct Overview<'a> {
     telling: TellingId,
     at_tip: bool,
     seed: u64,
@@ -3804,7 +3882,7 @@ struct Overview {
     saved_revision: Option<u32>,
     timeline: Vec<Marker>,
     communities: Vec<CommunityView>,
-    varieties: Vec<VarietyView>,
+    varieties: Vec<VarietyView<'a>>,
     contacts: Vec<ContactView>,
     /// Every state that has stood, in the order they arose.
     states: Vec<StateView>,
@@ -4000,7 +4078,7 @@ struct CommunityView {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct VarietyView {
+struct VarietyView<'a> {
     id: usize,
     /// What its speakers call it.
     name: String,
@@ -4053,7 +4131,7 @@ struct VarietyView {
     sacred_of: Option<usize>,
     /// The state whose classical form it is, if it is one.
     classical_of: Option<usize>,
-    purism: Vec<PurismView>,
+    purism: Vec<PurismView<'a>>,
     /// The high written register (sacred, classical, or court standard) its
     /// speakers write, or wrote before writing their own speech.
     high: Option<usize>,
@@ -4113,7 +4191,11 @@ fn pronoun_view(variety: &Variety) -> Vec<PronounView> {
                 ),
                 Origin::Renewed { base, .. } => (
                     "renewed",
-                    Some(variety.lexicon.get(base).first_sense.id.to_owned()),
+                    Some(
+                        variety.lexicon.concepts[variety.lexicon.get(base).first_sense]
+                            .id
+                            .to_string(),
+                    ),
                 ),
                 _ => ("founding", None),
             };
@@ -4190,15 +4272,15 @@ struct HarmonyAlternant {
 }
 
 #[derive(Serialize)]
-struct PurismView {
+struct PurismView<'a> {
     since: u32,
     cause: Option<umran_sim::Cause>,
-    replaced: Vec<PuristWordView>,
+    replaced: Vec<PuristWordView<'a>>,
 }
 
 #[derive(Serialize)]
-struct PuristWordView {
-    concept: &'static str,
+struct PuristWordView<'a> {
+    concept: &'a str,
     loan: String,
     native: String,
 }
@@ -4887,7 +4969,7 @@ fn sample_word(
     // Bare possessors at the start of the cycle are legitimate; other
     // requested eligible categories must have a recorded realization.
     if category.is_some_and(|c| {
-        meaning.categories.allows(c)
+        variety.lexicon.concepts[meaning].categories.allows(c)
             && !(c == Category::Genitive
                 && umran_sim::pronouns::is_pronoun(meaning)
                 && variety.grammar.summary.possessive == umran_sim::grammar::PronounCase::None)
@@ -4992,8 +5074,8 @@ fn grammar_origin_view(world: &World, variety: usize, marker: &GrammarMarker) ->
             source_form,
         } => GrammarOriginView::Grammaticalized {
             source: source.0,
-            concept: concept.id,
-            gloss: concept.gloss,
+            concept: CONCEPTS[concept.0 as usize].id.as_ref(),
+            gloss: CONCEPTS[concept.0 as usize].gloss.as_ref(),
             source_form: grammar_form_view(v, source_form, marker.born),
         },
         MarkerOrigin::Fused { particle } => GrammarOriginView::Fused {
@@ -5233,7 +5315,7 @@ fn written_and_said(variety: &Variety, word: &Lexeme) -> (String, Option<String>
     (written, differs.then_some(said))
 }
 
-fn lexicon_form(world: &World, variety: usize, word: &Lexeme) -> LexiconForm {
+fn lexicon_form<'a>(world: &'a World, variety: usize, word: &Lexeme) -> LexiconForm<'a> {
     let v = &world.varieties[variety];
     let (spelled, said) = written_and_said(v, word);
     LexiconForm {
@@ -5252,11 +5334,14 @@ fn lexicon_form(world: &World, variety: usize, word: &Lexeme) -> LexiconForm {
 
 /// How `variety` came by its word for `concept`: borrowed, stretched from
 /// another meaning, built from a word it had, coined, or inherited.
-fn rendering(world: &World, variety: usize, concept: &'static Concept) -> Option<Rendering> {
+fn rendering(world: &World, variety: usize, concept: umran_sim::ConceptId) -> Option<Rendering> {
     let v = &world.varieties[variety];
     let word = v.lexicon.word_for(concept)?;
-    let (how, from) = if word.first_sense.id != concept.id {
-        ("stretched", Some(word.first_sense.gloss.to_string()))
+    let (how, from) = if word.first_sense != concept {
+        (
+            "stretched",
+            Some(world.concepts[word.first_sense].gloss.to_string()),
+        )
     } else {
         let origin = origin_view(world, variety, word);
         let how = match origin.kind {
@@ -5282,8 +5367,8 @@ fn renderings(world: &World, need: Need, varieties: &[usize]) -> Vec<RenderingRo
         .filter(|(_, n)| *n == need)
         .filter_map(|(id, _)| by_id(id))
         .map(|concept| RenderingRow {
-            concept: concept.id,
-            gloss: concept.gloss,
+            concept: CONCEPTS[concept.0 as usize].id.as_ref(),
+            gloss: CONCEPTS[concept.0 as usize].gloss.as_ref(),
             renderings: varieties
                 .iter()
                 .filter_map(|&v| rendering(world, v, concept))
@@ -5455,23 +5540,23 @@ struct OriginView {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct LexiconRow {
-    concept: &'static str,
-    gloss: &'static str,
+struct LexiconRow<'a> {
+    concept: &'a str,
+    gloss: &'a str,
     field: &'static str,
     rank: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     class: Option<u32>,
     #[serde(flatten)]
-    form: LexiconForm,
+    form: LexiconForm<'a>,
     /// Current competing forms other than the dominant word above.
-    competing_forms: Vec<LexiconForm>,
+    competing_forms: Vec<LexiconForm<'a>>,
     competitors: usize,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct LexiconForm {
+struct LexiconForm<'a> {
     /// As written: as it sounded when the language was first written.
     spelled: String,
     /// As said now, spelled the same way, if writing has fallen behind.
@@ -5479,7 +5564,7 @@ struct LexiconForm {
     ipa: String,
     origin: OriginView,
     #[serde(skip_serializing_if = "Option::is_none")]
-    coined: Option<CoinedView>,
+    coined: Option<CoinedView<'a>>,
     changes: usize,
 }
 
@@ -5692,7 +5777,7 @@ struct RealizationView {
 }
 
 #[derive(Serialize)]
-struct VariantView {
+struct VariantView<'a> {
     spelled: String,
     said: Option<String>,
     ipa: String,
@@ -5701,8 +5786,8 @@ struct VariantView {
     class: Option<u32>,
     origin: OriginView,
     #[serde(skip_serializing_if = "Option::is_none")]
-    coined: Option<CoinedView>,
-    senses: Vec<&'static str>,
+    coined: Option<CoinedView<'a>>,
+    senses: Vec<&'a str>,
     history: Vec<HistoryLine>,
     paradigms: Vec<ParadigmView>,
 }
@@ -5716,13 +5801,13 @@ struct Cognate {
 }
 
 #[derive(Serialize)]
-struct WordView {
-    concept: &'static str,
-    gloss: &'static str,
+struct WordView<'a> {
+    concept: &'a str,
+    gloss: &'a str,
     field: &'static str,
     rank: Option<u8>,
-    related: Vec<&'static str>,
-    variants: Vec<VariantView>,
+    related: Vec<&'a str>,
+    variants: Vec<VariantView<'a>>,
     cognates: Vec<Cognate>,
 }
 
@@ -5903,9 +5988,9 @@ struct RiverFlowView {
 }
 
 #[derive(Serialize)]
-struct WordMapView {
-    concept: &'static str,
-    gloss: &'static str,
+struct WordMapView<'a> {
+    concept: &'a str,
+    gloss: &'a str,
     words: Vec<MapWord>,
 }
 
@@ -6030,7 +6115,8 @@ mod tests {
                         .as_array()
                         .unwrap()
                         .iter()
-                        .any(|r| r["concept"] == slot.concept.id),
+                        .any(|r| r["concept"]
+                            == *before.varieties[0].lexicon.concepts[slot.concept].id),
                     changed
                 );
             }
@@ -6280,7 +6366,13 @@ mod tests {
     fn authored_law_specimens_preserve_minimal_words_and_show_stress_only_changes() {
         let mut profile = umran_sim::SoundProfile::base();
         profile.stress = Some(StressRule::Final);
-        let mut variety = Variety::found(7, &profile, Livelihood::Farming, Default::default());
+        let mut variety = Variety::found(
+            &umran_sim::ConceptTable::default(),
+            7,
+            &profile,
+            Livelihood::Farming,
+            Default::default(),
+        );
         let water = variety
             .lexicon
             .word_for(by_id("water").unwrap())
@@ -8003,6 +8095,8 @@ mod tests {
                     "foundable",
                     "core",
                     "specimen",
+                    "custom",
+                    "tier",
                 ],
             );
         }
@@ -8072,7 +8166,8 @@ mod tests {
                     iron /mira/\n\
                     peace /kraspantarkat/\n";
         let report: serde_json::Value =
-            serde_json::from_str(&Bench::check_roots(&design.to_string(), text).unwrap()).unwrap();
+            serde_json::from_str(&Bench::check_roots(&design.to_string(), text, "[]").unwrap())
+                .unwrap();
         let roots = report["roots"].as_array().unwrap();
         let row = |line: u64| roots.iter().find(|r| r["line"] == line).unwrap();
         assert_eq!(roots.len(), 17, "comments and blank lines are skipped");
@@ -8158,12 +8253,13 @@ mod tests {
         }
         // Suggestions name meanings whose id or gloss contains the text.
         let report: serde_json::Value =
-            serde_json::from_str(&Bench::check_roots(&design.to_string(), "fish").unwrap())
+            serde_json::from_str(&Bench::check_roots(&design.to_string(), "fish", "[]").unwrap())
                 .unwrap();
         assert_eq!(report["roots"][0]["status"], "bad-ipa");
-        let report: serde_json::Value =
-            serde_json::from_str(&Bench::check_roots(&design.to_string(), "wat /a/").unwrap())
-                .unwrap();
+        let report: serde_json::Value = serde_json::from_str(
+            &Bench::check_roots(&design.to_string(), "wat /a/", "[]").unwrap(),
+        )
+        .unwrap();
         assert_eq!(report["roots"][0]["status"], "unknown-meaning");
         assert_eq!(
             report["roots"][0]["suggestions"],
@@ -8174,7 +8270,8 @@ mod tests {
         let merged: LanguageDesign = serde_json::from_value(report["design"].clone()).unwrap();
         assert_eq!(merged.roots.len(), 2);
         let report: serde_json::Value =
-            serde_json::from_str(&Bench::check_roots(&design.to_string(), text).unwrap()).unwrap();
+            serde_json::from_str(&Bench::check_roots(&design.to_string(), text, "[]").unwrap())
+                .unwrap();
         let merged: LanguageDesign = serde_json::from_value(report["design"].clone()).unwrap();
         let root = |concept: &str| {
             merged
@@ -8190,15 +8287,15 @@ mod tests {
         assert_eq!(root("chief"), Some("kaːr"));
         assert_eq!(root("peace"), Some("kraspantarkat"));
         assert_eq!(root("sun"), None);
-        assert_eq!(merged.validate(), Ok(()));
-        assert!(Bench::check_roots("{}", text).is_err());
+        assert_eq!(merged.validate(&umran_sim::ConceptTable::default()), Ok(()));
+        assert!(Bench::check_roots("{}", text, "[]").is_err());
     }
 
     #[test]
     fn previews_and_cards_mark_the_authors_roots() {
         let design = familiar_with(3, &["n", "a", "r", "w", "g"]);
         let report: serde_json::Value = serde_json::from_str(
-            &Bench::check_roots(&design.to_string(), "water /nara/\nwolf /waga/").unwrap(),
+            &Bench::check_roots(&design.to_string(), "water /nara/\nwolf /waga/", "[]").unwrap(),
         )
         .unwrap();
         assert!(
@@ -8400,7 +8497,13 @@ mod tests {
         use umran_sim::StressRule;
         let mut profile = umran_sim::SoundProfile::base();
         profile.stress = Some(StressRule::Final);
-        let mut variety = Variety::found(7, &profile, Livelihood::Farming, Default::default());
+        let mut variety = Variety::found(
+            &umran_sim::ConceptTable::default(),
+            7,
+            &profile,
+            Livelihood::Farming,
+            Default::default(),
+        );
         let word = variety
             .lexicon
             .slot(by_id("water").unwrap())

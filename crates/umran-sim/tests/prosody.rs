@@ -375,6 +375,7 @@ fn founding_knobs_and_spelling_keep_length_and_stress_separate() {
     design.stress = Some(StressRule::Free);
     design.geminates = 1.0;
     let long = Variety::found(
+        &umran_sim::ConceptTable::default(),
         7,
         &design.profile(),
         Livelihood::Farming,
@@ -382,6 +383,7 @@ fn founding_knobs_and_spelling_keep_length_and_stress_separate() {
     );
     design.geminates = 0.0;
     let short = Variety::found(
+        &umran_sim::ConceptTable::default(),
         7,
         &design.profile(),
         Livelihood::Farming,

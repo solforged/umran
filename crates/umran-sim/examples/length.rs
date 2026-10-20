@@ -26,7 +26,7 @@ fn main() {
                     .iter()
                     .filter_map(|s| {
                         s.dominant()
-                            .map(|id| (s.concept, &lexicon.get(id).form, id))
+                            .map(|id| (&lexicon.concepts[s.concept], &lexicon.get(id).form, id))
                     })
                     .collect();
                 let syll = |f: &umran_sim::Form| f.vowel_count() as f32;

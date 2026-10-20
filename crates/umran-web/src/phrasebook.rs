@@ -147,12 +147,13 @@ fn render(v: &Variety, generation: u32, frame: &Frame) -> Option<Phrase> {
     // Validate even arguments later omitted by agreement: no invented forms.
     for w in frame.words {
         let concept = by_id(w.concept)?;
+        let meta = &v.lexicon.concepts[concept];
         let lexeme = v.lexicon.word_for(concept)?;
         if lexeme.form.segs.is_empty() {
             return None;
         }
         if w.category.is_some_and(|category| {
-            concept.categories.allows(category)
+            meta.categories.allows(category)
                 && !(category == Category::Genitive
                     && umran_sim::pronouns::is_pronoun(concept)
                     && v.grammar.summary.possessive == umran_sim::grammar::PronounCase::None)
@@ -218,36 +219,36 @@ fn render(v: &Variety, generation: u32, frame: &Frame) -> Option<Phrase> {
             out.notes.push(n);
         }
     };
-    let mut emit = |w: &FrameWord,
-                    agreement: [Option<&AgreementForm>; 3],
-                    out: &mut GrammarRendering| {
-        if by_id(w.concept)?.class == umran_sim::concepts::Class::Entity && w.possessor_of.is_none()
-        {
-            sample_determiner(v, w.concept, generation, out)?;
-        }
-        if let Some(category) = w.category {
-            let lexeme = v.lexicon.word_for(by_id(w.concept)?)?;
-            if lexeme
-                .paradigms
-                .iter()
-                .filter(|p| p.category == category)
-                .flat_map(|p| &p.realizations)
-                .any(|r| {
-                    r.retired.is_none()
-                        && r.share > 0.0
-                        && v.grammar.audible(&lexeme.form, r, v.stress())
-                })
+    let mut emit =
+        |w: &FrameWord, agreement: [Option<&AgreementForm>; 3], out: &mut GrammarRendering| {
+            if v.lexicon.concepts[by_id(w.concept)?].class == umran_sim::concepts::Class::Entity
+                && w.possessor_of.is_none()
             {
-                if category == Category::Object {
-                    note(Note::ObjectMarked);
-                }
-                if category == Category::Genitive && !is_pronoun(w) {
-                    note(Note::NounGenitive);
+                sample_determiner(v, w.concept, generation, out)?;
+            }
+            if let Some(category) = w.category {
+                let lexeme = v.lexicon.word_for(by_id(w.concept)?)?;
+                if lexeme
+                    .paradigms
+                    .iter()
+                    .filter(|p| p.category == category)
+                    .flat_map(|p| &p.realizations)
+                    .any(|r| {
+                        r.retired.is_none()
+                            && r.share > 0.0
+                            && v.grammar.audible(&lexeme.form, r, v.stress())
+                    })
+                {
+                    if category == Category::Object {
+                        note(Note::ObjectMarked);
+                    }
+                    if category == Category::Genitive && !is_pronoun(w) {
+                        note(Note::NounGenitive);
+                    }
                 }
             }
-        }
-        sample_word(v, w.concept, w.category, generation, out, agreement)
-    };
+            sample_word(v, w.concept, w.category, generation, out, agreement)
+        };
     for index in order {
         let w = &frame.words[index];
         if let Some(role @ (Subject | Object)) = w.role {
@@ -269,7 +270,7 @@ fn render(v: &Variety, generation: u32, frame: &Frame) -> Option<Phrase> {
         {
             emit(p, [None; 3], &mut out.rendering)?;
         }
-        let verb = by_id(w.concept)?.class == umran_sim::concepts::Class::Event;
+        let verb = v.lexicon.concepts[by_id(w.concept)?].class == umran_sim::concepts::Class::Event;
         emit(
             w,
             if verb {

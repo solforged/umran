@@ -93,7 +93,7 @@ pub fn run(seeds: u64) -> Stats {
                     println!(
                         "  year {} {law}: {} /{}/ > /{}/",
                         entry.generation * 25,
-                        word.first_sense.gloss,
+                        variety.lexicon.concepts[word.first_sense].gloss,
                         before.ipa(),
                         after.ipa()
                     );

@@ -59,7 +59,7 @@ This bookkeeping makes no random draws and does not itself change replay.
   for "draw by world frequency", and presets (the base plus a `Flavor` from
   `flavor.rs` or `palettes.rs`) only produce starting designs to edit.
 - A design may carry the author's own roots (`LanguageDesign.roots`): a
-  catalog meaning and a form in the catalog's IPA, with `ː` for length.
+  world meaning and a form in the catalog's IPA, with `ː` for length.
   A root is taken whole or refused with a reason (`RootError`): the
   meaning must be one a founding language has a word for (not a pronoun
   cell a language may lack, nor a meaning that waits for a craft, a way of
@@ -96,6 +96,22 @@ This bookkeeping makes no random draws and does not itself change replay.
   vulgarities, a courtesy rather than a linguistic claim. Five meanings
   (wolf, song, peace, death, dream) were appended for authors' roots, with
   sing → song and die → death as families.
+- Each world owns a `ConceptTable`: immutable built-ins keep their numeric
+  `ConceptId`s in catalog order; the author's `Meaning` actions append owned
+  meanings after them. Lexical senses, slots, events, and coinage parts carry
+  IDs, resolved through that table rather than static concept references.
+  Lexicons share a cheap table snapshot and append empty slots when a meaning
+  is defined, including in languages no longer spoken. A custom meaning has
+  a field, class, countability, and cultural tier; an optional base and
+  relation prefer the ordinary derivation path. Before founding it receives
+  a root like any other available meaning, including a supplied design root.
+  Later, spoken languages fill its empty slot through the existing
+  need-driven coinage path, with borrowing, derivation, and fresh roots.
+  Per-concept random streams remain keyed by the meaning's string ID.
+  `Word` gives a living language an authored form at the current reading:
+  catalog IPA, a vowel, no tone letters, and only its current sounds. It
+  becomes dominant while incumbents remain competitors, then changes under
+  ordinary sound laws. Meanings and words replay only in their own telling.
 - Word families (`FAMILIES`, `morphology.rs`): each language mints its own
   affixes, or vowel patterns over consonant roots for root-and-pattern
   (`MorphologyKind::RootPattern`), and builds some family members from

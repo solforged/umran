@@ -3,7 +3,7 @@
 //! grammar choices, optional stress, and spelling. Presets and drawing by world frequency
 //! produce designs; a design then resolves to the `SoundProfile` the engine runs on.
 
-use crate::concepts::{Concept, by_id};
+use crate::concepts::{Concept, ConceptId, ConceptTable};
 use crate::form::Form;
 use crate::grammar::{GrammarDesign, GrammarPrior};
 use crate::inventory::Inventory;
@@ -58,7 +58,7 @@ pub enum RootError {
 }
 
 impl RootError {
-    fn describe(&self, root: &Root) -> String {
+    pub fn describe(&self, root: &Root) -> String {
         match self {
             Self::UnknownConcept => format!("The catalog has no meaning “{}”.", root.concept),
             Self::BadIpa(Some(at)) => format!(
@@ -83,16 +83,21 @@ impl RootError {
 /// meaning except the pronoun cells a language may lack and the meanings
 /// that wait for a craft, a way of life, or a faith (`ideas::NEEDS`).
 pub fn foundable(concept: &Concept) -> bool {
-    !crate::pronouns::is_optional_cell(concept.id) && crate::ideas::need(concept).is_none()
+    !crate::pronouns::is_optional_cell(&concept.id) && crate::ideas::need(concept).is_none()
 }
 
 impl Root {
     /// The meaning and form this root founds, before the design's own
     /// sounds are checked.
-    pub fn resolve(&self) -> Result<(&'static Concept, Form), RootError> {
-        let concept = by_id(&self.concept)
-            .filter(|c| foundable(c))
+    pub fn resolve(&self, concepts: &ConceptTable) -> Result<(ConceptId, Form), RootError> {
+        let concept = concepts
+            .by_id(&self.concept)
             .ok_or(RootError::UnknownConcept)?;
+        Ok((concept, self.form()?))
+    }
+
+    /// Parse an authored form without repairing it.
+    pub fn form(&self) -> Result<Form, RootError> {
         let raw = self.ipa.trim();
         if raw.is_empty() {
             return Err(RootError::BadIpa(None));
@@ -105,7 +110,7 @@ impl Root {
         if form.vowel_count() == 0 {
             return Err(RootError::NoVowel);
         }
-        Ok((concept, form))
+        Ok(form)
     }
 }
 
@@ -229,7 +234,7 @@ impl LanguageDesign {
     }
 
     /// Why this design cannot found a language, if it cannot.
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self, concepts: &ConceptTable) -> Result<(), String> {
         let mut seen: Vec<PhonemeId> = Vec::new();
         for sound in &self.sounds {
             let id = CATALOG
@@ -262,13 +267,15 @@ impl LanguageDesign {
         if knobs.iter().any(|k| !(0.0..=1.0).contains(k)) {
             return Err("knobs run from 0 to 1".into());
         }
-        let mut supplied: Vec<&str> = Vec::new();
+        let mut supplied: Vec<ConceptId> = Vec::new();
         for root in &self.roots {
-            let (concept, _) = self.check_root(root).map_err(|e| e.describe(root))?;
-            if supplied.contains(&concept.id) {
+            let (concept, _) = self
+                .check_root(root, concepts)
+                .map_err(|e| e.describe(root))?;
+            if supplied.contains(&concept) {
                 return Err(RootError::Duplicate.describe(root));
             }
-            supplied.push(concept.id);
+            supplied.push(concept);
         }
         Ok(())
     }
@@ -278,8 +285,15 @@ impl LanguageDesign {
     /// sounds, so later coinages and the card's sound list agree with it.
     /// Shapes the design's knobs would never draw are accepted: the
     /// author's language outranks the knobs.
-    pub fn check_root(&self, root: &Root) -> Result<(&'static Concept, Form), RootError> {
-        let (concept, form) = root.resolve()?;
+    pub fn check_root(
+        &self,
+        root: &Root,
+        concepts: &ConceptTable,
+    ) -> Result<(ConceptId, Form), RootError> {
+        let (concept, form) = root.resolve(concepts)?;
+        if !foundable(&concepts[concept]) {
+            return Err(RootError::UnknownConcept);
+        }
         if let Some(seg) = form.segs.iter().find(|seg| {
             !self
                 .sounds
@@ -374,8 +388,9 @@ mod tests {
     #[test]
     fn designs_found_exactly_their_sounds() {
         let design = LanguageDesign::by_frequency(7, 12, 5);
-        assert!(design.validate().is_ok());
+        assert!(design.validate(&ConceptTable::default()).is_ok());
         let variety = Variety::found(
+            &crate::ConceptTable::default(),
             7,
             &design.profile(),
             crate::Livelihood::Farming,
@@ -424,15 +439,25 @@ mod tests {
             ipa: "nope".into(),
             favoured: false,
         });
-        assert!(design.validate().unwrap_err().contains("nope"));
+        assert!(
+            design
+                .validate(&ConceptTable::default())
+                .unwrap_err()
+                .contains("nope")
+        );
         let mut design = LanguageDesign::by_frequency(1, 10, 5);
         design
             .sounds
             .retain(|s| !CATALOG.get(CATALOG.id_by_ipa(&s.ipa).unwrap()).is_vowel());
-        assert!(design.validate().unwrap_err().contains("vowels"));
+        assert!(
+            design
+                .validate(&ConceptTable::default())
+                .unwrap_err()
+                .contains("vowels")
+        );
         let mut design = LanguageDesign::by_frequency(1, 10, 5);
         design.word_length = 1.5;
-        assert!(design.validate().is_err());
+        assert!(design.validate(&ConceptTable::default()).is_err());
     }
 
     #[test]
@@ -466,6 +491,7 @@ mod tests {
         );
         for seed in [0, 7, u64::MAX] {
             let variety = Variety::found(
+                &crate::ConceptTable::default(),
                 seed,
                 &loaded.profile(),
                 crate::Livelihood::Farming,
@@ -498,6 +524,7 @@ mod tests {
         assert_eq!(profile.grammar.progressive, None);
         for seed in [0, 7, u64::MAX] {
             let variety = Variety::found(
+                &crate::ConceptTable::default(),
                 seed,
                 &profile,
                 crate::Livelihood::Farming,
@@ -513,12 +540,14 @@ mod tests {
             for seed in 0..4 {
                 let design = LanguageDesign::from_profile(&profile, seed);
                 let preset = Variety::found(
+                    &crate::ConceptTable::default(),
                     seed,
                     &profile,
                     crate::Livelihood::Farming,
                     crate::Ethos::default(),
                 );
                 let resolved = Variety::found(
+                    &crate::ConceptTable::default(),
                     seed,
                     &design.profile(),
                     crate::Livelihood::Farming,
@@ -551,6 +580,7 @@ mod tests {
             let json = serde_json::to_string(&design).unwrap();
             let loaded: LanguageDesign = serde_json::from_str(&json).unwrap();
             let variety = Variety::found(
+                &crate::ConceptTable::default(),
                 23,
                 &loaded.profile(),
                 crate::Livelihood::Farming,
@@ -596,6 +626,7 @@ mod tests {
         let initial = {
             design.stress = Some(StressRule::Initial);
             Variety::found(
+                &crate::ConceptTable::default(),
                 7,
                 &design.profile(),
                 crate::Livelihood::Farming,
@@ -604,6 +635,7 @@ mod tests {
         };
         design.stress = Some(StressRule::Final);
         let final_stress = Variety::found(
+            &crate::ConceptTable::default(),
             7,
             &design.profile(),
             crate::Livelihood::Farming,
@@ -613,7 +645,7 @@ mod tests {
         assert_eq!(final_stress.stress(), StressRule::Final);
         let mut moved = false;
         for (a, b) in initial.lexicon.living().zip(final_stress.lexicon.living()) {
-            assert_eq!(a.first_sense.id, b.first_sense.id);
+            assert_eq!(a.first_sense, b.first_sense);
             assert_eq!(a.form.segs, b.form.segs);
             assert_eq!(a.form.stress, None);
             assert_eq!(b.form.stress, None);
@@ -646,6 +678,7 @@ mod tests {
 
     fn found(design: &LanguageDesign, seed: u64) -> Variety {
         Variety::found(
+            &crate::ConceptTable::default(),
             seed,
             &design.profile(),
             crate::Livelihood::Farming,
@@ -669,8 +702,11 @@ mod tests {
             concept: concept.into(),
             ipa: ipa.into(),
         };
-        let refused =
-            |concept: &str, ipa: &str| design.check_root(&root(concept, ipa)).unwrap_err();
+        let refused = |concept: &str, ipa: &str| {
+            design
+                .check_root(&root(concept, ipa), &crate::ConceptTable::default())
+                .unwrap_err()
+        };
         assert_eq!(refused("unicorn", "nara"), RootError::UnknownConcept);
         // Pronoun cells a language may lack, and meanings that wait for a
         // craft, a way of life, or a faith, have no founding word.
@@ -696,26 +732,38 @@ mod tests {
             refused("water", "qara"),
             RootError::OutsideInventory("q".into())
         );
-        let (concept, form) = design.check_root(&root("water", "na.ra")).unwrap();
-        assert_eq!(concept.id, "water");
+        let (concept, form) = design
+            .check_root(&root("water", "na.ra"), &crate::ConceptTable::default())
+            .unwrap();
+        assert_eq!(crate::CONCEPTS[concept.0 as usize].id, "water");
         assert_eq!(form, Form::from_ipa("nara").unwrap());
         assert_eq!(form.stress, None);
         assert!(form.boundaries.is_empty());
 
         // `validate` names the offending root and refuses the whole design.
         design.roots = vec![root("water", "nara"), root("stone", "qara")];
-        assert!(design.validate().unwrap_err().contains("stone"));
+        assert!(
+            design
+                .validate(&ConceptTable::default())
+                .unwrap_err()
+                .contains("stone")
+        );
         design.roots.pop();
         design.roots.push(root("water", "mata"));
-        assert!(design.validate().unwrap_err().contains("water"));
+        assert!(
+            design
+                .validate(&ConceptTable::default())
+                .unwrap_err()
+                .contains("water")
+        );
         design.roots.pop();
-        assert_eq!(design.validate(), Ok(()));
+        assert_eq!(design.validate(&ConceptTable::default()), Ok(()));
         // Shapes the knobs never draw are the author's business.
         design.word_length = 0.0;
         design.final_consonants = 0.0;
         design.inner_clusters = false;
         design.roots.push(root("chief", "kraspantark"));
-        assert_eq!(design.validate(), Ok(()));
+        assert_eq!(design.validate(&ConceptTable::default()), Ok(()));
     }
 
     #[test]
@@ -728,15 +776,22 @@ mod tests {
             let rooted = found(&with_roots(seed, &given), seed);
             assert_eq!(plain.lexicon.lexemes.len(), rooted.lexicon.lexemes.len());
             for (a, b) in plain.lexicon.lexemes.iter().zip(&rooted.lexicon.lexemes) {
-                assert_eq!(a.first_sense.id, b.first_sense.id);
-                match given.iter().find(|(id, _)| *id == a.first_sense.id) {
+                assert_eq!(a.first_sense, b.first_sense);
+                match given
+                    .iter()
+                    .find(|(id, _)| *id == crate::CONCEPTS[a.first_sense.0 as usize].id)
+                {
                     Some((_, ipa)) => {
                         assert_eq!(b.form, Form::from_ipa(ipa).unwrap());
                         assert!(b.authored);
                         assert_eq!(b.origin, Origin::Founding);
                     }
                     None => {
-                        assert_eq!(a.form, b.form, "seed {seed}: {}", a.first_sense.id);
+                        assert_eq!(
+                            a.form, b.form,
+                            "seed {seed}: {}",
+                            plain.lexicon.concepts[a.first_sense].id
+                        );
                         assert!(!b.authored);
                     }
                 }
@@ -781,7 +836,7 @@ mod tests {
                 .iter()
                 .find(|l| l.authored)
                 .expect("the author's root is in the lexicon");
-            assert_eq!(word.first_sense.id, "water");
+            assert_eq!(world.concepts[word.first_sense].id, "water");
             assert_eq!(*word.form_at(0), supplied, "seed {seed}");
             let mut current = supplied.clone();
             for entry in &word.log {

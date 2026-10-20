@@ -22,7 +22,7 @@ fn purism_across_profiles_and_sample_recipe() {
                 );
                 assert!((41..=64).contains(&episode.since));
                 for word in &episode.replaced {
-                    let sense = umran_sim::concepts::by_id(word.concept).unwrap();
+                    let sense = word.concept;
                     assert_eq!(variety.lexicon.slot(sense).dominant(), Some(word.native));
                     assert!(!matches!(
                         variety.lexicon.get(word.native).origin,

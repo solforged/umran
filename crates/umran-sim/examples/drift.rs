@@ -82,7 +82,12 @@ fn main() {
             .iter()
             .take(4)
             .map(|(l, before, after)| {
-                format!("{} → {} '{}'", before.ipa(), after.ipa(), l.first_sense.id)
+                format!(
+                    "{} → {} '{}'",
+                    before.ipa(),
+                    after.ipa(),
+                    lexicon.concepts[l.first_sense].id
+                )
             })
             .collect();
         println!(
@@ -111,7 +116,11 @@ fn main() {
         };
         replaced += 1;
         let how = match now.origin {
-            Origin::Founding => format!("extended from '{}'", now.first_sense.gloss),
+            Origin::Founding => format!(
+                "extended from '{}'",
+                lexicon.concepts[now.first_sense].gloss
+            ),
+            Origin::Authored => format!("authored, gen {}", now.born),
             Origin::Expressive => format!("new root, gen {}", now.born),
             Origin::Compound { .. } => format!("compound, gen {}", now.born),
             Origin::Derived { relation, .. } => {
@@ -123,19 +132,18 @@ fn main() {
             Origin::Renewed { with, .. } => match with {
                 Some(with) => format!(
                     "compounded with '{}', gen {}",
-                    lexicon.get(with).first_sense.gloss,
+                    lexicon.concepts[lexicon.get(with).first_sense].gloss,
                     now.born
                 ),
                 None => format!("renewed with an affix, gen {}", now.born),
             },
         };
-        let rank = slot
-            .concept
+        let rank = lexicon.concepts[slot.concept]
             .stability
             .map_or("culture".to_string(), |r| format!("rank {r}"));
         println!(
             "  {:<16} {:<8} {:>10} → {:<10} {how}",
-            slot.concept.id,
+            lexicon.concepts[slot.concept].id,
             rank,
             founding.spell(&old.form),
             variety.spell(&now.form)
@@ -147,13 +155,17 @@ fn main() {
     let rows: Vec<String> = lexicon
         .slots
         .iter()
-        .filter(|s| s.concept.stability.is_some_and(|r| r <= 40))
+        .filter(|s| {
+            lexicon.concepts[s.concept]
+                .stability
+                .is_some_and(|r| r <= 40)
+        })
         .map(|s| {
             let then = founding.lexicon.word_for(s.concept).unwrap();
             let now = lexicon.word_for(s.concept).unwrap();
             format!(
                 "{:<9} {:>7} → {:<7}",
-                s.concept.id,
+                lexicon.concepts[s.concept].id,
                 founding.spell(&then.form),
                 variety.spell(&now.form)
             )

@@ -3,7 +3,7 @@
 How the workbench records, replays, and stores a world.
 
 A history is a seed, a map size, and ordered `Action`s (`chronicle.rs`):
-found, connect, settle, shift, state, religion, craft, law, temper, run. The
+found, connect, settle, shift, state, religion, craft, law, temper, meaning, word, run. The
 seed draws the map as well as the history. Found records the naming, the
 full design, the language's own seed, the one its preview used, so
 founding gives exactly the previewed words and names, and optionally the
@@ -18,12 +18,24 @@ rule contact makes the more prestigious side rule the other's state.
 Religion raises a founder among a people, and a faith with him; craft has
 a people come upon a craft it lacks; temper nudges one leaning of a
 people's temper, which then drifts and answers events as before.
+`Meaning` appends a world-local meaning (id, gloss, field, class,
+countability, tier, and optional derivation base and relation); before
+founding it receives a root, and later living languages coin words for it.
+`Word` records a language index, meaning id, and catalog IPA, making the
+author's form dominant at that reading while retaining competing forms.
+Both are authored decisions with an annal, and follow their telling's replay.
 A law records the living language's index and a catalog id
 (`{"kind":"law","variety":0,"law":"spirantization"}`), applying it at the
 reading year. `lawChoices(point, variety)` previews eligible laws without
 altering that reading, ordered by changed living words, then catalog order.
 Its `recent` flag reports the usual sixty-generation quiet span, but does
-not prevent an author's repeat application.
+not prevent an author's repeat application. `Authored` records a law the
+author wrote in notation (`title`, `source`, the parsed `rules`, an
+optional `stress`); replay applies the stored rules and never reparses
+the source, and the law then spreads by wave like a catalog law.
+`lawPreview(point, variety, law)` applies a catalog or authored law to a
+clone of the reading and lists every word and name it changes; the
+stateless `checkLaw(title, source)` reads the notation line by line.
 Consecutive runs merge up to the per-action limit, so playback stays a compact
 account. Any past generation is recovered by replaying, with checkpoints every
 10 generations; the timeline needs no separate data. Running to a year

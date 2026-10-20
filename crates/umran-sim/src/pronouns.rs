@@ -2,7 +2,7 @@
 //! Renewal copies a noun into a new grammatical use; intense contact may copy
 //! a pronoun, and a court may extend plural address to a polite singular.
 use crate::adapt::Adapter;
-use crate::concepts::{Concept, by_id};
+use crate::concepts::{CONCEPTS, ConceptId, by_id};
 use crate::grammar::same_sound;
 use crate::lexicon::{Entry, Event, LexemeId, Lexicon, Origin, Variant};
 use crate::phonotactics::Phonotactics;
@@ -23,8 +23,10 @@ pub const CELLS: [(u8, &str, &str); 9] = [
     (1, "pl", "1pl-exclusive"),
 ];
 
-pub fn is_pronoun(concept: &Concept) -> bool {
-    CELLS.iter().any(|(_, _, id)| *id == concept.id)
+pub fn is_pronoun(concept: ConceptId) -> bool {
+    CONCEPTS
+        .get(concept.0 as usize)
+        .is_some_and(|c| CELLS.iter().any(|(_, _, id)| *id == c.id))
 }
 
 /// Optional cells are minted only when a language gains them.

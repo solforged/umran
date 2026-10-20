@@ -67,7 +67,7 @@ fn report(world: &World, name: &str) {
                 .unwrap();
             println!(
                 "    {}: /{}/ > /{}/ ({law}; current form may include later laws)",
-                word.first_sense.gloss,
+                v.lexicon.concepts[word.first_sense].gloss,
                 before.ipa(),
                 word.form.ipa()
             );

@@ -36,8 +36,8 @@ fn evolve(world: &mut World, generation: u32) {
 
 #[test]
 fn genitive_eligibility_split_preserves_every_nonpronoun() {
-    for concept in crate::concepts::CONCEPTS {
-        if crate::pronouns::is_pronoun(concept) {
+    for (index, concept) in crate::concepts::CONCEPTS.iter().enumerate() {
+        if crate::pronouns::is_pronoun(crate::ConceptId(index as u32)) {
             assert!(concept.categories.genitive);
             assert!(!concept.categories.plural);
         } else {

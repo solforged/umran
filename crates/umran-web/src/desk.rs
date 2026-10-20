@@ -8,7 +8,7 @@ use crate::{
 use serde::Serialize;
 use std::collections::{BTreeMap, HashSet};
 use umran_sim::compare::{self, Pair};
-use umran_sim::concepts::{Concept, Field, by_id};
+use umran_sim::concepts::{ConceptId, ConceptTable, Field, by_id};
 use umran_sim::{CATALOG, CONCEPTS, Form, Lexeme, Origin, TellingId, Variety, World};
 use wasm_bindgen::prelude::*;
 
@@ -63,6 +63,10 @@ fn meaning_sets() -> Vec<MeaningSet> {
             id: "specimen",
             label: "Specimen",
         },
+        MeaningSet {
+            id: "custom",
+            label: "The author's meanings",
+        },
     ]
     .into_iter()
     .chain(FIELDS.iter().map(|&(field, id)| MeaningSet {
@@ -72,9 +76,14 @@ fn meaning_sets() -> Vec<MeaningSet> {
     .collect()
 }
 
-fn concepts(meanings: &str) -> Result<Vec<&'static Concept>, String> {
+fn concepts(table: &ConceptTable, meanings: &str) -> Result<Vec<ConceptId>, String> {
     match meanings {
-        "core" => Ok(CONCEPTS.iter().filter(|c| c.stability.is_some()).collect()),
+        "core" => Ok(table
+            .iter()
+            .filter(|(_, c)| c.stability.is_some())
+            .map(|(id, _)| id)
+            .collect()),
+        "custom" => Ok(table.ids().filter(|id| table.is_custom(*id)).collect()),
         "specimen" => Ok(SPECIMEN
             .iter()
             .map(|id| by_id(id).expect("specimen concept"))
@@ -85,7 +94,11 @@ fn concepts(meanings: &str) -> Result<Vec<&'static Concept>, String> {
                 .find(|(_, id)| *id == meanings)
                 .map(|(field, _)| *field)
                 .ok_or("Unknown meaning set.")?;
-            Ok(CONCEPTS.iter().filter(|c| c.field == field).collect())
+            Ok(table
+                .iter()
+                .filter(|(_, c)| c.field == field)
+                .map(|(id, _)| id)
+                .collect())
         }
     }
 }
@@ -124,9 +137,9 @@ fn segment(pair: Pair) -> Segment {
 }
 
 #[derive(Serialize)]
-struct CorrespondenceRow {
-    concept: &'static str,
-    gloss: &'static str,
+struct CorrespondenceRow<'a> {
+    concept: &'a str,
+    gloss: &'a str,
     a: FormView,
     b: FormView,
     alignment: Vec<Segment>,
@@ -154,19 +167,19 @@ struct Correspondences<'a> {
     b: usize,
     generation: u32,
     meanings: &'a str,
-    rows: Vec<CorrespondenceRow>,
+    rows: Vec<CorrespondenceRow<'a>>,
     regular: Vec<RegularPair>,
     grammar: Vec<GrammarObservation>,
 }
 
 fn correspondences<'a>(
-    world: &World,
+    world: &'a World,
     a: usize,
     b: usize,
     meanings: &'a str,
 ) -> Result<Correspondences<'a>, String> {
     let (va, vb) = (speech(world, a)?, speech(world, b)?);
-    let comparison = compare::compare_varieties(va, vb, &concepts(meanings)?);
+    let comparison = compare::compare_varieties(va, vb, &concepts(&world.concepts, meanings)?);
     // The method's support includes repeated positions and capped grammatical
     // evidence. The desk promises rows, so count each pair once per lexical row.
     // Gaps remain in the displayed alignment only: the method excludes them
@@ -223,8 +236,8 @@ fn correspondences<'a>(
             .rows
             .into_iter()
             .map(|row| CorrespondenceRow {
-                concept: row.concept.id,
-                gloss: row.concept.gloss,
+                concept: &world.concepts[row.concept].id,
+                gloss: &world.concepts[row.concept].gloss,
                 a: form_view(va, &row.a),
                 b: form_view(vb, &row.b),
                 alignment: row.alignment.into_iter().map(segment).collect(),
@@ -252,16 +265,16 @@ struct Borrowed {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct TruthRow {
-    concept: &'static str,
+struct TruthRow<'a> {
+    concept: &'a str,
     same_root: bool,
     borrowed: Option<Borrowed>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct Truth {
-    rows: Vec<TruthRow>,
+struct Truth<'a> {
+    rows: Vec<TruthRow<'a>>,
     ancestor: Option<usize>,
     split_at: Option<u32>,
 }
@@ -307,9 +320,9 @@ fn ancestor(world: &World, a: usize, b: usize) -> (Option<usize>, Option<u32>) {
     }
 }
 
-fn truth(world: &World, a: usize, b: usize, meanings: &str) -> Result<Truth, String> {
+fn truth<'a>(world: &'a World, a: usize, b: usize, meanings: &str) -> Result<Truth<'a>, String> {
     let (va, vb) = (speech(world, a)?, speech(world, b)?);
-    let rows = concepts(meanings)?
+    let rows = concepts(&world.concepts, meanings)?
         .into_iter()
         .filter_map(|concept| {
             let (wa, wb) = (va.lexicon.word_for(concept)?, vb.lexicon.word_for(concept)?);
@@ -321,7 +334,7 @@ fn truth(world: &World, a: usize, b: usize, meanings: &str) -> Result<Truth, Str
                 borrowed(world, a, wa).or_else(|| borrowed(world, b, wb))
             };
             Some(TruthRow {
-                concept: concept.id,
+                concept: &world.concepts[concept].id,
                 same_root: world.root_of(a, wa.id) == world.root_of(b, wb.id),
                 borrowed: loan,
             })
@@ -482,8 +495,8 @@ fn language_delta(
             };
             let concept = by_id(id).expect("specimen concept");
             Some(ChangedWord {
-                concept: concept.id,
-                gloss: concept.gloss,
+                concept: CONCEPTS[concept.0 as usize].id.as_ref(),
+                gloss: CONCEPTS[concept.0 as usize].gloss.as_ref(),
                 left: a.map(form),
                 right: b.map(form),
             })

@@ -92,10 +92,16 @@ the engine, not a second source. Blank where the engine has nothing yet.
      the possessor goes), a sample sentence, a possession phrase, and
      "I saw you" / "You saw me" rendered from the lexicon, the categories
      the engine models (plural, past, object, future, progressive,
-     genitive: `grammar.markers`), the pronouns with their object forms
-     and where they stand against the nouns (`grammar.pronounCase`: like
-     the nouns, ahead of them, or keeping a relic the nouns lost), and a
+     genitive: `grammar.markers`), the pronouns with their object and
+     possessive forms and where they stand against the nouns
+     (`grammar.pronounCase`, `grammar.possessive`: like the nouns, ahead
+     of them, or keeping a relic the nouns lost), the person marked on the
+     verb and on the thing owned (`grammar.agreement`,
+     `grammar.objectAgreement`, `grammar.possessorAgreement`), and a
      heading for what it does not model yet, stated as such.
+   - *Phrasebook*: a few fixed things to say, "I saw you", "my house",
+     "their children", rendered by the grammar as it stands, each with
+     the grammar it exercised (`phrasebook`).
    - *Lexicon*: every word with its origin (inherited, borrowed with its
      source and the contact behind it, coined, stretched), competitors,
      and cognates across the family (`lexicon`, `word`).
@@ -333,7 +339,19 @@ The chart, the cards, the chronicle, and the time bar. What changes:
   the lexicon.
 - A decision is taken from a card (*Decide…*), dated, and marked in the
   chronicle as the author's. It opens another telling if it is not at
-  the tip.
+  the tip. Three decisions write language rather than history, and the
+  engine checks each as it is typed: a language's *A sound change* takes
+  a catalog law or one written in the classical notation (`p > f / _ #`,
+  `[voiceless stop] > [voiced] / V _ V`, `a > e / _ .. [front]`,
+  `stress > initial`), read line by line by `checkLaw` and previewed on
+  every living word and name by `lawPreview` before it is let happen;
+  the frontispiece's *A meaning of your own* adds a meaning the catalog
+  lacks, with its field, kind, how bound it is to a way of life, and an
+  optional meaning to build it from, so every living language finds a
+  word for it in the years after (or at founding, where the speech step
+  takes them beside the author's roots); a language's *A word of your
+  own* gives it the author's form for a meaning, in the catalog's IPA and
+  the language's own sounds, which sound change then wears like any word.
 - Labels and layer detail follow one physical scale in kilometres per
   pixel, not a fraction of the world's drawing. At world scale only
   continents and the six largest living peoples are lettered. Below

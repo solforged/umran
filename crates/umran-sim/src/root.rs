@@ -1,4 +1,4 @@
-use crate::concepts::{CONCEPTS, Concept, FAMILIES, Field, Iconic, Relation};
+use crate::concepts::{Concept, ConceptId, ConceptTable, FAMILIES, Field, Iconic, Relation};
 use crate::form::Form;
 use crate::morphology::Morphology;
 use crate::phoneme::PhonemeId;
@@ -23,9 +23,9 @@ const DISTINCT_DRAWS: usize = 16;
 /// A founding word, and the word it was built from if it was derived.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Minted {
-    pub concept: &'static Concept,
+    pub concept: ConceptId,
     pub form: Form,
-    pub derived: Option<(&'static Concept, Relation)>,
+    pub derived: Option<(ConceptId, Relation)>,
     /// The author gave this form; the engine kept it verbatim.
     pub authored: bool,
 }
@@ -40,32 +40,35 @@ pub struct Minted {
 /// any draw, so drawn words avoid colliding with them, and the draw each
 /// replaces is still made and reserved; nothing else about the other words
 /// changes.
+#[allow(clippy::too_many_arguments)]
 pub fn mint_roots(
+    concepts: &ConceptTable,
     seed: u64,
     tactics: &Phonotactics,
     spelling: &Spelling,
     morphology: &Morphology,
     derivation: f32,
-    supplied: &[(&'static Concept, Form)],
+    supplied: &[(ConceptId, Form)],
+    available: impl Fn(ConceptId) -> bool,
 ) -> Vec<Minted> {
     let mut used: HashSet<Form> = HashSet::new();
     let mut by_field: HashMap<Field, HashSet<Form>> = HashMap::new();
     for (concept, form) in supplied {
         used.insert(form.clone());
         by_field
-            .entry(concept.field)
+            .entry(concepts[*concept].field)
             .or_default()
             .insert(form.clone());
     }
-    let mut out: Vec<Minted> = CONCEPTS
+    let mut out: Vec<Minted> = concepts
         .iter()
-        .filter(|concept| !crate::pronouns::is_optional_cell(concept.id))
-        .map(|concept| {
+        .filter(|(_, concept)| !crate::pronouns::is_optional_cell(&concept.id))
+        .map(|(id, concept)| {
             let field = by_field.entry(concept.field).or_default();
             // The draw is made and reserved even where the author supplied
             // the word, so every later word meets the same taken forms as
             // it would without the author's roots and keeps its own draw.
-            let mut rng = stream(seed, &[key("root"), key(concept.id)]);
+            let mut rng = stream(seed, &[key("root"), key(&concept.id)]);
             let drawn = mint_one(
                 &mut rng,
                 tactics,
@@ -79,10 +82,10 @@ pub fn mint_roots(
             field.insert(drawn.clone());
             let given = supplied
                 .iter()
-                .find(|(c, _)| c.id == concept.id)
+                .find(|(c, _)| *c == id)
                 .map(|(_, form)| form.clone());
             Minted {
-                concept,
+                concept: id,
                 authored: given.is_some(),
                 form: given.unwrap_or(drawn),
                 derived: None,
@@ -90,13 +93,11 @@ pub fn mint_roots(
         })
         .collect();
 
-    let index = |id: &str| {
-        CONCEPTS
-            .iter()
-            .filter(|concept| !crate::pronouns::is_optional_cell(concept.id))
-            .position(|c| c.id == id)
-            .expect("known concept")
-    };
+    let indices: HashMap<ConceptId, usize> = out
+        .iter()
+        .enumerate()
+        .map(|(i, m)| (m.concept, i))
+        .collect();
     // Each word's root skeleton, so derivations from derived words build on
     // the true root rather than on a pattern's prefix. In a root-and-pattern
     // language, short words still have three-consonant roots (as Arabic yad
@@ -118,7 +119,7 @@ pub fn mint_roots(
                 .take(3)
                 .collect();
             if patterned && !onsets.is_empty() {
-                let mut rng = stream(seed, &[key("skeleton"), key(m.concept.id)]);
+                let mut rng = stream(seed, &[key("skeleton"), key(&concepts[m.concept].id)]);
                 for _ in 0..DISTINCT_DRAWS {
                     if consonants.len() >= 3 {
                         break;
@@ -135,12 +136,29 @@ pub fn mint_roots(
             }
         })
         .collect();
-    for &(base, word, relation) in FAMILIES {
-        let mut rng = stream(seed, &[key("family"), key(word)]);
+    let families = FAMILIES
+        .iter()
+        .map(|&(base, word, relation)| {
+            (
+                concepts.by_id(base).expect("known base"),
+                concepts.by_id(word).expect("known word"),
+                relation,
+            )
+        })
+        .chain(concepts.ids().filter_map(|word| {
+            concepts
+                .derivation(word)
+                .map(|(base, relation)| (base, word, relation))
+        }));
+    for (base, word, relation) in families {
+        if concepts.is_custom(word) && !available(base) {
+            continue;
+        }
+        let mut rng = stream(seed, &[key("family"), key(&concepts[word].id)]);
         if rng.r#gen::<f32>() >= derivation {
             continue;
         }
-        let (b, w) = (index(base), index(word));
+        let (b, w) = (indices[&base], indices[&word]);
         // The author's word for a family member stands; a supplied base is
         // built on like any other.
         if out[w].authored {
@@ -151,7 +169,9 @@ pub fn mint_roots(
         };
         let concept = out[w].concept;
         let clash = out.iter().any(|m| {
-            m.concept.field == concept.field && m.concept.id != concept.id && m.form == form
+            concepts[m.concept].field == concepts[concept].field
+                && m.concept != concept
+                && m.form == form
         });
         if clash || spelling.unfortunate(&form) {
             continue;
@@ -222,12 +242,14 @@ mod tests {
             &mut stream(seed, &[key("morphology")]),
         );
         let roots = mint_roots(
+            &crate::ConceptTable::default(),
             seed,
             &tactics,
             &profile.spelling,
             &morphology,
             profile.morphology.derivation,
             &[],
+            |_| true,
         );
         (roots, tactics)
     }
@@ -244,16 +266,16 @@ mod tests {
                             tactics.fits_root(&m.form),
                             "{} seed {seed}: {} /{}/ breaks the root template",
                             profile.id,
-                            m.concept.id,
+                            crate::CONCEPTS[m.concept.0 as usize].id,
                             m.form.ipa()
                         );
                     }
                     assert!(
-                        seen.insert((m.concept.field, &m.form)),
+                        seen.insert((crate::CONCEPTS[m.concept.0 as usize].field, &m.form)),
                         "{} seed {seed}: /{}/ repeats within {:?}",
                         profile.id,
                         m.form.ipa(),
-                        m.concept.field
+                        crate::CONCEPTS[m.concept.0 as usize].field
                     );
                 }
             }
@@ -268,7 +290,10 @@ mod tests {
     }
 
     fn word<'a>(roots: &'a [Minted], id: &str) -> &'a Minted {
-        roots.iter().find(|m| m.concept.id == id).unwrap()
+        roots
+            .iter()
+            .find(|m| crate::CONCEPTS[m.concept.0 as usize].id == id)
+            .unwrap()
     }
 
     #[test]
@@ -282,9 +307,9 @@ mod tests {
         for seed in 0..seeds {
             for m in mint(seed, &profile).0 {
                 let has_i = m.form.phones().any(|p| p == i);
-                match m.concept.id {
+                match crate::CONCEPTS[m.concept.0 as usize].id.as_ref() {
                     "small" => small += usize::from(has_i),
-                    _ if m.concept.iconic.is_none() => {
+                    _ if crate::CONCEPTS[m.concept.0 as usize].iconic.is_none() => {
                         other += usize::from(has_i);
                         other_total += 1;
                     }
@@ -353,10 +378,15 @@ mod tests {
                 .filter(|m| m.derived.is_none())
             {
                 let len = m.form.syllables().len();
-                if m.concept.stability.is_some_and(|r| r <= 30) {
+                if crate::CONCEPTS[m.concept.0 as usize]
+                    .stability
+                    .is_some_and(|r| r <= 30)
+                {
                     core += len;
                     core_n += 1;
-                } else if m.concept.tier == Some(crate::concepts::Tier::Specialized) {
+                } else if crate::CONCEPTS[m.concept.0 as usize].tier
+                    == Some(crate::concepts::Tier::Specialized)
+                {
                     special += len;
                     special_n += 1;
                 }
@@ -387,7 +417,7 @@ mod tests {
                 .iter()
                 .filter(|m| m.derived.is_none())
             {
-                if m.concept.expressive {
+                if crate::CONCEPTS[m.concept.0 as usize].expressive {
                     expressive += usize::from(repeats(&m.form));
                     expressive_n += 1;
                 } else {
@@ -418,7 +448,11 @@ mod tests {
                 let roots = mint(seed, profile).0;
                 for m in roots.iter().filter(|m| m.derived.is_some()) {
                     derived += 1;
-                    let base = &word(&roots, m.derived.unwrap().0.id).form;
+                    let base = &roots
+                        .iter()
+                        .find(|root| root.concept == m.derived.unwrap().0)
+                        .unwrap()
+                        .form;
                     if patterned {
                         // The base's own consonants appear in order, around
                         // any pattern prefix, vowels, or drawn root consonants.

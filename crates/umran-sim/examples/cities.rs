@@ -102,7 +102,7 @@ fn main() {
                             .unwrap();
                         println!(
                             "  {}: /{}/ → /{}/",
-                            word.first_sense.id,
+                            world.concepts[word.first_sense].id,
                             before.ipa(),
                             word.form.ipa()
                         );

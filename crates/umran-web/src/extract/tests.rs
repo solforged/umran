@@ -57,7 +57,7 @@ fn table(w: &mut Bench, generation: u32, varieties: &[usize], concepts: &[&str])
 fn word_table_shares_roots_by_descent_and_mints_fresh_ones_for_coinages() {
     let mut w = bench();
     let generation = w.latest();
-    let all: Vec<&str> = CONCEPTS.iter().map(|c| c.id).collect();
+    let all: Vec<&str> = CONCEPTS.iter().map(|c| c.id.as_ref()).collect();
     let table = table(&mut w, generation, &[0, 1, 2], &all);
     assert_eq!(table["generation"], generation);
     assert_eq!(table["varieties"].as_array().unwrap().len(), 3);
@@ -71,7 +71,10 @@ fn word_table_shares_roots_by_descent_and_mints_fresh_ones_for_coinages() {
     for row in rows {
         let cells = row["cells"].as_array().unwrap();
         assert_eq!(cells.len(), 3);
-        let concept = by_id(row["concept"].as_str().unwrap()).unwrap();
+        let concept = world
+            .concepts
+            .by_id(row["concept"].as_str().unwrap())
+            .unwrap();
         if let (Some(a), Some(b)) = (cells[0].as_object(), cells[1].as_object()) {
             // Root identity is the engine's own cognacy, not the origin label.
             assert_eq!(

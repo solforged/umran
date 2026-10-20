@@ -311,7 +311,7 @@ pub fn language_names(
         let word = variety.lexicon.word_for(concept)?.form.clone();
         Some((
             morphology.compound(&people.form, &word),
-            format!("the {spelled} {}", concept.gloss),
+            format!("the {spelled} {}", variety.lexicon.concepts[concept].gloss),
         ))
     };
     let belonging = (
@@ -758,6 +758,7 @@ mod tests {
 
     fn variety(preset: &str, seed: u64) -> Variety {
         Variety::found(
+            &crate::ConceptTable::default(),
             seed,
             &SoundProfile::by_id(preset).unwrap(),
             Livelihood::Farming,

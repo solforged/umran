@@ -17,7 +17,13 @@ fn variety() -> Variety {
         genitive: Some(GrammarChoice::None),
         ..GrammarDesign::default()
     });
-    let mut v = Variety::found(7, &profile, Livelihood::Farming, Ethos::default());
+    let mut v = Variety::found(
+        &crate::ConceptTable::default(),
+        7,
+        &profile,
+        Livelihood::Farming,
+        Ethos::default(),
+    );
     for (i, word) in v.lexicon.lexemes.iter_mut().enumerate() {
         word.form = form(if i % 2 == 0 { "piti" } else { "pyty" });
         word.paradigms.clear();

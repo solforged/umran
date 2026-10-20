@@ -61,7 +61,9 @@ use std::collections::BTreeMap;
 /// rules, spreading by wave like catalog laws.
 /// Revision 65 gives pronouns possessive forms and lets them lean on the
 /// thing owned, fuse into possessive affixes, and fall silent.
-pub const ENGINE_REVISION: u32 = 65;
+/// Revision 66 keeps a per-world concept table so the author can add
+/// meanings and give a language a word of their own.
+pub const ENGINE_REVISION: u32 = 66;
 /// Revision 33 replaces flat geography and its region identities with a sphere.
 /// Earlier region-targeted actions cannot be replayed on the spherical mesh.
 pub const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;
@@ -151,6 +153,14 @@ pub enum Action {
     Authored {
         variety: usize,
         law: crate::notation::AuthoredLaw,
+    },
+    Meaning {
+        meaning: crate::Meaning,
+    },
+    Word {
+        variety: usize,
+        concept: String,
+        ipa: String,
     },
 }
 
@@ -710,7 +720,7 @@ fn apply(world: &mut World, action: &Action, index: usize) -> Result<(), String>
             livelihood,
             ethos,
         } => {
-            design.validate()?;
+            design.validate(&world.concepts)?;
             naming.validate()?;
             if let Some(ethos) = ethos {
                 ethos.validate()?;
@@ -881,6 +891,26 @@ fn apply(world: &mut World, action: &Action, index: usize) -> Result<(), String>
                 return Err(format!("run between 1 and {MAX_RUN} generations"));
             }
             world.run(*generations);
+        }
+        Action::Meaning { meaning } => {
+            world
+                .define_meaning(meaning.clone())
+                .map_err(|e| e.status().to_string())?;
+        }
+        Action::Word {
+            variety,
+            concept,
+            ipa,
+        } => {
+            let root = crate::Root {
+                concept: concept.clone(),
+                ipa: ipa.clone(),
+            };
+            world.give_word(*variety, &root).map_err(|e| match e {
+                crate::meanings::WordError::Root(e) => e.describe(&root),
+                crate::meanings::WordError::Pronoun => "pronoun".into(),
+                crate::meanings::WordError::Dead => "dead".into(),
+            })?;
         }
     }
     if !matches!(action, Action::Run { .. }) {

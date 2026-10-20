@@ -257,7 +257,7 @@ pub(crate) fn entry_variety(
 }
 
 fn word_events(world: &World, variety: usize, concept: &str) -> Result<HashSet<String>, String> {
-    let concept = umran_sim::concepts::by_id(concept).ok_or("Unknown concept.")?;
+    let concept = world.concepts.by_id(concept).ok_or("Unknown concept.")?;
     let speech = world
         .varieties
         .get(variety)
@@ -313,7 +313,7 @@ fn word_events(world: &World, variety: usize, concept: &str) -> Result<HashSet<S
     }
     for (position, (_, event)) in world.events.iter().enumerate() {
         if matches!(event, WorldEvent::TabooReplaced { variety: v, concept: c, .. }
-            if *v == variety && c.id == concept.id)
+            if *v == variety && *c == concept)
         {
             ids.insert(world_event_id(position));
         }

@@ -5,9 +5,7 @@
 //! cargo run --release -p umran-sim --example family -- [seed] [proto profile] [outsider profile] [generations]
 
 use umran_sim::compare::{Pair, Settings, compare_varieties, regular_correspondences};
-use umran_sim::{
-    CATALOG, CONCEPTS, ContactKind, Naming, Origin, Params, SoundProfile, World, catalog,
-};
+use umran_sim::{CATALOG, ContactKind, Naming, Origin, Params, SoundProfile, World, catalog};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -55,7 +53,7 @@ fn main() {
         }
     }
 
-    let concepts: Vec<_> = CONCEPTS.iter().collect();
+    let concepts: Vec<_> = world.concepts.ids().collect();
     let result = compare_varieties(&world.varieties[wv], &world.varieties[ev], &concepts);
     let truly: Vec<bool> = result
         .rows
@@ -93,7 +91,7 @@ fn main() {
     );
 
     let east_lexicon = &world.varieties[ev].lexicon;
-    let is_outside_loan = |c: &umran_sim::Concept| {
+    let is_outside_loan = |c: umran_sim::ConceptId| {
         east_lexicon
             .word_for(c)
             .is_some_and(|l| matches!(l.origin, Origin::Borrowed { from, .. } if from == world.communities[outsiders].variety))
@@ -127,7 +125,7 @@ fn main() {
         };
         println!(
             "  {:<10} {:>8} ~ {:<8} {:.2}  {why}",
-            row.concept.id,
+            world.concepts[row.concept].id,
             row.a.ipa_stressed(world.varieties[wv].stress()),
             row.b.ipa_stressed(world.varieties[ev].stress()),
             row.regularity

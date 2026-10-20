@@ -67,9 +67,10 @@ fn founding_assigns_all_nouns_but_not_verbs_and_preserves_semantic_cores() {
             for variant in &slot.variants {
                 assert_eq!(
                     v.gender.class_of(variant.lexeme).is_some(),
-                    choice != ClassChoice::None && slot.concept.noun_semantics().is_some(),
+                    choice != ClassChoice::None
+                        && v.lexicon.concepts[slot.concept].noun_semantics().is_some(),
                     "{} {choice:?}",
-                    slot.concept.id
+                    v.lexicon.concepts[slot.concept].id
                 );
             }
         }
@@ -310,6 +311,7 @@ fn binary_animacy_includes_people_and_sex_keeps_parent_cores_apart() {
         let mut profile = SoundProfile::base();
         profile.grammar.classes = Some(basis);
         let v = &Variety::found(
+            &crate::ConceptTable::default(),
             seed,
             &profile,
             crate::Livelihood::Farming,

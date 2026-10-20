@@ -6,9 +6,7 @@
 
 use umran_sim::concepts::by_id;
 use umran_sim::lexicon::Event;
-use umran_sim::{
-    CATALOG, CONCEPTS, Form, LanguageDesign, Lexeme, Naming, Params, Root, Sound, World,
-};
+use umran_sim::{CATALOG, Form, LanguageDesign, Lexeme, Naming, Params, Root, Sound, World};
 
 const ROOTS: [(&str, &str); 10] = [
     ("water", "nara"),
@@ -43,7 +41,9 @@ fn main() {
             ipa: ipa.into(),
         });
     }
-    design.validate().expect("the roots fit the design");
+    design
+        .validate(&umran_sim::ConceptTable::default())
+        .expect("the roots fit the design");
 
     let mut world = World::new(seed, Params::default());
     world.found_seeded(
@@ -88,14 +88,13 @@ fn main() {
         "{:<8} {:<9} {:<30}   {:<8} year 2500",
         "meaning", "root", "year 2500", "drawn"
     );
-    let position = |id: &str| CONCEPTS.iter().position(|c| c.id == id).unwrap_or(0);
     for (concept, ipa) in ROOTS {
         let concept = by_id(concept).expect("catalog concept");
         let word = variety
             .lexicon
             .lexemes
             .iter()
-            .find(|l| l.authored && l.first_sense.id == concept.id)
+            .find(|l| l.authored && l.first_sense == concept)
             .expect("the root is in the lexicon");
         // The nearest drawn word of the same field after it in the catalog.
         let drawn = || {
@@ -103,19 +102,19 @@ fn main() {
                 !l.authored
                     && l.born == 0
                     && l.obsolete.is_none()
-                    && l.first_sense.field == concept.field
+                    && world.concepts[l.first_sense].field == world.concepts[concept].field
             })
         };
         let neighbour = drawn()
-            .find(|l| position(l.first_sense.id) > position(concept.id))
+            .find(|l| l.first_sense > concept)
             .or_else(|| drawn().next())
             .expect("a drawn word of the field");
         println!(
             "{:<8} /{ipa}/{:<width$} {:<30}   {:<8} {}",
-            concept.id,
+            world.concepts[concept].id,
             "",
             describe(word),
-            neighbour.first_sense.id,
+            world.concepts[neighbour.first_sense].id,
             describe(neighbour),
             width = 7usize.saturating_sub(ipa.chars().count()),
         );

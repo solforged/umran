@@ -99,6 +99,7 @@ impl Variety {
     /// a stock of given names weighted by ethos. Identical inputs always
     /// agree.
     pub fn found(
+        concepts: &crate::concepts::ConceptTable,
         seed: u64,
         profile: &SoundProfile,
         livelihood: Livelihood,
@@ -112,26 +113,28 @@ impl Variety {
             &phonotactics,
             &mut stream(seed, &[key("morphology")]),
         );
-        let known = |minted: &crate::root::Minted| match need(minted.concept) {
+        let known = |concept| match need(&concepts[concept]) {
             None => true,
             Some(Need::Livelihood(l)) => l == livelihood,
             Some(_) => false,
         };
-        let supplied: Vec<(&'static crate::Concept, Form)> = profile
+        let supplied: Vec<(crate::ConceptId, Form)> = profile
             .roots
             .iter()
             .map(|root| {
-                root.resolve()
+                root.resolve(concepts)
                     .expect("roots are checked by LanguageDesign::validate before founding")
             })
             .collect();
         let roots = mint_roots(
+            concepts,
             seed,
             &phonotactics,
             &profile.spelling,
             &morphology,
             profile.morphology.derivation,
             &supplied,
+            known,
         );
         let style = if stream(seed, &[key("given style")]).r#gen::<f32>() < 0.6 {
             NameStyle::Double
@@ -141,7 +144,7 @@ impl Variety {
         let mut variety = Self {
             name: Name::default(),
             profile: profile.clone(),
-            lexicon: Lexicon::found(roots.into_iter().filter(known)),
+            lexicon: Lexicon::found(concepts, roots.into_iter().filter(|m| known(m.concept))),
             morphology,
             grammar: Grammar::default(),
             pronouns: crate::pronouns::Pronouns::default(),
@@ -183,7 +186,10 @@ impl Variety {
             if word.authored {
                 continue;
             }
-            let mut rng = stream(seed, &[key("founding prosody"), key(word.first_sense.id)]);
+            let mut rng = stream(
+                seed,
+                &[key("founding prosody"), key(&concepts[word.first_sense].id)],
+            );
             if variety.profile.stress == Some(StressRule::Free) {
                 word.form.stress = Some(crate::rng::index(&mut rng, word.form.vowel_count()));
             }

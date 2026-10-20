@@ -49,7 +49,7 @@ fn main() {
                             let at = word.log.iter().position(|e| e.generation == *g && matches!(&e.event, Event::SoundLaw { law, .. } if law == law_id))?;
                             let Event::SoundLaw { before, .. } = &word.log[at].event else { return None };
                             let after = word.log[at + 1..].iter().find_map(|e| match &e.event { Event::SoundLaw { before, .. } => Some(before), _ => None }).unwrap_or(&word.form);
-                            Some(format!("{}: /{}/ > /{}/", word.first_sense.gloss, before.ipa_stressed(stress), after.ipa_stressed(after_stress)))
+                            Some(format!("{}: /{}/ > /{}/", variety.lexicon.concepts[word.first_sense].gloss, before.ipa_stressed(stress), after.ipa_stressed(after_stress)))
                         }).unwrap_or_default();
                         println!(
                             "year {:4}, language {id}, stress {}: {} — {example}",

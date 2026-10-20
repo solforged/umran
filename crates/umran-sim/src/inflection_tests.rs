@@ -8,6 +8,7 @@ use crate::{
 
 fn fixture() -> (Grammar, Lexicon, Morphology) {
     let variety = Variety::found(
+        &crate::ConceptTable::default(),
         52,
         &SoundProfile::by_id("semitic").unwrap(),
         Livelihood::Farming,
@@ -36,7 +37,7 @@ fn fixture() -> (Grammar, Lexicon, Morphology) {
     grammar.markers[pattern as usize].template = Some(template);
     (
         grammar,
-        Lexicon::found(std::iter::empty()),
+        Lexicon::found(&crate::ConceptTable::default(), std::iter::empty()),
         variety.morphology,
     )
 }

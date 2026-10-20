@@ -296,7 +296,7 @@ fn audit(world: &World, snapshots: &[Snapshot], band: &mut Band) {
             }
             if seen.insert(world.root_of(v, word.id)) {
                 *band.causes.entry(kind).or_default() += 1;
-                if spreads && word.first_sense.field == Field::Religion {
+                if spreads && world.concepts[word.first_sense].field == Field::Religion {
                     band.sacred_faith += usize::from(kind == "faith");
                     band.sacred_contact += usize::from(kind == "contact");
                 }

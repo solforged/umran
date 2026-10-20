@@ -14,7 +14,7 @@ use std::cell::RefCell;
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
 use umran_sim::climate::{ClimateCause, ClimateChange};
-use umran_sim::concepts::Concept;
+use umran_sim::concepts::ConceptId;
 use umran_sim::grammar::{Category, Marker, MarkerKind, MarkerOrigin, NoticeKind, Side};
 use umran_sim::ideas::{NEEDS, Need};
 use umran_sim::names::PlaceOrigin;
@@ -1133,7 +1133,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                         "Among the {}, {} forbade the old word for “{}”, *{}*, and they said *{}* instead.",
                         name(community),
                         names.faith(world, religion),
-                        concept.gloss,
+                        world.concepts[concept].gloss,
                         v.spell(v.lexicon.get(old).form_at(generation)),
                         v.spell(v.lexicon.get(word).form_at(generation))
                     ),
@@ -1143,7 +1143,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 annal.religions = vec![religion];
                 annal.variety = Some(variety);
                 annal.taboo = Some(TabooAnnal {
-                    concept: concept.id,
+                    concept: umran_sim::CONCEPTS[concept.0 as usize].id.as_ref(),
                     old: old.0,
                     word: word.0,
                 });
@@ -1258,13 +1258,13 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                             "The {} made *{}* for “{}”, translating the word of {} part by part.",
                             name(community),
                             v.spell(word.form_at(generation)),
-                            word.first_sense.gloss,
+                            world.concepts[word.first_sense].gloss,
                             names.language(world, donor, generation)
                         ),
                         None => format!(
                             "The {} made a word of their own for “{}”: *{}*.",
                             name(community),
-                            word.first_sense.gloss,
+                            world.concepts[word.first_sense].gloss,
                             v.spell(word.form_at(generation))
                         ),
                     },
@@ -1279,7 +1279,11 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                         coined
                             .parts
                             .iter()
-                            .map(|p| format!("*{}* “{}”", v.spell(&p.form), p.concept.gloss))
+                            .map(|p| format!(
+                                "*{}* “{}”",
+                                v.spell(&p.form),
+                                world.concepts[p.concept].gloss
+                            ))
                             .collect::<Vec<_>>()
                             .join(" and ")
                     ));
@@ -1300,20 +1304,25 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     "meaning",
                     tell(
                         world,
-                        &[key("meaning"), g, community as u64, key(from.id)],
+                        &[
+                            key("meaning"),
+                            g,
+                            community as u64,
+                            key(&world.concepts[from].id),
+                        ],
                         PEJORATED,
                         &[
                             ("p", &name(community)),
                             ("w", &said),
-                            ("from", from.gloss),
-                            ("to", to.gloss),
+                            ("from", &world.concepts[from].gloss),
+                            ("to", &world.concepts[to].gloss),
                         ],
                     ),
                     &[community],
                     &[],
                 );
                 annal.variety = Some(variety);
-                annal.notes = vec![match from.id {
+                annal.notes = vec![match world.concepts[from].id.as_ref() {
                     "god" => "With the new faith the old gods became demons, as Greek daimōn, a divine power, became the Christian demon, and Iranian daēva became a devil while Sanskrit deva still means a god.".into(),
                     _ => "The old priests became sorcerers, as the Persian magi, priests of the old faith, gave the Greeks their word for magic.".into(),
                 }];
@@ -1388,7 +1397,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                         names.language(world, variety, generation),
                         word.native_form,
                         word.loan_form,
-                        umran_sim::concepts::by_id(word.concept).map_or(word.concept, |c| c.gloss)
+                        world.concepts[word.concept].gloss
                     ),
                     &[],
                     &[],
@@ -1425,6 +1434,48 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                     entered,
                     cause,
                 });
+                annal
+            }
+            WorldEvent::MeaningDefined { concept } => entry(
+                generation,
+                "meaning-defined",
+                format!(
+                    "The author set a new meaning before every people: “{}”.",
+                    world.concepts[concept].gloss
+                ),
+                &[],
+                &[],
+            ),
+            WorldEvent::WordAuthored {
+                variety,
+                concept,
+                word,
+            } => {
+                let speech = &world.varieties[variety];
+                let word = speech.lexicon.get(word);
+                // A later decision may change it within the same generation.
+                let given = word
+                    .log
+                    .iter()
+                    .find_map(|entry| match &entry.event {
+                        Event::SoundLaw { before, .. } => Some(before),
+                        _ => None,
+                    })
+                    .unwrap_or(&word.form);
+                let mut annal = entry(
+                    generation,
+                    "word-authored",
+                    format!(
+                        "The author gave *{}* /{}/ to {} for “{}”.",
+                        speech.spell(given),
+                        given.ipa(),
+                        speech.title(speech.name.form_at(generation)),
+                        world.concepts[concept].gloss,
+                    ),
+                    &[],
+                    &[],
+                );
+                annal.variety = Some(variety);
                 annal
             }
         };
@@ -1915,17 +1966,17 @@ fn variety_at(world: &World, community: usize, position: usize) -> usize {
 
 /// The first word `variety` had for `concept`, and when it took that
 /// meaning on.
-fn first_word<'a>(variety: &'a Variety, concept: &Concept) -> Option<(&'a Lexeme, u32)> {
+fn first_word(variety: &Variety, concept: ConceptId) -> Option<(&Lexeme, u32)> {
     variety
         .lexicon
         .lexemes
         .iter()
         .filter_map(|l| {
-            let since = if l.first_sense.id == concept.id {
+            let since = if l.first_sense == concept {
                 Some(l.born)
             } else {
                 l.log.iter().find_map(|e| match e.event {
-                    Event::Extended { to } if to.id == concept.id => Some(e.generation),
+                    Event::Extended { to } if to == concept => Some(e.generation),
                     _ => None,
                 })
             };
@@ -1949,8 +2000,11 @@ fn new_words(world: &World, variety: usize, need: Need, generation: u32) -> Vec<
                 return None;
             }
             let said = v.spell(word.form_at(since));
-            let how = if word.first_sense.id != concept.id {
-                format!("stretched from “{}”", word.first_sense.gloss)
+            let how = if word.first_sense != concept {
+                format!(
+                    "stretched from “{}”",
+                    world.concepts[word.first_sense].gloss
+                )
             } else {
                 match word.origin {
                     Origin::Borrowed { from, .. } => {
@@ -1962,7 +2016,10 @@ fn new_words(world: &World, variety: usize, need: Need, generation: u32) -> Vec<
                     _ => "a new word".into(),
                 }
             };
-            Some(format!("“{}” *{said}*, {how}", concept.gloss))
+            Some(format!(
+                "“{}” *{said}*, {how}",
+                world.concepts[concept].gloss
+            ))
         })
         .collect();
     if words.is_empty() {
@@ -2400,7 +2457,7 @@ fn grammar_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> 
                         } => format!(
                             "The word *{}*, “{}”, /{}/, acquired a grammatical job while its lexical use remained. This development is called grammaticalization.",
                             variety.spell(source_form),
-                            concept.gloss,
+                            world.concepts[*concept].gloss,
                             source_form.ipa_stressed(variety.stress_at(marker.born))
                         ),
                         MarkerOrigin::Fused { particle } => format!(
@@ -2515,7 +2572,7 @@ fn grammar_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> 
                     (
                         format!(
                             "The {category_id} form for “{}” was reshaped among {people}, from *{}* to *{}*, to follow the pattern used for new words.",
-                            word.first_sense.gloss,
+                            world.concepts[word.first_sense].gloss,
                             variety.spell(before),
                             variety.spell(after)
                         ),
@@ -2538,7 +2595,7 @@ fn grammar_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> 
                     (
                         format!(
                             "The word for “{}” came to {people} from {language} together with its {category_id} form.",
-                            word.first_sense.gloss
+                            world.concepts[word.first_sense].gloss
                         ),
                         vec![
                             "Both the base and its marked form were acquired together. A borrowed marked form does not by itself make the foreign pattern productive on native words.".into(),
@@ -2838,7 +2895,12 @@ fn pronoun_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> 
             }
             let generation = notice.generation;
             let people = speakers(world, shifts, v, generation, names);
-            let gloss = |id: &str| umran_sim::concepts::by_id(id).map_or("", |c| c.gloss);
+            let gloss = |id: &str| {
+                world
+                    .concepts
+                    .by_id(id)
+                    .map_or("", |c| world.concepts[c].gloss.as_ref())
+            };
             let (before, after) = (variety.spell(&notice.before), variety.spell(&notice.after));
             let meaning = gloss(notice.cell);
             let (kind, text, note, donor, state) = match &notice.event {
@@ -3281,7 +3343,7 @@ impl Shifts {
 /// A word that changed audibly in `generation`, spelled before and after,
 /// with its meaning: preferring words changed by more laws, then the most
 /// basic meanings.
-fn example(variety: &Variety, generation: u32) -> Option<(String, String, &'static str)> {
+fn example(variety: &Variety, generation: u32) -> Option<(String, String, &str)> {
     let mut best = None;
     let mut rank = None;
     for word in variety.lexicon.living() {
@@ -3290,7 +3352,11 @@ fn example(variety: &Variety, generation: u32) -> Option<(String, String, &'stat
         };
         let key = (
             laws,
-            Reverse(word.first_sense.stability.unwrap_or(u8::MAX)),
+            Reverse(
+                variety.lexicon.concepts[word.first_sense]
+                    .stability
+                    .unwrap_or(u8::MAX),
+            ),
             Reverse(word.id.0),
         );
         // A lower-ranked word cannot replace the best audible example.
@@ -3301,7 +3367,11 @@ fn example(variety: &Variety, generation: u32) -> Option<(String, String, &'stat
         let (before, after) = (variety.spell(before), variety.spell(after));
         if before != after {
             rank = Some(key);
-            best = Some((before, after, word.first_sense.gloss));
+            best = Some((
+                before,
+                after,
+                variety.lexicon.concepts[word.first_sense].gloss.as_ref(),
+            ));
         }
     }
     best
@@ -3381,10 +3451,7 @@ mod cause_tests {
 
     #[test]
     fn ranked_examples_match_exhaustive_spelling() {
-        fn exhaustive(
-            variety: &Variety,
-            generation: u32,
-        ) -> Option<(String, String, &'static str)> {
+        fn exhaustive(variety: &Variety, generation: u32) -> Option<(String, String, &str)> {
             variety
                 .lexicon
                 .living()
@@ -3415,11 +3482,21 @@ mod cause_tests {
                 .max_by_key(|(laws, word, ..)| {
                     (
                         *laws,
-                        Reverse(word.first_sense.stability.unwrap_or(u8::MAX)),
+                        Reverse(
+                            variety.lexicon.concepts[word.first_sense]
+                                .stability
+                                .unwrap_or(u8::MAX),
+                        ),
                         Reverse(word.id.0),
                     )
                 })
-                .map(|(_, word, before, after)| (before, after, word.first_sense.gloss))
+                .map(|(_, word, before, after)| {
+                    (
+                        before,
+                        after,
+                        variety.lexicon.concepts[word.first_sense].gloss.as_ref(),
+                    )
+                })
         }
 
         for preset in ["familiar", "semitic", "bantu"] {

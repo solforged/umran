@@ -23,7 +23,12 @@ fn realm(fixed: bool, rate: f32) -> (World, usize, usize) {
     world.religions[religion].translates = false;
     world.generation = 4;
     let from = world.communities[donor].variety;
-    for concept in CONCEPTS.iter().filter(|c| c.stability.is_some()).take(24) {
+    for concept in world
+        .concepts
+        .ids()
+        .filter(|id| world.concepts[*id].stability.is_some())
+        .take(24)
+    {
         let source = world.varieties[from].lexicon.word_for(concept).unwrap();
         let origin = Origin::Borrowed {
             from,
@@ -109,7 +114,7 @@ fn written_revival_revives_archaisms_only_in_high_form_and_retains_causes() {
     );
     for word in &episode.replaced {
         let lexicon = &world.varieties[high].lexicon;
-        let concept = by_id(word.concept).unwrap();
+        let concept = word.concept;
         assert_eq!(
             lexicon.slot(concept).variants,
             vec![Variant {
@@ -256,7 +261,7 @@ fn no_native_attestation_coins_without_laundering_a_foreign_root() {
         },
     };
     for word in &mut v.lexicon.lexemes {
-        if word.first_sense.id == concept.id {
+        if word.first_sense == concept {
             word.origin = foreign;
         }
     }
@@ -270,7 +275,7 @@ fn no_native_attestation_coins_without_laundering_a_foreign_root() {
         3,
     );
     v.lexicon.get_mut(derivative).obsolete = Some(4);
-    let slot = CONCEPTS.iter().position(|c| c.id == concept.id).unwrap();
+    let slot = concept.0 as usize;
     let id = native_substitute(v, slot, 5, &mut stream(8, &[key("purism test")]));
     assert!(native(&v.lexicon, id));
     assert_ne!(id, derivative);

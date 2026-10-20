@@ -88,7 +88,7 @@ fn main() {
                         println!(
                             "  year {}: {} {} > plural {}",
                             generations * 25,
-                            word.first_sense.id,
+                            variety.lexicon.concepts[word.first_sense].id,
                             word.form.ipa(),
                             r.form.as_ref().unwrap().ipa()
                         );

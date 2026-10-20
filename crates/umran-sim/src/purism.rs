@@ -2,7 +2,7 @@
 //! Native substitutes follow lexical-purist reforms; fixing a written norm
 //! follows the grammarians' separation of classical and everyday speech.
 
-use crate::concepts::{CONCEPTS, FAMILIES, by_id};
+use crate::concepts::{ConceptId, FAMILIES, by_id};
 use crate::lexicon::{Entry, Event, LexemeId, Lexicon, Origin, Variant};
 use crate::phonotactics::Phonotactics;
 use crate::rng::{key, stream};
@@ -25,7 +25,7 @@ pub struct Purism {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Replacement {
-    pub concept: &'static str,
+    pub concept: ConceptId,
     pub loan: LexemeId,
     pub native: LexemeId,
     /// Frozen spellings at the reform, not reconstructed from later speech.
@@ -194,7 +194,7 @@ impl World {
                     key("purism native"),
                     high as u64,
                     u64::from(since),
-                    key(CONCEPTS[slot].id),
+                    key(&self.concepts[ConceptId(slot as u32)].id),
                 ],
             );
             let variety = &mut self.varieties[high];
@@ -207,7 +207,7 @@ impl World {
                     lexicon.lexemes[variant.lexeme.0 as usize].log.push(Entry {
                         generation: since,
                         event: Event::Lost {
-                            sense: CONCEPTS.get(slot).unwrap(),
+                            sense: ConceptId(slot as u32),
                         },
                     });
                 }
@@ -219,7 +219,7 @@ impl World {
                 word.log.push(Entry {
                     generation: since,
                     event: Event::Extended {
-                        to: CONCEPTS.get(slot).unwrap(),
+                        to: ConceptId(slot as u32),
                     },
                 });
             }
@@ -231,7 +231,7 @@ impl World {
             });
             let native_form = variety.written_word(variety.lexicon.get(native));
             replaced.push(Replacement {
-                concept: CONCEPTS[slot].id,
+                concept: ConceptId(slot as u32),
                 loan,
                 native,
                 loan_form,
@@ -274,7 +274,7 @@ impl World {
 /// point backwards, including the two ingredients of a renewed compound.
 fn native(lexicon: &Lexicon, id: LexemeId) -> bool {
     match lexicon.get(id).origin {
-        Origin::Founding | Origin::Expressive => true,
+        Origin::Founding | Origin::Expressive | Origin::Authored => true,
         Origin::Borrowed { .. } => false,
         Origin::Derived { base, .. } => native(lexicon, base),
         Origin::Renewed { base, with } => {
@@ -291,7 +291,8 @@ fn native_substitute(
     rng: &mut impl Rng,
 ) -> LexemeId {
     let lexicon = &variety.lexicon;
-    let concept = &CONCEPTS[slot];
+    let concept_id = ConceptId(slot as u32);
+    let concept = &lexicon.concepts[concept_id];
     // Prefer a surviving native competitor, then an attested archaism. Do not
     // revive a homophone of an unrelated living word or a borrowed derivative.
     let current = lexicon.slots[slot]
@@ -306,7 +307,7 @@ fn native_substitute(
             .iter()
             .find(|word| {
                 word.obsolete.is_some()
-                    && word.first_sense.id == concept.id
+                    && word.first_sense == concept_id
                     && native(lexicon, word.id)
                     && !lexicon.living().any(|other| other.form == word.form)
             })
@@ -346,7 +347,7 @@ fn native_substitute(
         let field: HashSet<Form> = lexicon
             .slots
             .iter()
-            .filter(|s| s.concept.field == concept.field)
+            .filter(|s| lexicon.concepts[s.concept].field == concept.field)
             .flat_map(|s| s.variants.iter())
             .map(|v| lexicon.get(v.lexeme).form.clone())
             .collect();
@@ -363,7 +364,7 @@ fn native_substitute(
             Origin::Expressive,
         )
     });
-    variety.lexicon.coin(form, origin, concept, generation)
+    variety.lexicon.coin(form, origin, concept_id, generation)
 }
 
 #[cfg(test)]
