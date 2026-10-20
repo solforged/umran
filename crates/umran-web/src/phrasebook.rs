@@ -494,8 +494,9 @@ mod tests {
             assert!(dropped.notes.contains(&Note::PronounDropped));
             let view = serde_json::to_value(grammar_view(&world, 0)).unwrap();
             assert_eq!(view["possessorAgreement"]["stage"], "affix");
+            assert_eq!(view["possessorAgreement"]["role"], "possessor");
             assert!(
-                view["possessorAgreement"]["forms"]
+                view["possessorAgreement"]["cells"]
                     .as_array()
                     .unwrap()
                     .len()

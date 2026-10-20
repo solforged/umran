@@ -1807,7 +1807,7 @@ impl Bench {
                 Some(LawChoice {
                     id: law.id.clone(),
                     label: law.label.clone(),
-                    words: words + names,
+                    words,
                     names,
                     specimen: law_specimen(speech, law),
                     recent: speech.laws.iter().rev().any(|(generation, id)| {
@@ -1819,7 +1819,7 @@ impl Bench {
             })
             .collect();
         // Stable sorting preserves catalog order when coverage is tied.
-        choices.sort_by_key(|choice| std::cmp::Reverse(choice.words));
+        choices.sort_by_key(|choice| std::cmp::Reverse(choice.words + choice.names));
         to_json(&choices)
     }
 
@@ -4613,10 +4613,7 @@ fn grammar_view(world: &World, variety: usize) -> GrammarView {
         agreement: agreement_view(v, v.grammar.agreement(), world.generation),
         object_agreement: agreement_view(v, v.grammar.object_agreement(), world.generation),
         possessive: v.grammar.summary.possessive,
-        possessor_agreement: {
-            let view = agreement_view(v, v.grammar.possessor_agreement(), world.generation);
-            PossessorAgreementView { stage: view.stage, side: view.side, forms: view.cells }
-        },
+        possessor_agreement: agreement_view(v, v.grammar.possessor_agreement(), world.generation),
         sample: grammar_sample(v, world.generation),
         classes: v
             .gender
@@ -5593,7 +5590,7 @@ struct GrammarView {
     categories: Vec<GrammarCategoryView>,
     possessive: umran_sim::grammar::PronounCase,
     #[serde(rename = "possessorAgreement")]
-    possessor_agreement: PossessorAgreementView,
+    possessor_agreement: AgreementView,
 }
 
 #[derive(Serialize)]
@@ -5607,13 +5604,6 @@ struct AgreementView {
     since: Option<u32>,
     cells: Vec<AgreementCellView>,
     history: Vec<AgreementHistoryView>,
-}
-
-#[derive(Serialize)]
-struct PossessorAgreementView {
-    stage: AgreementStage,
-    side: &'static str,
-    forms: Vec<AgreementCellView>,
 }
 
 #[derive(Serialize)]
@@ -6219,9 +6209,11 @@ mod tests {
                 .position(|law| law.id == c["id"].as_str().unwrap())
                 .unwrap()
         };
+        let coverage =
+            |c: &serde_json::Value| c["words"].as_u64().unwrap() + c["names"].as_u64().unwrap();
         assert!(choices.windows(2).all(|pair| {
-            pair[0]["words"].as_u64() > pair[1]["words"].as_u64()
-                || (pair[0]["words"] == pair[1]["words"] && order(&pair[0]) < order(&pair[1]))
+            coverage(&pair[0]) > coverage(&pair[1])
+                || (coverage(&pair[0]) == coverage(&pair[1]) && order(&pair[0]) < order(&pair[1]))
         }));
         assert!(choices.iter().any(|c| c["id"] == "spirantization"));
         for choice in &choices {
@@ -6246,12 +6238,7 @@ mod tests {
                             != now.form.stressed_syllable(after.stress())
                 })
                 .count();
-            assert_eq!(
-                choice["words"],
-                changed + choice["names"].as_u64().unwrap() as usize,
-                "{}",
-                choice["id"]
-            );
+            assert_eq!(choice["words"], changed, "{}", choice["id"]);
             let actual = serde_json::to_value(specimen(after, 0)).unwrap();
             for (preview, current) in choice["specimen"]
                 .as_array()
