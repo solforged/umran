@@ -78,12 +78,14 @@ pub struct CategoryEligibility {
     pub plural: bool,
     pub object: bool,
     pub past: bool,
+    pub genitive: bool,
 }
 
 impl CategoryEligibility {
     pub const fn allows(self, category: Category) -> bool {
         match category {
-            Category::Plural | Category::Genitive => self.plural,
+            Category::Plural => self.plural,
+            Category::Genitive => self.genitive,
             Category::Object => self.object,
             Category::Past | Category::Future | Category::Progressive => self.past,
         }
@@ -264,21 +266,25 @@ const COUNT: CategoryEligibility = CategoryEligibility {
     plural: true,
     object: true,
     past: false,
+    genitive: true,
 };
 const VERB: CategoryEligibility = CategoryEligibility {
     plural: false,
     object: false,
     past: true,
+    genitive: false,
 };
 const UNMARKED: CategoryEligibility = CategoryEligibility {
     plural: false,
     object: false,
     past: false,
+    genitive: false,
 };
 const PRONOUN: CategoryEligibility = CategoryEligibility {
     plural: false,
     object: true,
     past: false,
+    genitive: true,
 };
 
 pub static CONCEPTS: &[Concept] = &[

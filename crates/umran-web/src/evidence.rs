@@ -8,8 +8,9 @@
 use crate::notebook::Subject;
 use crate::provenance::{LoanCauseView, cause_view, entry_variety, event_position};
 use crate::{
-    Bench, CoinedPartView, CoinedView, ReadView, SPECIMEN, Workbench, coined_view, entity_id, fail,
-    form_after, grammar_origin_view, substrate_label, to_json,
+    AgreementView, Bench, CoinedPartView, CoinedView, ReadView, SPECIMEN, Workbench,
+    agreement_view, coined_view, entity_id, fail, form_after, grammar_origin_view, substrate_label,
+    to_json,
 };
 use serde::Serialize;
 use std::collections::{BTreeMap, HashSet};
@@ -191,6 +192,7 @@ struct GrammarStory {
     category: &'static str,
     label: &'static str,
     markers: Vec<MarkerStory>,
+    agreement: Option<AgreementView>,
 }
 
 #[derive(Serialize)]
@@ -1238,6 +1240,8 @@ fn grammar_story(
         category: category.id(),
         label: category.label(),
         markers,
+        agreement: (category == Category::Genitive)
+            .then(|| agreement_view(v, v.grammar.possessor_agreement(), world.generation)),
     })
 }
 

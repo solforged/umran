@@ -59,7 +59,9 @@ use std::collections::BTreeMap;
 /// subject, fuse into object affixes, and license unsaid objects.
 /// Revision 64 applies sound laws the author wrote in notation, stored as
 /// rules, spreading by wave like catalog laws.
-pub const ENGINE_REVISION: u32 = 64;
+/// Revision 65 gives pronouns possessive forms and lets them lean on the
+/// thing owned, fuse into possessive affixes, and fall silent.
+pub const ENGINE_REVISION: u32 = 65;
 /// Revision 33 replaces flat geography and its region identities with a sphere.
 /// Earlier region-targeted actions cannot be replayed on the spherical mesh.
 pub const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;

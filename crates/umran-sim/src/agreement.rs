@@ -1,7 +1,7 @@
-//! Verb person agreement by Givón's cycle: a free personal pronoun, said
-//! beside its verb, weakens into a clitic; the clitic fuses into a person
-//! affix; audible affixes let the free pronoun drop; worn affixes give the
-//! pronoun its place back, and the renewed pronouns can start over.
+//! Person agreement by Givón's cycle: a free pronoun beside its host
+//! weakens into a clitic, then an affix. Distinct affixes license pronoun
+//! drop; worn affixes return the free pronoun. Subjects and objects attach
+//! to the verb; possessors attach to the possessed noun.
 use super::*;
 use std::borrow::Cow;
 
@@ -11,12 +11,14 @@ pub enum AgreementRole {
     #[default]
     Subject,
     Object,
+    Possessor,
 }
 impl AgreementRole {
     pub fn id(self) -> &'static str {
         match self {
             Self::Subject => "subject",
             Self::Object => "object",
+            Self::Possessor => "possessor",
         }
     }
 }
@@ -95,7 +97,7 @@ pub struct Agreement {
     pub role: AgreementRole,
     pub stage: AgreementStage,
     pub pro_drop: bool,
-    /// The verb's side the free pronoun stood on when it cliticized.
+    /// The host's side the free pronoun stood on when it cliticized.
     pub side: Side,
     pub cells: Vec<AgreementForm>,
     /// Generation the current stage began; after a loss, the loss itself.
@@ -206,16 +208,21 @@ impl Grammar {
     pub fn object_agreement(&self) -> &Agreement {
         &self.object_agreement
     }
+    pub fn possessor_agreement(&self) -> &Agreement {
+        &self.possessor_agreement
+    }
     pub fn agreement_for(&self, role: AgreementRole) -> &Agreement {
         match role {
             AgreementRole::Subject => &self.agreement,
             AgreementRole::Object => &self.object_agreement,
+            AgreementRole::Possessor => &self.possessor_agreement,
         }
     }
     fn agreement_for_mut(&mut self, role: AgreementRole) -> &mut Agreement {
         match role {
             AgreementRole::Subject => &mut self.agreement,
             AgreementRole::Object => &mut self.object_agreement,
+            AgreementRole::Possessor => &mut self.possessor_agreement,
         }
     }
     fn agreement_side(order: WordOrder) -> Side {
@@ -228,6 +235,12 @@ impl Grammar {
         match order {
             WordOrder::SOV => Side::Prefix,
             WordOrder::SVO | WordOrder::VSO => Side::Suffix,
+        }
+    }
+    fn possessor_side(&self) -> Side {
+        match self.possessor {
+            PossessorOrder::Before => Side::Prefix,
+            PossessorOrder::After => Side::Suffix,
         }
     }
     /// The cells that could cliticize now: every living base cell has a
@@ -253,19 +266,22 @@ impl Grammar {
         let side = match role {
             AgreementRole::Subject => Self::agreement_side(self.order),
             AgreementRole::Object => Self::object_side(self.order),
+            AgreementRole::Possessor => self.possessor_side(),
         };
         let mut cells = Vec::with_capacity(7);
         for cell in base_cells(lexicon) {
             let Some(word) = lexicon.word_for(by_id(cell)?) else {
                 continue;
             };
-            let source_form = (role == AgreementRole::Object)
-                .then(|| self.pronoun_object(word, stress))
-                .flatten()
-                .and_then(|r| {
-                    let mut forms = self.surface(&word.form, r);
-                    (forms.len() == 1).then(|| forms.remove(0))
-                });
+            let source_form = match role {
+                AgreementRole::Subject => None,
+                AgreementRole::Object => self.pronoun_object(word, stress),
+                AgreementRole::Possessor => self.pronoun_possessive(word, stress),
+            }
+            .and_then(|r| {
+                let mut forms = self.surface(&word.form, r);
+                (forms.len() == 1).then(|| forms.remove(0))
+            });
             let source = source_form.as_ref().unwrap_or(&word.form);
             if source.segs.len() < 2 {
                 return None;
@@ -338,6 +354,31 @@ impl Grammar {
             params,
         );
     }
+    pub(super) fn evolve_possessor_agreement(
+        &mut self,
+        seed: u64,
+        variety: usize,
+        generation: u32,
+        lexicon: &Lexicon,
+        stress: StressRule,
+        params: &crate::Params,
+    ) {
+        if params.possessive_case_rate == 0.0
+            && params.possessive_fusion_rate == 0.0
+            && params.possessive_drop_rate == 0.0
+        {
+            return;
+        }
+        self.evolve_person_agreement(
+            AgreementRole::Possessor,
+            seed,
+            variety,
+            generation,
+            lexicon,
+            stress,
+            params,
+        );
+    }
     #[allow(clippy::too_many_arguments)]
     fn evolve_person_agreement(
         &mut self,
@@ -363,6 +404,12 @@ impl Grammar {
                 params.object_drop_rate,
                 "object-agreement",
             ),
+            AgreementRole::Possessor => (
+                params.possessive_case_rate,
+                params.possessive_fusion_rate,
+                params.possessive_drop_rate,
+                "possessive agreement",
+            ),
         };
         let (rate, candidates) = match agreement.stage {
             AgreementStage::None => {
@@ -378,6 +425,7 @@ impl Grammar {
                 let candidates = match role {
                     AgreementRole::Subject => self.clitic_candidates(lexicon, stress),
                     AgreementRole::Object => self.object_clitic_candidates(lexicon, stress),
+                    AgreementRole::Possessor => self.candidates(role, lexicon, stress),
                 };
                 let Some(candidates) = candidates else {
                     return;
@@ -411,6 +459,7 @@ impl Grammar {
         let side = match role {
             AgreementRole::Subject => Self::agreement_side(self.order),
             AgreementRole::Object => Self::object_side(self.order),
+            AgreementRole::Possessor => self.possessor_side(),
         };
         let agreement = self.agreement_for_mut(role);
         match candidates {
@@ -464,6 +513,7 @@ impl Grammar {
             .cells
             .iter_mut()
             .chain(self.object_agreement.cells.iter_mut())
+            .chain(self.possessor_agreement.cells.iter_mut())
             .filter(|c| c.retired.is_none())
         {
             let mut current = Cow::Borrowed(&cell.form);
@@ -489,7 +539,11 @@ impl Grammar {
     /// contrast is lost: the forms retire and the free pronoun is
     /// obligatory again.
     pub(super) fn refresh_agreement(&mut self, stress: StressRule, generation: u32) {
-        for agreement in [&mut self.agreement, &mut self.object_agreement] {
+        for agreement in [
+            &mut self.agreement,
+            &mut self.object_agreement,
+            &mut self.possessor_agreement,
+        ] {
             let (distinct, living) = agreement.distinct_count(stress);
             if agreement.stage != AgreementStage::None && distinct * 2 < living {
                 for cell in agreement.cells.iter_mut().filter(|c| c.retired.is_none()) {
@@ -509,6 +563,7 @@ impl Grammar {
         self.summary.pro_drop = self.agreement.pro_drop;
         self.summary.object_agreement = self.object_agreement.stage;
         self.summary.object_pro_drop = self.object_agreement.pro_drop;
+        self.summary.possessor_agreement = self.possessor_agreement.stage;
     }
     /// Person affixes keep the order the free words stood in: on the prefix
     /// side the object joins first, nearer the stem (S-O-V, as Bantu
@@ -550,6 +605,33 @@ impl Grammar {
             joined = Cow::Owned(next);
         }
         joined.into_owned()
+    }
+
+    /// Possessor agreement attaches to the possessed noun, outside its
+    /// inflection. A clitic is joined here too; the facade retains `=`.
+    pub fn attach_possessor(
+        &self,
+        noun: &Form,
+        possessor: &Form,
+        morphology: &Morphology,
+        stress: StressRule,
+    ) -> (Form, usize) {
+        let side = self.possessor_agreement.side;
+        let (mut joined, edge) = match side {
+            Side::Prefix => morphology.join_with_edge(possessor, noun),
+            Side::Suffix => morphology.join_with_edge(noun, possessor),
+        };
+        if let Some(feature) = self.harmony {
+            feature.realize_bound(&mut joined, edge, side, noun);
+        }
+        if stress == StressRule::Free && joined.stress.is_none() {
+            let vowels = joined.vowel_count();
+            joined.stress = (vowels > 0).then(|| match side {
+                Side::Prefix => vowels.saturating_sub(noun.vowel_count()),
+                Side::Suffix => 0,
+            });
+        }
+        (joined, edge)
     }
 }
 

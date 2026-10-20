@@ -7,6 +7,7 @@ mod evidence;
 mod extract;
 mod law_preview;
 mod notebook;
+mod phrasebook;
 mod provenance;
 
 use annals::{Annal, annals};
@@ -4079,6 +4080,7 @@ struct PronounView {
     origin: &'static str,
     source: Option<String>,
     object: Option<PronounObjectView>,
+    possessive: Option<PronounPossessiveView>,
 }
 
 #[derive(Serialize)]
@@ -4087,6 +4089,13 @@ struct PronounObjectView {
     ipa: String,
     kind: &'static str,
     since: u32,
+}
+
+#[derive(Serialize)]
+struct PronounPossessiveView {
+    form: String,
+    spelled: String,
+    marking: umran_sim::grammar::PronounCase,
 }
 
 fn pronoun_view(variety: &Variety) -> Vec<PronounView> {
@@ -4149,6 +4158,17 @@ fn pronoun_view(variety: &Variety) -> Vec<PronounView> {
                                 .join(" "),
                             kind: variety.grammar.marker(r.marker).kind.id(),
                             since: r.born,
+                        }
+                    }),
+                possessive: variety
+                    .grammar
+                    .pronoun_possessive(word, variety.stress())
+                    .map(|r| {
+                        let forms = variety.grammar.surface(&word.form, r);
+                        PronounPossessiveView {
+                            form: ipa_surface(&forms, variety.stress()),
+                            spelled: spell_surface(variety, &forms),
+                            marking: variety.grammar.summary.possessive,
                         }
                     }),
             })
@@ -4510,6 +4530,11 @@ fn grammar_view(world: &World, variety: usize) -> GrammarView {
         pronoun_case: v.grammar.pronoun_case(),
         agreement: agreement_view(v, v.grammar.agreement(), world.generation),
         object_agreement: agreement_view(v, v.grammar.object_agreement(), world.generation),
+        possessive: v.grammar.summary.possessive,
+        possessor_agreement: {
+            let view = agreement_view(v, v.grammar.possessor_agreement(), world.generation);
+            PossessorAgreementView { stage: view.stage, side: view.side, forms: view.cells }
+        },
         sample: grammar_sample(v, world.generation),
         classes: v
             .gender
@@ -4701,145 +4726,19 @@ fn omitted_pronoun(agreement: &Agreement, cell: Option<&AgreementForm>) -> bool 
 }
 
 fn grammar_sample(variety: &Variety, generation: u32) -> Option<GrammarSample> {
-    let mut sentence = grammar_sentence(variety, generation, Category::Past)?;
-    sentence.translation = "The child saw the dog.";
-    let mut future = grammar_sentence(variety, generation, Category::Future)?;
-    future.translation = "The child will see the dog.";
-    let possession_order = match variety.grammar.possessor {
-        PossessorOrder::Before => ["child", "fish"],
-        PossessorOrder::After => ["fish", "child"],
-    };
-    let mut possession = GrammarRendering {
-        translation: "The child’s fish.",
-        ..Default::default()
-    };
-    for concept in possession_order {
-        if concept == "fish" {
-            sample_determiner(variety, concept, generation, &mut possession)?;
-        }
-        let category = (concept == "child").then_some(Category::Genitive);
-        sample_word(
-            variety,
-            concept,
-            category,
-            generation,
-            &mut possession,
-            [None, None],
-        )?;
-    }
     Some(GrammarSample {
-        sentence,
-        possession,
-        future,
+        sentence: phrasebook::render_id(variety, generation, "see-past")?.rendering,
+        possession: phrasebook::render_id(variety, generation, "child-of-fish")?.rendering,
+        future: phrasebook::render_id(variety, generation, "see-future")?.rendering,
         pronoun: grammar_pronoun_sample(variety, generation),
+        possessive: phrasebook::render_id(variety, generation, "my-house").map(|p| p.rendering),
     })
 }
 
-/// Nouns stay: affixes double them, but clitics do not.
-fn grammar_sentence(
-    variety: &Variety,
-    generation: u32,
-    tense: Category,
-) -> Option<GrammarRendering> {
-    let words = [
-        ("child", None),
-        ("see", Some(tense)),
-        ("dog", Some(Category::Object)),
-    ];
-    let order = match variety.grammar.order {
-        WordOrder::SOV => [0, 2, 1],
-        WordOrder::SVO => [0, 1, 2],
-        WordOrder::VSO => [1, 0, 2],
-    };
-    let agreement = [
-        agreement_cell(variety.grammar.agreement(), "3sg", false),
-        agreement_cell(variety.grammar.object_agreement(), "3sg", false),
-    ];
-    let mut sentence = GrammarRendering::default();
-    for index in order {
-        let (concept, category) = words[index];
-        if concept != "see" {
-            sample_determiner(variety, concept, generation, &mut sentence)?;
-        }
-        let agreement = if concept == "see" {
-            agreement
-        } else {
-            [None, None]
-        };
-        sample_word(
-            variety,
-            concept,
-            category,
-            generation,
-            &mut sentence,
-            agreement,
-        )?;
-    }
-    Some(sentence)
-}
-
 fn grammar_pronoun_sample(variety: &Variety, generation: u32) -> Option<PronounSample> {
-    let render = |subject, object, translation| {
-        let words = [
-            (subject, None),
-            ("see", Some(Category::Past)),
-            (object, Some(Category::Object)),
-        ];
-        let order = match variety.grammar.order {
-            WordOrder::SOV => [0, 2, 1],
-            WordOrder::SVO => [0, 1, 2],
-            WordOrder::VSO => [1, 0, 2],
-        };
-        let agreement = [
-            agreement_cell(variety.grammar.agreement(), subject, true),
-            agreement_cell(variety.grammar.object_agreement(), object, true),
-        ];
-        let omitted = [
-            omitted_pronoun(variety.grammar.agreement(), agreement[0]),
-            false,
-            omitted_pronoun(variety.grammar.object_agreement(), agreement[1]),
-        ];
-        let mut sentence = GrammarRendering {
-            translation,
-            ..Default::default()
-        };
-        for index in order {
-            if omitted[index] {
-                continue;
-            }
-            let (concept, category) = words[index];
-            let word = variety
-                .lexicon
-                .word_for(umran_sim::concepts::by_id(concept)?)?;
-            if category.is_some_and(|category| {
-                !word.paradigms.iter().any(|p| {
-                    p.category == category
-                        && p.realizations
-                            .iter()
-                            .any(|r| r.born <= generation && r.retired.is_none() && r.share > 0.0)
-                })
-            }) {
-                return None;
-            }
-            let agreement = if concept == "see" {
-                agreement
-            } else {
-                [None, None]
-            };
-            sample_word(
-                variety,
-                concept,
-                category,
-                generation,
-                &mut sentence,
-                agreement,
-            )?;
-        }
-        Some(sentence)
-    };
     Some(PronounSample {
-        first: render("1sg", "2sg", "I saw you.")?,
-        second: render("2sg", "1sg", "You saw me.")?,
+        first: phrasebook::render_id(variety, generation, "see-past")?.rendering,
+        second: phrasebook::render_id(variety, generation, "i-you")?.rendering,
     })
 }
 
@@ -4910,6 +4809,7 @@ fn agree_token(
     let label = |role, cell| match role {
         AgreementRole::Subject => agreement_gloss(cell).to_owned(),
         AgreementRole::Object => format!("{}.OBJ", agreement_gloss(cell)),
+        AgreementRole::Possessor => format!("{}.POSS", agreement_gloss(cell)),
     };
     // Prefixes join object then subject; suffixes join subject then object.
     for side in [Side::Prefix, Side::Suffix] {
@@ -4966,15 +4866,14 @@ fn sample_word(
     category: Option<Category>,
     generation: u32,
     rendering: &mut GrammarRendering,
-    agreement: [Option<&AgreementForm>; 2],
+    agreement: [Option<&AgreementForm>; 3],
 ) -> Option<()> {
-    let word = variety
-        .lexicon
-        .word_for(umran_sim::concepts::by_id(concept)?)?;
-    let gloss_base = match concept {
-        "1sg" => "1SG",
-        "2sg" => "2SG",
-        _ => concept,
+    let meaning = umran_sim::concepts::by_id(concept)?;
+    let word = variety.lexicon.word_for(meaning)?;
+    let gloss_base = if umran_sim::pronouns::is_pronoun(meaning) {
+        agreement_gloss(concept)
+    } else {
+        concept
     };
     let realization = category.and_then(|category| {
         word.paradigms
@@ -4985,6 +4884,17 @@ fn sample_word(
             .filter(|r| r.born <= generation && r.retired.is_none() && r.share > 0.0)
             .max_by(|a, b| a.share.total_cmp(&b.share))
     });
+    // Bare possessors at the start of the cycle are legitimate; other
+    // requested eligible categories must have a recorded realization.
+    if category.is_some_and(|c| {
+        meaning.categories.allows(c)
+            && !(c == Category::Genitive
+                && umran_sim::pronouns::is_pronoun(meaning)
+                && variety.grammar.summary.possessive == umran_sim::grammar::PronounCase::None)
+    }) && realization.is_none()
+    {
+        return None;
+    }
     let stress = variety.stress();
     // The word's pieces, and which of them is the word itself rather than
     // a particle: that one hosts the verb's person mark.
@@ -5019,7 +4929,7 @@ fn sample_word(
                     gloss_base.into()
                 }
                 MarkerKind::Bound | MarkerKind::Pattern
-                    if umran_sim::pronouns::is_pronoun(word.first_sense) =>
+                    if umran_sim::pronouns::is_pronoun(meaning) =>
                 {
                     format!("{gloss_base}.{label}")
                 }
@@ -5046,7 +4956,7 @@ fn sample_word(
             gloss: gloss.clone(),
         })
         .collect();
-    let [subject, object] = agreement.map(|cell| {
+    let [subject, object, possessor] = agreement.map(|cell| {
         let cell = cell?;
         let form = cell.form_at(generation);
         // Worn marks are unsaid and unglossed, independently for each role.
@@ -5055,6 +4965,10 @@ fn sample_word(
     if subject.is_some() || object.is_some() {
         let (verb, gloss) = &pieces[host];
         tokens[host] = agree_token(variety, verb, gloss, subject, object);
+    }
+    if let Some((cell, form)) = possessor {
+        let (noun, gloss) = &pieces[host];
+        tokens[host] = phrasebook::possessive_token(variety, noun, gloss, cell, form);
     }
     for token in tokens {
         if !rendering.gloss.is_empty() {
@@ -5592,6 +5506,9 @@ struct GrammarView {
     markers: Vec<GrammarMarkerView>,
     classes: Vec<NounClassView>,
     categories: Vec<GrammarCategoryView>,
+    possessive: umran_sim::grammar::PronounCase,
+    #[serde(rename = "possessorAgreement")]
+    possessor_agreement: PossessorAgreementView,
 }
 
 #[derive(Serialize)]
@@ -5605,6 +5522,13 @@ struct AgreementView {
     since: Option<u32>,
     cells: Vec<AgreementCellView>,
     history: Vec<AgreementHistoryView>,
+}
+
+#[derive(Serialize)]
+struct PossessorAgreementView {
+    stage: AgreementStage,
+    side: &'static str,
+    forms: Vec<AgreementCellView>,
 }
 
 #[derive(Serialize)]
@@ -5655,6 +5579,7 @@ struct GrammarSample {
     possession: GrammarRendering,
     future: GrammarRendering,
     pronoun: Option<PronounSample>,
+    possessive: Option<GrammarRendering>,
 }
 
 #[derive(Serialize)]
@@ -8963,28 +8888,32 @@ mod tests {
     #[test]
     fn grammar_sample_orders_subject_object_and_complete_past_form() {
         for (order, gloss) in [
-            (WordOrder::SOV, ["child", "dog-OBJ", "see-PAST"]),
-            (WordOrder::SVO, ["child", "see-PAST", "dog-OBJ"]),
-            (WordOrder::VSO, ["see-PAST", "child", "dog-OBJ"]),
+            (WordOrder::SOV, ["1SG", "2SG.OBJ", "see-PAST"]),
+            (WordOrder::SVO, ["1SG", "see-PAST", "2SG.OBJ"]),
+            (WordOrder::VSO, ["see-PAST", "1SG", "2SG.OBJ"]),
         ] {
             let world = grammar_world(GrammarChoice::Suffix, order);
             let variety = &world.varieties[0];
             let view = grammar_view(&world, 0);
             assert_eq!(view.marking, "case");
             let sample = view.sample.unwrap();
-            assert_eq!(sample.sentence.translation, "The child saw the dog.");
+            assert_eq!(sample.sentence.translation, "I saw you.");
             assert_eq!(sample.possession.translation, "The child’s fish.");
-            assert_eq!(sample.future.translation, "The child will see the dog.");
+            assert_eq!(sample.future.translation, "The children will see the dog.");
             assert_eq!(sample.sentence.gloss, gloss);
             let expected: Vec<_> = gloss
                 .iter()
                 .map(|gloss| {
-                    let concept = gloss.split('-').next().unwrap();
+                    let concept = match *gloss {
+                        "1SG" => "1sg",
+                        "2SG.OBJ" => "2sg",
+                        _ => "see",
+                    };
                     let word = variety
                         .lexicon
                         .word_for(umran_sim::concepts::by_id(concept).unwrap())
                         .unwrap();
-                    if concept == "child" {
+                    if concept == "1sg" {
                         word.form.clone()
                     } else {
                         let category = if concept == "see" {
@@ -9028,8 +8957,8 @@ mod tests {
             variety.grammar.possessor = PossessorOrder::After;
             let sample = grammar_view(&world, 0).sample.unwrap();
             let expected = match side {
-                Side::Prefix => ["see-PAST", "child", "OBJ", "dog"],
-                Side::Suffix => ["see-PAST", "child", "dog", "OBJ"],
+                Side::Prefix => ["see-PAST", "1SG", "OBJ", "2SG"],
+                Side::Suffix => ["see-PAST", "1SG", "2SG", "OBJ"],
             };
             assert_eq!(sample.sentence.gloss, expected);
             let position = expected.iter().position(|gloss| *gloss == "OBJ").unwrap();
@@ -9102,7 +9031,7 @@ mod tests {
         // The worn mark is no longer audible, so the sample shows a bare dog.
         let sample = view.sample.expect("sample survives the loss");
         assert!(
-            !sample.sentence.gloss.iter().any(|g| g == "dog-OBJ"),
+            !sample.sentence.gloss.iter().any(|g| g == "2SG.OBJ"),
             "an eroded bound mark must not be glossed: {:?}",
             sample.sentence.gloss
         );
@@ -9115,7 +9044,7 @@ mod tests {
         assert_eq!(view.marking, "order");
         assert_eq!(
             view.sample.unwrap().sentence.gloss,
-            ["child", "dog", "see-PAST"]
+            ["1SG", "2SG", "see-PAST"]
         );
     }
     #[test]
@@ -9189,7 +9118,8 @@ mod tests {
         let v = &mut world.varieties[0];
         let concept = umran_sim::concepts::by_id("2sg").unwrap();
         v.lexicon.slot_mut(concept).variants.clear();
-        assert!(grammar_sample(v, 0).unwrap().pronoun.is_none());
+        assert!(grammar_sample(v, 0).is_none());
+        assert!(phrasebook::render_id(v, 0, "see-future").is_some());
     }
 
     #[test]
@@ -9242,8 +9172,8 @@ mod tests {
                 ["1SG=see-PAST", "2SG.OBJ"],
                 ["1SG", "1SG-see-PAST", "2SG.OBJ"],
                 ["1SG-see-PAST", "2SG.OBJ"],
-                ["child", "3SG-see-PAST", "dog-OBJ"],
-                ["child", "see-PAST", "dog-OBJ"],
+                ["child", "3PL-see-FUT", "dog-OBJ"],
+                ["child", "see-FUT", "dog-OBJ"],
             ),
             (
                 WordOrder::VSO,
@@ -9251,8 +9181,8 @@ mod tests {
                 ["see-PAST=1SG", "2SG.OBJ"],
                 ["see-PAST-1SG", "1SG", "2SG.OBJ"],
                 ["see-PAST-1SG", "2SG.OBJ"],
-                ["see-PAST-3SG", "child", "dog-OBJ"],
-                ["see-PAST", "child", "dog-OBJ"],
+                ["see-FUT-3PL", "child", "dog-OBJ"],
+                ["see-FUT", "child", "dog-OBJ"],
             ),
         ] {
             let mut world = grammar_world(GrammarChoice::Suffix, order);
@@ -9313,7 +9243,7 @@ mod tests {
             assert_eq!(pronoun.first.translation, "I saw you.");
             assert_eq!(pronoun.first.text.split(' ').count(), 2);
             assert_eq!(pronoun.first.ipa.matches('=').count(), 1);
-            assert_eq!(sample.sentence.gloss, sentence_clitic);
+            assert_eq!(sample.future.gloss, sentence_clitic);
             assert!(
                 sample
                     .future
@@ -9331,7 +9261,7 @@ mod tests {
             assert_eq!(pronoun.first.gloss, affix);
             assert!(!pronoun.first.text.contains('='));
             assert_eq!(pronoun.first.text.split(' ').count(), 3);
-            assert_eq!(sample.sentence.gloss, sentence);
+            assert_eq!(sample.future.gloss, sentence);
             let v = &mut world.varieties[0];
             evolve(v, 10);
             world.generation = 10;
@@ -9346,7 +9276,7 @@ mod tests {
             assert!(
                 pronoun.second.gloss[0].contains("2SG") || pronoun.second.gloss[1].contains("2SG")
             );
-            assert_eq!(sample.sentence.gloss, sentence);
+            assert_eq!(sample.future.gloss, sentence);
             let events: Vec<_> = annals(&world)
                 .iter()
                 .filter(|a| a.variety == Some(0))

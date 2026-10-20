@@ -466,6 +466,8 @@ pub struct GrammarSummary {
     pub pro_drop: bool,
     pub object_agreement: AgreementStage,
     pub object_pro_drop: bool,
+    pub possessive: PronounCase,
+    pub possessor_agreement: AgreementStage,
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct Grammar {
@@ -486,6 +488,9 @@ pub struct Grammar {
     pronoun_relic_recorded: bool,
     agreement: Agreement,
     object_agreement: Agreement,
+    possessor_agreement: Agreement,
+    possessive_case_enabled: bool,
+    possessive_relic_recorded: bool,
 }
 
 impl Default for Grammar {
@@ -506,6 +511,9 @@ impl Default for Grammar {
             pronoun_relic_recorded: false,
             agreement: Agreement::new(AgreementRole::Subject),
             object_agreement: Agreement::new(AgreementRole::Object),
+            possessor_agreement: Agreement::new(AgreementRole::Possessor),
+            possessive_case_enabled: false,
+            possessive_relic_recorded: false,
         }
     }
 }
@@ -715,7 +723,11 @@ impl Grammar {
                 }
             }
             for category in Category::ALL {
-                if slot.concept.categories.allows(category) {
+                if slot.concept.categories.allows(category)
+                    && !(category == Category::Genitive
+                        && crate::pronouns::is_pronoun(slot.concept)
+                        && !self.possessive_case_enabled)
+                {
                     for variant in &slot.variants {
                         self.usage[variant.lexeme.0 as usize][category.position()] +=
                             variant.weight;
@@ -816,6 +828,9 @@ impl Grammar {
         if self.pronoun_case_enabled {
             self.retain_pronoun_markers(lexicon, stress, generation);
         }
+        if self.possessive_case_enabled {
+            self.retain_case_markers(Category::Genitive, lexicon, stress, generation);
+        }
         for word in &mut lexicon.lexemes {
             for paradigm in &mut word.paradigms {
                 if word.obsolete.is_some()
@@ -910,8 +925,8 @@ impl Grammar {
                     continue;
                 }
                 marker_totals[i] += usage;
-                let noun_side =
-                    p.category != Category::Object || !self.pronoun_usage[word.id.0 as usize];
+                let noun_side = !matches!(p.category, Category::Object | Category::Genitive)
+                    || !self.pronoun_usage[word.id.0 as usize];
                 if noun_side {
                     summary.categories[i].eligible += 1;
                     totals[i] += usage;
@@ -964,6 +979,7 @@ impl Grammar {
         }
         self.summary = summary;
         self.refresh_pronoun_case(lexicon, stress, generation);
+        self.refresh_possessive_case(lexicon, stress, generation);
         self.refresh_agreement(stress, generation);
     }
     /// Productive material follows surviving edges, including empty ones.
@@ -1166,8 +1182,8 @@ impl Grammar {
             {
                 continue;
             }
-            if self.pronoun_case_enabled
-                && category == Category::Object
+            if ((self.pronoun_case_enabled && category == Category::Object)
+                || (self.possessive_case_enabled && category == Category::Genitive))
                 && self.marker(marker).scope == MarkerScope::All
                 && self.pronoun_usage[word.id.0 as usize]
                 && word
@@ -1235,7 +1251,7 @@ impl Grammar {
                 continue;
             }
             for p in &mut word.paradigms {
-                if (scope == MarkerScope::Pronouns && p.category == Category::Object)
+                if (scope == MarkerScope::Pronouns && p.category == old.category)
                     || p.realizations
                         .iter()
                         .any(|r| r.retired.is_none() && r.marker == particle)
@@ -1496,6 +1512,20 @@ impl Grammar {
                 retained_analogy = Some((id, marker));
                 continue;
             }
+            if category == Category::Genitive && self.pronoun_usage[id.0 as usize] {
+                let mut retention = stream(
+                    seed,
+                    &[
+                        key("possessive pronoun case"),
+                        variety as u64,
+                        generation as u64,
+                        key("retention"),
+                    ],
+                );
+                if retention.r#gen::<f32>() < params.pronoun_case_retention {
+                    continue;
+                }
+            }
             self.apply_analogy(
                 lexicon, morphology, stress, generation, category, id, marker,
             );
@@ -1558,6 +1588,16 @@ impl Grammar {
         }
         self.evolve_agreement(seed, variety, generation, lexicon, stress, params);
         self.evolve_object_agreement(seed, variety, generation, lexicon, stress, params);
+        self.evolve_possessive_case(
+            seed,
+            variety,
+            generation,
+            lexicon,
+            morphology,
+            stress,
+            params.possessive_case_rate,
+        );
+        self.evolve_possessor_agreement(seed, variety, generation, lexicon, stress, params);
         self.refresh(lexicon, stress, generation);
     }
     #[allow(clippy::too_many_arguments)]
@@ -2120,3 +2160,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "possessive_tests.rs"]
+mod possessive_tests;

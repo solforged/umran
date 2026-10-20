@@ -335,6 +335,11 @@ pub struct Params {
     pub object_fusion_rate: f32,
     /// Chance per generation that distinct object affixes license null objects.
     pub object_drop_rate: f32,
+    /// Chance per generation of pronoun genitive recruitment/fusion and
+    /// possessor cliticization on the possessed noun (independent streams).
+    pub possessive_case_rate: f32,
+    pub possessive_fusion_rate: f32,
+    pub possessive_drop_rate: f32,
 }
 
 impl Default for Params {
@@ -415,6 +420,9 @@ impl Default for Params {
             object_agreement_rate: 0.02,
             object_fusion_rate: 0.02,
             object_drop_rate: 0.015,
+            possessive_case_rate: 0.006,
+            possessive_fusion_rate: 0.02,
+            possessive_drop_rate: 0.015,
         }
     }
 }
@@ -479,6 +487,9 @@ impl Params {
             object_agreement_rate: 0.0,
             object_fusion_rate: 0.0,
             object_drop_rate: 0.0,
+            possessive_case_rate: 0.0,
+            possessive_fusion_rate: 0.0,
+            possessive_drop_rate: 0.0,
             ..Self::default()
         }
     }

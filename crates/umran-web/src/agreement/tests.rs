@@ -84,11 +84,10 @@ fn clitics_replace_pronouns_in_all_orders_without_doubling_nouns() {
         assert_eq!(pronoun.second.gloss, [second]);
         assert_eq!(pronoun.first.text.split_whitespace().count(), 1);
         assert_eq!(pronoun.first.text.matches('=').count(), 2);
-        for noun in [sample.sentence, sample.future] {
-            assert!(!noun.text.contains('='));
-            assert!(noun.gloss.iter().all(|g| !g.contains("3SG")));
-            assert_eq!(noun.gloss.len(), 3);
-        }
+        let noun = sample.future;
+        assert!(!noun.text.contains('='));
+        assert!(noun.gloss.iter().all(|g| !g.contains("3SG")));
+        assert_eq!(noun.gloss.len(), 3);
         let subject = v.grammar.agreement().cell("1sg").unwrap();
         let object = v.grammar.object_agreement().cell("2sg").unwrap();
         let token = agree_token(
@@ -109,17 +108,17 @@ fn affixes_double_nouns_but_each_pronoun_stays_until_its_own_drop() {
         (
             WordOrder::SOV,
             "1SG-2SG.OBJ-see-PAST",
-            "3SG-3SG.OBJ-see-PAST",
+            "3PL-3SG.OBJ-see-FUT",
         ),
         (
             WordOrder::SVO,
             "1SG-see-PAST-2SG.OBJ",
-            "3SG-see-PAST-3SG.OBJ",
+            "3PL-see-FUT-3SG.OBJ",
         ),
         (
             WordOrder::VSO,
             "see-PAST-1SG-2SG.OBJ",
-            "see-PAST-3SG-3SG.OBJ",
+            "see-FUT-3PL-3SG.OBJ",
         ),
     ] {
         let mut world = world(order, GrammarChoice::None);
@@ -134,8 +133,8 @@ fn affixes_double_nouns_but_each_pronoun_stays_until_its_own_drop() {
         assert!(pronoun.first.gloss.iter().any(|g| g == "1SG"));
         assert!(pronoun.first.gloss.iter().any(|g| g == "2SG"));
         assert!(pronoun.first.gloss.iter().any(|g| g == verb_gloss));
-        assert!(sample.sentence.gloss.iter().any(|g| g == noun_gloss));
-        assert_eq!(sample.sentence.gloss.len(), 3);
+        assert!(sample.future.gloss.iter().any(|g| g == noun_gloss));
+        assert_eq!(sample.future.gloss.len(), 3);
         assert!(!pronoun.first.text.contains('='));
         for object_first in [false, true] {
             let mut dropped = world.clone();
@@ -158,7 +157,7 @@ fn affixes_double_nouns_but_each_pronoun_stays_until_its_own_drop() {
                     .iter()
                     .any(|g| g == if object_first { "1SG" } else { "2SG" })
             );
-            assert!(sample.sentence.gloss.iter().any(|g| g == noun_gloss));
+            assert!(sample.future.gloss.iter().any(|g| g == noun_gloss));
             evolve(&mut dropped, 11, &forced());
             assert_eq!(
                 grammar_pronoun_sample(&dropped.varieties[0], 11)
@@ -214,15 +213,15 @@ fn mixed_stages_wrap_the_affixed_verb_in_the_other_roles_clitic() {
                     .any(|g| g == if subject_fuses { "1SG" } else { "2SG" })
             );
             assert_eq!(pronoun.first.text.matches('=').count(), 1);
-            assert!(!sample.sentence.text.contains('='));
+            assert!(!sample.future.text.contains('='));
             assert!(
                 sample
-                    .sentence
+                    .future
                     .gloss
                     .iter()
                     .any(
-                        |g| g.contains(if subject_fuses { "3SG-" } else { "3SG.OBJ" })
-                            || (subject_fuses && g.ends_with("-3SG"))
+                        |g| g.contains(if subject_fuses { "3PL-" } else { "3SG.OBJ" })
+                            || (subject_fuses && g.ends_with("-3PL"))
                     )
             );
         }

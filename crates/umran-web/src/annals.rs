@@ -2479,9 +2479,11 @@ fn grammar_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> 
                     )
                 }
                 NoticeKind::PronounRelic { cells } => (
-                    format!(
-                        "Among {people}, nouns no longer marked the object, but the pronouns kept their old object forms."
-                    ),
+                    if notice.category == Category::Genitive {
+                        format!("Among {people}, the nouns lost their genitive, but the pronouns kept their forms for an owner, as English keeps my and his.")
+                    } else {
+                        format!("Among {people}, nouns no longer marked the object, but the pronouns kept their old object forms.")
+                    },
                     vec![
                         "What is said often resists being made regular; the pronouns' forms outlived the marking that made them.".into(),
                     ],
@@ -2622,6 +2624,10 @@ fn agreement_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal
         for (prefix, agreement) in [
             ("agreement", variety.grammar.agreement()),
             ("object-agreement", variety.grammar.object_agreement()),
+            (
+                "possessive-agreement",
+                variety.grammar.possessor_agreement(),
+            ),
         ] {
             for (position, notice) in agreement.events.iter().enumerate().filter(|(_, notice)| {
                 variety.parent.is_none_or(|fork| {
@@ -2701,6 +2707,30 @@ fn agreement_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal
                             "Among {people}, the verb's marks of person wore away until they no longer told one from another, and the pronoun was spoken again."
                         ),
                         "Sound change wears affixes down until they no longer tell the persons apart; the pronoun becomes obligatory, as in French, and may start the cycle over.",
+                    ),
+                    (AgreementRole::Possessor, AgreementKind::Clitics) => (
+                        format!(
+                            "Among {people}, the pronouns that named an owner wore short and leaned on the thing owned{examples}."
+                        ),
+                        "A possessor pronoun said beside its noun every time weakens into a clitic on that noun, as Persian -am in ketāb-am “my book”.",
+                    ),
+                    (AgreementRole::Possessor, AgreementKind::Affixes) => (
+                        format!(
+                            "Among {people}, those leaning pronouns grew into the noun itself, so that a thing owned told whose it was{examples}."
+                        ),
+                        "Possessor clitics that always sit on the noun become part of it: possessive affixes, as Turkish ev-im “my house” and Hebrew bet-í.",
+                    ),
+                    (AgreementRole::Possessor, AgreementKind::ProDrop) => (
+                        format!(
+                            "Among {people}, the noun told whose it was so plainly that the owner's pronoun fell silent beside it."
+                        ),
+                        "When possessive affixes tell the persons apart, the free pronoun is left out unless it is emphasized, as in Turkish and Quechua.",
+                    ),
+                    (AgreementRole::Possessor, AgreementKind::Loss) => (
+                        format!(
+                            "Among {people}, the noun's marks of its owner wore away until they no longer told one from another, and the owner's pronoun was spoken again."
+                        ),
+                        "Sound change wears possessive affixes down until they no longer tell the persons apart; the free pronoun becomes obligatory and may start the cycle over.",
                     ),
                 };
                 out.push(Annal {

@@ -204,8 +204,8 @@ This bookkeeping makes no random draws and does not itself change replay.
   pooled into that percentage. The founding choice is profile-neutral;
   dual number and inclusive-only systems are not yet represented.
 - Pronoun object forms (`pronoun_case.rs`) use the same paradigms and sound
-  laws as nouns. All nine personal-pronoun meanings allow object marking,
-  but neither plural nor genitive marking. Founding builds their paradigms
+  laws as nouns. All nine personal-pronoun meanings allow object and
+  genitive marking, but not plural marking. Founding builds object paradigms
   after replacing the initial roots, including optional clusivity cells;
   renewal and borrowing acquire the current native object form at sync.
   A donor's object form enters only as recorded imported-pair evidence,
@@ -326,6 +326,41 @@ This bookkeeping makes no random draws and does not itself change replay.
   Across all 200 founders, 52 acquired object marks and one lost them.
   The unchanged workbench recipe ends with eight object-marking languages
   and eight subject-marking languages.
+- Possessive pronouns (`pronoun_case.rs`, `agreement.rs`) begin unmarked:
+  year-zero grammar has `possessive: none` and no possessor agreement.
+  Their genitive eligibility is separate from plural eligibility; every
+  noun retains its previous eligibility. Historical recruitment copies the
+  current noun genitive paradigm, and a particle can fuse earlier on
+  pronouns (`LikeNouns` → `Ahead`); surviving forms become `Relic` after
+  noun genitive loss. These changes use the `possessive pronoun case`
+  stream. `GrammarDesign.genitive` remains optional and draws noun marking
+  when omitted; there is no new founding choice.
+  The possessor independently follows the Givón cycle on the possessed
+  noun, never the verb. Its one-word genitive form supplies the clitic
+  where available, otherwise its free form does. `Before` produces
+  prefixes and `After` suffixes. Clitics replace the free pronoun; affixes
+  initially accompany it and later allow it to drop. Joining uses the
+  noun's morphology, harmony, and stress. Fusion waits eight generations;
+  drop requires two-thirds distinct cells; loss below half distinct
+  returns the free pronoun and starts a twelve-generation restart wait.
+  The independent `possessive agreement` stream uses
+  `possessive_case_rate` (0.006) for cliticization,
+  `possessive_fusion_rate` (0.02), and `possessive_drop_rate` (0.015).
+  The case rate also gates paradigm recruitment and pronoun-only fusion.
+  `static_society()` zeroes all three: no new founding paradigms or draws
+  change feature-off histories. Feature-on histories may change.
+  Possessor agreement events carry role `possessor`; genitive relic
+  notices carry category `genitive`. The facade exposes `possessive`,
+  `possessorAgreement`, each pronoun's optional possessive form, and
+  possessor evidence in the genitive grammar story.
+  `cargo run --release -p umran-web --example possessive` reports forty
+  default-parameter seeds through 4,000 years, pooled over living
+  descendants, plus the workbench recipe separately. The acceptance bands
+  are 25–60% ever reaching affixes and 15–50% currently clitic or affix.
+  At the calibrated defaults, 134/374 living languages (35.83%) have
+  reached affixes, 148/374 (39.57%) currently mark possessors, and 68/374
+  (18.18%) allow pronoun drop. The separately reported sample has 1/18
+  living languages with affixes (5.56%) and none dropping the pronoun.
 - Noun classes (`gender.rs`) sort nouns into groups that other words must
   agree with, following Corbett, *Gender* (1991): agreement is how a class
   becomes visible. Founding draws presence and semantic basis separately
@@ -487,19 +522,41 @@ This bookkeeping makes no random draws and does not itself change replay.
   `grammar.possessor` (before or after), and `grammar.marking`: case while
   there is a productive object marker and object contrast retention exceeds
   one half, otherwise order. Here "case" includes a separate adposition.
-  The sample sentence is "the child saw the dog": bare child, the current
-  past form of see, and the current object form of dog, in the language's
-  order. Each category uses its most-used living realization, including
-  surviving stem changes. Bound forms gloss as see-PAST and dog-OBJ;
-  particles have their own PAST or OBJ gloss item, on their recorded side.
-  A future sample, "the child will see the dog", uses the same word order and
-  object form with the most-used future realization of see; its gloss is FUT,
-  or bare see when no dedicated mark survives. It is `grammar.sample.future`,
-  beside `sentence` and `possession`, with the same text/IPA/gloss shape.
-  Text and stressed IPA separate spoken words with spaces. The possession
-  sample is "the child's fish", child and fish in possessor order, with the
-  child's most-used genitive realization, glossed GEN. The facade omits the sample if a
-  required word or form is missing. The design JSON keeps plural and past
+  The phrasebook's `see-past` sample is “I saw you”; `see-future` is
+  “the children will see the dog”. Each category uses its most-used living
+  realization, including surviving stem changes. Bound forms gloss as
+  see-PAST and dog-OBJ; particles have their own gloss item on their
+  recorded side. Nouns take their recorded determiner agreement; person
+  agreement uses the appropriate subject and object cells, including
+  plural subjects. Possession follows possessor order. A pronoun can stand
+  free, cliticize, affix, or drop after agreement becomes distinct.
+  The facade omits an individual frame if a required word or form is
+  missing; zero-marked and worn realizations remain legitimate forms.
+  The `phrasebook` read on Bench and both wasm classes returns frame IDs,
+  text, IPA, gloss arrays, translations, and enum-only notes:
+  `possessive-clitic`, `possessive-affix`, `pronoun-dropped`,
+  `noun-genitive`, `object-marked`, and `agreement`.
+  The existing grammar card keeps `sentence`, `possession`, `future`, and
+  the `pronoun` pair, now drawn from these frames, and gains nullable
+  `possessive` from `my-house`.
+
+  | Frame ID | Words | Translation |
+  | --- | --- | --- |
+  | `see-past` | 1sg see.PST 2sg | I saw you |
+  | `see-future` | child.PL see.FUT dog | the children will see the dog |
+  | `eat-progressive` | 1pl eat.PROG fish | we are eating fish |
+  | `my-house` | 1sg-POSS house | my house |
+  | `your-father` | 2sg-POSS father | your father |
+  | `their-children` | 3pl-POSS child.PL | their children |
+  | `go-past-plural` | 3pl go.PST | they went |
+  | `give-past` | 1sg give.PST 2sg water | I gave you water |
+  | `peace` | peace | peace (as a greeting) |
+  | `child-of-fish` | child.GEN fish | the child's fish |
+  | `i-you` | 2sg see.PST 1sg | you saw me |
+
+  `i-you` is the reverse member of the pronoun pair; `see-past` is the
+  first. Ditransitives retain both objects in their frame order and index
+  the first on the verb. The design JSON keeps plural and past
   choices and adds nullable object, future, progressive, genitive, order, and possessor
   settings; null or omission draws that setting at founding, while a resolved
   design saves each drawn value.
@@ -2521,9 +2578,9 @@ can refuse this fixed recipe; the report counts those refusals separately.
 
 Subregional river meanders, changing lake extents, lake salinity, resolved travel times,
 purism in speech rather than writing, spelling reform as a purist act,
-inflection beyond count noun plural, noun and pronoun object marking, the genitive,
-and verb past, future, and progressive, agreement beyond subject and object person
-and the determiner, combined tense–aspect forms, modal readings and tense–aspect clitic stages, possessive pronouns,
+other inflectional categories, agreement beyond subject, object, and possessor
+person and the determiner, combined tense–aspect forms, modal readings and
+tense–aspect clitic stages,
 tone beyond the word (sandhi), vowel harmony beyond the word, syllabic
 consonants and productive cluster repair, prenasalized stops, syntax beyond fixed word
 and possessor order, alignment beyond this object contrast, and doctrine
