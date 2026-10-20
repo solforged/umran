@@ -72,8 +72,9 @@ fn pattern_word(
 
 fn vowel_law(left: Env, result: Rewrite) -> Law {
     Law {
-        id: "test-melody",
-        label: "Test melody",
+        id: ("test-melody").into(),
+        label: ("Test melody").into(),
+        source: None,
         commonness: 1.0,
         stress: None,
         rules: vec![SoundChange {

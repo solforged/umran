@@ -789,7 +789,7 @@ mod tests {
                     continue;
                 };
                 assert!(
-                    variety.laws.contains(&(entry.generation, *law)),
+                    variety.laws.contains(&(entry.generation, law.clone())),
                     "seed {seed}: {law} at {} is not a recorded law",
                     entry.generation
                 );

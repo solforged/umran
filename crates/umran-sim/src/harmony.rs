@@ -33,15 +33,23 @@ pub struct Harmony {
     checked_words: usize,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Trigger {
-    Assimilation { generation: u32, law: &'static str },
-    ContrastMerger { law: &'static str },
+    Assimilation {
+        generation: u32,
+        law: std::borrow::Cow<'static, str>,
+    },
+    ContrastMerger {
+        law: std::borrow::Cow<'static, str>,
+    },
     LexicalAttrition,
-    Contact { donor: usize, cause: Option<Cause> },
+    Contact {
+        donor: usize,
+        cause: Option<Cause>,
+    },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Notice {
     pub generation: u32,
     pub feature: Feature,
@@ -332,7 +340,10 @@ impl Variety {
             if !exempt && let Some(before) = feature.apply(&mut word.form) {
                 word.log.push(Entry {
                     generation,
-                    event: Event::SoundLaw { law, before },
+                    event: Event::SoundLaw {
+                        law: law.into(),
+                        before,
+                    },
                 });
             }
             for r in word
@@ -361,7 +372,10 @@ impl Variety {
                 if let Some(before) = before {
                     r.history.push(GrammarEntry {
                         generation,
-                        event: GrammarEvent::SoundLaw { law, before },
+                        event: GrammarEvent::SoundLaw {
+                            law: law.into(),
+                            before,
+                        },
                     });
                 }
             }
@@ -374,7 +388,10 @@ impl Variety {
             {
                 marker.history.push(GrammarEntry {
                     generation,
-                    event: GrammarEvent::SoundLaw { law, before },
+                    event: GrammarEvent::SoundLaw {
+                        law: law.into(),
+                        before,
+                    },
                 });
             }
         }
@@ -435,7 +452,7 @@ impl World {
     pub(crate) fn harmony_after_law(
         &mut self,
         v: usize,
-        law: &'static str,
+        law: &crate::Law,
         before: Option<(Feature, bool)>,
     ) {
         let Some((feature, affixes)) = before else {
@@ -443,8 +460,10 @@ impl World {
         };
         let variety = &self.varieties[v];
         if !feature.has_contrast(variety) || (affixes && !feature.has_affix_contrast(variety)) {
-            let trigger = if feature.law_changed_vowels(variety, law, self.generation) {
-                Trigger::ContrastMerger { law }
+            let trigger = if feature.law_changed_vowels(variety, &law.id, self.generation) {
+                Trigger::ContrastMerger {
+                    law: law.id.clone(),
+                }
             } else {
                 Trigger::LexicalAttrition
             };
@@ -509,12 +528,12 @@ impl World {
                     .laws
                     .iter()
                     .rev()
-                    .find(|&&(g, law)| {
+                    .find(|(g, law)| {
                         law == feature.precursor()
-                            && self.generation.saturating_sub(g) <= 24
-                            && after.is_none_or(|lost| g > lost)
+                            && self.generation.saturating_sub(*g) <= 24
+                            && after.is_none_or(|lost| *g > lost)
                     })
-                    .copied();
+                    .cloned();
                 let Some((generation, law)) = recent else {
                     continue;
                 };
@@ -552,7 +571,7 @@ impl World {
                 name.log.push(Entry {
                     generation,
                     event: Event::SoundLaw {
-                        law: feature.law(),
+                        law: feature.law().into(),
                         before,
                     },
                 });
@@ -565,7 +584,7 @@ impl World {
 /// recorded under zero-weight catalog ids and is not spread as an empty law.
 pub(crate) fn catalog_laws() -> [crate::Law; 5] {
     use crate::{Env, Matcher, Rewrite, SoundChange};
-    let precursor = |feature: Feature, label| {
+    let precursor = |feature: Feature, label: &'static str| {
         let mut rules = Vec::new();
         for &(from, to) in feature.pairs() {
             for &(_, trigger) in feature.pairs() {
@@ -579,19 +598,21 @@ pub(crate) fn catalog_laws() -> [crate::Law; 5] {
             }
         }
         crate::Law {
-            id: feature.precursor(),
-            label,
+            id: feature.precursor().into(),
+            label: label.into(),
             rules,
             commonness: 0.25,
             stress: None,
+            source: None,
         }
     };
-    let record = |feature: Feature, label| crate::Law {
-        id: feature.law(),
-        label,
+    let record = |feature: Feature, label: &'static str| crate::Law {
+        id: feature.law().into(),
+        label: label.into(),
         rules: Vec::new(),
         commonness: 0.0,
         stress: None,
+        source: None,
     };
     [
         precursor(

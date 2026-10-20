@@ -81,7 +81,7 @@ fn main() {
                                 matches!(
                                     e.event,
                                     Event::SoundLaw {
-                                        law: "koine-levelling",
+                                        law: std::borrow::Cow::Borrowed("koine-levelling"),
                                         ..
                                     }
                                 )
@@ -94,7 +94,7 @@ fn main() {
                             .iter()
                             .find_map(|e| match &e.event {
                                 Event::SoundLaw {
-                                    law: "koine-levelling",
+                                    law: std::borrow::Cow::Borrowed("koine-levelling"),
                                     before,
                                 } => Some(before),
                                 _ => None,
@@ -129,8 +129,8 @@ fn main() {
             }
         }
         for (to, v) in world.varieties.iter().enumerate() {
-            for &(g, law, from) in v.waves.iter().filter(|(g, _, _)| *g == world.generation) {
-                if !world.varieties[from].koine_of.is_empty() {
+            for (g, law, from) in v.waves.iter().filter(|(g, _, _)| *g == world.generation) {
+                if !world.varieties[*from].koine_of.is_empty() {
                     println!(
                         "year {}: city speech {from} sends wave {law} to variety {to}",
                         g * 25

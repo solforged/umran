@@ -365,7 +365,7 @@ fn expected_changes(
             log.push(Entry {
                 generation,
                 event: Event::SoundLaw {
-                    law: law.id,
+                    law: law.id.clone(),
                     before: form,
                 },
             });
@@ -501,7 +501,7 @@ fn assert_grammatical_change(
             GrammarEvent::SoundLaw { law, before } => Some(Entry {
                 generation: entry.generation,
                 event: Event::SoundLaw {
-                    law,
+                    law: law.clone(),
                     before: before.clone(),
                 },
             }),
@@ -621,13 +621,13 @@ fn sound_laws_are_regular_protect_words_and_freeze_the_record() {
             let year = world.generation * 25;
             let applied: Vec<_> = world.varieties[v].laws[law_count..]
                 .iter()
-                .map(|&(g, id)| {
+                .map(|&(g, ref id)| {
                     assert_eq!(
                         g, world.generation,
                         "seed {seed}, year {year}: misplaced law"
                     );
-                    seen.insert(id);
-                    laws.iter().find(|law| law.id == id).expect("catalog law")
+                    seen.insert(id.clone());
+                    laws.iter().find(|law| &law.id == id).expect("catalog law")
                 })
                 .collect();
             fired += applied.len();
@@ -668,7 +668,7 @@ fn sound_laws_are_regular_protect_words_and_freeze_the_record() {
                     expected,
                     "seed {seed}, year {year}, {:?}, laws {:?}: irregular word change",
                     after.id,
-                    applied.iter().map(|l| l.id).collect::<Vec<_>>()
+                    applied.iter().map(|l| &l.id).collect::<Vec<_>>()
                 );
                 let changes: Vec<_> = after.log[*log_len..]
                     .iter()
@@ -1049,9 +1049,9 @@ fn scramble_descent(variety: &mut Variety) {
         inherited: u32::MAX,
     });
     variety.koine_of = vec![(usize::MAX, 1.0)];
-    variety.laws = vec![(u32::MAX, "unrelated history")];
+    variety.laws = vec![(u32::MAX, "unrelated history".into())];
     variety.stress_history = vec![(u32::MAX, StressRule::Final)];
-    variety.waves = vec![(u32::MAX, "unrelated history", usize::MAX)];
+    variety.waves = vec![(u32::MAX, "unrelated history".into(), usize::MAX)];
     let history = GrammarEntry {
         generation: u32::MAX,
         event: GrammarEvent::Imported {

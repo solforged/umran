@@ -443,8 +443,9 @@ mod tests {
 
     fn merger(from: &Form, to: &Form) -> Law {
         Law {
-            id: "test-river-merger",
-            label: "River merger",
+            id: ("test-river-merger").into(),
+            label: ("River merger").into(),
+            source: None,
             rules: vec![SoundChange {
                 id: "test-river-merger".into(),
                 target: Matcher::Phone(from.segs[0].phone),

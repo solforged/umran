@@ -370,9 +370,17 @@ pub struct GrammarEntry {
 #[derive(Clone, Debug, PartialEq)]
 pub enum GrammarEvent {
     Created,
-    SoundLaw { law: &'static str, before: Form },
-    Analogy { before: Form },
-    Imported { from: usize, source: Form },
+    SoundLaw {
+        law: std::borrow::Cow<'static, str>,
+        before: Form,
+    },
+    Analogy {
+        before: Form,
+    },
+    Imported {
+        from: usize,
+        source: Form,
+    },
     Retired,
 }
 /// One donor's current marked form, adapted at acquisition.
@@ -959,7 +967,7 @@ impl Grammar {
         self.refresh_agreement(stress, generation);
     }
     /// Productive material follows surviving edges, including empty ones.
-    fn update_edges(&mut self, lexicon: &Lexicon, generation: u32, law: &'static str) {
+    fn update_edges(&mut self, lexicon: &Lexicon, generation: u32, law: &Law) {
         let mut edges: Vec<HashMap<Vec<Seg>, f32>> = vec![HashMap::new(); self.markers.len()];
         for word in lexicon.living() {
             for p in &word.paradigms {
@@ -1000,7 +1008,10 @@ impl Grammar {
                     let before = std::mem::replace(&mut marker.form, after);
                     marker.history.push(GrammarEntry {
                         generation,
-                        event: GrammarEvent::SoundLaw { law, before },
+                        event: GrammarEvent::SoundLaw {
+                            law: law.id.clone(),
+                            before,
+                        },
                     });
                 }
             }
@@ -1022,7 +1033,7 @@ impl Grammar {
                     marker.history.push(GrammarEntry {
                         generation,
                         event: GrammarEvent::SoundLaw {
-                            law: law.id,
+                            law: law.id.clone(),
                             before,
                         },
                     });
@@ -1051,7 +1062,7 @@ impl Grammar {
                         r.history.push(GrammarEntry {
                             generation,
                             event: GrammarEvent::SoundLaw {
-                                law: law.id,
+                                law: law.id.clone(),
                                 before,
                             },
                         });
@@ -1060,8 +1071,8 @@ impl Grammar {
             }
         }
         self.uses(lexicon);
-        self.update_edges(lexicon, generation, law.id);
-        self.update_patterns(lexicon, generation, law.id);
+        self.update_edges(lexicon, generation, law);
+        self.update_patterns(lexicon, generation, law);
         self.refresh(lexicon, law.stress.unwrap_or(stress), generation);
     }
     /// Shared particles occur once. Attached alternatives share one category use.
@@ -1947,12 +1958,12 @@ mod tests {
         assert_eq!(realization.edge, marked.segs.len());
         assert!(matches!(
             &realization.history.last().unwrap().event,
-            GrammarEvent::SoundLaw { law: "initial-stress", before } if before == &marked
+            GrammarEvent::SoundLaw { law: std::borrow::Cow::Borrowed("initial-stress"), before } if before == &marked
         ));
         assert_eq!(grammar.marker(particle).form, particle_form);
         assert!(matches!(
             &grammar.marker(particle).history.last().unwrap().event,
-            GrammarEvent::SoundLaw { law: "initial-stress", before } if before == &particle_form
+            GrammarEvent::SoundLaw { law: std::borrow::Cow::Borrowed("initial-stress"), before } if before == &particle_form
         ));
     }
 
@@ -2033,8 +2044,9 @@ mod tests {
             assert!(grammar.audible(&lexicon.get(word).form, realization, StressRule::Initial));
         }
         let law = Law {
-            id: "test-final-consonant-loss",
-            label: "A final consonant disappears",
+            id: ("test-final-consonant-loss").into(),
+            label: ("A final consonant disappears").into(),
+            source: None,
             rules: vec![SoundChange {
                 id: "test-final-consonant-loss".into(),
                 target: Matcher::AnyConsonant,

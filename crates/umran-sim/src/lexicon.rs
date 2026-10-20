@@ -92,7 +92,7 @@ pub enum Event {
         cause: LoanCause,
     },
     SoundLaw {
-        law: &'static str,
+        law: std::borrow::Cow<'static, str>,
         before: Form,
     },
     /// The word began to be used for another concept as well.

@@ -276,6 +276,67 @@ impl Rewrite {
 }
 
 impl SoundChange {
+    /// Matched feature rewrites with no catalog realization. Normal application
+    /// remains a no-op for these segments; previews disclose that fact.
+    pub fn unrealisable(&self, form: &Form, stress: StressRule) -> usize {
+        if !matches!(
+            self.result,
+            Rewrite::Consonant { .. } | Rewrite::Vowel { .. }
+        ) {
+            return 0;
+        }
+        let syllables = form.syllables();
+        let accent = form.stressed_syllable(stress);
+        (0..form.segs.len())
+            .filter(|&i| {
+                if !self.target.at(form, i, &syllables, accent)
+                    || !self.left.at(form, i.checked_sub(1), i, &syllables, accent)
+                    || !self.right.at(
+                        form,
+                        (i + 1 < form.segs.len()).then_some(i + 1),
+                        i,
+                        &syllables,
+                        accent,
+                    )
+                {
+                    return false;
+                }
+                let id = form.segs[i].phone;
+                if self.result.apply(id) != Some(id) {
+                    return false;
+                }
+                match (&self.result, CATALOG.get(id)) {
+                    (
+                        Rewrite::Consonant {
+                            place,
+                            manner,
+                            voiced,
+                            secondary,
+                        },
+                        Segment::Consonant(c),
+                    ) => {
+                        place.is_some_and(|p| p != c.place)
+                            || manner.is_some_and(|m| m != c.manner)
+                            || voiced.is_some_and(|v| v != c.voiced)
+                            || secondary.is_some_and(|s| s != c.secondary)
+                    }
+                    (
+                        Rewrite::Vowel {
+                            height,
+                            backness,
+                            rounded,
+                        },
+                        Segment::Vowel(v),
+                    ) => {
+                        height.is_some_and(|h| h != v.height)
+                            || backness.is_some_and(|b| b != v.backness)
+                            || rounded.is_some_and(|r| r != v.rounded)
+                    }
+                    _ => true,
+                }
+            })
+            .count()
+    }
     /// Every match reads the input, including stress and length.
     pub fn hits<'a>(
         &'a self,
@@ -554,8 +615,9 @@ mod tests {
         assert_eq!(out.vowel_count(), input.vowel_count());
         assert_eq!(rule.apply(&input, StressRule::Free), out);
         let law = crate::Law {
-            id: "fusion-test",
-            label: "fusion test",
+            id: ("fusion-test").into(),
+            label: ("fusion test").into(),
+            source: None,
             commonness: 1.0,
             rules: vec![rule],
             stress: None,

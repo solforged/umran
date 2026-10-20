@@ -37,6 +37,7 @@ pub mod livelihood;
 mod math;
 pub mod morphology;
 pub mod names;
+pub mod notation;
 pub mod palettes;
 pub mod phoneme;
 pub mod phonotactics;

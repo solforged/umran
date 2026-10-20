@@ -55,15 +55,15 @@ fn main() {
 
     println!("\nSound laws");
     let laws = catalog();
-    for &(generation, id) in &variety.laws {
-        let law = laws.iter().find(|l| l.id == id).unwrap();
+    for (generation, id) in &variety.laws {
+        let law = laws.iter().find(|l| &l.id == id).unwrap();
         let changed: Vec<(&Lexeme, &Form, &Form)> = lexicon
             .lexemes
             .iter()
             .filter_map(|l| {
                 let at = l.log.iter().position(|e| {
-                    e.generation == generation
-                        && matches!(&e.event, Event::SoundLaw { law, .. } if *law == id)
+                    e.generation == *generation
+                        && matches!(&e.event, Event::SoundLaw { law, .. } if law == id)
                 })?;
                 let Event::SoundLaw { before, .. } = &l.log[at].event else {
                     unreachable!()

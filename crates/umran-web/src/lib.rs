@@ -5,6 +5,7 @@ mod annals;
 mod desk;
 mod evidence;
 mod extract;
+mod law_preview;
 mod notebook;
 mod provenance;
 
@@ -755,10 +756,8 @@ impl Bench {
                 ),
                 Action::Law { variety, law } => {
                     let label = &world
-                        .law_catalog()
-                        .iter()
-                        .find(|l| l.id == law)
-                        .expect("authored laws are catalog laws")
+                        .law_by_id(law)
+                        .expect("applied catalog law exists")
                         .label;
                     (
                     "law",
@@ -783,6 +782,23 @@ impl Bench {
                     Some(*variety),
                     )
                 }
+                Action::Authored { variety, law } => (
+                    "authored",
+                    format!(
+                        "The author wrote a sound law for *{}* in their own hand: “{}”.",
+                        world.varieties[*variety]
+                            .title(world.varieties[*variety].name.form_at(generation)),
+                        law.title
+                    ),
+                    world
+                        .communities
+                        .iter()
+                        .enumerate()
+                        .filter(|(c, _)| spoken(*c) == *variety)
+                        .map(|(c, _)| c)
+                        .collect(),
+                    Some(*variety),
+                ),
                 Action::Temper {
                     community,
                     axis,
@@ -820,7 +836,9 @@ impl Bench {
                 text,
                 people,
                 variety,
-                annals: if let Action::Law { variety, .. } = action {
+                annals: if let Action::Law { variety, .. } | Action::Authored { variety, .. } =
+                    action
+                {
                     vec![format!("sounds:{variety}:{generation}")]
                 } else {
                     decision
@@ -1750,14 +1768,20 @@ impl Bench {
                         law.changes(&word.form, &after, stress)
                     })
                     .count();
+                let mut names = 0;
+                world.visit_law_names(variety, |_, _, name| {
+                    let after = law.apply(&name.form, speech.minimal, stress);
+                    names += usize::from(law.changes(&name.form, &after, stress));
+                });
                 Some(LawChoice {
-                    id: law.id,
-                    label: law.label,
-                    words,
+                    id: law.id.clone(),
+                    label: law.label.clone(),
+                    words: words + names,
+                    names,
                     specimen: law_specimen(speech, law),
-                    recent: speech.laws.iter().rev().any(|&(generation, id)| {
-                        id == law.id
-                            && world.generation.saturating_sub(generation)
+                    recent: speech.laws.iter().rev().any(|(generation, id)| {
+                        *id == law.id
+                            && world.generation.saturating_sub(*generation)
                                 < umran_sim::world::LAW_RECURRENCE
                     }),
                 })
@@ -1827,10 +1851,9 @@ impl Bench {
                 born[first] = *g;
             }
         }
-        let laws = world.law_catalog();
         let law_label = |id: &str| {
-            laws.iter()
-                .find(|l| l.id == id)
+            world
+                .law_by_id(id)
                 .map_or_else(|| substrate_label(id), |l| l.label.to_string())
         };
         // Every language that hears another people's name, built once:
@@ -1960,16 +1983,19 @@ impl Bench {
                         laws: v
                             .laws
                             .iter()
-                            .map(|&(generation, law)| LawView {
-                                generation,
-                                id: law,
+                            .map(|(generation, law)| LawView {
+                                generation: *generation,
+                                id: law.clone(),
                                 label: law_label(law),
                                 from: v
                                     .waves
                                     .iter()
-                                    .find(|&&(g, w, _)| (g, w) == (generation, law))
+                                    .find(|(g, w, _)| (*g, w) == (*generation, law))
                                     .map(|&(_, _, f)| f),
-                                decision: world.authored_laws.get(&(id, generation, law)).copied(),
+                                decision: world
+                                    .authored_laws
+                                    .get(&(id, *generation, law.clone()))
+                                    .copied(),
                             })
                             .collect(),
                         words: v.lexicon.living().count(),
@@ -2488,6 +2514,7 @@ impl Bench {
                 | Action::Religion { .. }
                 | Action::Temper { .. }
                 | Action::Law { .. }
+                | Action::Authored { .. }
                 | Action::Craft { .. } => continue,
             };
             let kind = match action {
@@ -3133,7 +3160,6 @@ fn form_after(word: &Lexeme, i: usize) -> &Form {
 }
 
 fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
-    let laws = world.law_catalog();
     let mut out = vec![HistoryLine {
         generation: word.born,
         cause: origin_cause(world, word),
@@ -3253,9 +3279,8 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
                     .ipa_stressed(world.varieties[variety].stress_at(entry.generation))
             ),
             Event::SoundLaw { law, before } => {
-                let label = laws
-                    .iter()
-                    .find(|l| l.id == *law)
+                let label = world
+                    .law_by_id(law)
                     .map_or_else(|| substrate_label(law), |l| l.label.to_string());
                 format!(
                     "{label}: /{}/ → /{}/",
@@ -4174,7 +4199,7 @@ struct Builder {
 #[derive(Serialize)]
 struct LawView {
     generation: u32,
-    id: &'static str,
+    id: std::borrow::Cow<'static, str>,
     label: String,
     /// The variety it spread from, if it came as a wave from a neighbour
     /// rather than arising here.
@@ -4185,9 +4210,10 @@ struct LawView {
 
 #[derive(Serialize)]
 struct LawChoice {
-    id: &'static str,
-    label: &'static str,
+    id: std::borrow::Cow<'static, str>,
+    label: std::borrow::Cow<'static, str>,
     words: usize,
+    names: usize,
     specimen: Vec<SpecimenWord>,
     recent: bool,
 }
@@ -5201,7 +5227,6 @@ fn grammar_history(
     current: Option<&Form>,
     subject: &str,
 ) -> Vec<HistoryLine> {
-    let laws = world.law_catalog();
     let v = &world.varieties[variety];
     let mut out = Vec::with_capacity(entries.len());
     let mut after = current;
@@ -5226,18 +5251,16 @@ fn grammar_history(
                     .filter(|(generation, _)| *generation == entry.generation)
                     .find_map(|(_, id)| {
                         let before = prior;
-                        prior = laws
-                            .iter()
-                            .find(|law| law.id == *id)
+                        prior = world
+                            .law_by_id(id)
                             .and_then(|law| law.stress)
                             .unwrap_or(prior);
                         (*id == *law).then_some((before, prior))
                     });
                 let (before_stress, after_stress) = transition.unwrap_or((initial, stress));
                 let before = before.ipa_stressed(before_stress);
-                let label = laws
-                    .iter()
-                    .find(|l| l.id == *law)
+                let label = world
+                    .law_by_id(law)
                     .map_or_else(|| substrate_label(law), |law| law.label.to_string());
                 match after {
                     Some(form) => format!(
@@ -6040,6 +6063,121 @@ mod tests {
         .to_string()
     }
 
+    #[test]
+    fn authored_preview_matches_full_application_and_preserves_save() {
+        let mut bench = Bench::new(7, "small").unwrap();
+        bench.act(&found("Test", "familiar")).unwrap();
+        let law = umran_sim::notation::parse("A full preview", "V > [long]\nstress > final")
+            .law
+            .unwrap();
+        let point = to_json(&bench.chronicle.end()).unwrap();
+        let saved = bench.save().unwrap();
+        let before = bench.chronicle.latest().clone();
+        let view: serde_json::Value = serde_json::from_str(
+            &bench
+                .law_preview(&point, 0, &serde_json::json!({"authored": law}).to_string())
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(bench.save().unwrap(), saved);
+        assert!(!view["words"].as_array().unwrap().is_empty());
+        assert!(!view["names"].as_array().unwrap().is_empty());
+        bench
+            .act(&serde_json::json!({"kind": "authored", "variety": 0, "law": law}).to_string())
+            .unwrap();
+        let after = bench.chronicle.latest();
+        let speech = &after.varieties[0];
+        for row in view["words"].as_array().unwrap() {
+            let concept = by_id(row["concept"].as_str().unwrap()).unwrap();
+            let word = speech.lexicon.word_for(concept).unwrap();
+            assert_eq!(row["after"], word.form.ipa_stressed(speech.stress()));
+            assert_eq!(row["spelledAfter"], speech.spell(&word.form));
+        }
+        for slot in &before.varieties[0].lexicon.slots {
+            for variant in &slot.variants {
+                let old = before.varieties[0].lexicon.get(variant.lexeme);
+                let new = speech.lexicon.get(variant.lexeme);
+                let changed = old.form != new.form
+                    || old.form.stressed_syllable(before.varieties[0].stress())
+                        != new.form.stressed_syllable(speech.stress());
+                assert_eq!(
+                    view["words"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|r| r["concept"] == slot.concept.id),
+                    changed
+                );
+            }
+        }
+        let mut before_names = Vec::new();
+        before.visit_law_names(0, |kind, subject, name| {
+            before_names.push((kind, subject, name))
+        });
+        let mut i = 0;
+        after.visit_law_names(0, |kind, subject, name| {
+            let old = before_names[i].2;
+            i += 1;
+            if old.form != name.form {
+                assert!(
+                    view["names"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|r| r["kind"] == kind
+                            && r["subject"] == serde_json::json!(subject)
+                            && r["before"] == old.form.ipa_stressed(before.varieties[0].stress())
+                            && r["after"] == name.form.ipa_stressed(speech.stress()))
+                );
+            }
+        });
+        let id = after.authored[0].id.clone();
+        let expected_lexicon = speech.lexicon.clone();
+        let annal = annals(after)
+            .into_iter()
+            .find(|a| a.laws.contains(&id))
+            .unwrap();
+        assert_eq!(annal.decision, Some(1));
+        assert!(annal.notes.iter().any(|n| n == "A full preview"));
+        let occurrences: serde_json::Value =
+            serde_json::from_str(&bench.law_occurrences(0, 0, &id).unwrap()).unwrap();
+        assert_eq!(occurrences[0]["label"], "A full preview");
+        assert_eq!(occurrences[0]["rules"][0], "V > [long]");
+        let restored = Bench::load(&bench.save().unwrap()).unwrap();
+        assert_eq!(
+            restored.chronicle.latest().varieties[0].lexicon,
+            expected_lexicon
+        );
+    }
+
+    #[test]
+    fn authored_preview_counts_unrealisable_features() {
+        let mut world = World::solo(
+            0,
+            &umran_sim::SoundProfile::base(),
+            umran_sim::Params::static_society(),
+        );
+        let id = world.varieties[0].lexicon.living().next().unwrap().id;
+        world.varieties[0].lexicon.get_mut(id).form = Form::from_ipa("pa").unwrap();
+        let law = umran_sim::notation::parse("Unavailable", "p > [pharyngeal stop]")
+            .law
+            .unwrap()
+            .law(0);
+        assert_eq!(
+            law.rules[0].unrealisable(&Form::from_ipa("pa").unwrap(), StressRule::Initial),
+            1
+        );
+        assert_eq!(
+            law.apply(
+                &Form::from_ipa("pa").unwrap(),
+                umran_sim::MinimalWord::Syllable,
+                StressRule::Initial
+            )
+            .ipa(),
+            "pa"
+        );
+    }
+
     fn found_at(name: &str, preset: &str, region: usize) -> String {
         let mut action: serde_json::Value = serde_json::from_str(&found(name, preset)).unwrap();
         action["region"] = region.into();
@@ -6064,8 +6202,12 @@ mod tests {
         );
         assert!(choices.iter().all(|c| c["id"] != "koine-levelling"));
         let catalog = catalog();
-        let order =
-            |c: &serde_json::Value| catalog.iter().position(|law| law.id == c["id"]).unwrap();
+        let order = |c: &serde_json::Value| {
+            catalog
+                .iter()
+                .position(|law| law.id == c["id"].as_str().unwrap())
+                .unwrap()
+        };
         assert!(choices.windows(2).all(|pair| {
             pair[0]["words"].as_u64() > pair[1]["words"].as_u64()
                 || (pair[0]["words"] == pair[1]["words"] && order(&pair[0]) < order(&pair[1]))
@@ -6093,7 +6235,12 @@ mod tests {
                             != now.form.stressed_syllable(after.stress())
                 })
                 .count();
-            assert_eq!(choice["words"], changed, "{}", choice["id"]);
+            assert_eq!(
+                choice["words"],
+                changed + choice["names"].as_u64().unwrap() as usize,
+                "{}",
+                choice["id"]
+            );
             let actual = serde_json::to_value(specimen(after, 0)).unwrap();
             for (preview, current) in choice["specimen"]
                 .as_array()
@@ -6186,7 +6333,7 @@ mod tests {
             .unwrap();
         assert_eq!(bench.law_choices(&start, 0).unwrap(), original);
         assert_eq!(
-            bench.chronicle.latest().authored_laws[&(0, 0, "initial-stress")],
+            bench.chronicle.latest().authored_laws[&(0, 0, "initial-stress".into())],
             3
         );
         let overview: serde_json::Value =
@@ -8395,7 +8542,7 @@ mod tests {
         let change = |generation, before: &str| GrammarEntry {
             generation,
             event: GrammarEvent::SoundLaw {
-                law: "fixture-law",
+                law: std::borrow::Cow::Borrowed("fixture-law"),
                 before: form(before),
             },
         };
@@ -8473,14 +8620,14 @@ mod tests {
             Entry {
                 generation: 6,
                 event: Event::SoundLaw {
-                    law: "fixture-law",
+                    law: std::borrow::Cow::Borrowed("fixture-law"),
                     before: form("kaka"),
                 },
             },
             Entry {
                 generation: 9,
                 event: Event::SoundLaw {
-                    law: "fixture-law",
+                    law: std::borrow::Cow::Borrowed("fixture-law"),
                     before: form("tata"),
                 },
             },
@@ -8659,7 +8806,7 @@ mod tests {
             );
             v.grammar
                 .apply_law(&mut v.lexicon, law, v.minimal, prior, 5);
-            v.laws.push((5, law.id));
+            v.laws.push((5, law.id.clone()));
             v.stress_history.push((5, prior));
             v.profile.stress = law.stress;
         }

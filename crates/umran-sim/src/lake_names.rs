@@ -410,8 +410,9 @@ mod tests {
             Form::from_ipa("a").unwrap()
         };
         let law = Law {
-            id: "test-lake-merger",
-            label: "Lake merger",
+            id: ("test-lake-merger").into(),
+            label: ("Lake merger").into(),
+            source: None,
             rules: vec![SoundChange {
                 id: "test-lake-merger".into(),
                 target: Matcher::Phone(before.segs[0].phone),

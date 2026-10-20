@@ -36,8 +36,9 @@ fn fixture() -> World {
 }
 fn vowel_merger() -> Law {
     Law {
-        id: "test-class-vowel-merger",
-        label: "Class vowels merge",
+        id: ("test-class-vowel-merger").into(),
+        label: ("Class vowels merge").into(),
+        source: None,
         rules: vec![SoundChange {
             id: "test-class-vowel-merger".into(),
             target: Matcher::Phone(crate::CATALOG.id_by_ipa("i").unwrap()),
@@ -162,7 +163,7 @@ fn regular_erosion_merges_classes_records_trigger_and_then_loses_agreement() {
     assert_eq!(
         v.gender.events[0].cause,
         Some(SoundCause {
-            law: "test-class-vowel-merger",
+            law: "test-class-vowel-merger".into(),
             generation: 1
         })
     );

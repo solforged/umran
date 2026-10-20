@@ -273,14 +273,17 @@ fn word_events(world: &World, variety: usize, concept: &str) -> Result<HashSet<S
                         ids.insert(world_event_id(position));
                     }
                 }
-                Event::SoundLaw { law, ref before } => {
+                Event::SoundLaw {
+                    ref law,
+                    ref before,
+                } => {
                     let after = form_after(word, i);
                     let v = &world.varieties[owner];
                     // Logged stress changes touched this word even when a
                     // second shift in the same generation restored its accent.
                     if (before != after
                         || v.stress_history.iter().any(|(g, _)| *g == entry.generation))
-                        && v.laws.contains(&(entry.generation, law))
+                        && v.laws.contains(&(entry.generation, law.clone()))
                     {
                         ids.insert(format!("sounds:{owner}:{}", entry.generation));
                         // Formation laws are represented by the shift/koiné annal.
@@ -340,7 +343,7 @@ impl Bench {
             Subject::Craft { id } => a.crafts.contains(id),
             Subject::Language { variety } => a.languages.contains(variety),
             Subject::Word { .. } => word.contains(&a.id),
-            Subject::Law { id, .. } => a.laws.contains(&id.as_str()),
+            Subject::Law { id, .. } => a.laws.iter().any(|law| law == id),
             Subject::Land { region } => a.lands.contains(region),
             Subject::Continent { landmass } => a
                 .lands

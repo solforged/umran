@@ -435,16 +435,19 @@ fn word_story_follows_inherited_changes_but_not_untouched_laws() {
     let mut world = founders();
     let concept = umran_sim::concepts::by_id("water").unwrap();
     let word_id = world.varieties[0].lexicon.slot(concept).dominant().unwrap();
-    let law = umran_sim::catalog()[0].id;
+    let law = umran_sim::catalog()[0].id.clone();
     world.generation = 1;
     let word = world.varieties[0].lexicon.get_mut(word_id);
     let before = word.form.clone();
     word.form = umran_sim::Form::from_ipa("e").unwrap();
     word.log.push(umran_sim::Entry {
         generation: 1,
-        event: Event::SoundLaw { law, before },
+        event: Event::SoundLaw {
+            law: law.clone(),
+            before,
+        },
     });
-    world.varieties[0].laws.push((1, law));
+    world.varieties[0].laws.push((1, law.clone()));
     let daughter = world.split(0, None, 0.5);
     let v = world.communities[daughter].variety;
     world.generation = 2;
@@ -611,11 +614,11 @@ fn word_story_keeps_stress_changes_that_cancel_within_one_generation() {
         word.log.push(umran_sim::Entry {
             generation: 1,
             event: Event::SoundLaw {
-                law: law.id,
+                law: law.id.clone(),
                 before: word.form.clone(),
             },
         });
-        speech.laws.push((1, law.id));
+        speech.laws.push((1, law.id.clone()));
     }
     world.generation = 1;
     let mut bench = fixed(world);

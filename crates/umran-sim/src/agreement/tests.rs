@@ -273,8 +273,9 @@ fn agreement_forms_wear_by_sound_law_with_history_and_can_merge() {
     evolve(&mut v, 1, &forced());
     assert_eq!(ipa(&v, "1sg"), "ma");
     let law = Law {
-        id: "test-raising",
-        label: "Test raising",
+        id: ("test-raising").into(),
+        label: ("Test raising").into(),
+        source: None,
         commonness: 1.0,
         stress: None,
         rules: vec![crate::SoundChange {
@@ -297,7 +298,7 @@ fn agreement_forms_wear_by_sound_law_with_history_and_can_merge() {
         GrammarEntry {
             generation: 2,
             event: GrammarEvent::SoundLaw {
-                law: "test-raising",
+                law: std::borrow::Cow::Borrowed("test-raising"),
                 before
             }
         } if before.ipa() == "ma"
@@ -633,8 +634,9 @@ fn sound_laws_wear_both_roles_without_touching_object_source_snapshots() {
     evolve(&mut v, 1, &both_forced());
     let before = v.grammar.object_agreement().clone();
     let law = Law {
-        id: "object-test-raising",
-        label: "Test raising",
+        id: ("object-test-raising").into(),
+        label: ("Test raising").into(),
+        source: None,
         commonness: 1.0,
         stress: None,
         rules: vec![crate::SoundChange {

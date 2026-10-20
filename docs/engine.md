@@ -569,9 +569,9 @@ This bookkeeping makes no random draws and does not itself change replay.
   nasal can lengthen the preceding vowel. Length alone has neutral segment
   preference; assimilation is scored toward the surviving consonant.
   The author can also apply a catalog law to a living language as a dated
-  decision. The catalog previews its effect on six basic words and counts
-  the living lexemes (individual vocabulary entries) whose current forms
-  would change. Eligibility also considers grammatical forms, such as a
+  decision. The catalog keeps a six-word specimen and counts changed living
+  words and names, with the name count separately reported. Eligibility also
+  considers grammatical forms, such as a
   plural with an ending; the same minimal-word and last-vowel guards apply.
   A recent law may be chosen again if it still changes something. Authored
   laws enter the ordinary ledger, change living names and grammar, and
@@ -579,6 +579,33 @@ This bookkeeping makes no random draws and does not itself change replay.
   offered: its mergers depend on the particular city's speakers, so it is
   not a portable rule. Revision means returning before the decision, not
   editing a derived word or removing a law from the ledger.
+- **Authored sound laws** (`notation.rs`). `parse(title, source)` checks
+  one `target > result / left _ right` rule per line, ignoring blank lines
+  and lines starting with `#`. `C` and `V` name consonants and vowels;
+  bracketed natural classes name place, manner, voicing, secondary
+  articulation, vowel quality, length, and stress. `#` is a word edge,
+  an empty side is unrestricted, and `.. [front]` on the right reaches the
+  next syllable's vowel. `labial` expands bilabial then labiodental;
+  bare `[long]`/`[short]` match consonants then vowels, while bare
+  `[stressed]`/`[unstressed]` match vowel nuclei. Target `open-syllable`
+  and `medial` restrict vowel position. Results may delete (`∅`, `0`, `Ø`),
+  change length, `[lengthen before]`, or `[geminate next]`.
+  `stress > initial|penult|final|weight|free` sets one stress rule per law.
+  Each target, result, and immediate environment carries one catalog
+  segment or class: no insertion, metathesis, multi-segment replacement,
+  or authored tone. Unsupported combinations are reported rather than
+  dropping constraints. The title is required and limited to 60 characters.
+  Actions save the compiled rules and display source separately; replay
+  never reparses the source. The id includes title slug and generation;
+  a duplicate id in one generation is refused. A law must change a living
+  word or name, with no inventory-preference gate. The shared application
+  path preserves obsolete forms, final vowels, and minimal words, and
+  changes grammar, names, harmony, and tone observations. Stored authored
+  laws can spread by wave but never enter the automatic draw or recurrence
+  timer. `lawPreview` uses the real application path on a copy, reporting
+  all changed words and names, unchanged counts, stress, and per-rule
+  changes and unrealizable feature bundles across lexical, grammatical,
+  and named forms; it makes no random draws.
 - Sound laws also spread as waves (`spread_waves`), as the wave model of
   language change describes: a law that took hold in a variety in the
   last ten generations may pass to a variety in contact with it. The

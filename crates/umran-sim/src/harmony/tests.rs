@@ -89,10 +89,14 @@ fn emergence_requires_recent_assimilation_and_static_societies_disable_it() {
     w.params.harmony_rate = 1.0;
     w.evolve_harmony(&[true]);
     assert!(w.varieties[0].harmony.is_none());
-    w.varieties[0].laws.push((1, "rounding-assimilation"));
+    w.varieties[0]
+        .laws
+        .push((1, "rounding-assimilation".into()));
     w.evolve_harmony(&[true]);
     assert!(w.varieties[0].harmony.is_none());
-    w.varieties[0].laws.push((29, "rounding-assimilation"));
+    w.varieties[0]
+        .laws
+        .push((29, "rounding-assimilation".into()));
     w.params.harmony_rate = Params::static_society().harmony_rate;
     w.evolve_harmony(&[true]);
     assert!(w.varieties[0].harmony.is_none());
@@ -104,7 +108,7 @@ fn emergence_requires_recent_assimilation_and_static_societies_disable_it() {
         w.varieties[0].harmony_events[0].trigger,
         Trigger::Assimilation {
             generation: 29,
-            law: "rounding-assimilation"
+            law: "rounding-assimilation".into()
         }
     );
 }
@@ -204,8 +208,9 @@ fn merger_stops_productivity_and_does_not_undo_old_forms() {
     w.varieties[0].harmony = Some(Harmony::new(Feature::Rounding, 0, 7));
     w.varieties[0].sync_grammar(0);
     let law = crate::Law {
-        id: "test-unround",
-        label: "unround",
+        id: ("test-unround").into(),
+        label: ("unround").into(),
+        source: None,
         commonness: 0.0,
         stress: None,
         rules: [("y", "i"), ("ø", "e")]
@@ -226,7 +231,7 @@ fn merger_stops_productivity_and_does_not_undo_old_forms() {
     assert_eq!(
         w.varieties[0].harmony_events[0].trigger,
         Trigger::ContrastMerger {
-            law: "test-unround"
+            law: "test-unround".into()
         }
     );
 }
@@ -338,8 +343,9 @@ fn collapse_of_productive_affixes_stops_harmony_with_stem_contrast_intact() {
     v.sync_grammar(0);
     assert!(Feature::Rounding.has_affix_contrast(v));
     let law = crate::Law {
-        id: "test-final-unround",
-        label: "final vowels unround",
+        id: ("test-final-unround").into(),
+        label: ("final vowels unround").into(),
+        source: None,
         commonness: 0.0,
         stress: None,
         rules: vec![crate::SoundChange {
@@ -358,7 +364,7 @@ fn collapse_of_productive_affixes_stops_harmony_with_stem_contrast_intact() {
     assert_eq!(
         w.varieties[0].harmony_events[0].trigger,
         Trigger::ContrastMerger {
-            law: "test-final-unround"
+            law: "test-final-unround".into()
         }
     );
 }

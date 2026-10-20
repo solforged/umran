@@ -340,7 +340,7 @@ fn nearest_ancestor_split_and_inherited_loan_keep_their_recorded_owner() {
 #[test]
 fn branched_static_world_counts_only_new_laws_loans_and_descendants() {
     let mut shared = pair();
-    shared.varieties[0].laws.push((0, "shared-law"));
+    shared.varieties[0].laws.push((0, "shared-law".into()));
     loan(&mut shared, 0, 1, "night");
     let mut left = shared.clone();
     let mut right = shared.clone();
@@ -348,12 +348,14 @@ fn branched_static_world_counts_only_new_laws_loans_and_descendants() {
     right.generation = 3;
     // Supplied ledgers isolate facade subtraction from law eligibility. Two
     // applications of the same law remain two occurrences but one exclusive id.
-    left.varieties[0]
-        .laws
-        .extend([(0, "left-law"), (3, "left-law"), (3, "both-law")]);
+    left.varieties[0].laws.extend([
+        (0, "left-law".into()),
+        (3, "left-law".into()),
+        (3, "both-law".into()),
+    ]);
     right.varieties[0]
         .laws
-        .extend([(0, "right-law"), (3, "both-law")]);
+        .extend([(0, "right-law".into()), (3, "both-law".into())]);
     loan(&mut left, 0, 1, "water");
     loan(&mut left, 0, 1, "fire");
     loan(&mut right, 0, 1, "hand");

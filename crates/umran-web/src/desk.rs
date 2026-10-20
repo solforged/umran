@@ -337,7 +337,7 @@ fn truth(world: &World, a: usize, b: usize, meanings: &str) -> Result<Truth, Str
 
 #[derive(Serialize)]
 struct AppliedLaw {
-    id: &'static str,
+    id: std::borrow::Cow<'static, str>,
     label: String,
     generation: u32,
 }
@@ -370,8 +370,8 @@ struct LanguageDelta {
     variety: usize,
     left: SpeechSide,
     right: SpeechSide,
-    only_left: Vec<&'static str>,
-    only_right: Vec<&'static str>,
+    only_left: Vec<std::borrow::Cow<'static, str>>,
+    only_right: Vec<std::borrow::Cow<'static, str>>,
     changed_words: Vec<ChangedWord>,
     loans_left: Vec<Loans>,
     loans_right: Vec<Loans>,
@@ -409,14 +409,12 @@ fn speech_sides(world: &World, shared: &World, count: usize) -> Vec<(SpeechSide,
                     .laws
                     .iter()
                     .skip(common.laws.len())
-                    .map(|&(generation, id)| AppliedLaw {
-                        id,
+                    .map(|(generation, id)| AppliedLaw {
+                        id: id.clone(),
                         label: world
-                            .law_catalog()
-                            .iter()
-                            .find(|law| law.id == id)
+                            .law_by_id(id)
                             .map_or_else(|| substrate_label(id), |law| law.label.to_string()),
-                        generation,
+                        generation: *generation,
                     })
                     .collect()
             } else {
@@ -459,11 +457,12 @@ fn language_delta(
     let (left, loans_left) = left;
     let (right, loans_right) = right;
     let exclusive = |a: &SpeechSide, b: &SpeechSide| {
-        let other: HashSet<_> = b.laws.iter().map(|law| law.id).collect();
+        let other: HashSet<_> = b.laws.iter().map(|law| &law.id).collect();
         let mut seen = HashSet::new();
         a.laws
             .iter()
-            .filter_map(|law| (!other.contains(law.id) && seen.insert(law.id)).then_some(law.id))
+            .filter(|law| !other.contains(&law.id) && seen.insert(&law.id))
+            .map(|law| law.id.clone())
             .collect()
     };
     let only_left = exclusive(&left, &right);

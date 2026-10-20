@@ -16,8 +16,8 @@ const MAX_SYNCOPATED_CLUSTER: usize = 3;
 /// across every living word.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Law {
-    pub id: &'static str,
-    pub label: &'static str,
+    pub id: Cow<'static, str>,
+    pub label: Cow<'static, str>,
     pub rules: Vec<SoundChange>,
     /// Rough typological commonness, a hand estimate rather than a measured
     /// frequency. Lenition and palatalization are common; wholesale
@@ -25,6 +25,8 @@ pub struct Law {
     pub commonness: f32,
     /// A suprasegmental law, assessed by movement of word stress.
     pub stress: Option<StressRule>,
+    /// Author text for display only; catalog laws have no authored source.
+    pub source: Option<String>,
 }
 
 /// What a law would do to a lexicon if chosen now.
@@ -118,6 +120,21 @@ impl Law {
             || self
                 .stress
                 .is_some_and(|next| form.stressed_syllable(stress) != after.stressed_syllable(next))
+    }
+
+    /// Author choices need a real change, not an inventory preference score.
+    /// Unlike the catalog assessment this also handles a segment chain and a
+    /// stress shift in the same law.
+    pub fn changes_any<'a>(
+        &self,
+        forms: impl Iterator<Item = &'a Form>,
+        minimal: MinimalWord,
+        stress: StressRule,
+    ) -> bool {
+        forms.into_iter().any(|form| {
+            let after = self.apply(form, minimal, stress);
+            self.changes(form, &after, stress)
+        })
     }
 
     /// `None` when the law would change nothing.
@@ -336,11 +353,12 @@ fn law(id: &'static str, label: &'static str, commonness: f32, rules: Vec<SoundC
         })
         .collect();
     Law {
-        id,
-        label,
+        id: id.into(),
+        label: label.into(),
         rules,
         commonness,
         stress: None,
+        source: None,
     }
 }
 
@@ -1155,7 +1173,7 @@ mod tests {
 
     #[test]
     fn ids_are_unique() {
-        let ids: HashSet<_> = catalog().iter().map(|l| l.id).collect();
+        let ids: HashSet<_> = catalog().into_iter().map(|l| l.id).collect();
         assert_eq!(ids.len(), catalog().len());
     }
 

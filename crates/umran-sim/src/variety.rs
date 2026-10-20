@@ -42,13 +42,13 @@ pub struct Variety {
     pub minimal: MinimalWord,
     /// Sound laws in the order applied, with their generation. A law may
     /// appear more than once: kinds of change recur over long spans.
-    pub laws: Vec<(u32, &'static str)>,
+    pub laws: Vec<(u32, std::borrow::Cow<'static, str>)>,
     /// The rule before each stress shift, including inherited shifts.
     pub stress_history: Vec<(u32, StressRule)>,
     pub tonal: Option<crate::tone::Tonal>,
     /// Laws among `laws` that reached it from a neighbour rather than
     /// arising in it, by generation, with the variety each came from.
-    pub waves: Vec<(u32, &'static str, usize)>,
+    pub waves: Vec<(u32, std::borrow::Cow<'static, str>, usize)>,
     /// Where this variety split from, if it did.
     pub parent: Option<Fork>,
     /// Contributors to this koiné at formation, largest first.

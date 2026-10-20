@@ -311,12 +311,7 @@ impl Grammar {
 
     /// A contextual law may leave several allomorphs. Generalize a new melody
     /// only when every living use agrees, never by majority or HashMap order.
-    pub(crate) fn update_patterns(
-        &mut self,
-        lexicon: &Lexicon,
-        generation: u32,
-        law: &'static str,
-    ) {
+    pub(crate) fn update_patterns(&mut self, lexicon: &Lexicon, generation: u32, law: &crate::Law) {
         for marker in self
             .markers
             .iter_mut()
@@ -355,7 +350,10 @@ impl Grammar {
                 marker.template = Some(next);
                 marker.history.push(GrammarEntry {
                     generation,
-                    event: GrammarEvent::SoundLaw { law, before },
+                    event: GrammarEvent::SoundLaw {
+                        law: law.id.clone(),
+                        before,
+                    },
                 });
             }
         }

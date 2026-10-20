@@ -782,11 +782,11 @@ mod tests {
                     generation: 200,
                     inherited: 0,
                 });
-                variety.laws.push((201, "unrelated history"));
+                variety.laws.push((201, "unrelated history".into()));
                 let history = GrammarEntry {
                     generation: 202,
                     event: GrammarEvent::SoundLaw {
-                        law: "unrelated history",
+                        law: "unrelated history".into(),
                         before: Form::from_ipa("su").unwrap(),
                     },
                 };
@@ -800,7 +800,7 @@ mod tests {
                     word.log.push(Entry {
                         generation: 203,
                         event: Event::SoundLaw {
-                            law: "unrelated history",
+                            law: "unrelated history".into(),
                             before: Form::from_ipa("su").unwrap(),
                         },
                     });

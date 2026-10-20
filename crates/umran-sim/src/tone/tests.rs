@@ -185,7 +185,7 @@ fn regular_tone_laws_reach_living_words_grammar_and_names_not_obsolete_words() {
         world.events.last().unwrap().1,
         WorldEvent::Tone {
             gained: false,
-            law: Some("tone-loss"),
+            law: Some(std::borrow::Cow::Borrowed("tone-loss")),
             ..
         }
     ));
@@ -224,7 +224,7 @@ fn tone_waves_record_contact_cause_and_static_society_stays_inert() {
         world.varieties[v]
             .waves
             .iter()
-            .any(|&(_, id, from)| id == "coda-tonogenesis" && from == 0)
+            .any(|&(_, ref id, from)| id == "coda-tonogenesis" && from == 0)
     );
     let event = world.events.iter().position(|(_, event)| matches!(event, WorldEvent::Tone { variety, gained: true, .. } if *variety == v)).unwrap();
     assert_eq!(world.causes.get(&event).unwrap().event, cause);

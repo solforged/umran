@@ -26,7 +26,7 @@ fn report(world: &World, name: &str) {
             }
             gained += usize::from(event.gained);
             lost += usize::from(!event.gained);
-            let reason = match event.trigger {
+            let reason = match &event.trigger {
                 Trigger::Assimilation { generation, law } => {
                     format!("after {law} in year {}", generation * 25)
                 }
@@ -52,7 +52,7 @@ fn report(world: &World, name: &str) {
         }
         if let Some(word) = v.lexicon.living().find(|l| {
             l.log.iter().any(
-                |e| matches!(e.event, Event::SoundLaw { law, .. } if law.starts_with("harmony-")),
+                |e| matches!(&e.event, Event::SoundLaw { law, .. } if law.starts_with("harmony-")),
             )
         }) {
             let (law, before) = word

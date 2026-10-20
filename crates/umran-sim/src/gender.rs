@@ -178,9 +178,9 @@ pub struct ClassNotice {
     /// Exact phonological trigger, rather than a cause inferred from adjacent prose.
     pub cause: Option<SoundCause>,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SoundCause {
-    pub law: &'static str,
+    pub law: std::borrow::Cow<'static, str>,
     pub generation: u32,
 }
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -497,7 +497,7 @@ impl Gender {
                 class.history.push(GrammarEntry {
                     generation,
                     event: GrammarEvent::SoundLaw {
-                        law: law.id,
+                        law: law.id.clone(),
                         before,
                     },
                 });
@@ -510,7 +510,7 @@ impl Gender {
             });
         }
         let cause = Some(SoundCause {
-            law: law.id,
+            law: law.id.clone(),
             generation,
         });
         // Complete surface identity, not merely empty endings: umlaut may keep
@@ -536,7 +536,7 @@ impl Gender {
                         class: i as u32,
                         into: into as u32,
                     },
-                    cause,
+                    cause: cause.clone(),
                 });
             }
         }

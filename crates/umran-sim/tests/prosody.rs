@@ -205,7 +205,7 @@ fn syncope_limits_the_whole_joined_cluster_not_just_its_neighbors() {
 #[test]
 fn rhythmic_matching_is_not_tied_to_the_catalog_law_id() {
     let mut syncope = law("unstressed-syncope");
-    syncope.id = "renamed-syncope";
+    syncope.id = "renamed-syncope".into();
     syncope.rules[0].id = "renamed-rule".into();
     let input = form("katapamitala");
     assert_eq!(
@@ -425,7 +425,7 @@ fn founding_knobs_and_spelling_keep_length_and_stress_separate() {
     assert!(matches!(
         name.log[0].event,
         Event::SoundLaw {
-            law: "initial-stress",
+            law: std::borrow::Cow::Borrowed("initial-stress"),
             ..
         }
     ));
@@ -504,7 +504,7 @@ fn forty_seed_four_thousand_year_prosody_band() {
             languages += 1;
             conditioned += usize::from(variety.laws.iter().any(|(_, id)| {
                 matches!(
-                    *id,
+                    id.as_ref(),
                     "unstressed-reduction"
                         | "unstressed-syncope"
                         | "unstressed-apocope"

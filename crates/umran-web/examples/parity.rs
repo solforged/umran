@@ -145,6 +145,21 @@ fn request(bench: &mut Option<Bench>, input: Value) -> Result<Value, String> {
             )?;
             serde_json::from_str(&choices).map_err(|e| e.to_string())
         }
+        "check-law" => {
+            let report = Bench::check_law(
+                input["title"].as_str().ok_or("Missing title")?,
+                input["source"].as_str().ok_or("Missing source")?,
+            )?;
+            serde_json::from_str(&report).map_err(|e| e.to_string())
+        }
+        "law-preview" => {
+            let preview = bench.as_ref().ok_or("No world open")?.law_preview(
+                &input["point"].to_string(),
+                entity_id(&input["variety"], "Missing variety")?,
+                &input["law"].to_string(),
+            )?;
+            serde_json::from_str(&preview).map_err(|e| e.to_string())
+        }
         "branch" => {
             let generation = input["generation"].as_u64().ok_or("Missing generation")?;
             let generation = u32::try_from(generation).map_err(|error| error.to_string())?;

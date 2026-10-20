@@ -99,7 +99,7 @@ impl Name {
             self.log.push(Entry {
                 generation,
                 event: Event::SoundLaw {
-                    law: law.id,
+                    law: law.id.clone(),
                     before,
                 },
             });

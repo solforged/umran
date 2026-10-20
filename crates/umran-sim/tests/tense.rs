@@ -125,8 +125,9 @@ fn eroded_fused_tenses_are_renewed_without_erasing_the_old_competitor() {
             .unwrap();
         let t = Form::from_ipa("t").unwrap().segs[0].phone;
         let loss = Law {
-            id: "test-final-t-loss",
-            label: "Final t disappears",
+            id: ("test-final-t-loss").into(),
+            label: ("Final t disappears").into(),
+            source: None,
             rules: vec![SoundChange {
                 id: "test-final-t-loss".into(),
                 target: Matcher::Phone(t),

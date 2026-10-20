@@ -61,7 +61,7 @@ pub(crate) struct Annal {
     /// The lands it tells of: where peoples went, and where from.
     pub lands: Vec<usize>,
     /// The sound laws it tells of, by id.
-    pub laws: Vec<&'static str>,
+    pub laws: Vec<std::borrow::Cow<'static, str>>,
     /// For a sound change, the language's specimen words after it, with
     /// how those it reached sounded before.
     pub specimen: Vec<SpecimenWord>,
@@ -515,10 +515,10 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
             WorldEvent::Tone {
                 variety,
                 gained,
-                law,
+                ref law,
             } => {
                 let language = names.language(world, variety, generation);
-                let (text, note) = match (gained, law) {
+                let (text, note) = match (gained, law.as_deref()) {
                     (true, Some("coda-tonogenesis")) => (
                         format!(
                             "In {language}, sounds at the ends of words fell silent and left their mark as pitch: words came to be told apart by tone."
@@ -545,7 +545,7 @@ pub(crate) fn annals(world: &World) -> Vec<Annal> {
                 );
                 annal.notes = vec![note.into()];
                 annal.variety = Some(variety);
-                annal.laws.extend(law);
+                annal.laws.extend(law.iter().cloned());
                 annal
             }
             WorldEvent::Settlement(ref record) => {
@@ -2250,24 +2250,26 @@ fn place_note(world: &World, region: usize, generation: u32) -> Option<String> {
 /// One entry per language and generation in which its sounds changed,
 /// told through a word that changed, with the laws in the apparatus.
 fn sound_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> {
-    let laws = world.law_catalog();
     let label = |id: &str| {
-        laws.iter()
-            .find(|l| l.id == id)
+        world
+            .law_by_id(id)
             .map_or_else(|| substrate_label(id), |l| l.label.to_string())
     };
     let mut out = Vec::new();
     for (v, variety) in world.varieties.iter().enumerate() {
         // A daughter's inherited laws are told in its parent's annals.
         let from = variety.parent.map_or(0, |f| f.generation + 1);
-        let mut by_generation: BTreeMap<u32, Vec<&'static str>> = BTreeMap::new();
-        for &(generation, id) in variety
+        let mut by_generation: BTreeMap<u32, Vec<std::borrow::Cow<'static, str>>> = BTreeMap::new();
+        for (generation, id) in variety
             .laws
             .iter()
-            .filter(|(g, id)| *g >= from || world.authored_laws.contains_key(&(v, *g, *id)))
+            .filter(|(g, id)| *g >= from || world.authored_laws.contains_key(&(v, *g, id.clone())))
         {
             // Authored laws at a daughter's founding year are not inherited.
-            by_generation.entry(generation).or_default().push(id);
+            by_generation
+                .entry(*generation)
+                .or_default()
+                .push(id.clone());
         }
         for (generation, ids) in by_generation {
             let people = speakers(world, shifts, v, generation, names);
@@ -2290,7 +2292,7 @@ fn sound_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> {
             let note = |id: &str| match variety
                 .waves
                 .iter()
-                .find(|&&(g, w, _)| (g, w) == (generation, id))
+                .find(|(g, w, _)| *g == generation && w == id)
             {
                 Some(&(_, _, source)) => format!(
                     "{}, spreading from {}",
@@ -2301,7 +2303,7 @@ fn sound_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> {
             };
             let decision = ids
                 .iter()
-                .filter_map(|&id| world.authored_laws.get(&(v, generation, id)))
+                .filter_map(|id| world.authored_laws.get(&(v, generation, id.clone())))
                 .copied()
                 .max();
             out.push(Annal {
@@ -2919,21 +2921,21 @@ fn harmony_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> 
                 Feature::Atr => "tense with tense and lax with lax",
             };
             let (text, note, laws, cause, donor) = match notice.trigger {
-                Trigger::Assimilation { law, .. } => (
+                Trigger::Assimilation { ref law, .. } => (
                     format!(
                         "Among {people}, the vowels of a word came to agree, {agree}, and endings changed to match the words they joined."
                     ),
                     "Vowel harmony: a change between neighbouring syllables became a rule for the whole word, as harmony is thought to have grown in Finnic and Turkic.".into(),
-                    vec![law],
+                    vec![law.clone()],
                     None,
                     None,
                 ),
-                Trigger::ContrastMerger { law } => (
+                Trigger::ContrastMerger { ref law } => (
                     format!(
                         "Among {people}, vowel harmony faded once the vowels it paired had fallen together."
                     ),
                     "Harmony needs the contrast it rests on; Estonian lost most of the Finnic harmony this way.".into(),
-                    vec![law],
+                    vec![law.clone()],
                     None,
                     None,
                 ),
@@ -3081,7 +3083,11 @@ fn class_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> {
                     })
                     .collect(),
                 lands: Vec::new(),
-                laws: notice.cause.map(|c| vec![c.law]).unwrap_or_default(),
+                laws: notice
+                    .cause
+                    .as_ref()
+                    .map(|c| vec![c.law.clone()])
+                    .unwrap_or_default(),
                 specimen: Vec::new(),
                 states: Vec::new(),
                 religions: Vec::new(),
@@ -3095,10 +3101,10 @@ fn class_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> {
                 climate: None,
                 river_flow: None,
                 settlement: None,
-                decision: notice.cause.and_then(|cause| {
+                decision: notice.cause.as_ref().and_then(|cause| {
                     world
                         .authored_laws
-                        .get(&(v, cause.generation, cause.law))
+                        .get(&(v, cause.generation, cause.law.clone()))
                         .copied()
                 }),
                 before: None,

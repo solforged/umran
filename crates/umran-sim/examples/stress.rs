@@ -22,16 +22,16 @@ fn main() {
             world.run(1);
             for (id, variety) in world.varieties.iter().enumerate() {
                 let mut stress = old.get(id).copied().unwrap_or(variety.stress());
-                for &(g, law_id) in &variety.laws {
-                    if g != generation {
+                for (g, law_id) in &variety.laws {
+                    if *g != generation {
                         continue;
                     }
-                    let Some(law) = laws.iter().find(|l| l.id == law_id) else {
+                    let Some(law) = laws.iter().find(|l| &l.id == law_id) else {
                         continue;
                     };
                     let after_stress = law.stress.unwrap_or(stress);
                     if matches!(
-                        law_id,
+                        law_id.as_ref(),
                         "unstressed-reduction"
                             | "unstressed-syncope"
                             | "unstressed-apocope"
@@ -46,7 +46,7 @@ fn main() {
                             | "penult-stress"
                     ) {
                         let example = variety.lexicon.lexemes.iter().find_map(|word| {
-                            let at = word.log.iter().position(|e| e.generation == g && matches!(e.event, Event::SoundLaw { law, .. } if law == law_id))?;
+                            let at = word.log.iter().position(|e| e.generation == *g && matches!(&e.event, Event::SoundLaw { law, .. } if law == law_id))?;
                             let Event::SoundLaw { before, .. } = &word.log[at].event else { return None };
                             let after = word.log[at + 1..].iter().find_map(|e| match &e.event { Event::SoundLaw { before, .. } => Some(before), _ => None }).unwrap_or(&word.form);
                             Some(format!("{}: /{}/ > /{}/", word.first_sense.gloss, before.ipa_stressed(stress), after.ipa_stressed(after_stress)))

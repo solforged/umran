@@ -73,7 +73,9 @@ pub fn run(seeds: u64) -> Stats {
                     matches!(
                         entry.event,
                         Event::SoundLaw {
-                            law: "coda-tonogenesis" | "register-tonogenesis",
+                            law: std::borrow::Cow::Borrowed(
+                                "coda-tonogenesis" | "register-tonogenesis"
+                            ),
                             ..
                         }
                     )

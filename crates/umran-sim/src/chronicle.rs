@@ -57,7 +57,9 @@ use std::collections::BTreeMap;
 /// peace, death, and dream, and keys founding prosody draws by word.
 /// Revision 63 lets object pronouns lean on a verb that already marks its
 /// subject, fuse into object affixes, and license unsaid objects.
-pub const ENGINE_REVISION: u32 = 63;
+/// Revision 64 applies sound laws the author wrote in notation, stored as
+/// rules, spreading by wave like catalog laws.
+pub const ENGINE_REVISION: u32 = 64;
 /// Revision 33 replaces flat geography and its region identities with a sphere.
 /// Earlier region-targeted actions cannot be replayed on the spherical mesh.
 pub const SPHERICAL_GEOGRAPHY_REVISION: u32 = 33;
@@ -142,6 +144,11 @@ pub enum Action {
     },
     Run {
         generations: u32,
+    },
+    /// Applies stored author-written rules, without catalog selection.
+    Authored {
+        variety: usize,
+        law: crate::notation::AuthoredLaw,
     },
 }
 
@@ -806,7 +813,7 @@ fn apply(world: &mut World, action: &Action, index: usize) -> Result<(), String>
             let law = world
                 .law_catalog()
                 .iter()
-                .find(|candidate| candidate.id == law)
+                .find(|candidate| candidate.id == *law)
                 .ok_or_else(|| format!("there is no sound law {law}"))?;
             if law.id == "koine-levelling" {
                 return Err("koine levelling is not a portable sound law".into());
@@ -835,6 +842,30 @@ fn apply(world: &mut World, action: &Action, index: usize) -> Result<(), String>
             world
                 .authored_laws
                 .insert((*variety, world.generation, law.id), index);
+        }
+        Action::Authored { variety, law } => {
+            if !world
+                .communities
+                .iter()
+                .any(|c| c.living() && c.variety == *variety)
+            {
+                return Err(format!("language {variety} has no living speakers"));
+            }
+            if law.title.trim().is_empty() || law.title.chars().count() > 60 {
+                return Err("a sound law needs a title of 1 to 60 characters".into());
+            }
+            let law = law.law(world.generation);
+            if world.authored.iter().any(|prior| prior.id == law.id) {
+                return Err("a law with this title already exists in this generation".into());
+            }
+            if !world.law_changes_living(*variety, &law) {
+                return Err("the sound law would change no living forms".into());
+            }
+            world.apply_law(*variety, &law);
+            world
+                .authored_laws
+                .insert((*variety, world.generation, law.id.clone()), index);
+            world.authored.push(law);
         }
         Action::Temper {
             community,
@@ -899,6 +930,127 @@ mod tests {
                 .iter()
                 .zip(&b.varieties)
                 .all(|(x, y)| x.lexicon == y.lexicon)
+    }
+
+    #[test]
+    fn stored_authored_law_applies_replays_and_refuses_without_mutation() {
+        let mut history = Chronicle::new(7, MapSize::Small);
+        history.act(found("First", "familiar")).unwrap();
+        let mut law = crate::notation::parse("Long vowels", "V > [long]")
+            .law
+            .unwrap();
+        // Replay reads the stored rules even when display source is not notation.
+        law.source = "display only".into();
+        let before = history.latest().varieties[0].clone();
+        history
+            .act(Action::Authored {
+                variety: 0,
+                law: law.clone(),
+            })
+            .unwrap();
+        let after = &history.latest().varieties[0];
+        assert_ne!(before.name.form, after.name.form);
+        assert!(
+            before
+                .lexicon
+                .living()
+                .any(|word| word.form != after.lexicon.get(word.id).form)
+        );
+        assert_eq!(history.latest().authored[0].id, "authored:long-vowels:0");
+        assert_eq!(history.latest().authored[0].commonness, 0.0);
+        let saved = history.recipe();
+        assert!(
+            history
+                .act(Action::Authored {
+                    variety: 0,
+                    law: law.clone()
+                })
+                .is_err()
+        );
+        assert_eq!(history.recipe(), saved);
+        for (variety, title) in [
+            (0, ""),
+            (0, "Other lengthening"),
+            (usize::MAX, "Long vowels"),
+        ] {
+            let mut refused = law.clone();
+            refused.title = title.into();
+            assert!(
+                history
+                    .act(Action::Authored {
+                        variety,
+                        law: refused
+                    })
+                    .is_err()
+            );
+            assert_eq!(history.recipe(), saved);
+        }
+        let recipe: Recipe = serde_json::from_str(&serde_json::to_string(&saved).unwrap()).unwrap();
+        let replay = Chronicle::from_recipe(&recipe).unwrap();
+        assert!(same(history.latest(), replay.latest()));
+        assert_eq!(history.latest().authored, replay.latest().authored);
+        assert_eq!(
+            history.latest().authored_laws,
+            replay.latest().authored_laws
+        );
+    }
+
+    #[test]
+    fn authored_law_accepts_name_only_changes_and_has_no_recurrence_timer() {
+        let mut world = World::solo(0, &crate::SoundProfile::base(), Params::static_society());
+        let law = crate::notation::parse("A name changes", "q > k")
+            .law
+            .unwrap();
+        for word in &mut world.varieties[0].lexicon.lexemes {
+            word.form = crate::Form::from_ipa("pata").unwrap();
+        }
+        world.varieties[0].name.form = crate::Form::from_ipa("qaqa").unwrap();
+        apply(
+            &mut world,
+            &Action::Authored {
+                variety: 0,
+                law: law.clone(),
+            },
+            0,
+        )
+        .unwrap();
+        assert_eq!(world.varieties[0].name.form.ipa(), "kaka");
+        world.generation += 1;
+        world.varieties[0].name.form = crate::Form::from_ipa("qaqa").unwrap();
+        apply(&mut world, &Action::Authored { variety: 0, law }, 1).unwrap();
+        assert_eq!(world.authored.len(), 2);
+        assert_ne!(world.authored[0].id, world.authored[1].id);
+    }
+
+    #[test]
+    fn authored_wave_band() {
+        let mut worlds_with_wave = 0;
+        let mut arrivals = 0;
+        for seed in 0..40 {
+            let mut world = World::solo(seed, &crate::SoundProfile::base(), Params::default());
+            let child = world.split(0, None, 0.0);
+            world.communities[child].lands = world.communities[0].lands.clone();
+            world
+                .connect(0, child, 1.0, ContactKind::Neighbours)
+                .unwrap();
+            let law = crate::notation::parse("Long vowels", "V > [long]")
+                .law
+                .unwrap();
+            apply(&mut world, &Action::Authored { variety: 0, law }, 0).unwrap();
+            world.run(80);
+            let count = world
+                .varieties
+                .iter()
+                .flat_map(|v| &v.waves)
+                .filter(|(_, law, _)| law.starts_with("authored:"))
+                .count();
+            worlds_with_wave += usize::from(count > 0);
+            arrivals += count;
+        }
+        println!(
+            "Authored wave band: {worlds_with_wave}/40 worlds, {arrivals} arrivals over 2,000 years"
+        );
+        assert!(worlds_with_wave > 0);
     }
 
     #[test]
@@ -1039,13 +1191,14 @@ mod tests {
                     })
             })
             .unwrap()
-            .id;
+            .id
+            .clone();
         let source_lexicon = world.varieties[parent].lexicon.clone();
         let before = speech.lexicon.clone();
         history
             .act(Action::Law {
                 variety: daughter,
-                law: law.into(),
+                law: law.to_string(),
             })
             .unwrap();
         let world = history.latest();
@@ -1187,11 +1340,12 @@ mod tests {
                         .is_none()
             })
             .unwrap()
-            .id;
+            .id
+            .clone();
         for (variety, law) in [
             (0, "missing-law"),
             (0, "koine-levelling"),
-            (0, noop),
+            (0, noop.as_ref()),
             (usize::MAX, "w-fortition"),
         ] {
             let before = world.clone();
@@ -1259,18 +1413,21 @@ mod tests {
         assert_eq!(world.varieties[target].lexicon.get(word).form, before);
         world.step();
         assert_eq!(world.varieties[target].lexicon.get(word).form, after);
-        assert_eq!(world.varieties[target].waves, vec![(1, "w-fortition", 0)]);
+        assert_eq!(
+            world.varieties[target].waves,
+            vec![(1, "w-fortition".into(), 0)]
+        );
         assert!(
             !world
                 .authored_laws
-                .contains_key(&(target, 1, "w-fortition"))
+                .contains_key(&(target, 1, "w-fortition".into()))
         );
         world.varieties[0].lexicon.get_mut(word).form = before;
         apply(&mut world, &action, 1).unwrap();
         assert_eq!(world.varieties[0].lexicon.get(word).form, after);
         assert_eq!(
             world.varieties[0].laws,
-            vec![(0, "w-fortition"), (1, "w-fortition")]
+            vec![(0, "w-fortition".into()), (1, "w-fortition".into())]
         );
         assert_eq!(
             world.decisions.iter().map(|d| d.action).collect::<Vec<_>>(),

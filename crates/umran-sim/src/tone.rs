@@ -207,8 +207,9 @@ impl World {
             .iter()
             .filter(|law| is_tone_law(law) && applies(law, variety))
             .filter(|law| {
-                !variety.laws.iter().any(|&(g, id)| {
-                    id == law.id && self.generation.saturating_sub(g) < crate::world::LAW_RECURRENCE
+                !variety.laws.iter().any(|(g, id)| {
+                    *id == law.id
+                        && self.generation.saturating_sub(*g) < crate::world::LAW_RECURRENCE
                 })
             })
             .filter(|law| {
@@ -228,7 +229,7 @@ impl World {
         }
     }
 
-    pub(crate) fn observe_tone(&mut self, v: usize, law: Option<&'static str>) {
+    pub(crate) fn observe_tone(&mut self, v: usize, law: Option<std::borrow::Cow<'static, str>>) {
         let variety = &mut self.varieties[v];
         let tonal = variety.tones() > 0;
         let was = variety.tonal.is_some_and(|period| period.lost.is_none());

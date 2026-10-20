@@ -627,8 +627,9 @@ fn shares(counts: BTreeMap<usize, f32>) -> Vec<(usize, f32)> {
 
 fn levelling_law(mergers: &[(PhonemeId, PhonemeId)]) -> Law {
     Law {
-        id: "koine-levelling",
-        label: "Minority sounds merge into majority sounds",
+        id: ("koine-levelling").into(),
+        label: ("Minority sounds merge into majority sounds").into(),
+        source: None,
         commonness: 0.0,
         rules: mergers
             .iter()
@@ -943,7 +944,7 @@ mod tests {
         for word in v.lexicon.living() {
             assert_eq!(word.form.ipa(), "tata");
             assert!(word.log.iter().any(|e| matches!(&e.event,
-                Event::SoundLaw { law: "koine-levelling", before } if before.ipa() == "θaθa")));
+                Event::SoundLaw { law: std::borrow::Cow::Borrowed("koine-levelling"), before } if before.ipa() == "θaθa")));
         }
         for (form, _) in v.grammar.forms(&v.lexicon) {
             assert!(
@@ -952,7 +953,7 @@ mod tests {
             );
         }
         assert_eq!(v.lexicon.get(old).form.ipa(), "aθa");
-        assert_eq!(v.laws.last(), Some(&(4, "koine-levelling")));
+        assert_eq!(v.laws.last(), Some(&(4, "koine-levelling".into())));
     }
 
     #[test]

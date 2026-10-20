@@ -17,7 +17,9 @@ use umran_sim::coinage::CoinageKind;
 use umran_sim::concepts::{Concept, Relation, by_id};
 use umran_sim::grammar::{Category, GrammarEntry, GrammarEvent, Marker, MarkerOrigin};
 use umran_sim::names::Name;
-use umran_sim::{Event, Form, Lexeme, LexemeId, Origin, StressRule, Variety, World, WorldEvent};
+use umran_sim::{
+    Event, Form, Law, Lexeme, LexemeId, Origin, StressRule, Variety, World, WorldEvent,
+};
 use wasm_bindgen::prelude::*;
 
 #[derive(Serialize, PartialEq)]
@@ -31,7 +33,7 @@ struct FormView {
 #[serde(rename_all = "camelCase")]
 struct LawOccurrenceRef {
     variety: usize,
-    law: &'static str,
+    law: std::borrow::Cow<'static, str>,
     generation: u32,
     index: usize,
 }
@@ -44,7 +46,7 @@ struct LawOccurrenceRef {
 )]
 enum ChangeCause {
     Law {
-        law: &'static str,
+        law: std::borrow::Cow<'static, str>,
         label: String,
         occurrence: Option<LawOccurrenceRef>,
     },
@@ -94,6 +96,7 @@ struct LawOccurrence {
     #[serde(skip)]
     order: usize,
     label: String,
+    rules: Vec<String>,
     arrival: Arrival,
     annal: Option<String>,
     words: Vec<LawWord>,
@@ -249,9 +252,7 @@ fn form_view(variety: &Variety, form: &Form, stress: StressRule) -> FormView {
 
 fn law_label(world: &World, law: &str) -> String {
     world
-        .law_catalog()
-        .iter()
-        .find(|l| l.id == law)
+        .law_by_id(law)
         .map_or_else(|| substrate_label(law), |l| l.label.to_string())
 }
 
@@ -265,7 +266,7 @@ fn word_occurrence(
     at: usize,
 ) -> Option<LawOccurrenceRef> {
     let entry = &word.log[at];
-    let Event::SoundLaw { law, .. } = entry.event else {
+    let Event::SoundLaw { ref law, .. } = entry.event else {
         unreachable!()
     };
     let owner = entry_variety(world, variety, word, at);
@@ -275,7 +276,7 @@ fn word_occurrence(
         .enumerate()
         .filter(|(i, prior)| {
             prior.generation == entry.generation
-                && matches!(prior.event, Event::SoundLaw { law: id, .. } if id == law)
+                && matches!(&prior.event, Event::SoundLaw { law: id, .. } if id == law)
                 && entry_variety(world, variety, word, *i) == owner
         })
         .count();
@@ -287,13 +288,13 @@ fn word_occurrence(
         .enumerate()
         .filter(|(i, prior)| {
             prior.generation == entry.generation
-                && matches!(prior.event, Event::SoundLaw { law: id, .. } if id == law)
+                && matches!(&prior.event, Event::SoundLaw { law: id, .. } if id == law)
                 && entry_variety(world, variety, word, *i) == owner
         })
         .count();
     Some(LawOccurrenceRef {
         variety: owner,
-        law,
+        law: law.clone(),
         generation: entry.generation,
         index,
     })
@@ -305,19 +306,19 @@ fn word_occurrence(
 fn ledger_owner(world: &World, variety: usize, at: usize) -> usize {
     let v = &world.varieties[variety];
     let Some(fork) = v.parent else { return variety };
-    let (generation, law) = v.laws[at];
+    let (generation, ref law) = v.laws[at];
     if generation > fork.generation {
         return variety;
     }
     let ordinal = v.laws[..at]
         .iter()
-        .filter(|&&(g, l)| g == generation && l == law)
+        .filter(|(g, l)| *g == generation && l == law)
         .count();
     if generation == fork.generation {
         let total = v
             .laws
             .iter()
-            .filter(|&&(g, id)| g == generation && id == law)
+            .filter(|(g, id)| *g == generation && id == law)
             .count();
         for word in &v.lexicon.lexemes {
             if word.id.0 >= fork.inherited {
@@ -328,7 +329,7 @@ fn ledger_owner(world: &World, variety: usize, at: usize) -> usize {
                 .iter()
                 .filter(|entry| {
                     entry.generation == generation
-                        && matches!(entry.event, Event::SoundLaw { law: id, .. } if id == law)
+                        && matches!(&entry.event, Event::SoundLaw { law: id, .. } if id == law)
                 })
                 .count();
             if observed != total {
@@ -340,7 +341,7 @@ fn ledger_owner(world: &World, variety: usize, at: usize) -> usize {
                 .enumerate()
                 .filter(|(_, entry)| {
                     entry.generation == generation
-                        && matches!(entry.event, Event::SoundLaw { law: id, .. } if id == law)
+                        && matches!(&entry.event, Event::SoundLaw { law: id, .. } if id == law)
                 })
                 .nth(ordinal)
             {
@@ -375,17 +376,12 @@ fn stress_transition(world: &World, reference: &LawOccurrenceRef) -> (StressRule
         .find(|(g, _)| *g >= reference.generation)
         .map_or(v.stress(), |(_, prior)| *prior);
     let mut index = 0;
-    for (at, &(generation, id)) in v.laws.iter().enumerate() {
+    for (at, (generation, id)) in v.laws.iter().cloned().enumerate() {
         if generation != reference.generation {
             continue;
         }
         let prior = stress;
-        if let Some(next) = world
-            .law_catalog()
-            .iter()
-            .find(|l| l.id == id)
-            .and_then(|l| l.stress)
-        {
+        if let Some(next) = world.law_by_id(&id).and_then(|l| l.stress) {
             stress = next;
         }
         if id == reference.law && ledger_owner(world, reference.variety, at) == reference.variety {
@@ -400,12 +396,12 @@ fn stress_transition(world: &World, reference: &LawOccurrenceRef) -> (StressRule
 
 fn law_cause(
     world: &World,
-    law: &'static str,
+    law: std::borrow::Cow<'static, str>,
     occurrence: Option<LawOccurrenceRef>,
 ) -> ChangeCause {
     ChangeCause::Law {
+        label: law_label(world, &law),
         law,
-        label: law_label(world, law),
         occurrence,
     }
 }
@@ -420,9 +416,7 @@ fn after_stress(
     occurrence.map_or_else(
         || {
             world
-                .law_catalog()
-                .iter()
-                .find(|l| l.id == law)
+                .law_by_id(law)
                 .and_then(|l| l.stress)
                 .unwrap_or_else(|| world.varieties[variety].stress_at(generation))
         },
@@ -482,7 +476,7 @@ fn marker_occurrence(
     at: usize,
 ) -> Option<LawOccurrenceRef> {
     let entry = &marker.history[at];
-    let GrammarEvent::SoundLaw { law, .. } = entry.event else {
+    let GrammarEvent::SoundLaw { ref law, .. } = entry.event else {
         unreachable!()
     };
     let owner = marker_owner(world, variety, marker, at);
@@ -492,7 +486,7 @@ fn marker_occurrence(
         .enumerate()
         .filter(|(i, prior)| {
             prior.generation == entry.generation
-                && matches!(prior.event, GrammarEvent::SoundLaw { law: id, .. } if id == law)
+                && matches!(&prior.event, GrammarEvent::SoundLaw { law: id, .. } if id == law)
                 && marker_owner(world, variety, marker, *i) == owner
         })
         .count();
@@ -504,13 +498,13 @@ fn marker_occurrence(
         .enumerate()
         .filter(|(i, prior)| {
             prior.generation == entry.generation
-                && matches!(prior.event, GrammarEvent::SoundLaw { law: id, .. } if id == law)
+                && matches!(&prior.event, GrammarEvent::SoundLaw { law: id, .. } if id == law)
                 && marker_owner(world, variety, marker, *i) == owner
         })
         .count();
     Some(LawOccurrenceRef {
         variety: owner,
-        law,
+        law: law.clone(),
         generation: entry.generation,
         index,
     })
@@ -520,7 +514,7 @@ fn law_occurrences(world: &World, variety: usize, law: &str) -> Result<Vec<LawOc
     let v = speech(world, variety)?;
     let mut records = BTreeMap::new();
     let mut counts = BTreeMap::new();
-    for (at, &(generation, id)) in v.laws.iter().enumerate() {
+    for (at, (generation, id)) in v.laws.iter().cloned().enumerate() {
         if id != law {
             continue;
         }
@@ -528,16 +522,16 @@ fn law_occurrences(world: &World, variety: usize, law: &str) -> Result<Vec<LawOc
         let index = counts.entry((owner, generation)).or_insert(0);
         let reference = LawOccurrenceRef {
             variety: owner,
-            law: id,
+            law: id.clone(),
             generation,
             index: *index,
         };
         *index += 1;
         let recorded = &world.varieties[owner];
-        let total = application_count(world, owner, generation, id);
+        let total = application_count(world, owner, generation, &id);
         let arrival = if owner != variety {
             Arrival::Inherited { ancestor: owner }
-        } else if let Some(&decision) = world.authored_laws.get(&(owner, generation, id)) {
+        } else if let Some(&decision) = world.authored_laws.get(&(owner, generation, id.clone())) {
             if reference.index + 1 == total {
                 Arrival::Authored { decision }
             } else {
@@ -546,7 +540,7 @@ fn law_occurrences(world: &World, variety: usize, law: &str) -> Result<Vec<LawOc
         } else if let Some(&(_, _, from)) = recorded
             .waves
             .iter()
-            .find(|&&(g, l, _)| g == generation && l == id)
+            .find(|(g, l, _)| *g == generation && *l == id)
         {
             if total == 1 {
                 Arrival::Wave { from }
@@ -563,13 +557,18 @@ fn law_occurrences(world: &World, variety: usize, law: &str) -> Result<Vec<LawOc
         let has_annal = recorded
             .parent
             .is_none_or(|fork| generation > fork.generation)
-            || world.authored_laws.contains_key(&(owner, generation, id));
+            || world
+                .authored_laws
+                .contains_key(&(owner, generation, id.clone()));
         records.insert(
             reference.clone(),
             LawOccurrence {
                 reference,
                 order: at,
-                label: law_label(world, id),
+                label: law_label(world, &id),
+                rules: world
+                    .law_by_id(&id)
+                    .map_or_else(Vec::new, Law::rule_sources),
                 arrival,
                 annal: has_annal.then(|| format!("sounds:{owner}:{generation}")),
                 words: Vec::new(),
@@ -581,7 +580,7 @@ fn law_occurrences(world: &World, variety: usize, law: &str) -> Result<Vec<LawOc
     for word in &v.lexicon.lexemes {
         for (i, entry) in word.log.iter().enumerate() {
             let Event::SoundLaw {
-                law: id,
+                law: ref id,
                 ref before,
             } = entry.event
             else {
@@ -616,7 +615,7 @@ fn law_occurrences(world: &World, variety: usize, law: &str) -> Result<Vec<LawOc
     for marker in &v.grammar.markers {
         for (i, entry) in marker.history.iter().enumerate() {
             let GrammarEvent::SoundLaw {
-                law: id,
+                law: ref id,
                 ref before,
             } = entry.event
             else {
@@ -652,7 +651,7 @@ fn law_occurrences(world: &World, variety: usize, law: &str) -> Result<Vec<LawOc
                 let mut counts = BTreeMap::new();
                 for (i, entry) in realization.history.iter().enumerate() {
                     let GrammarEvent::SoundLaw {
-                        law: id,
+                        law: ref id,
                         ref before,
                     } = entry.event
                     else {
@@ -684,19 +683,19 @@ fn law_occurrences(world: &World, variety: usize, law: &str) -> Result<Vec<LawOc
                     let index = counts.entry((owner, entry.generation)).or_insert(0);
                     let reference = LawOccurrenceRef {
                         variety: owner,
-                        law: id,
+                        law: id.clone(),
                         generation: entry.generation,
                         index: *index,
                     };
                     *index += 1;
                     let observed = realization.history.iter().filter(|e| {
                         e.generation == entry.generation
-                            && matches!(e.event, GrammarEvent::SoundLaw { law, .. } if law == id)
+                            && matches!(&e.event, GrammarEvent::SoundLaw { law, .. } if law == id)
                     }).count();
                     let ledger = v
                         .laws
                         .iter()
-                        .filter(|&&(g, law)| g == entry.generation && law == id)
+                        .filter(|(g, law)| *g == entry.generation && law == id)
                         .count();
                     if observed != ledger {
                         continue;
@@ -733,7 +732,7 @@ fn occurrence_names(world: &World, occurrence: &mut LawOccurrence) {
         world,
         reference.variety,
         reference.generation,
-        reference.law,
+        &reference.law,
     );
     let mut add = |subject: Subject, name: &Name| {
         let observed = name
@@ -741,7 +740,7 @@ fn occurrence_names(world: &World, occurrence: &mut LawOccurrence) {
             .iter()
             .filter(|e| {
                 e.generation == reference.generation
-                    && matches!(e.event, Event::SoundLaw { law, .. } if law == reference.law)
+                    && matches!(&e.event, Event::SoundLaw { law, .. } if *law == reference.law)
             })
             .count();
         if observed != total {
@@ -753,7 +752,7 @@ fn occurrence_names(world: &World, occurrence: &mut LawOccurrence) {
             .enumerate()
             .filter(|(_, e)| {
                 e.generation == reference.generation
-                    && matches!(e.event, Event::SoundLaw { law, .. } if law == reference.law)
+                    && matches!(&e.event, Event::SoundLaw { law, .. } if *law == reference.law)
             })
             .nth(reference.index);
         let Some((i, entry)) = entry else { return };
@@ -901,14 +900,14 @@ fn word_forms(world: &World, variety: usize, word: &Lexeme) -> Vec<FormPoint> {
     }
     for (i, entry) in word.log.iter().enumerate() {
         match entry.event {
-            Event::SoundLaw { law, .. } => {
+            Event::SoundLaw { ref law, .. } => {
                 let occurrence = word_occurrence(world, variety, word, i);
                 let owner = entry_variety(world, variety, word, i);
                 let stress = after_stress(world, owner, entry.generation, law, occurrence.as_ref());
                 out.push(FormPoint {
                     generation: entry.generation,
                     form: form_view(&world.varieties[owner], form_after(word, i), stress),
-                    cause: law_cause(world, law, occurrence),
+                    cause: law_cause(world, law.clone(), occurrence),
                 });
             }
             Event::Extended { .. } => out.push(FormPoint {
@@ -1183,13 +1182,13 @@ fn grammar_story(
         let mut forms = Vec::new();
         for (i, entry) in marker.history.iter().enumerate() {
             let (cause, stress) = match entry.event {
-                GrammarEvent::SoundLaw { law, .. } => {
+                GrammarEvent::SoundLaw { ref law, .. } => {
                     let occurrence = marker_occurrence(world, variety, marker, i);
                     let owner = marker_owner(world, variety, marker, i);
                     let stress =
                         after_stress(world, owner, entry.generation, law, occurrence.as_ref());
                     (
-                        GrammarCause::Change(law_cause(world, law, occurrence)),
+                        GrammarCause::Change(law_cause(world, law.clone(), occurrence)),
                         stress,
                     )
                 }
@@ -1496,19 +1495,19 @@ mod tests {
             Entry {
                 generation: 2,
                 event: Event::SoundLaw {
-                    law: "fixture-law",
+                    law: std::borrow::Cow::Borrowed("fixture-law"),
                     before: form("katata"),
                 },
             },
             Entry {
                 generation: 2,
                 event: Event::SoundLaw {
-                    law: "fixture-law",
+                    law: std::borrow::Cow::Borrowed("fixture-law"),
                     before: form("katta"),
                 },
             },
         ];
-        v.laws = vec![(2, "fixture-law"), (2, "fixture-law")];
+        v.laws = vec![(2, "fixture-law".into()), (2, "fixture-law".into())];
         world
     }
 
@@ -1558,12 +1557,12 @@ mod tests {
         word.log.push(Entry {
             generation: 2,
             event: Event::SoundLaw {
-                law: "fixture-law",
+                law: std::borrow::Cow::Borrowed("fixture-law"),
                 before: word.form.clone(),
             },
         });
         word.form = form("ka");
-        daughter.laws.push((2, "fixture-law"));
+        daughter.laws.push((2, "fixture-law".into()));
         world.varieties.push(daughter);
         let rows = law_occurrences(&world, 1, "fixture-law").unwrap();
         assert_eq!(
@@ -1584,7 +1583,7 @@ mod tests {
     #[test]
     fn repeated_authorship_does_not_copy_latest_decision_to_earlier_change() {
         let mut world = repeated_world();
-        world.authored_laws.insert((0, 2, "fixture-law"), 7);
+        world.authored_laws.insert((0, 2, "fixture-law".into()), 7);
         let rows = law_occurrences(&world, 0, "fixture-law").unwrap();
         assert!(matches!(rows[0].arrival, Arrival::Unrecorded));
         assert!(matches!(rows[1].arrival, Arrival::Authored { decision: 7 }));
@@ -1621,12 +1620,12 @@ mod tests {
             Entry {
                 generation: 3,
                 event: Event::SoundLaw {
-                    law: "fixture-law",
+                    law: std::borrow::Cow::Borrowed("fixture-law"),
                     before: form("tata"),
                 },
             },
         ];
-        v.laws.push((3, "fixture-law"));
+        v.laws.push((3, "fixture-law".into()));
         v.lexicon.slot_mut(concept).variants.clear();
         v.lexicon.slot_mut(concept).introduce(id, 1.0);
         let trail = loan_trail(&world, 0, concept).unwrap().unwrap();
@@ -1636,7 +1635,7 @@ mod tests {
         assert!(matches!(
             trail.after[0].cause,
             ChangeCause::Law {
-                law: "fixture-law",
+                law: std::borrow::Cow::Borrowed("fixture-law"),
                 ..
             }
         ));
@@ -1725,7 +1724,7 @@ mod tests {
         assert!(life.holders[0].forms.iter().any(|p| matches!(
             p.cause,
             ChangeCause::Law {
-                law: "fixture-law",
+                law: std::borrow::Cow::Borrowed("fixture-law"),
                 occurrence: None,
                 ..
             }
@@ -1756,7 +1755,7 @@ mod tests {
             GrammarEntry {
                 generation: 3,
                 event: GrammarEvent::SoundLaw {
-                    law: "fixture-law",
+                    law: std::borrow::Cow::Borrowed("fixture-law"),
                     before: form("ta"),
                 },
             },
@@ -1767,7 +1766,7 @@ mod tests {
         ];
         let id = marker.id.to_string();
         let category = marker.category;
-        v.laws.push((3, "fixture-law"));
+        v.laws.push((3, "fixture-law".into()));
         let story = grammar_story(&world, 0, category).unwrap();
         let marker = story.markers.iter().find(|m| m.marker == id).unwrap();
         assert_eq!(marker.source.as_ref().unwrap().concept, "water");
@@ -1812,11 +1811,11 @@ mod tests {
         word.log.push(Entry {
             generation: 4,
             event: Event::SoundLaw {
-                law: "fixture-law",
+                law: std::borrow::Cow::Borrowed("fixture-law"),
                 before: form("tataka"),
             },
         });
-        v.laws.push((4, "fixture-law"));
+        v.laws.push((4, "fixture-law".into()));
         let examples = builder_examples(&world, 0).unwrap();
         let example = examples.iter().find(|e| e.builder == "renewing").unwrap();
         assert_eq!(

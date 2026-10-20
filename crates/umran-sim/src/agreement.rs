@@ -478,7 +478,7 @@ impl Grammar {
                 cell.history.push(GrammarEntry {
                     generation,
                     event: GrammarEvent::SoundLaw {
-                        law: law.id,
+                        law: law.id.clone(),
                         before,
                     },
                 });

@@ -69,7 +69,9 @@ for (let i = 0; i < args.length; i++) {
 // Persistent, root-specific caches keep warm runs quick without sharing the
 // web build's Cargo lock or changing any generated browser bindings.
 const cacheKey = createHash("sha256").update(root).digest("hex").slice(0, 12);
-const cache = join("/tmp", `umran-parity-${cacheKey}`);
+const cache = process.env.CARGO_TARGET_DIR
+  ? join(process.env.CARGO_TARGET_DIR, "parity")
+  : join("/tmp", `umran-parity-${cacheKey}`);
 const scratch = await mkdtemp(join(tmpdir(), "umran-parity-bindings-"));
 await mkdir(cache, { recursive: true });
 
@@ -464,6 +466,44 @@ async function relatedFamily(seed: number): Promise<void> {
   } finally { bench.free(); }
 }
 
+async function authoredLaw(recipe: string, seed: number): Promise<void> {
+  await rpc({ kind: "load", recipe });
+  const bench = Workbench.load(recipe);
+  try {
+    await rpc({ kind: "branch", generation: 48 });
+    bench.branch(48);
+    const overview = object(json(JSON.parse(bench.overview(48))));
+    const point = overview.point!;
+    const title = "Authored parity law";
+    const source = "[voiceless stop] > [voiced] / V _ V\nV > ∅ / _ #";
+    const report = object(json(JSON.parse(Workbench.checkLaw(title, source))));
+    assertExact(await rpc({ kind: "check-law", title, source }), report, "Authored notation differs");
+    const law = report.law!;
+    if (!law) throw new Error("Authored parity law failed to parse");
+    let chosen: number | undefined;
+    const saved = bench.save();
+    for (const community of array(overview.communities).map(object).filter(c => c.ended === null)) {
+      const variety = number(community.variety);
+      const preview = object(json(JSON.parse(bench.lawPreview(JSON.stringify(point), variety, JSON.stringify({ authored: law })))));
+      assertExact(await rpc({ kind: "law-preview", point, variety, law: { authored: law } }), preview, "Authored law previews differ");
+      if (array(preview.words).length || array(preview.names).length) { chosen = variety; break; }
+    }
+    if (chosen === undefined) throw new Error("Sample needs an effective authored law at year 1200");
+    assertExact(bench.save(), saved, "Law preview changed the WASM save");
+    assertExact(await rpc({ kind: "save" }), saved, "Law preview changed the native save");
+    const action: JsonObject = { kind: "authored", variety: chosen, law };
+    await rpc({ kind: "act", action });
+    wasmAct(bench, action);
+    await compare(bench, "sample/authored", seed, 1200);
+    const authored = bench.save();
+    await rpc({ kind: "load", recipe: authored });
+    const replay = Workbench.load(authored);
+    try { await compare(replay, "sample/authored/replay", seed, 1200); }
+    finally { replay.free(); }
+    worlds++;
+  } finally { bench.free(); }
+}
+
 async function legacyGeography(seed: number, geography: "spherical-v1" | "continental-v2" | "continental-v3" | "continental-v4" | "continental-v5"): Promise<void> {
   const size = ["small", "medium", "large", "vast"][seed % 4];
   const label = `legacy/${geography}/${size}`;
@@ -585,6 +625,7 @@ async function sample(): Promise<void> {
         throw new Error("Live/replayed sample differs in WASM");
       }
     } finally { replay.free(); }
+    await authoredLaw(recipe, sampleModule.SAMPLE_LAND.seed);
     // The planner's full census, paths and refusals must agree before an
     // authored decision is applied. Reload the same starting history for each
     // intent so this exercises three alternatives, not an accidental chain.

@@ -743,7 +743,7 @@ pub enum WorldEvent {
     Tone {
         variety: usize,
         gained: bool,
-        law: Option<&'static str>,
+        law: Option<std::borrow::Cow<'static, str>>,
     },
     /// `community` was founded with a new language.
     Found {
@@ -1049,7 +1049,7 @@ pub struct World {
     pub decisions: Vec<Decision>,
     /// Authored catalog applications, keyed by language, generation, and law.
     /// Repeating the same law in one generation retains its latest decision.
-    pub authored_laws: BTreeMap<(usize, u32, &'static str), usize>,
+    pub authored_laws: BTreeMap<(usize, u32, std::borrow::Cow<'static, str>), usize>,
     /// Optional causes by response event index, within this telling.
     pub causes: std::collections::BTreeMap<usize, crate::Cause>,
     pub(crate) triggers: crate::causes::Triggers,
@@ -1076,6 +1076,8 @@ pub struct World {
     /// Directed corridors already recorded in the annals.
     pub sea_routes: std::collections::BTreeSet<(usize, usize, usize)>,
     laws: Vec<Law>,
+    /// Stored authored laws are wave sources, never automatic candidates.
+    pub authored: Vec<Law>,
 }
 
 /// Per-variety random streams for one generation.
@@ -1144,6 +1146,7 @@ impl World {
             holy_war_checks: 0,
             sea_routes: Default::default(),
             laws: catalog(),
+            authored: Vec::new(),
         }
     }
 
@@ -4001,15 +4004,16 @@ impl World {
                     lexeme.log.push(Entry {
                         generation,
                         event: Event::SoundLaw {
-                            law: "substrate",
+                            law: "substrate".into(),
                             before,
                         },
                     });
                 }
             }
             let law = Law {
-                id: "substrate",
-                label: "Substrate sounds merge",
+                id: ("substrate").into(),
+                label: ("Substrate sounds merge").into(),
+                source: None,
                 rules: vec![merge],
                 commonness: 0.0,
                 stress: None,
@@ -4024,7 +4028,7 @@ impl World {
             for (_, name) in &mut new.lake_exonyms {
                 name.change(&law, new.minimal, stress, generation);
             }
-            new.laws.push((generation, "substrate"));
+            new.laws.push((generation, "substrate".into()));
         }
 
         let new_index = self.varieties.len();
@@ -4223,7 +4227,7 @@ impl World {
         let candidates: Vec<(&Law, f32)> = self
             .laws
             .iter()
-            .filter(|law| !recent.contains(law.id))
+            .filter(|law| !recent.contains(law.id.as_ref()))
             .filter(|law| !crate::tone::is_tone_law(law))
             .filter_map(|law| {
                 let a = assessor.assess(law)?;
@@ -4254,7 +4258,7 @@ impl World {
     /// of its language, its peoples, the given names in fashion, and the
     /// lands and rivers they hold. Names of the dead (founders of states
     /// and faiths) are kept as they were said.
-    pub(crate) fn apply_law(&mut self, v: usize, law: &Law) {
+    pub fn apply_law(&mut self, v: usize, law: &Law) {
         let generation = self.generation;
         let harmony_before = self.harmony_before_law(v);
         let variety = &mut self.varieties[v];
@@ -4270,7 +4274,7 @@ impl World {
                 lexeme.log.push(Entry {
                     generation,
                     event: Event::SoundLaw {
-                        law: law.id,
+                        law: law.id.clone(),
                         before,
                     },
                 });
@@ -4283,17 +4287,17 @@ impl World {
             .gender
             .apply_law(law, minimal, stress, generation, &variety.lexicon);
         crate::coinage::observe_opacity(&mut variety.lexicon, generation);
-        variety.laws.push((generation, law.id));
+        variety.laws.push((generation, law.id.clone()));
         if let Some(next) = law.stress {
             variety.stress_history.push((generation, stress));
             variety.profile.stress = Some(next);
         }
-        self.harmony_after_law(v, law.id, harmony_before);
+        self.harmony_after_law(v, law, harmony_before);
         let variety = &mut self.varieties[v];
         variety.harmonize_words(generation);
         self.change_names(v, |name| name.change(law, minimal, stress, generation));
         self.harmonize_names(v);
-        self.observe_tone(v, Some(law.id));
+        self.observe_tone(v, Some(law.id.clone()));
     }
 
     /// One traversal for every living name; historical attestations stay frozen.
@@ -4362,7 +4366,7 @@ impl World {
             let pace = self.pace(v);
             // For each law on offer: its total pull, and the variety
             // pulling hardest, which is where it is said to come from.
-            let mut offers: BTreeMap<&'static str, (f32, usize, f32)> = BTreeMap::new();
+            let mut offers: BTreeMap<&str, (f32, usize, f32)> = BTreeMap::new();
             for contact in &self.contacts {
                 for (me, other) in [(contact.a, contact.b), (contact.b, contact.a)] {
                     let (m, o) = (&self.communities[me], &self.communities[other]);
@@ -4384,13 +4388,13 @@ impl World {
                         } else {
                             1.0
                         };
-                    for &(g, id) in &self.varieties[o.variety].laws {
-                        let age = generation.saturating_sub(g);
-                        if age >= WAVE_SPAN || recent.contains(id) {
+                    for (g, id) in &self.varieties[o.variety].laws {
+                        let age = generation.saturating_sub(*g);
+                        if age >= WAVE_SPAN || recent.contains(id.as_ref()) {
                             continue;
                         }
                         let h = pull * (1.0 - age as f32 / WAVE_SPAN as f32);
-                        let offer = offers.entry(id).or_insert((0.0, o.variety, 0.0));
+                        let offer = offers.entry(id.as_ref()).or_insert((0.0, o.variety, 0.0));
                         offer.0 += h;
                         if h > offer.2 {
                             (offer.1, offer.2) = (o.variety, h);
@@ -4411,14 +4415,24 @@ impl World {
             let offered: Vec<(&Law, usize, f32)> = offers
                 .into_iter()
                 .filter_map(|(id, (h, from, _))| {
-                    let law = self.laws.iter().find(|l| l.id == id)?;
+                    let law = self
+                        .laws
+                        .iter()
+                        .chain(&self.authored)
+                        .find(|l| l.id == id)?;
                     if !crate::tone::applies(law, variety) {
                         return None;
                     }
-                    let a = assessor.assess(law)?;
-                    let taste =
+                    let taste = if law.id.starts_with("authored:") {
+                        if !self.law_changes_living(v, law) {
+                            return None;
+                        }
+                        1.0
+                    } else {
+                        let a = assessor.assess(law)?;
                         crate::math::exp(self.params.preference_pull * a.pull.clamp(-5.0, 3.0))
-                            .min(3.0);
+                            .min(3.0)
+                    };
                     Some((law, from, h * taste))
                 })
                 .collect();
@@ -4442,13 +4456,15 @@ impl World {
 
     /// Laws that took hold in variety `v` within the last
     /// `LAW_RECURRENCE` generations, which may not take hold again yet.
-    fn recent_laws(&self, v: usize) -> HashSet<&'static str> {
+    fn recent_laws(&self, v: usize) -> HashSet<&str> {
         let generation = self.generation;
         self.varieties[v]
             .laws
             .iter()
-            .filter(|&&(g, _)| generation.saturating_sub(g) < LAW_RECURRENCE)
-            .map(|&(_, id)| id)
+            .filter(|(g, id)| {
+                !id.starts_with("authored:") && generation.saturating_sub(*g) < LAW_RECURRENCE
+            })
+            .map(|(_, id)| id.as_ref())
             .collect()
     }
 
@@ -6000,7 +6016,7 @@ mod tests {
             world.generation = generation;
             world.sound_change(v, &[]);
             assert_eq!(world.varieties[v].lexicon.get(word).form, before);
-            assert_eq!(world.varieties[v].laws, vec![(0, "w-fortition")]);
+            assert_eq!(world.varieties[v].laws, vec![(0, "w-fortition".into())]);
         }
         // A fresh wave obeys the same quiet span as a local change.
         let mut wave = world.clone();
@@ -6014,17 +6030,20 @@ mod tests {
         wave.apply_law(from, &law);
         wave.spread_waves(&wave.spoken());
         assert_eq!(wave.varieties[v].lexicon.get(word).form, before);
-        assert_eq!(wave.varieties[v].laws, vec![(0, "w-fortition")]);
+        assert_eq!(wave.varieties[v].laws, vec![(0, "w-fortition".into())]);
         wave.generation = LAW_RECURRENCE;
         wave.spread_waves(&wave.spoken());
         assert_eq!(wave.varieties[v].lexicon.get(word).form, after);
         assert_eq!(
             wave.varieties[v].laws,
-            vec![(0, "w-fortition"), (LAW_RECURRENCE, "w-fortition")]
+            vec![
+                (0, "w-fortition".into()),
+                (LAW_RECURRENCE, "w-fortition".into())
+            ]
         );
         assert_eq!(
             wave.varieties[v].waves,
-            vec![(LAW_RECURRENCE, "w-fortition", from)]
+            vec![(LAW_RECURRENCE, "w-fortition".into(), from)]
         );
 
         world.generation = LAW_RECURRENCE;
@@ -6032,7 +6051,10 @@ mod tests {
         assert_eq!(world.varieties[v].lexicon.get(word).form, after);
         assert_eq!(
             world.varieties[v].laws,
-            vec![(0, "w-fortition"), (LAW_RECURRENCE, "w-fortition")]
+            vec![
+                (0, "w-fortition".into()),
+                (LAW_RECURRENCE, "w-fortition".into())
+            ]
         );
     }
 
@@ -7052,11 +7074,11 @@ mod tests {
             let name = heard(&world);
             let theirs = &world.varieties[v].laws;
             for entry in &name.log {
-                let Event::SoundLaw { law, .. } = entry.event else {
+                let Event::SoundLaw { ref law, .. } = entry.event else {
                     panic!("seed {seed}: only sound laws change it");
                 };
                 assert!(
-                    theirs.iter().any(|&(_, l)| l == law),
+                    theirs.iter().any(|(_, l)| l == law),
                     "seed {seed}: {law} is not the neighbours' law"
                 );
             }
@@ -7232,8 +7254,11 @@ mod tests {
             let source = world.communities[home].variety;
             for (who, count) in [(dialect, &mut kin), (stranger, &mut strangers)] {
                 let v = world.variety_of(who);
-                for &(g, id, from) in &v.waves {
-                    assert!(v.laws.contains(&(g, id)), "a wave is a law undergone");
+                for &(g, ref id, from) in &v.waves {
+                    assert!(
+                        v.laws.contains(&(g, id.clone())),
+                        "a wave is a law undergone"
+                    );
                     *count += usize::from(from == source);
                 }
             }
@@ -7313,14 +7338,14 @@ mod tests {
             assert_eq!(remembered.meaning, local.meaning);
             for entry in &remembered.log {
                 if entry.generation > local.log.last().map_or(0, |e| e.generation) {
-                    let Event::SoundLaw { law, .. } = entry.event else {
+                    let Event::SoundLaw { ref law, .. } = entry.event else {
                         panic!("only sound laws");
                     };
                     assert!(
                         world.varieties[v]
                             .laws
                             .iter()
-                            .any(|&(g, l)| g == entry.generation && l == law)
+                            .any(|(g, l)| *g == entry.generation && l == law)
                     );
                 }
             }
@@ -7709,25 +7734,25 @@ mod tests {
         assert_eq!(speech.lexicon.get(word).form, form);
         assert_eq!(speech.name.form, form);
         assert_eq!(world.communities[0].name.form, form);
-        assert_eq!(speech.laws.last(), Some(&(8, "initial-stress")));
+        assert_eq!(speech.laws.last(), Some(&(8, "initial-stress".into())));
         assert!(matches!(
             speech.lexicon.get(word).log.last().unwrap().event,
             Event::SoundLaw {
-                law: "initial-stress",
+                law: std::borrow::Cow::Borrowed("initial-stress"),
                 ..
             }
         ));
         assert!(matches!(
             speech.name.log.last().unwrap().event,
             Event::SoundLaw {
-                law: "initial-stress",
+                law: std::borrow::Cow::Borrowed("initial-stress"),
                 ..
             }
         ));
         assert!(matches!(
             world.communities[0].name.log.last().unwrap().event,
             Event::SoundLaw {
-                law: "initial-stress",
+                law: std::borrow::Cow::Borrowed("initial-stress"),
                 ..
             }
         ));
@@ -7737,7 +7762,7 @@ mod tests {
         let received = &world.varieties[receiver];
         assert_eq!(received.stress(), StressRule::Initial);
         assert_eq!(received.lexicon.get(word).form, form);
-        assert!(received.waves.contains(&(8, "initial-stress", v)));
+        assert!(received.waves.contains(&(8, "initial-stress".into(), v)));
     }
 
     #[test]
@@ -7771,9 +7796,12 @@ mod tests {
                         ..Params::static_society()
                     },
                 );
-                world
-                    .laws
-                    .retain(|law| matches!(law.id, "unstressed-reduction" | "unstressed-apocope"));
+                world.laws.retain(|law| {
+                    matches!(
+                        law.id.as_ref(),
+                        "unstressed-reduction" | "unstressed-apocope"
+                    )
+                });
                 world.varieties[0].minimal = MinimalWord::Syllable;
                 world.run(80);
                 losses[i] +=

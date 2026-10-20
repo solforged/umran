@@ -82,7 +82,7 @@ fn main() {
                 "  gen {generation:>3}  {} {} tone ({})",
                 world.language_title(*variety),
                 if *gained { "gained" } else { "lost" },
-                law.unwrap_or("lexical turnover")
+                law.as_deref().unwrap_or("lexical turnover")
             ),
             WorldEvent::Settlement(record) => println!(
                 "  gen {generation:>3}  {}: {:?} in {} ({} people)",
