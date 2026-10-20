@@ -52,6 +52,7 @@ const DECISION_NAME: Record<DecisionView["kind"], string> = {
   settle: "the settlement", found: "the founding", "found-related": "the founding",
   connect: "the contact", shift: "the language shift", state: "the state decision",
   religion: "the faith decision", craft: "the craft decision", temper: "the change of temper", law: "the sound law",
+  authored: "the sound law", meaning: "the meaning", word: "the word",
 };
 
 type View =

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, ChevronDown, Feather, LocateFixed, Plus, RefreshCw } from "lucide-react";
-import { attempt, checkRoots, createEngine, message, presetDesign, preview } from "../engine";
-import type { Action, Catalog, Craft, Engine, EthosAxis, Forming, FoundingPreview, FoundingTraits, GrammarChoice, GrammarDesign, LakeNamesView, LanguageDesign, Livelihood, MapSize, Naming, Overview, PossessorOrder, RiverNamesView, RootCheck, Variety, WordOrder, WorldMap } from "../model";
+import { attempt, checkRoots, concepts, createEngine, message, presetDesign, preview } from "../engine";
+import type { Action, Catalog, Craft, Engine, EthosAxis, Forming, FoundingPreview, FoundingTraits, GrammarChoice, GrammarDesign, LakeNamesView, LanguageDesign, Livelihood, MapSize, Meaning, MeaningField, MeaningSet, MeaningTier, Naming, Overview, PossessorOrder, RiverNamesView, RootCheck, Variety, WordOrder, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { countWord, ETHOS_AXES, ETHOS_DRIVES, ETHOS_POLES, hue, landCardLabel, LIVELIHOOD_DRIVES, LIVELIHOOD_NAME, MARKING_PHRASE, MILD, OPENNESS, OPENNESS_DRIVES, peopleLabel, POSSESSOR_PHRASE, STANDING, STANDING_DRIVES, STRONG, TERRAIN_NAME, WORD_ORDER_PHRASE } from "../lore";
+import { countWord, ETHOS_AXES, ETHOS_DRIVES, ETHOS_POLES, hue, landCardLabel, LIVELIHOOD_DRIVES, LIVELIHOOD_NAME, MARKING_PHRASE, MEANING_CLASS, MEANING_TIER, MILD, OPENNESS, OPENNESS_DRIVES, peopleLabel, POSSESSOR_PHRASE, STANDING, STANDING_DRIVES, STRONG, TERRAIN_NAME, WORD_ORDER_PHRASE } from "../lore";
 import { newBookId, readDraft, saveDraft, worldName, type DraftEntry } from "../shelf";
 import { Designer, randomSeed, type Founding as FoundingDesign } from "./Designer";
 import { FormingChart } from "./FormingChart";
@@ -61,6 +61,8 @@ interface DraftDesign {
   seed: number;
   size: MapSize;
   founders: Founder[];
+  /// Meanings the author adds to the world before any people is founded.
+  meanings: Meaning[];
   step: number;
   selected: number | null;
   land: number | null;
@@ -81,7 +83,7 @@ interface OpenedDraft {
 function freshDesign(): DraftDesign {
   let author = "";
   try { author = localStorage.getItem("umran.author") ?? ""; } catch { /* A title page may still be written. */ }
-  return { version: 1, seed: randomSeed(), size: "medium", founders: [], step: 0, selected: null, land: null,
+  return { version: 1, seed: randomSeed(), size: "medium", founders: [], meanings: [], step: 0, selected: null, land: null,
     title: null, author, years: DEFAULT_YEARS, settling: "one", groupCount: 3, nextKey: 0 };
 }
 
@@ -100,6 +102,13 @@ function isDraftDesign(value: unknown): value is DraftDesign {
     || !["one", "kin", "neighbours"].includes(String(value.settling))
     || !index(value.groupCount) || value.groupCount < 2 || value.groupCount > 6
     || !Array.isArray(value.founders) || value.founders.length > MOST_PEOPLES) return false;
+  // Older drafts have no meanings; they open with none.
+  if (value.meanings === undefined) value.meanings = [];
+  if (!Array.isArray(value.meanings) || !value.meanings.every((meaning: unknown) => record(meaning)
+    && typeof meaning.id === "string" && typeof meaning.gloss === "string" && typeof meaning.field === "string"
+    && ["entity", "event", "property"].includes(String(meaning.class)) && typeof meaning.countable === "boolean"
+    && ["basic", "everyday", "specialized"].includes(String(meaning.tier))
+    && (meaning.from === null || (record(meaning.from) && typeof meaning.from.base === "string" && typeof meaning.from.relation === "string")))) return false;
   const keys = new Set<number>();
   for (const founder of value.founders) {
     if (!record(founder) || !index(founder.key) || keys.has(founder.key) || founder.key >= value.nextKey
@@ -149,6 +158,9 @@ interface Built {
   riverNames: RiverNamesView[];
   lakeNames: LakeNamesView[];
   founders: Founder[];
+  meanings: Meaning[];
+  /// The catalog's fields, for naming a meaning's.
+  fields: MeaningSet[];
   seed: number;
   size: MapSize;
 }
@@ -193,11 +205,11 @@ const ROOT_WARNING: Record<RootCheck["warnings"][number], string> = {
 /// The author's own words, one `meaning form` to a line, checked against
 /// the speech's sounds as they are typed. Accepted roots go into the design;
 /// the rest of the vocabulary is drawn around them.
-function RootsBox({ founder, update }: { founder: Founder; update: (key: number, patch: Partial<Founder>) => void }) {
+function RootsBox({ founder, meanings, update }: { founder: Founder; meanings: Meaning[]; update: (key: number, patch: Partial<Founder>) => void }) {
   const [text, setText] = useState(() => (founder.design.roots ?? []).map((root) => `${root.concept} ${root.ipa}`).join("\n"));
   const [open, setOpen] = useState(() => (founder.design.roots?.length ?? 0) > 0);
   const bare = JSON.stringify({ ...founder.design, roots: [] });
-  const report = useMemo(() => text.trim() ? checkRoots(JSON.parse(bare) as LanguageDesign, text) : null, [bare, text]);
+  const report = useMemo(() => text.trim() ? checkRoots(JSON.parse(bare) as LanguageDesign, text, meanings) : null, [bare, text, meanings]);
   const accepted = report?.design.roots ?? [];
   useEffect(() => {
     if (JSON.stringify(accepted) !== JSON.stringify(founder.design.roots ?? [])) {
@@ -233,6 +245,56 @@ function RootsBox({ founder, update }: { founder: Founder; update: (key: number,
   </section>;
 }
 
+const MEANING_SHAPES = ["count", "mass", "event", "property"] as const;
+type MeaningShape = typeof MEANING_SHAPES[number];
+
+/// Meanings the catalog lacks, added to the world before its peoples are
+/// founded, so every founding draws a word for them and the author's roots
+/// may name them. The engine checks each on the next build.
+function MeaningsBox({ meanings, fields, onChange }: { meanings: Meaning[]; fields: MeaningSet[]; onChange: (meanings: Meaning[]) => void }) {
+  const [open, setOpen] = useState(meanings.length > 0);
+  const [gloss, setGloss] = useState("");
+  const [shape, setShape] = useState<MeaningShape>("count");
+  const [field, setField] = useState<MeaningField>("house");
+  const [tier, setTier] = useState<MeaningTier>("everyday");
+  const id = gloss.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/^to /, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 32);
+  const taken = id ? concepts().some((concept) => concept.id === id) || meanings.some((meaning) => meaning.id === id) : false;
+  const add = () => {
+    if (!id || taken) return;
+    onChange([...meanings, {
+      id, gloss: gloss.trim(), field, class: shape === "event" ? "event" : shape === "property" ? "property" : "entity",
+      countable: shape === "count", tier, from: null,
+    }]);
+    setGloss("");
+  };
+  return <section className="founding-roots founding-meanings">
+    <h4>Meanings of your own</h4>
+    {open ? <>
+      <p>Add what the catalog lacks: <i>hearth</i>, <i>to forge</i>, <i>sacred</i>. Every people founded here draws a word for it, and roots above may name it by its short name.</p>
+      {meanings.length ? <ul className="founding-roots-check">{meanings.map((meaning) => <li key={meaning.id} className="ok">
+        <span className="founding-roots-meaning">{meaning.gloss}</span>
+        <span className="muted small"><code>{meaning.id}</code> · {MEANING_CLASS[meaning.class === "event" ? "event" : meaning.class === "property" ? "property" : meaning.countable ? "count" : "mass"].replace(/ \(.*\)$/, "").toLowerCase()} · {fields.find((set) => set.id === meaning.field)?.label ?? meaning.field}</span>
+        <button type="button" className="link" onClick={() => onChange(meanings.filter((other) => other.id !== meaning.id))}>Remove</button>
+      </li>)}</ul> : null}
+      <div className="founding-meaning-form">
+        <input type="text" aria-label="Meaning" value={gloss} maxLength={40} placeholder="hearth" onChange={(event) => setGloss(event.target.value)}
+          onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); add(); } }} />
+        <select aria-label="Kind" value={shape} onChange={(event) => setShape(event.target.value as MeaningShape)}>
+          {MEANING_SHAPES.map((kind) => <option key={kind} value={kind}>{MEANING_CLASS[kind]}</option>)}
+        </select>
+        <select aria-label="Field" value={field} onChange={(event) => setField(event.target.value as MeaningField)}>
+          {fields.map((set) => <option key={set.id} value={set.id}>{set.label}</option>)}
+        </select>
+        <select aria-label="How bound to a way of life" value={tier} onChange={(event) => setTier(event.target.value as MeaningTier)}>
+          {(["basic", "everyday", "specialized"] as const).map((t) => <option key={t} value={t}>{MEANING_TIER[t].name}</option>)}
+        </select>
+        <button type="button" disabled={!id || taken} onClick={add}><Plus size={14} aria-hidden="true" /> Add</button>
+      </div>
+      {taken ? <p className="notice">“{id}” is a meaning already; the catalog or your list has it.</p> : <p className="muted small">{MEANING_TIER[tier].drives}</p>}
+    </> : <p className="founding-roots-closed">The catalog’s {concepts().length} meanings are theirs. <button type="button" className="link" onClick={() => setOpen(true)}>Add meanings of your own…</button></p>}
+  </section>;
+}
+
 /// Draft on the real engine, one step at a time: the coasts, a homeland,
 /// the peoples, their speech, and the title page. Writing the chronicle
 /// hands that same world to the workshop with the years to run.
@@ -249,6 +311,7 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
   const [worldSeed, setWorldSeed] = useState(opening.design.seed);
   const [size, setSize] = useState<MapSize>(opening.design.size);
   const [founders, setFounders] = useState<Founder[]>(opening.design.founders);
+  const [meanings, setMeanings] = useState<Meaning[]>(opening.design.meanings);
   const [selected, setSelected] = useState<number | null>(opening.design.selected);
   const [inspected, setInspected] = useState<number | null>(opening.design.land);
   const mapContainer = useRef<HTMLElement>(null);
@@ -292,10 +355,10 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
   const draftChanged = useRef(onDraft);
   draftChanged.current = onDraft;
   const design = useMemo<DraftDesign>(() => ({
-    version: 1, seed: worldSeed, size, founders, step: STEPS.findIndex((entry) => entry.id === step),
+    version: 1, seed: worldSeed, size, founders, meanings, step: STEPS.findIndex((entry) => entry.id === step),
     selected, land: inspected, title, author, years: Number.isFinite(years) ? years : null,
     settling, groupCount, nextKey: nextKey.current,
-  }), [worldSeed, size, founders, step, selected, inspected, title, author, years, settling, groupCount]);
+  }), [worldSeed, size, founders, meanings, step, selected, inspected, title, author, years, settling, groupCount]);
   const rawDesign = useMemo(() => JSON.stringify(design), [design]);
   const manuscript = useRef({ design, raw: rawDesign, built });
   manuscript.current = { design, raw: rawDesign, built };
@@ -423,15 +486,15 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
 
   useEffect(() => {
     const current = manuscript.current.design;
-    if (current.seed !== worldSeed || current.size !== size || current.founders !== founders) return;
+    if (current.seed !== worldSeed || current.size !== size || current.founders !== founders || current.meanings !== meanings) return;
     // Resolving new homelands publishes their draft in the same render. It
     // must not immediately rebuild the identical world a second time.
     const previous = published.current;
-    if (previous?.founders === founders && previous.seed === worldSeed && previous.size === size) return;
+    if (previous?.founders === founders && previous.meanings === meanings && previous.seed === worldSeed && previous.size === size) return;
     let live = true;
     const isCurrent = () => {
       const design = manuscript.current.design;
-      return live && design.seed === worldSeed && design.size === size && design.founders === founders;
+      return live && design.seed === worldSeed && design.size === size && design.founders === founders && design.meanings === meanings;
     };
     const failed = (failure: unknown) => {
       if (!isCurrent()) return;
@@ -454,6 +517,8 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
       const next = await origin.foundingDraft();
       if (!isCurrent()) { next.dispose(); return; }
       try {
+        // Meanings come first so every founding can draw a root for them.
+        for (const meaning of meanings) await next.act({ kind: "meaning", meaning });
         const indices = new Map<number, number>();
         for (const [index, founder] of founders.entries()) {
           const options = {
@@ -491,10 +556,11 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
         }
         const year = next.tip();
         const sameWorld = previous && previous.seed === worldSeed && previous.size === size ? previous : null;
-        const [overview, traits, reach, riverNames, lakeNames, drawn, forming] = await Promise.all([
+        const [overview, traits, reach, riverNames, lakeNames, drawn, forming, fields] = await Promise.all([
           year.overview(0), Promise.all(founders.map((_, index) => next.foundingTraits(index))), next.foundingPreview(),
           year.rivers(0), year.lakes(0),
           sameWorld ? sameWorld.map : next.map(), sameWorld ? sameWorld.forming : origin.forming(),
+          year.meaningSets(),
         ]);
         if (!isCurrent()) { next.dispose(); return; }
         if (restoring.current && inspected !== null && (!drawn.regions[inspected] || drawn.regions[inspected].terrain === "sea")) {
@@ -522,7 +588,7 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
           });
         });
         const founded: Built = {
-          map: drawn, forming, overview, traits, refused, preview: reach, riverNames, lakeNames, founders: settled, seed: worldSeed, size,
+          map: drawn, forming, overview, traits, refused, preview: reach, riverNames, lakeNames, founders: settled, meanings, fields, seed: worldSeed, size,
         };
         engine.current?.dispose();
         engine.current = next;
@@ -538,7 +604,7 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
     };
     void build().catch(failed);
     return () => { live = false; };
-  }, [worldSeed, size, founders, installDesign]);
+  }, [worldSeed, size, founders, meanings, installDesign]);
 
   useEffect(() => () => {
     base.current?.engine.dispose();
@@ -963,7 +1029,8 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
               <Sample rendering={speech.grammar.sample.possession} label="Sample possession" />
               <Sample rendering={speech.grammar.sample.future} label="Sample future" /></> : null}
           </section>
-          <RootsBox key={speechOwner.key} founder={speechOwner} update={update} />
+          <RootsBox key={speechOwner.key} founder={speechOwner} meanings={meanings} update={update} />
+          {built ? <MeaningsBox meanings={meanings} fields={built.fields.filter((set) => !["core", "specimen", "custom"].includes(set.id))} onChange={setMeanings} /> : null}
         </> : null}
       </div>
     </>;

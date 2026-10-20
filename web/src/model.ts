@@ -69,6 +69,9 @@ export interface ConceptView {
   /// In the desk's core set (a stability tier is recorded).
   core: boolean;
   specimen: boolean;
+  /// Added by the author to this world rather than in the catalog.
+  custom: boolean;
+  tier: MeaningTier | null;
 }
 
 export interface SoundInfo {
@@ -142,6 +145,12 @@ export type Action =
   | { kind: "religion"; community: number }
   | { kind: "craft"; community: number; craft: Craft }
   | { kind: "law"; variety: number; law: string }
+  /// A sound law the author wrote; the engine applies the stored rules.
+  | { kind: "authored"; variety: number; law: AuthoredLaw }
+  /// A meaning the author adds to this world's catalog.
+  | { kind: "meaning"; meaning: Meaning }
+  /// The author's own word for a meaning in one language, at this year.
+  | { kind: "word"; variety: number; concept: string; ipa: string }
   | { kind: "run"; generations: number }
   /// Fate's hand on a people's temper: nudges one axis, by -1 to 1.
   | { kind: "temper"; community: number; axis: EthosAxis; amount: number };
@@ -150,9 +159,94 @@ export type Action =
 export interface LawChoice {
   id: string;
   label: string;
+  /// Living words it would change.
   words: number;
+  /// Names it would change.
+  names: number;
   specimen: SpecimenWord[];
   recent: boolean;
+}
+
+/// A sound law the author wrote in the classical notation. `rules` are the
+/// engine's parsed form and are what replay applies; `source` is kept to show.
+export interface AuthoredLaw {
+  title: string;
+  source: string;
+  rules: unknown[];
+  stress: StressRule | null;
+}
+
+export type RuleStatus = "ok" | "empty" | "bad-segment" | "unknown-term" | "bad-shape" | "unsupported" | "duplicate-stress";
+
+/// One line of the author's notation, read by the engine.
+export interface RuleCheck {
+  line: number;
+  source: string;
+  status: RuleStatus;
+  message: string;
+  /// Plain words for an accepted rule.
+  reading: string | null;
+}
+
+export interface LawReport {
+  rules: RuleCheck[];
+  /// Present only when every line was accepted.
+  law: AuthoredLaw | null;
+}
+
+/// Every living word and name a law would change at the reading, through
+/// the engine's own application path, without changing the reading.
+export interface LawPreview {
+  title: string;
+  rules: { source: string; changed: number; unrealisable: number }[];
+  words: { concept: string; gloss: string; before: string; after: string; spelledBefore: string; spelledAfter: string }[];
+  names: { kind: "language" | "people" | "state" | "land" | "river" | "lake" | "exonym" | "person"; subject: number | null; before: string; after: string }[];
+  unchangedWords: number;
+  unchangedNames: number;
+  stress: { before: StressRule; after: StressRule } | null;
+}
+
+export type LawRequest = { catalog: string } | { authored: AuthoredLaw };
+
+export type MeaningField = "physical-world" | "kinship" | "animals" | "body" | "food-drink" | "clothing-grooming" | "house" | "agriculture" | "basic-actions" | "motion" | "possession" | "spatial" | "quantity" | "time" | "sense-perception" | "emotions" | "cognition" | "speech" | "social" | "warfare" | "law" | "religion" | "function";
+export type MeaningClass = "entity" | "event" | "property";
+export type MeaningTier = "basic" | "everyday" | "specialized";
+export type MeaningRelation = "collective" | "agent" | "place" | "instrument" | "result" | "action" | "abstract";
+
+/// A meaning the author adds to a world. The id is a slug unique against
+/// the catalog and earlier additions; the tier sets how readily it is borrowed.
+export interface Meaning {
+  id: string;
+  gloss: string;
+  field: MeaningField;
+  class: MeaningClass;
+  countable: boolean;
+  tier: MeaningTier;
+  /// Build the word from another meaning's word where the language's derivation allows.
+  from: { base: string; relation: MeaningRelation } | null;
+}
+
+export interface MeaningCheck {
+  status: "ok" | "bad-id" | "taken" | "bad-gloss" | "bad-class" | "unknown-base" | "bad-relation";
+  message: string;
+  suggestions: string[];
+}
+
+/// The author's own word for a meaning, checked against one language at a reading.
+export interface WordCheck {
+  status: "ok" | "unknown-meaning" | "bad-ipa" | "no-vowel" | "outside-inventory" | "pronoun" | "dead";
+  detail: string | null;
+  suggestions: string[];
+  spelled: string | null;
+  current: { form: string; spelled: string } | null;
+}
+
+export type PhraseNote = "possessive-clitic" | "possessive-affix" | "pronoun-dropped" | "noun-genitive" | "object-marked" | "agreement";
+
+/// One fixed utterance frame rendered by the language's grammar.
+export interface Phrase extends GrammarRendering {
+  id: string;
+  notes: PhraseNote[];
 }
 
 /// A people's temper: six leanings, each from -1 to 1, toward the second
@@ -445,18 +539,24 @@ export interface Variety {
     source: string | null;
     /// The dominant object form at this reading, or null without an audible object contrast.
     object: { spelled: string; ipa: string; kind: "bound" | "particle" | "pattern"; since: number } | null;
+    /// The dominant possessive form at this reading, or null without one.
+    possessive: { form: string; spelled: string; marking: PronounCase } | null;
   }[];
   harmony: { feature: "backness" | "rounding" | "atr"; since: number; lost: number | null } | null;
   grammar: {
     order: WordOrder;
     possessor: PossessorOrder;
     marking: "case" | "order";
-    sample?: { sentence: GrammarRendering; possession: GrammarRendering; future: GrammarRendering; pronoun: { first: GrammarRendering; second: GrammarRendering } | null };
+    sample?: { sentence: GrammarRendering; possession: GrammarRendering; future: GrammarRendering; pronoun: { first: GrammarRendering; second: GrammarRendering } | null; possessive: GrammarRendering | null };
     /// Where the pronouns stand against the nouns on object marking.
     pronounCase: PronounCase;
     /// Where the verb stands on marking its subject's person, and its object's.
     agreement: AgreementView;
     objectAgreement: AgreementView;
+    /// Where the pronouns stand against the nouns on marking a possessor.
+    possessive: PronounCase;
+    /// Where the possessed noun stands on carrying its possessor's person.
+    possessorAgreement: AgreementView;
     markers: GrammarMarker[];
     classes: NounClass[];
     categories: {
@@ -701,7 +801,7 @@ export interface Annal {
   /// The index of the decision that produced this entry, if one did.
   decision?: number;
   generation: number;
-  kind: "found" | "split" | "settlement" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "climate" | "river-flow" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper" | "grammar" | "pronoun-renewed" | "pronoun-polite" | "pronoun-generalised" | "pronoun-borrowed" | "class-emerged" | "class-merged" | "class-lost" | "harmony-gained" | "harmony-lost" | "tone-gained" | "tone-lost" | "coinage" | "calque" | "purist-reform" | "purist-replacement" | "tenet-adopted" | "tenet-disputed" | "taboo-replacement" | "drought" | "hard-winter" | "flood" | "fleet-built" | "fleet-lost" | "sea-route-opened";
+  kind: "found" | "split" | "settlement" | "migration" | "shift" | "contact" | "parted" | "neighbours" | "conquest" | "law" | "spread" | "displaced" | "hardship" | "climate" | "river-flow" | "livelihood" | "ended" | "rose" | "fell" | "standard" | "classical" | "vernacular" | "craft" | "faith" | "conversion" | "meaning" | "respelling" | "schism" | "pilgrimage" | "holy-land" | "city" | "koine" | "temper" | "grammar" | "pronoun-renewed" | "pronoun-polite" | "pronoun-generalised" | "pronoun-borrowed" | "class-emerged" | "class-merged" | "class-lost" | "harmony-gained" | "harmony-lost" | "tone-gained" | "tone-lost" | "coinage" | "calque" | "purist-reform" | "purist-replacement" | "tenet-adopted" | "tenet-disputed" | "taboo-replacement" | "drought" | "hard-winter" | "flood" | "fleet-built" | "fleet-lost" | "sea-route-opened" | "meaning-defined" | "word-authored";
   /// The annalist's words; words of the language are marked *thus*.
   text: string;
   /// Recorded names in appearance order; start is a UTF-16 offset in text.
@@ -751,7 +851,7 @@ export type LoanCause =
 export interface Story { annals: string[] }
 
 export interface Origin {
-  kind: "inherited" | "coined" | "borrowed" | "kept" | "derived";
+  kind: "inherited" | "coined" | "borrowed" | "kept" | "derived" | "authored";
   from: string | null;
   generation: number;
   fromVariety: number | null;
@@ -789,6 +889,8 @@ export type ChangeCause =
 export interface LawOccurrence {
   ref: LawOccurrenceRef;
   label: string;
+  /// The law's rules as the author wrote them, or as the catalog spells them.
+  rules: string[];
   arrival: { kind: "own" } | { kind: "wave"; from: number } | { kind: "inherited"; ancestor: number }
     | { kind: "authored"; decision: number } | { kind: "substrate" } | { kind: "unrecorded" };
   annal: string | null;
@@ -831,6 +933,8 @@ export interface GrammarStory {
     shares: { generation: number; share: number }[];
     forms: { generation: number; form: FormView; cause: ChangeCause | { kind: "analogy" } }[];
   }[];
+  /// The possessor's person on the noun, for the genitive story.
+  agreement?: AgreementView | null;
 }
 
 export interface BuilderExample {
@@ -1147,6 +1251,16 @@ export interface ReadEngine {
   overviewAt(point: HistoryPoint): Read<Overview>;
   settlement(point: HistoryPoint, community: number, intent: SettlementIntent, share: number, destination: number | null): Read<SettlementPreview>;
   lawChoices(point: HistoryPoint, variety: number): Read<LawChoice[]>;
+  /// Every word and name a law would change at the point, catalog or authored.
+  lawPreview(point: HistoryPoint, variety: number, law: LawRequest): Read<LawPreview>;
+  /// Whether a meaning may be added at the point, with the engine's reason.
+  checkMeaning(point: HistoryPoint, meaning: Meaning): Read<MeaningCheck>;
+  /// Whether a form may be given to a language for a meaning at the point.
+  checkWord(point: HistoryPoint, variety: number, concept: string, ipa: string): Read<WordCheck>;
+  /// Catalog meanings plus those the author added by this year.
+  meanings(generation: number): Read<ConceptView[]>;
+  /// Fixed utterances rendered by the language's grammar.
+  phrasebook(generation: number, variety: number): Read<Phrase[]>;
   contactReach(point: HistoryPoint, a: number, b: number, contact: ContactKind): Read<ContactReach>;
   latest(): Read<number>;
   overview(generation: number): Read<Overview>;
@@ -1321,7 +1435,7 @@ export interface DecisionView {
   /// The action's index in its telling.
   index: number;
   generation: number;
-  kind: "settle" | "found" | "found-related" | "connect" | "shift" | "state" | "religion" | "craft" | "temper" | "law";
+  kind: "settle" | "found" | "found-related" | "connect" | "shift" | "state" | "religion" | "craft" | "temper" | "law" | "authored" | "meaning" | "word";
   /// One sentence in the chronicle's voice.
   text: string;
   people: number[];
@@ -1342,7 +1456,7 @@ export type PronounCase = "none" | "like-nouns" | "ahead" | "relic";
 /// The verb's person marking: none, a clitic pronoun leaning on it, or an affix.
 export type AgreementStage = "none" | "clitic" | "affix";
 export type AgreementKind = "clitics" | "affixes" | "pro-drop" | "loss";
-export type AgreementRole = "subject" | "object";
+export type AgreementRole = "subject" | "object" | "possessor";
 export interface AgreementView {
   role: AgreementRole;
   stage: AgreementStage;

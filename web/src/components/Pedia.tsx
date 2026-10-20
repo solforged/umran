@@ -971,6 +971,7 @@ const DECISION_GROUP: Record<DecisionView["kind"], HistoryView["group"]> = {
   settle: "Peoples & journeys", found: "Peoples & journeys", "found-related": "Peoples & journeys",
   connect: "Peoples & journeys", shift: "Languages & words", state: "Rule & cities",
   religion: "Faith & ideas", craft: "Faith & ideas", temper: "Land & livelihood", law: "Languages & words",
+  authored: "Languages & words", meaning: "Languages & words", word: "Languages & words",
 };
 
 function filterDecisions(decisions: DecisionView[], overview: Overview, view: HistoryView): DecisionView[] {
@@ -985,7 +986,7 @@ function filterDecisions(decisions: DecisionView[], overview: Overview, view: Hi
   const terms = searchText(view.query.trim()).split(/\s+/).filter(Boolean);
   return decisions.filter((decision) => {
     if (view.group !== "All events" && DECISION_GROUP[decision.kind] !== view.group) return false;
-    if (decision.kind === "law" && view.sounds !== "all" &&
+    if ((decision.kind === "law" || decision.kind === "authored") && view.sounds !== "all" &&
       (view.sounds === "none" || decision.variety === null || decision.generation > (lineage.get(decision.variety) ?? -1))) return false;
     const text = searchText(decision.text);
     return terms.every((term) => text.includes(term));
@@ -1246,6 +1247,7 @@ function WorldCard({ context }: { context: Context }) {
       <ol aria-live="polite">{told.map((annal) => <li key={annal.id}><span className="frontispiece-when">{annal.generation * YEARS}</span><span><Told text={annal.text} names={annal.names} go={context.go} /></span></li>)}</ol>
       <button type="button" onClick={context.onStopRun}><Square size={13} aria-hidden="true" /> Stop here</button>
     </section>}
+    {writing === null && overview.communities.some((c) => c.ended === null) ? <Decisions community={-1} context={context} choices={[["meaning", "A meaning of your own"]]} label="Decide for this world" /> : null}
     <FrontispiecePeoples peoples={peoples} context={context} />
     <Leaf id="crafts" title="Crafts" summary={<p>{crafts.length ? <Joined items={crafts} link={(craft) => <CraftLink craft={craft.id} context={context} />} /> : <span className="muted">No people has a craft yet.</span>}</p>}>
       <table className="peoples"><thead><tr><th>Craft</th><th>First held</th><th>Holders</th></tr></thead><tbody>
@@ -1926,7 +1928,7 @@ function LanguageCard({ variety, context }: { variety: number; context: Context 
   const folio = useContext(FolioContext)!;
   return <div className="language-card">
     <CardHead icon={Languages} kind="A language" title={v.name} tone={folio.open === "desk" ? undefined : hue(v.family)} sub={v.meaning ? `“${v.meaning}”` : null} />
-    <Decisions community={speakers[0]?.id ?? -1} context={context} choices={[["law", "A sound change"]]} disabled={!speakers.length} label="Decide for this language" />
+    <Decisions community={speakers[0]?.id ?? -1} context={context} choices={[["law", "A sound change"], ["word", "A word of your own"]]} disabled={!speakers.length} label="Decide for this language" />
     <button type="button" className="link language-desk-action" disabled={!context.overview.varieties.some((other) => other.spoken && other.id !== variety)} onClick={() => folio.show("desk")}>Compare with another language…</button>
     <div className="language-opening">
       {openingSpeakers.map((c) => {

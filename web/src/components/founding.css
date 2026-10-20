@@ -976,6 +976,26 @@
   min-width: 6rem;
 }
 
+.founding-meaning-form {
+  display: grid;
+  grid-template-columns: minmax(7rem, 1.2fr) repeat(3, minmax(6rem, 1fr)) auto;
+  gap: 0.4rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.founding-meaning-form button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+@media (max-width: 599px) {
+  .founding-meaning-form {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 .founding-roots-closed {
   font-size: var(--dense-size);
 }

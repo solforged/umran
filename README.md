@@ -161,6 +161,19 @@ keeping the first telling even when both decisions happened in the same year.
 
 ![A choice of homeland beside the chart: a territorial division preview, with the lands and people remaining and parting, and a new heart chosen for the departing people](docs/images/settlement.jpg)
 
+**The author's hand in a language** opens from a language's **Decide…**
+menu and the frontispiece. **A sound change** previews every catalog law
+against the language's own words and names before it is chosen, or takes
+a law written in notation (`h > ∅ / V _ V`, `stress > penult`), each rule
+read back in plain words and every changed word, grammatical form, and
+name shown first. **A word of your own** gives a language a form for any
+meaning, in the catalog's sounds, which sound change wears like any other
+word. **A meaning of your own** adds a concept the catalog lacks, with its
+kind, field, borrowability, and the meaning it derives from; every living
+language finds a word for it in the years that follow, and a founding can
+name such meanings in its roots. Each language's card and chapter also
+carries a **phrasebook**, a few fixed phrases said as they are said now.
+
 **Two tellings, one year** lays alternate histories side by side. Return to
 a past year and choose **Continue in another telling** to run from there,
 keeping the first future. Their charts pan and zoom together; follow a

@@ -53,7 +53,7 @@ const GRAMMAR_KINDS: Partial<Record<Annal["kind"], true>> = {
   "class-emerged": true, "class-merged": true, "class-lost": true, "harmony-gained": true, "harmony-lost": true, "tone-gained": true, "tone-lost": true,
 };
 /// Entries that give a language a word it did not have.
-const WORD_KINDS: Partial<Record<Annal["kind"], true>> = { coinage: true, calque: true, "purist-replacement": true, "taboo-replacement": true };
+const WORD_KINDS: Partial<Record<Annal["kind"], true>> = { coinage: true, calque: true, "purist-replacement": true, "taboo-replacement": true, "word-authored": true };
 
 /// "A", "A and B", "A, B, and C", or "A, B, and two more" past `max`.
 export function listed(names: string[], max = 3): string {

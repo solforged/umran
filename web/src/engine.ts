@@ -48,6 +48,13 @@ import type {
   NameQuarry,
   RootsReport,
   ConceptView,
+  LawPreview,
+  LawRequest,
+  LawReport,
+  Meaning,
+  MeaningCheck,
+  WordCheck,
+  Phrase,
 } from "./model";
 import type { EngineReply, EngineRequest, EngineStatus, Opened, ReadMethod, WriteMethod, Written } from "./engineProtocol";
 
@@ -157,6 +164,11 @@ class Reading implements ReadEngine {
     return this.ask<ContactReach>("contactReach", JSON.stringify(point), a, b, contact);
   }
   lawChoices(point: HistoryPoint, variety: number) { return this.ask<LawChoice[]>("lawChoices", JSON.stringify(point), variety); }
+  lawPreview(point: HistoryPoint, variety: number, law: LawRequest) { return this.ask<LawPreview>("lawPreview", JSON.stringify(point), variety, JSON.stringify(law)); }
+  checkMeaning(point: HistoryPoint, meaning: Meaning) { return this.ask<MeaningCheck>("checkMeaning", JSON.stringify(point), JSON.stringify(meaning)); }
+  checkWord(point: HistoryPoint, variety: number, concept: string, ipa: string) { return this.ask<WordCheck>("checkWord", JSON.stringify(point), variety, concept, ipa); }
+  meanings(generation: number) { return this.year<ConceptView[]>("meanings", generation); }
+  phrasebook(generation: number, variety: number) { return this.ask<Phrase[]>("phrasebook", generation, variety); }
   latest() { return this.answers.get("latest", () => this.world.call("latest", [], this.scope) as Promise<number>); }
   overview(generation: number) { return this.year<Overview>("overview", generation); }
   lexicon(generation: number, variety: number) { return this.ask<LexiconRow[]>("lexicon", generation, variety); }
@@ -354,9 +366,16 @@ export function preview(design: LanguageDesign, seed: number, naming: Naming): P
 }
 
 /// The author's roots, one `meaning form` to a line, checked against the
-/// design's sounds; the returned design carries the accepted roots.
-export function checkRoots(design: LanguageDesign, text: string): RootsReport {
-  return JSON.parse(Workbench.checkRoots(JSON.stringify(design), text)) as RootsReport;
+/// design's sounds and the meanings added to the draft; the returned design
+/// carries the accepted roots.
+export function checkRoots(design: LanguageDesign, text: string, meanings: Meaning[] = []): RootsReport {
+  return JSON.parse(Workbench.checkRoots(JSON.stringify(design), text, JSON.stringify(meanings))) as RootsReport;
+}
+
+/// The author's sound law in the classical notation, one rule to a line,
+/// read without a world: what each line means, or why it is refused.
+export function checkLaw(title: string, source: string): LawReport {
+  return JSON.parse(Workbench.checkLaw(title, source)) as LawReport;
 }
 
 let conceptList: ConceptView[] | null = null;

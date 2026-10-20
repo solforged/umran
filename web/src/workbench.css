@@ -400,6 +400,25 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .law-choice .specimen { margin: .4rem 0 0; }
 .law-choice small { display: block; margin-top: .3rem; }
 
+/* The author's own law, meaning, and word: the notation and its reading,
+   then every word the law would change. */
+.form .segmented { display: flex; gap: .3rem; }
+.form .segmented button { flex: 1; }
+.form .segmented button[aria-selected="true"] { color: var(--accent); border-color: var(--accent); }
+.form .law-source, .form .law-rules-check code, .form .law-preview-rules code { font-family: var(--mono, ui-monospace, monospace); }
+.form .law-source { min-height: 4.5rem; resize: vertical; }
+.law-rules-check, .law-preview-rules, .law-preview-names { margin: 0; padding: 0; list-style: none; display: grid; gap: .25rem; }
+.law-rules-check li { display: grid; grid-template-columns: minmax(8rem, auto) minmax(0, 1fr); gap: .6rem; align-items: baseline; }
+.law-rules-check li.trouble { color: var(--ink-soft); }
+.law-rules-check li.trouble code { text-decoration: underline dotted; }
+.law-preview { display: grid; gap: .5rem; }
+.law-preview .table-wrap { max-height: 18rem; }
+.law-preview-names li { font-size: var(--dense-size); }
+.law-rules { margin: 0 0 .35rem; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: .25rem .9rem; font-size: var(--dense-size); }
+.law-rules code { font-family: var(--mono, ui-monospace, monospace); }
+.form .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: .8rem; }
+.form .form-row label { align-content: start; }
+
 .form .contact-choice small { display: block; margin-top: .3rem; }
 
 /* The revision desk keeps both drafts and sends evidence links to their side. */

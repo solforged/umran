@@ -13,6 +13,7 @@ import {
   Anchor,
   Crown,
   Expand,
+  Feather,
   Flag,
   Flame,
   Footprints,
@@ -38,7 +39,7 @@ import {
   WholeWord,
   type LucideIcon,
 } from "lucide-react";
-import type { AgreementKind, AgreementRole, AgreementView, Annal, ClimateView, Community, ContactKind, Ethos, EthosAxis, Law, Livelihood, Mechanism, Overview, PlaceExonym, PlaceName, PronounCase, ReadEngine, ReligionView, Rendering, SchismCause, Seasons, StateView, StressRule, Tenet, Terrain, TravelLeg, WorldMap } from "./model";
+import type { AgreementKind, AgreementRole, AgreementView, Annal, ClimateView, Community, ContactKind, Ethos, EthosAxis, Law, LawPreview, Livelihood, MeaningRelation, MeaningTier, Mechanism, Overview, PlaceExonym, PlaceName, PronounCase, ReadEngine, ReligionView, Rendering, RuleStatus, SchismCause, Seasons, StateView, StressRule, Tenet, Terrain, TravelLeg, WorldMap } from "./model";
 import { YEARS } from "./model";
 import { findAnnal } from "./history";
 
@@ -101,6 +102,8 @@ export const EVENT_KIND: Record<Annal["kind"], { icon: LucideIcon; name: string 
   "tenet-adopted": { icon: Sparkles, name: "A faith holds a teaching" },
   "tenet-disputed": { icon: Split, name: "A faith parts over a teaching" },
   "taboo-replacement": { icon: Sparkles, name: "A word is forbidden" },
+  "meaning-defined": { icon: Feather, name: "The author names a meaning" },
+  "word-authored": { icon: Feather, name: "The author gives a word" },
 };
 
 /// How one leg of a journey was travelled.
@@ -197,6 +200,54 @@ export const STRESS_RULE: Record<StressRule, string> = {
   final: "on the last syllable",
   weight: "on a heavy next-to-last syllable, otherwise the syllable before it; on the first syllable in a two-syllable word",
   free: "on a syllable specified separately for each word",
+};
+
+/// The kinds of meaning an author can add, as the catalog sorts them.
+export const MEANING_CLASS = {
+  count: "Counted thing (hearth, oar)",
+  mass: "Uncounted stuff (ash, dusk)",
+  event: "Action (to forge, to vow)",
+  property: "Quality (sacred, bitter)",
+} as const;
+
+/// How bound a meaning is to a way of life, and what that drives (`concepts.rs` borrowability).
+export const MEANING_TIER: Record<MeaningTier, { name: string; drives: string }> = {
+  basic: { name: "Everyone's experience", drives: "Borrowed about as seldom as sun or mother; every people keeps its own word." },
+  everyday: { name: "Ordinary life", drives: "Borrowed now and then, like bread or boat, when peoples trade and mix." },
+  specialized: { name: "A craft, trade, or institution", drives: "Borrowed readily with the thing itself, like market, iron, or law." },
+};
+
+/// How a built word relates to the word it is built from (`Relation`).
+export const MEANING_RELATION: Record<MeaningRelation, string> = {
+  collective: "group of (person → people)",
+  agent: "one who does it (pray → priest)",
+  place: "place of it (seed → field)",
+  instrument: "tool for it (fishing → net)",
+  result: "what it yields (sing → song)",
+  action: "doing it (fire → to cook)",
+  abstract: "the idea of it (die → death)",
+};
+
+/// Why a line of the author's sound law was refused.
+export const RULE_TROUBLE: Record<Exclude<RuleStatus, "ok">, string> = {
+  empty: "",
+  "bad-segment": "not a catalog sound",
+  "unknown-term": "not a class the engine knows",
+  "bad-shape": "cannot be read as a rule",
+  unsupported: "beyond what a law can do here",
+  "duplicate-stress": "stress is set twice",
+};
+
+/// What a changed name in a law preview names.
+export const NAME_KIND: Record<LawPreview["names"][number]["kind"], string> = {
+  language: "the language",
+  people: "a people",
+  state: "a state",
+  land: "a land",
+  river: "a river",
+  lake: "a lake",
+  exonym: "a name for others",
+  person: "a person",
 };
 
 /// A people's six leanings, in the order a card lists them.
@@ -465,6 +516,14 @@ export const PRONOUN_CASE_PHRASE: Record<PronounCase, string | null> = {
   relic: "The nouns have lost their object marking, but the pronouns keep theirs, as English keeps me and him",
 };
 
+/** What the pronouns do about possession, beside the nouns' genitive. */
+export const POSSESSIVE_PHRASE: Record<PronounCase, string | null> = {
+  none: null,
+  "like-nouns": "A pronoun names its owner's possession as a noun does, with the same genitive",
+  ahead: "The pronouns have their own possessive forms, ahead of the nouns, which still use a separate genitive word, as English my beside of",
+  relic: "The nouns have lost their genitive, but the pronouns keep possessive forms, as English my and his",
+};
+
 /** What the verb says about who acts, or whom it is done to, by stage and pro-drop. */
 export function agreementPhrase({ role, stage, proDrop }: AgreementView): string | null {
   if (stage === "none") return null;
@@ -474,10 +533,16 @@ export function agreementPhrase({ role, stage, proDrop }: AgreementView): string
       ? "The verb carries a person affix that says who acts, so the pronoun is left out unless it is stressed, as in Spanish"
       : "The verb carries a person affix that says who acts, beside the pronoun, as German -e, -st, -t";
   }
-  if (stage === "clitic") return "The object pronoun is said as a clitic on the verb, as Spanish lo in lo veo";
+  if (role === "object") {
+    if (stage === "clitic") return "The object pronoun is said as a clitic on the verb, as Spanish lo in lo veo";
+    return proDrop
+      ? "The verb carries an affix for its object too, so the object pronoun is left out, as in Swahili"
+      : "The verb carries an affix for its object too, beside the object pronoun";
+  }
+  if (stage === "clitic") return "A possessor pronoun is said as a clitic leaning on the thing possessed, as Persian -am in ketāb-am";
   return proDrop
-    ? "The verb carries an affix for its object too, so the object pronoun is left out, as in Swahili"
-    : "The verb carries an affix for its object too, beside the object pronoun";
+    ? "The possessed noun carries a person affix that names its owner, so the pronoun is left out, as Turkish ev-im “my house”"
+    : "The possessed noun carries a person affix that names its owner, beside the pronoun";
 }
 
 const SUBJECT_STEP: Record<AgreementKind, string> = {
@@ -492,8 +557,14 @@ const OBJECT_STEP: Record<AgreementKind, string> = {
   "pro-drop": "the object pronoun fell silent beside the verb",
   loss: "the object affixes wore away and the pronoun returned",
 };
+const POSSESSOR_STEP: Record<AgreementKind, string> = {
+  clitics: "the possessor pronouns became clitics on the thing possessed",
+  affixes: "the possessor clitics fused into affixes on the noun",
+  "pro-drop": "the possessor pronoun fell silent beside the noun",
+  loss: "the possessive affixes wore away and the pronoun returned",
+};
 export function agreementStep(role: AgreementRole, kind: AgreementKind): string {
-  return (role === "subject" ? SUBJECT_STEP : OBJECT_STEP)[kind];
+  return (role === "subject" ? SUBJECT_STEP : role === "object" ? OBJECT_STEP : POSSESSOR_STEP)[kind];
 }
 
 /// The chronicle's quiet apparatus shares its nouns with cards and the book.

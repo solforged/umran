@@ -12,7 +12,8 @@ export const READ_METHODS = {
   lawOccurrences: true, specimenLives: true, wordLife: true, loanTrail: true,
   grammarStory: true, builderExamples: true, correspondences: true, truth: true,
   meaningSets: true, speechDelta: true, wordTable: true, nameQuarry: true,
-  previous: true, compare: true,
+  previous: true, compare: true, lawPreview: true, checkMeaning: true, checkWord: true,
+  meanings: true, phrasebook: true,
 } as const satisfies Record<string, true>;
 /// Workbench methods that change the world; each answers with its new status.
 export const WRITE_METHODS = {
