@@ -56,6 +56,8 @@ import type {
   MeaningCheck,
   WordCheck,
   Phrase,
+  SoundHint,
+  SoundInfo,
 } from "./model";
 import type { EngineReply, EngineRequest, EngineStatus, Opened, ReadMethod, WriteMethod, Written } from "./engineProtocol";
 
@@ -342,9 +344,23 @@ export function landMap(seed: number, size: MapSize, geography: GeographyVersion
   return map;
 }
 
+let catalogCache: Catalog | null = null;
 export async function loadCatalog(): Promise<Catalog> {
   await ready();
-  return JSON.parse(Workbench.catalog()) as Catalog;
+  catalogCache ??= JSON.parse(Workbench.catalog()) as Catalog;
+  return catalogCache;
+}
+
+/// The catalog's sounds in chart order; call only after `loadCatalog`.
+export function catalogSounds(): SoundInfo[] {
+  catalogCache ??= JSON.parse(Workbench.catalog()) as Catalog;
+  return catalogCache.sounds;
+}
+
+/// Where the author wrote a sound as a romanization would (`sh`, `u:`, or
+/// `r` for a language's ɾ), the catalog IPA they probably meant.
+export function soundHints(text: string, inventory: string[] | null, notation = false): SoundHint[] {
+  return JSON.parse(Workbench.soundHints(text, JSON.stringify(inventory), notation)) as SoundHint[];
 }
 
 // Design helpers; call only after `loadCatalog` has resolved, which

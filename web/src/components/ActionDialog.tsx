@@ -10,6 +10,8 @@ import { useAnswer } from "./Pending";
 /// "found" opens the language designer; the rest are here.
 export type DialogKind = "found" | "connect" | "shift" | "state" | "religion" | "craft" | "temper" | "law" | "meaning" | "word";
 export type InterventionKind = DialogKind | "settlement";
+/// A law to begin the form from: one the language took, written again.
+export interface LawDraft { title: string; source: string; variety: number }
 
 const TITLES: Record<Exclude<DialogKind, "found">, string> = {
   connect: "Two peoples meet",
@@ -55,11 +57,13 @@ export function ActionDialog({
   overview,
   engine,
   selected,
+  lawDraft = null,
   onClose,
   onAction,
 }: {
   open: boolean;
   kind: Exclude<DialogKind, "found">;
+  lawDraft?: LawDraft | null;
   catalog: Catalog;
   overview: Overview;
   engine: ReadEngine;
@@ -153,7 +157,7 @@ export function ActionDialog({
   const body: ReactNode = (() => {
     switch (kind) {
       case "law":
-        return <LawDecision open={open} overview={overview} engine={engine} languages={spoken} onStage={setStaged} />;
+        return <LawDecision key={lawDraft ? `${lawDraft.variety}:${lawDraft.source}` : "fresh"} open={open} overview={overview} engine={engine} languages={spoken} draft={lawDraft} onStage={setStaged} />;
       case "meaning":
         return <MeaningDecision open={open} overview={overview} engine={engine} onStage={setStaged} />;
       case "word":

@@ -4,7 +4,7 @@ import { loadCatalog, loadEngine, message } from "./engine";
 import type { Action, Catalog, DecisionView, Engine, HistoryPoint, NotebookNote, Overview, ReadEngine, SettlementChoice, SettlementPreview, WorldMap } from "./model";
 import type { Focus } from "./components/Pedia";
 import { YEARS } from "./model";
-import { ActionDialog, type DialogKind } from "./components/ActionDialog";
+import { ActionDialog, type DialogKind, type LawDraft } from "./components/ActionDialog";
 import { Book } from "./components/Book";
 import { Designer, type Founding as FoundingDesign } from "./components/Designer";
 import { Modal } from "./components/Modal";
@@ -107,6 +107,7 @@ export default function App() {
   const [notebook, setNotebook] = useState<NotebookNote[]>([]);
   const [community, setCommunity] = useState(0);
   const [dialog, setDialog] = useState<DialogKind | null>(null);
+  const [lawDraft, setLawDraft] = useState<LawDraft | null>(null);
   const [route, setRoute] = useState<Route>({ kind: "shelf" });
   const routeRef = useRef<Route>(route);
   const page = route.kind === "world" ? route.page : "stage";
@@ -914,6 +915,7 @@ export default function App() {
       <ActionDialog
         open={dialog !== null}
         kind={liftedDialog.value}
+        lawDraft={lawDraft}
         catalog={catalog}
         overview={overview}
         engine={frame.reading}
@@ -973,7 +975,7 @@ export default function App() {
         onDismissRun={dismissRun}
         onNextEvent={() => nextEvent(EVENT_LIMIT)}
         onUndo={strike}
-        onDialog={setDialog}
+        onDialog={(kind, draft) => { setLawDraft(draft ?? null); setDialog(kind); }}
         runOnOpen={firstRun}
         onRunOpened={() => setFirstRun(null)}
       />

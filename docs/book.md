@@ -347,7 +347,9 @@ time bar. It works as follows:
   on a language card, or *Open in the desk* beside a pair in the world's
   *Words compared*. Choose a living language and a meaning set. It begins
   with the record covered: neutral names, aligned sounds in two rows,
-  gaps shown as a dash, and recurring sound pairs with their word support.
+  gaps shown as a dash, and recurring sound pairs with their word support
+  and where in the word they meet (initial, between vowels, final, beside
+  a consonant), the first evidence of a conditioned change.
   Selecting pairs highlights their segments; *Note a hypothesis* carries
   the selected pairs into an editable, dated note kept in the first
   language's margin. *Reveal the record* separately reads each word's
@@ -375,6 +377,10 @@ time bar. It works as follows:
     `[voiceless stop] > [voiced] / V _ V`, `a > e / _ .. [front]`,
     `stress > initial`), read line by line by `checkLaw` and previewed on
     every living word and name by `lawPreview` before it is applied.
+    The language's sounds sit as keys beneath the rules, with a hint
+    where the text writes a romanization (`sh`, `:`, doubled vowels) for
+    the catalog's IPA. A language's law ledger offers *Write one like
+    it…*, which opens the form with a recorded law's rules to adapt.
   - The frontispiece's *A meaning of your own* adds a meaning the catalog
     lacks, with its field, kind, how bound it is to a way of life, and an
     optional meaning to build it from. Every living language finds a

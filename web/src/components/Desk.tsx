@@ -1,5 +1,5 @@
 import { use, useEffect, useId, useRef, useState, type CSSProperties } from "react";
-import type { Correspondences, MeaningSet, NotebookNote, Read, Segment, Truth } from "../model";
+import type { Correspondences, MeaningSet, NotebookNote, PairPositions, Read, Segment, Truth } from "../model";
 import { YEARS } from "../model";
 import { LoanCauseText, type ChapterContext } from "./LanguageChapter";
 import { makeNote } from "./Margin";
@@ -18,6 +18,13 @@ interface DeskProps {
 const samePair = (a: Segment, b: Segment) => a.a === b.a && a.b === b.b;
 
 /** Current forms first; the independent historical record only on request. */
+/// Where a recurring pair stands in the words that show it, the places
+/// that would condition a sound law; places with no word are left out.
+function placesOf(positions: PairPositions): string {
+  return ([["initial", positions.initial], ["between vowels", positions.betweenVowels], ["final", positions.final], ["beside a consonant", positions.elsewhere]] as const)
+    .filter(([, count]) => count > 0).map(([place, count]) => `${count} ${place}`).join(" · ");
+}
+
 export function Desk({ first, second, meanings = "core", ctx, onSaveNote, onStartNote }: DeskProps) {
   const choices = ctx.overview.varieties.filter((variety) => variety.spoken && variety.id !== first)
     .sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
@@ -71,7 +78,8 @@ function DeskComparison({ first, second, meanings, ctx, onSaveNote, onStartNote 
     onStartNote();
     const hypothesis = makeNote(ctx.overview, { kind: "language", variety: first }, a);
     hypothesis.title = `${a} and ${b}: a hypothesis`;
-    hypothesis.body = `Comparing ${a} with ${b}, ${meanings}, in year ${ctx.generation * YEARS}.\n\nThe recurring sound pairs ${selected.map((pair) => `${pair.a ?? "–"} ↔ ${pair.b ?? "–"}`).join(", ")} may point to a shared history. This is a hypothesis from the current forms${revealed ? "; the record has been revealed" : ", made before revealing the record"}.`;
+    const where = (pair: Segment) => comparison.regular.find((row) => samePair(row.pair, pair))?.positions;
+    hypothesis.body = `Comparing ${a} with ${b}, ${meanings}, in year ${ctx.generation * YEARS}.\n\nThe recurring sound pairs ${selected.map((pair) => { const at = where(pair); return `${pair.a ?? "–"} ↔ ${pair.b ?? "–"}${at ? ` (${placesOf(at)})` : ""}`; }).join(", ")} may point to a shared history. This is a hypothesis from the current forms${revealed ? "; the record has been revealed" : ", made before revealing the record"}.`;
     setDraft(hypothesis);
     setNotice(null);
   };
@@ -103,10 +111,11 @@ function DeskComparison({ first, second, meanings, ctx, onSaveNote, onStartNote 
       <aside className="desk-correspondences" aria-label="Recurring correspondences">
         <h3>Recurring sound pairs</h3>
         <p className="muted small">Support counts words, not repeated sounds within one word. Select a pair to find it in the alignments.</p>
-        {comparison.regular.length ? <ul>{comparison.regular.map(({ pair, support }) => {
+        {comparison.regular.length ? <ul>{comparison.regular.map(({ pair, support, positions }) => {
           const chosen = selected.some((item) => samePair(item, pair));
           return <li key={JSON.stringify(pair)}><button type="button" aria-pressed={chosen} onClick={() => setSelected(chosen ? selected.filter((item) => !samePair(item, pair)) : [...selected, pair])}>
             <span className="ipa">{pair.a ?? "–"} ↔ {pair.b ?? "–"}</span><span>{support} {support === 1 ? "word" : "words"}</span>
+            <small className="desk-positions">{placesOf(positions)}</small>
           </button></li>;
         })}</ul> : <p className="muted small">No recurring sound pairs in these meanings. A larger meaning set may offer more evidence.</p>}
         {selected.length ? <button type="button" className="link" onClick={() => setSelected([])}>Clear selection</button> : null}

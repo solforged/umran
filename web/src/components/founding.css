@@ -236,6 +236,14 @@
   color: var(--ink-soft);
 }
 
+.founding-seed-field input {
+  width: 8.5em;
+  margin-left: 0.3rem;
+  padding: 0.05rem 0.3rem;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: inherit;
+}
+
 .founding-count {
   display: grid;
   gap: 0.35rem;
@@ -978,7 +986,7 @@
 
 .founding-meaning-form {
   display: grid;
-  grid-template-columns: minmax(7rem, 1.2fr) repeat(3, minmax(6rem, 1fr)) auto;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
   gap: 0.4rem;
   align-items: center;
   margin-top: 0.5rem;
@@ -990,11 +998,6 @@
   gap: 0.25rem;
 }
 
-@media (max-width: 599px) {
-  .founding-meaning-form {
-    grid-template-columns: 1fr 1fr;
-  }
-}
 
 .founding-roots-closed {
   font-size: var(--dense-size);

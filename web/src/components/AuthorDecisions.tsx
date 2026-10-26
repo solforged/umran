@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { LawDraft } from "./ActionDialog";
 import type { Action, AuthoredLaw, LawPreview, LawRequest, Meaning, MeaningClass, MeaningField, MeaningRelation, MeaningTier, Overview, ReadEngine, Variety } from "../model";
 import { YEARS } from "../model";
 import { attempt, checkLaw } from "../engine";
-import { MEANING_CLASS, MEANING_RELATION, MEANING_TIER, NAME_KIND, RULE_TROUBLE, STRESS_RULE } from "../lore";
+import { capitalized, MEANING_CLASS, MEANING_RELATION, MEANING_TIER, NAME_KIND, RULE_TROUBLE, STRESS_RULE } from "../lore";
 import { Specimen } from "./Specimen";
+import { SoundKeys } from "./SoundKeys";
 import { useAnswer } from "./Pending";
 
 /// The author's decisions that write language rather than history: a sound
@@ -11,6 +13,12 @@ import { useAnswer } from "./Pending";
 /// footer and clears it while the engine refuses.
 
 const NONE: never[] = [];
+/// A language's sounds in catalog IPA, for the keys beside a field.
+function inventory(overview: Overview, variety: number): string[] | null {
+  const language = overview.varieties[variety];
+  return language ? [...language.consonants, ...language.vowels] : null;
+}
+
 /// Meaning sets that are not fields of the catalog.
 const NOT_FIELDS = ["core", "specimen", "custom"];
 
@@ -39,9 +47,11 @@ function LawPreviewTable({ preview }: { preview: LawPreview }) {
   const [all, setAll] = useState(false);
   const shown = all ? preview.words : preview.words.slice(0, 24);
   const changed = preview.words.length + preview.names.length;
+  // Competing words share a meaning; the lexicon counts meanings.
+  const meanings = new Set(preview.words.map((word) => word.concept)).size;
   return <div className="law-preview">
     <p className={changed ? "muted small" : "notice"}>
-      {changed ? <>{preview.words.length} {preview.words.length === 1 ? "word" : "words"} and {preview.names.length} {preview.names.length === 1 ? "name" : "names"} change; {preview.unchangedWords} words and {preview.unchangedNames} names stay as they are.</>
+      {changed ? <>{preview.words.length} {preview.words.length === 1 ? "word" : "words"}{meanings !== preview.words.length ? ` (in ${meanings} meanings, with competing words)` : ""} and {preview.names.length} {preview.names.length === 1 ? "name" : "names"} change; {preview.unchangedWords} words and {preview.unchangedNames} names stay as they are.</>
         : "This law would change nothing that is said now."}
       {preview.stress ? <> Stress moves from {STRESS_RULE[preview.stress.before]} to {STRESS_RULE[preview.stress.after]}.</> : null}
     </p>
@@ -51,14 +61,14 @@ function LawPreviewTable({ preview }: { preview: LawPreview }) {
     {preview.rules.length > 1 ? <ul className="law-preview-rules">{preview.rules.map((rule) => <li key={rule.source}><code>{rule.source}</code> <span className="muted small">{rule.changed} {rule.changed === 1 ? "change" : "changes"}</span></li>)}</ul> : null}
     {preview.words.length ? <div className="table-wrap"><table className="law-words">
       <thead><tr><th>Meaning</th><th>Before → after</th></tr></thead>
-      <tbody>{shown.map((word) => <tr key={word.concept}>
+      <tbody>{shown.map((word, i) => <tr key={i}>
         <td>{word.gloss}</td>
         <td><span className="word">{word.spelledBefore}</span> <span className="ipa">/{word.before}/</span> → <span className="word">{word.spelledAfter}</span> <span className="ipa">/{word.after}/</span></td>
       </tr>)}</tbody>
     </table></div> : null}
     {preview.words.length > shown.length ? <button type="button" className="link" onClick={() => setAll(true)}>All {preview.words.length} words</button> : null}
     {preview.names.length ? <ul className="law-preview-names">{preview.names.map((name, i) => <li key={i}>
-      <span className="muted small">{NAME_KIND[name.kind]}</span> <span className="word">{name.before}</span> → <span className="word">{name.after}</span>
+      <span className="muted small">{NAME_KIND[name.kind]}{name.of ? <> <span className="word">{capitalized(name.of)}</span></> : name.kind.endsWith("exonym") ? " a place the chart leaves unnamed" : null}</span> <span className="word">{capitalized(name.spelledBefore)}</span> <span className="ipa">/{name.before}/</span> → <span className="word">{capitalized(name.spelledAfter)}</span> <span className="ipa">/{name.after}/</span>
     </li>)}</ul> : null}
   </div>;
 }
@@ -70,15 +80,16 @@ function LawPreviewRead({ engine, overview, variety, law }: { engine: ReadEngine
   return <LawPreviewTable preview={outcome.value} />;
 }
 
-export function LawDecision({ open, overview, engine, languages, onStage }: {
+export function LawDecision({ open, overview, engine, languages, draft = null, onStage }: {
   open: boolean; overview: Overview; engine: ReadEngine; languages: Variety[];
+  draft?: LawDraft | null;
   onStage: (action: Action | null) => void;
 }) {
-  const [variety, setVariety] = useState(languages[0]?.id ?? -1);
-  const [mode, setMode] = useState<"catalog" | "written">("catalog");
+  const [variety, setVariety] = useState(draft && languages.some((v) => v.id === draft.variety) ? draft.variety : languages[0]?.id ?? -1);
+  const [mode, setMode] = useState<"catalog" | "written">(draft ? "written" : "catalog");
   const [catalog, setCatalog] = useState<string | null>(null);
-  const [title, setTitle] = useState("");
-  const [source, setSource] = useState("");
+  const [title, setTitle] = useState(draft?.title ?? "");
+  const [source, setSource] = useState(draft?.source ?? "");
   const choices = useAnswer(open && mode === "catalog" && variety >= 0 ? engine.lawChoices(overview.point, variety) : null) ?? NONE;
   const report = useMemo(() => title.trim() || source.trim() ? checkLaw(title, source) : null, [title, source]);
   // The full preview applies the law to every word; wait for the typing to settle.
@@ -91,6 +102,7 @@ export function LawDecision({ open, overview, engine, languages, onStage }: {
     else onStage(writtenChanges && settled ? { kind: "authored", variety, law: settled } : null);
   }, [mode, catalog, choices, variety, settled, writtenChanges, onStage]);
   const trouble = report?.rules.filter((rule) => rule.status !== "ok" && rule.status !== "empty") ?? NONE;
+  const rules = useRef<HTMLTextAreaElement>(null);
   return <>
     <LanguagePick languages={languages} variety={variety} onChange={(id) => { setVariety(id); setCatalog(null); }} />
     <div className="segmented" role="tablist" aria-label="Where the law comes from">
@@ -117,10 +129,11 @@ export function LawDecision({ open, overview, engine, languages, onStage }: {
       </label>
       <label>
         Rules, one to a line
-        <textarea className="law-source" value={source} rows={Math.min(10, Math.max(3, source.split("\n").length + 1))} spellCheck={false} autoCapitalize="off" autoCorrect="off"
+        <textarea ref={rules} className="law-source" value={source} rows={Math.min(10, Math.max(3, source.split("\n").length + 1))} spellCheck={false} autoCapitalize="off" autoCorrect="off"
           placeholder={"p > f / _ #\n[voiceless stop] > [voiced] / V _ V\na > e / _ .. [front]"} onChange={(e) => setSource(e.target.value)} />
         <small>Sounds are the catalog’s IPA. <code>C</code> and <code>V</code> are any consonant or vowel; <code>[voiceless stop]</code>, <code>[front]</code>, <code>[long]</code>, <code>[stressed]</code> name classes; <code>#</code> is the edge of the word; <code>∅</code> deletes; <code>_ .. [front]</code> looks to the next syllable’s vowel; <code>stress &gt; initial</code> moves the stress. One sound on each side of the blank.</small>
       </label>
+      <SoundKeys sounds={inventory(overview, variety)} field={rules} value={source} onChange={setSource} notation />
       {report ? <ul className="law-rules-check">{report.rules.filter((rule) => rule.status !== "empty").map((rule) => <li key={rule.line} className={rule.status === "ok" ? "ok" : "trouble"}>
         <code>{rule.source}</code>
         <span className="small">{rule.status === "ok" ? rule.reading : <>{RULE_TROUBLE[rule.status]}{rule.message ? `: ${rule.message}` : ""}</>}</span>
@@ -158,6 +171,7 @@ export function MeaningDecision({ open, overview, engine, onStage }: {
   const ok = check?.error === null && check.value.status === "ok";
   useEffect(() => { onStage(ok ? { kind: "meaning", meaning } : null); }, [ok, meaning, onStage]);
   const baseMeaning = meanings.find((concept) => concept.id === base);
+  const taken = check?.error === null && check.value.status === "taken" ? meanings.find((concept) => concept.id === meaning.id) : undefined;
   return <>
     <label>
       Meaning
@@ -205,7 +219,8 @@ export function MeaningDecision({ open, overview, engine, onStage }: {
       </label> : null}
     </div>
     {check ? <p className={ok ? "muted small" : "notice"} role="status">
-      {check.error !== null ? check.error : ok ? `Every living language will find a word for “${meaning.gloss}” in the years after ${overview.generation * YEARS}${overview.generation === 0 ? ", or carry one from its founding" : ""}.` : <>{check.value.message}{check.value.suggestions.length ? <> Perhaps you mean {check.value.suggestions.map((s, i) => <span key={s}>{i ? ", " : ""}<code>{s}</code></span>)}.</> : null}</>}
+      {check.error !== null ? check.error : ok ? `Every living language will find a word for “${meaning.gloss}” in the years after ${overview.generation * YEARS}${overview.generation === 0 ? ", or carry one from its founding" : ""}.` : taken ? <>This world has “{taken.gloss}” already{taken.custom ? ", as a meaning of yours" : ", from the catalog"}, so every language has or will find a word for it. To add a different meaning, give it another short name.</>
+        : <>{check.value.message}{check.value.suggestions.length ? <> Perhaps you mean {check.value.suggestions.map((s, i) => <span key={s}>{i ? ", " : ""}<code>{s}</code></span>)}.</> : null}</>}
     </p> : null}
   </>;
 }
@@ -222,6 +237,7 @@ export function WordDecision({ open, overview, engine, languages, onStage }: {
   const ok = check?.error === null && check.value.status === "ok";
   useEffect(() => { onStage(ok ? { kind: "word", variety, concept, ipa: ipa.trim() } : null); }, [ok, variety, concept, ipa, onStage]);
   const current = check?.error === null ? check.value.current : null;
+  const form = useRef<HTMLInputElement>(null);
   return <>
     <LanguagePick languages={languages} variety={variety} onChange={setVariety} />
     <label>
@@ -232,9 +248,10 @@ export function WordDecision({ open, overview, engine, languages, onStage }: {
     </label>
     <label>
       Their word
-      <input type="text" value={ipa} spellCheck={false} autoCapitalize="off" autoCorrect="off" placeholder="kaːr" onChange={(e) => setIpa(e.target.value)} />
+      <input ref={form} type="text" value={ipa} spellCheck={false} autoCapitalize="off" autoCorrect="off" placeholder="kaːr" onChange={(e) => setIpa(e.target.value)} />
       <small>In the catalog’s IPA, using sounds this language has. Sound change wears it like any word from here on.</small>
     </label>
+    <SoundKeys sounds={inventory(overview, variety)} field={form} value={ipa} onChange={setIpa} />
     {check ? <p className={ok ? "muted small" : "notice"} role="status">
       {check.error !== null ? check.error : ok ? <>Spelled <span className="word">{check.value.spelled}</span> in their hand.</>
         : <>{WORD_TROUBLE[check.value.status]}{check.value.detail ? ` (${check.value.detail})` : ""}{check.value.suggestions.length ? <>; try {check.value.suggestions.map((s, i) => <span key={s}>{i ? ", " : ""}<code>{s}</code></span>)}</> : null}.</>}

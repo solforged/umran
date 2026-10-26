@@ -2,6 +2,7 @@ import { use, useState, type ReactNode } from "react";
 import { Download, Feather } from "lucide-react";
 import type { Catalog, GrammarMarker, HistoryLine, LawOccurrence, LawOccurrenceRef, LexiconRow, LoanCause, Overview, PhraseNote, ReadEngine, Subject, Variant, Variety, WorldMap } from "../model";
 import { YEARS } from "../model";
+import type { LawDraft } from "./ActionDialog";
 import { download, fileName, nameQuarryCsv } from "../takeout";
 import { agreementPhrase, agreementStep, CONTACT_NAME, landCardLabel, MARKING_PHRASE, peopleLabel, POSSESSIVE_PHRASE, POSSESSOR_PHRASE, PRONOUN_CASE_PHRASE, stateLabel, STRESS_RULE, WORD_ORDER_PHRASE } from "../lore";
 import { individualAnnals, findAnnal } from "../history";
@@ -30,6 +31,8 @@ export interface ChapterContext {
   dictionaryView?: DictionaryView;
   onDictionaryView?: (view: DictionaryView) => void;
   onYear?: (generation: number) => void;
+  /// Opens the law form with a law written out, to change or apply anew.
+  onWriteLaw?: (draft: LawDraft) => void;
   wordAnchor?: (variety: number, concept: string) => string;
 }
 interface SectionProps { variety: Variety; ctx: ChapterContext }
@@ -145,6 +148,8 @@ function LawLedger({ variety, ctx }: SectionProps) {
         {occurrence.arrival.kind === "authored" ? <span className="pen" title="The author’s decision"><Feather size={12} aria-hidden="true" /></span> : null}
         <button type="button" className="link law-select" aria-pressed={sameOccurrence(selected, occurrence.ref)} onClick={() => setSelected(sameOccurrence(selected, occurrence.ref) ? null : occurrence.ref)}>{occurrence.label}</button>
         {ctx.link(lawSubject(occurrence.ref), "Read this application")}
+        {ctx.onWriteLaw && occurrence.rules.length ? <button type="button" className="link law-write-again" title="Open the law form with this law written out, to change it or give it to a living language"
+          onClick={() => ctx.onWriteLaw!({ title: occurrence.label, source: occurrence.rules.filter((rule, i) => occurrence.rules.indexOf(rule) === i).join("\n"), variety: variety.spoken ? variety.id : -1 })}>Write one like it…</button> : null}
       </div>
       <LawEvidence variety={variety} occurrence={occurrence} ctx={ctx} />
     </li>)}</ol> : <p className="muted">No sound laws yet.</p>}

@@ -33,7 +33,7 @@ import { cityLabel, continentLabel, waterLabel, weatherZoneLabel } from "../lore
 import { filterHistory, findAnnal, individualAnnals, relatedMoments, searchText, subjectHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
 import { eraBirths, eras, isQuiet, languageEraChange, quietLine, quietRuns, quietSummary, speechLine, type Era, type EraYear } from "../eras";
 import { bond } from "../words";
-import type { InterventionKind } from "./ActionDialog";
+import type { InterventionKind, LawDraft } from "./ActionDialog";
 import { SettlementAccount } from "./SettlementDesk";
 import { Told } from "./Told";
 import { Explained } from "./Explained";
@@ -48,7 +48,8 @@ import { closeClosingDialogs, emphasizeInk, reducedMotion, useLiftedValue } from
 import { Popover } from "./Popover";
 import { CHAPTER, ChapterSummary, LawEvidence, LoanCauseText, WordOrigin, type ChapterContext } from "./LanguageChapter";
 import { Margin } from "./Margin";
-import { Pending } from "./Pending";
+import { Pending, useAnswer } from "./Pending";
+import { MeaningPick } from "./MeaningPick";
 import { Desk } from "./Desk";
 import { attempt, concepts } from "../engine";
 import "./chronicle.css";
@@ -94,7 +95,7 @@ interface Context {
   onStopRun: () => void;
   canUndo: boolean;
   onUndo: () => void;
-  onDialog: (kind: InterventionKind, community: number) => void;
+  onDialog: (kind: InterventionKind, community: number, draft?: LawDraft) => void;
   onReconsider: (annal: Annal) => void;
   onReturnBefore: (point: HistoryPoint) => void;
   /// Tell the history again as a telling set aside told it.
@@ -1153,7 +1154,8 @@ function WordsCompared({ spoken, context, onOpenDesk }: { spoken: Variety[]; con
   const rows = spoken.filter((variety) => !excluded.includes(variety.id)).sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
   const reference = rows.find((variety) => variety.id === chosenReference) ?? rows[0];
   const sets = context.engine.meaningSets();
-  const catalog = concepts();
+  // The author's own meanings resolve beside the catalog's.
+  const catalog = useAnswer(context.engine.meanings(context.generation), true) ?? concepts();
   const listed = useMemo(() => meanings === "own" ? resolveMeanings(own, catalog)
     : { concepts: catalog.filter((concept) => meanings === "core" ? concept.core : meanings === "specimen" ? concept.specimen : concept.field === meanings).map((concept) => concept.id), unknown: [] },
   [meanings, own, catalog]);
@@ -1173,7 +1175,8 @@ function WordsCompared({ spoken, context, onOpenDesk }: { spoken: Variety[]; con
     </div>
     {meanings === "own" ? <div className="compared-own">
       <textarea aria-label="Meanings of your own" placeholder={"water\nfire\nking\nwolf"} rows={4} value={own} spellCheck={false} onChange={(event) => setOwn(event.currentTarget.value)} />
-      <p className="muted small">{listed.concepts.length} {listed.concepts.length === 1 ? "meaning" : "meanings"} found in the catalog.
+      <MeaningPick meanings={catalog} label="Add a meaning to the list" onPick={(concept) => setOwn(`${own.replace(/\n*$/, "")}${own.trim() ? "\n" : ""}${concept.id}`)} />
+      <p className="muted small">{listed.concepts.length} {listed.concepts.length === 1 ? "meaning" : "meanings"} found.
         {listed.unknown.map((entry) => <span key={entry.meaning} className="compared-unknown"> <b>{entry.meaning}</b>: {entry.suggestions.length ? <>not a meaning here; try {entry.suggestions.map((concept, index) => <span key={concept}>{index ? ", " : ""}<button type="button" className="link" onClick={() => setOwn(own.replace(entry.meaning, concept))}>{concept}</button></span>)}</> : "not a meaning here"}.</span>)}
       </p>
     </div> : null}
@@ -1186,7 +1189,7 @@ function WordsCompared({ spoken, context, onOpenDesk }: { spoken: Variety[]; con
     <p className="muted small"><strong>Recorded roots.</strong> Words shaded alike share a root in the record. Open a pair in the desk to study its current sounds before revealing that history.</p>
     {table && reference ? <Pending reading={table} label="Reading the words in these meanings…">
       <WordsComparedTable reading={table} reference={reference} meanings={meanings === "own" ? "core" : meanings} context={context} onOpenDesk={onOpenDesk} />
-    </Pending> : <p className="muted">{rows.length ? "Name at least one meaning the catalog knows." : "Choose at least one language for the list, and two to open a pair in the desk."}</p>}
+    </Pending> : <p className="muted">{rows.length ? "Name at least one meaning this world knows." : "Choose at least one language for the list, and two to open a pair in the desk."}</p>}
   </>;
 }
 
@@ -1443,7 +1446,7 @@ function HistoryCard({ generation, context }: { generation?: number; context: Co
               onBlur={(e) => { if (e.target.value.trim() !== telling.name) context.onRenameTelling(telling.id, e.target.value); }}
               onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} maxLength={120} /></label>
             <p className="small">{telling.id === overview.telling ? "This telling · " : ""}Through year {telling.latest * YEARS}
-              {telling.parent ? ` · from ${overview.tellings.find((t) => t.id === telling.parent?.telling)?.name ?? "an earlier telling"}, year ${(telling.from ?? 0) * YEARS}` : " · the first telling"}</p>
+              {telling.parent ? ` · from ${overview.tellings.find((t) => t.id === telling.parent?.telling)?.name ?? "an earlier telling"}, year ${(telling.from ?? 0) * YEARS}, ${telling.decision ? `on ${telling.decision}` : "with no new decision yet"}` : " · the first telling"}</p>
             <div className="row">{telling.id !== overview.telling ? <><button type="button" onClick={() => context.onRestore(telling.id)}>Read this telling</button>
               <button type="button" onClick={() => context.onCompare(telling.id)}>Compare these tellings</button></> : null}</div>
           </article>)}
@@ -1967,6 +1970,11 @@ function languageChapterContext(context: Context, variety: number): ChapterConte
     overview: context.overview, map: context.map, catalog: context.catalog,
     link: (subject, label) => <button type="button" className="link" onClick={() => context.go(subject)}>{label}</button>,
     open: context.go, onYear: context.onScrub,
+    onWriteLaw: context.running == null ? (draft) => {
+      const speakers = context.overview.communities.find((c) => c.variety === draft.variety && c.ended === null)
+        ?? context.overview.communities.find((c) => c.ended === null);
+      if (speakers) context.onDialog("law", speakers.id, draft);
+    } : undefined,
     dictionaryView: context.dictionaryViews[variety] ?? INITIAL_DICTIONARY,
     onDictionaryView: (view) => context.onDictionaryView(variety, view),
   };

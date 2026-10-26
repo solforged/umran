@@ -411,6 +411,13 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
 .law-rules-check li { display: grid; grid-template-columns: minmax(8rem, auto) minmax(0, 1fr); gap: .6rem; align-items: baseline; }
 .law-rules-check li.trouble { color: var(--ink-soft); }
 .law-rules-check li.trouble code { text-decoration: underline dotted; }
+/* A language's sounds as keys beside a field that takes catalog IPA. */
+.sound-keys { display: grid; gap: .3rem; }
+.sound-keys-row { display: flex; flex-wrap: wrap; gap: .2rem; }
+.sound-keys-gap { width: .5rem; }
+.sound-key { min-width: 1.9rem; padding: .1rem .35rem; font: inherit; font-size: var(--dense-size); line-height: 1.5; }
+.sound-keys-hints { margin: 0; }
+@media (pointer: coarse) { .sound-key { min-width: 44px; min-height: 44px; } }
 .law-preview { display: grid; gap: .5rem; }
 .law-preview .table-wrap { max-height: 18rem; }
 .law-preview-names li { font-size: var(--dense-size); }
@@ -455,3 +462,6 @@ kbd { font: .75rem var(--serif); color: var(--ink-soft); border: 1px solid var(-
   .comparison-speech-words li { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
   .comparison-speech-gloss { grid-column: 1 / -1; }
 }
+
+/* Finding a meaning to add to a list of them. */
+.meaning-pick { display: grid; gap: .15rem; max-width: 22rem; }

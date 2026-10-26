@@ -5,7 +5,7 @@ import type { Annal, Catalog, Craft, Destination, HistoryPoint, NotebookNote, Re
 import { YEARS } from "../model";
 import { ETHOS_AXES, ETHOS_POLES, EVENT_KIND, hue } from "../lore";
 import { PACES } from "../words";
-import type { DialogKind, InterventionKind } from "./ActionDialog";
+import type { DialogKind, InterventionKind, LawDraft } from "./ActionDialog";
 import { attempt, message } from "../engine";
 import { Pending, useAnswer } from "./Pending";
 import { SettlementDesk, type SettlementDraft } from "./SettlementDesk";
@@ -188,7 +188,7 @@ export function Stage({
   onDismissRun: () => void;
   onNextEvent: () => Promise<boolean>;
   onUndo: () => void;
-  onDialog: (kind: DialogKind) => void;
+  onDialog: (kind: DialogKind, draft?: LawDraft) => void;
   initialFocus: Focus | null;
   /// The open card changed; the app keeps it as the reader's place.
   onFocus: (focus: Focus) => void;
@@ -478,7 +478,7 @@ export function Stage({
       setTrail((t) => cardPath([...t.slice(0, -1), destination(focus)], { subject, reading: { telling: overview.telling, point } }));
     }
   };
-  const openDialog = (kind: InterventionKind, community = selected) => {
+  const openDialog = (kind: InterventionKind, community = selected, draft?: LawDraft) => {
     halt();
     if (kind === "settlement") {
       settlementOpener.current = document.activeElement instanceof HTMLElement
@@ -489,7 +489,7 @@ export function Stage({
       };
       if (liftedSettlement.closing) { afterLift.current = null; open(); }
       else liftThen(open, document.activeElement instanceof HTMLElement ? document.activeElement : null);
-    } else { liftThen(() => onDialog(kind), document.activeElement instanceof HTMLElement ? document.activeElement : null); }
+    } else { liftThen(() => onDialog(kind, draft), document.activeElement instanceof HTMLElement ? document.activeElement : null); }
   };
   const reconsider = (annal: Annal) => {
     if (!annal.settlement || !annal.before) return;
@@ -1031,9 +1031,9 @@ export function Stage({
             setTheirNames(false);
           }
         }}
-        onDialog={(kind, community) => {
+        onDialog={(kind, community, draft) => {
           onSelect(community);
-          openDialog(kind, community);
+          openDialog(kind, community, draft);
         }}
         onReconsider={reconsider}
         onReturnBefore={(point) => { halt(); onReadPoint(point); }}

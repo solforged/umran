@@ -85,6 +85,12 @@ export interface SoundInfo {
   share: number;
 }
 
+/// A sound written as a romanization would, and its catalog IPA.
+export interface SoundHint {
+  written: string;
+  ipa: string;
+}
+
 export interface PreviewWord {
   gloss: string;
   spelled: string;
@@ -200,7 +206,12 @@ export interface LawPreview {
   title: string;
   rules: { source: string; changed: number; unrealisable: number }[];
   words: { concept: string; gloss: string; before: string; after: string; spelledBefore: string; spelledAfter: string }[];
-  names: { kind: "language" | "people" | "state" | "land" | "river" | "lake" | "exonym" | "person"; subject: number | null; before: string; after: string }[];
+  names: {
+    kind: "language" | "people" | "state" | "land" | "river" | "lake" | "exonym" | "river-exonym" | "lake-exonym" | "person";
+    subject: number | null; before: string; after: string; spelledBefore: string; spelledAfter: string;
+    /// What a name for others names, as the chart now spells it.
+    of: string | null;
+  }[];
   unchangedWords: number;
   unchangedNames: number;
   stress: { before: StressRule; after: StressRule } | null;
@@ -776,6 +787,8 @@ export interface TellingView {
   latest: number;
   tip: HistoryPoint;
   actions: number;
+  /// The kind of decision the telling opened with, if it made one.
+  decision: string | null;
 }
 export interface Comparison {
   generation: number;
@@ -965,10 +978,13 @@ export interface Correspondences {
     cognate: boolean;
   }[];
   /// Recurring correspondences, strongest first; `support` counts the rows that show the pair.
-  regular: { pair: Segment; support: number }[];
+  regular: { pair: Segment; support: number; positions: PairPositions }[];
   /// Grammatical observations the method used.
   grammar: { category: string; a: string; b: string; regular: boolean }[];
 }
+
+/// Where in the aligned words a recurring pair stands, counted per word.
+export interface PairPositions { initial: number; betweenVowels: number; final: number; elsewhere: number }
 
 /// The answer key for the same rows, kept apart from `Correspondences`.
 export interface Truth {

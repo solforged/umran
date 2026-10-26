@@ -246,7 +246,9 @@ export const NAME_KIND: Record<LawPreview["names"][number]["kind"], string> = {
   land: "a land",
   river: "a river",
   lake: "a lake",
-  exonym: "a name for others",
+  exonym: "their name for",
+  "river-exonym": "their name for the river",
+  "lake-exonym": "their name for the lake",
   person: "a person",
 };
 

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, ChevronDown, Feather, LocateFixed, Plus, RefreshCw } from "lucide-react";
 import { attempt, checkRoots, concepts, createEngine, message, presetDesign, preview } from "../engine";
-import type { Action, Catalog, Craft, Engine, EthosAxis, Forming, FoundingPreview, FoundingTraits, GrammarChoice, GrammarDesign, LakeNamesView, LanguageDesign, Livelihood, MapSize, Meaning, MeaningField, MeaningSet, MeaningTier, Naming, Overview, PossessorOrder, RiverNamesView, RootCheck, Variety, WordOrder, WorldMap } from "../model";
+import type { Action, Catalog, Craft, Engine, EthosAxis, Forming, FoundingPreview, FoundingTraits, GrammarChoice, GrammarDesign, LakeNamesView, LanguageDesign, Livelihood, MapSize, Meaning, MeaningField, MeaningRelation, MeaningSet, MeaningTier, Naming, Overview, PossessorOrder, RiverNamesView, RootCheck, SoundHint, Variety, WordOrder, WorldMap } from "../model";
 import { YEARS } from "../model";
-import { countWord, ETHOS_AXES, ETHOS_DRIVES, ETHOS_POLES, hue, landCardLabel, LIVELIHOOD_DRIVES, LIVELIHOOD_NAME, MARKING_PHRASE, MEANING_CLASS, MEANING_TIER, MILD, OPENNESS, OPENNESS_DRIVES, peopleLabel, POSSESSOR_PHRASE, STANDING, STANDING_DRIVES, STRONG, TERRAIN_NAME, WORD_ORDER_PHRASE } from "../lore";
+import { countWord, ETHOS_AXES, ETHOS_DRIVES, ETHOS_POLES, hue, landCardLabel, LIVELIHOOD_DRIVES, LIVELIHOOD_NAME, MARKING_PHRASE, MEANING_CLASS, MEANING_RELATION, MEANING_TIER, MILD, OPENNESS, OPENNESS_DRIVES, peopleLabel, POSSESSOR_PHRASE, STANDING, STANDING_DRIVES, STRONG, TERRAIN_NAME, WORD_ORDER_PHRASE } from "../lore";
 import { newBookId, readDraft, saveDraft, worldName, type DraftEntry } from "../shelf";
 import { Designer, randomSeed, type Founding as FoundingDesign } from "./Designer";
 import { FormingChart } from "./FormingChart";
@@ -14,6 +14,8 @@ import { Modal, plainTitle } from "./Modal";
 import { decodeNaming, encodeNaming, namingChoices } from "./NamingSelect";
 import { Phrase } from "./Phrase";
 import { Sample } from "./Sample";
+import { SoundKeys } from "./SoundKeys";
+import { MeaningPick } from "./MeaningPick";
 import { useAnswer } from "./Pending";
 import { Popover } from "./Popover";
 import { Sheet, type SheetDetent } from "./Sheet";
@@ -190,7 +192,7 @@ function markerChoice(speech: Variety, category: "plural" | "past" | "object"): 
 function rootTrouble(root: RootCheck): string {
   switch (root.status) {
     case "unknown-meaning": return "no such meaning in the catalog";
-    case "bad-ipa": return root.detail === "no-vowel" ? "has no vowel" : root.detail ? `cannot be read at “${root.detail}”` : "cannot be read";
+    case "bad-ipa": return !root.ipa.trim() ? "waits for its word" : root.detail === "no-vowel" ? "has no vowel" : root.detail ? `cannot be read at “${root.detail}”` : "cannot be read";
     case "outside-inventory": return `uses ${root.detail ?? "a sound"} this speech does not have`;
     case "duplicate": return root.detail ? `already given on line ${root.detail}` : "given twice";
     default: return "";
@@ -205,7 +207,13 @@ const ROOT_WARNING: Record<RootCheck["warnings"][number], string> = {
 /// The author's own words, one `meaning form` to a line, checked against
 /// the speech's sounds as they are typed. Accepted roots go into the design;
 /// the rest of the vocabulary is drawn around them.
-function RootsBox({ founder, meanings, update }: { founder: Founder; meanings: Meaning[]; update: (key: number, patch: Partial<Founder>) => void }) {
+function RootsBox({ founder, meanings, update, renamed, kin }: {
+  founder: Founder; meanings: Meaning[]; update: (key: number, patch: Partial<Founder>) => void;
+  /// Peoples whose names the latest roots changed.
+  renamed: { before: string; after: string }[];
+  /// The kin who inherit these words from the same ancestral tongue.
+  kin: string[];
+}) {
   const [text, setText] = useState(() => (founder.design.roots ?? []).map((root) => `${root.concept} ${root.ipa}`).join("\n"));
   const [open, setOpen] = useState(() => (founder.design.roots?.length ?? 0) > 0);
   const bare = JSON.stringify({ ...founder.design, roots: [] });
@@ -218,6 +226,14 @@ function RootsBox({ founder, meanings, update }: { founder: Founder; meanings: M
     }
   }, [accepted, founder, update]);
   const trouble = report?.roots.filter((root) => root.status !== "ok" && root.status !== "warned") ?? [];
+  const box = useRef<HTMLTextAreaElement>(null);
+  const pickable = useMemo(() => [...concepts(), ...meanings.map((meaning) => ({ id: meaning.id, gloss: meaning.gloss, pronoun: false, custom: true }))], [meanings]);
+  // A hint rewrites the sounds of each line, never its meaning.
+  const writeHint = (hint: SoundHint) => {
+    const lines = text.split("\n");
+    for (const root of report?.roots ?? []) lines[root.line - 1] = `${root.meaning} ${root.ipa.replaceAll(hint.written, hint.ipa)}`;
+    setText(lines.join("\n"));
+  };
   const replaceMeaning = (root: RootCheck, concept: string) => {
     const lines = text.split("\n");
     lines[root.line - 1] = `${concept} ${root.ipa}`;
@@ -226,9 +242,17 @@ function RootsBox({ founder, meanings, update }: { founder: Founder; meanings: M
   return <section className="founding-roots">
     <h4>Their own words</h4>
     {open ? <>
-      <p>Give any meanings their words, one to a line, in the catalog’s sounds: <code>water nara</code>, <code>king kaːr</code>. The rest of the vocabulary is drawn around them, and sound change wears them like any word.</p>
-      <textarea className="founding-roots-text" aria-label="The author’s roots" value={text} rows={Math.min(12, Math.max(3, text.split("\n").length + 1))}
+      <p>Give any meanings their words, one to a line, in the catalog’s sounds: <code>water nara</code>, <code>king kaːr</code>. The rest of the vocabulary is drawn around them, and sound change wears them like any word.{kin.length ? <> These are the words of their ancestral tongue, so the {kin.join(" and the ")} inherit them too.</> : null}</p>
+      <textarea ref={box} className="founding-roots-text" aria-label="The author’s roots" value={text} rows={Math.min(12, Math.max(3, text.split("\n").length + 1))}
         spellCheck={false} autoCapitalize="off" autoCorrect="off" onChange={(event) => setText(event.target.value)} />
+      <SoundKeys sounds={founder.design.sounds.map((sound) => sound.ipa)} field={box} value={text}
+        sounding={report?.roots.map((root) => root.ipa).join(" ")} onChange={setText} onHint={writeHint} />
+      <MeaningPick meanings={pickable} label="Add a line for a meaning" onPick={(concept) => {
+        const next = `${text.replace(/\n*$/, "")}${text.trim() ? "\n" : ""}${concept.id} `;
+        setText(next);
+        requestAnimationFrame(() => { box.current?.focus(); box.current?.setSelectionRange(next.length, next.length); });
+      }} />
+      {renamed.length ? <p className="muted small" role="status">Peoples are named from their words, so yours renamed {renamed.map((name, i) => <span key={i}>{i ? ", " : ""}the {name.before} the <b>{name.after}</b></span>)}.</p> : null}
       {report ? <>
         <p className={trouble.length ? "notice" : "muted small"}>
           {accepted.length} {accepted.length === 1 ? "root" : "roots"} given{trouble.length ? ` · ${trouble.length} ${trouble.length === 1 ? "needs" : "need"} attention` : ""}
@@ -241,8 +265,20 @@ function RootsBox({ founder, meanings, update }: { founder: Founder; meanings: M
             {root.suggestions.length ? <> · try {root.suggestions.map((concept, index) => <span key={concept}>{index ? ", " : ""}<button type="button" className="link" onClick={() => replaceMeaning(root, concept)}>{concept}</button></span>)}</> : null}</span> : null}
         </li>)}</ul>
       </> : null}
-    </> : <p className="founding-roots-closed">The words are drawn from their sounds. <button type="button" className="link" onClick={() => setOpen(true)}>Give them words of your own…</button></p>}
+    </> : <p className="founding-roots-closed">The words are drawn from their sounds. <button type="button" className="link" onClick={() => { setOpen(true); requestAnimationFrame(() => { box.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }); box.current?.focus({ preventScroll: true }); }); }}>Give them words of your own…</button></p>}
   </section>;
+}
+
+/// The world's seed, which the author may type to draw a known world again.
+function SeedField({ seed, onSeed }: { seed: number; onSeed: (seed: number) => void }) {
+  const [text, setText] = useState(String(seed));
+  useEffect(() => setText(String(seed)), [seed]);
+  const value = /^\d+$/.test(text.trim()) ? Number(text.trim()) : NaN;
+  const valid = Number.isSafeInteger(value) && value <= 0xffff_ffff;
+  const use = () => { if (valid && value !== seed) onSeed(value); else if (!valid) setText(String(seed)); };
+  return <label className="founding-seed-field">Seed <input type="text" inputMode="numeric" value={text} spellCheck={false} aria-invalid={!valid}
+    onChange={(event) => setText(event.target.value)} onBlur={use}
+    onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); use(); } }} /></label>;
 }
 
 const MEANING_SHAPES = ["count", "mass", "event", "property"] as const;
@@ -257,23 +293,28 @@ function MeaningsBox({ meanings, fields, onChange }: { meanings: Meaning[]; fiel
   const [shape, setShape] = useState<MeaningShape>("count");
   const [field, setField] = useState<MeaningField>("house");
   const [tier, setTier] = useState<MeaningTier>("everyday");
+  const [base, setBase] = useState("");
+  const [relation, setRelation] = useState<MeaningRelation>("place");
+  const bases = useMemo(() => [...concepts().filter((concept) => !concept.pronoun), ...meanings], [meanings]);
+  const baseMeaning = bases.find((concept) => concept.id === base);
   const id = gloss.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/^to /, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 32);
   const taken = id ? concepts().some((concept) => concept.id === id) || meanings.some((meaning) => meaning.id === id) : false;
   const add = () => {
     if (!id || taken) return;
     onChange([...meanings, {
       id, gloss: gloss.trim(), field, class: shape === "event" ? "event" : shape === "property" ? "property" : "entity",
-      countable: shape === "count", tier, from: null,
+      countable: shape === "count", tier, from: baseMeaning ? { base: baseMeaning.id, relation } : null,
     }]);
     setGloss("");
+    setBase("");
   };
   return <section className="founding-roots founding-meanings">
     <h4>Meanings of your own</h4>
     {open ? <>
-      <p>Add what the catalog lacks: <i>hearth</i>, <i>to forge</i>, <i>sacred</i>. Each people founded here gains a word for it. To give it a root above, use its short name.</p>
+      <p>Add what the catalog lacks: <i>hearth</i>, <i>to forge</i>, <i>sacred</i>. Each people founded here gains a word for it. To give it a word under <i>Their own words</i> below, use its short name.</p>
       {meanings.length ? <ul className="founding-roots-check">{meanings.map((meaning) => <li key={meaning.id} className="ok">
         <span className="founding-roots-meaning">{meaning.gloss}</span>
-        <span className="muted small"><code>{meaning.id}</code> · {MEANING_CLASS[meaning.class === "event" ? "event" : meaning.class === "property" ? "property" : meaning.countable ? "count" : "mass"].replace(/ \(.*\)$/, "").toLowerCase()} · {fields.find((set) => set.id === meaning.field)?.label ?? meaning.field}</span>
+        <span className="muted small"><code>{meaning.id}</code> · {MEANING_CLASS[meaning.class === "event" ? "event" : meaning.class === "property" ? "property" : meaning.countable ? "count" : "mass"].replace(/ \(.*\)$/, "").toLowerCase()} · {fields.find((set) => set.id === meaning.field)?.label ?? meaning.field}{meaning.from ? ` · built from ${meaning.from.base}` : ""}</span>
         <button type="button" className="link" onClick={() => onChange(meanings.filter((other) => other.id !== meaning.id))}>Remove</button>
       </li>)}</ul> : null}
       <div className="founding-meaning-form">
@@ -288,8 +329,15 @@ function MeaningsBox({ meanings, fields, onChange }: { meanings: Meaning[]; fiel
         <select aria-label="How bound to a way of life" value={tier} onChange={(event) => setTier(event.target.value as MeaningTier)}>
           {(["basic", "everyday", "specialized"] as const).map((t) => <option key={t} value={t}>{MEANING_TIER[t].name}</option>)}
         </select>
-        <button type="button" disabled={!id || taken} onClick={add}><Plus size={14} aria-hidden="true" /> Add</button>
+        <input type="text" aria-label="Built from" list="founding-meaning-bases" value={base} spellCheck={false} placeholder="built from: none" onChange={(event) => setBase(event.target.value.trim())} />
+        <datalist id="founding-meaning-bases">{bases.map((concept) => <option key={concept.id} value={concept.id}>{concept.gloss}</option>)}</datalist>
+        {baseMeaning ? <select aria-label="As its" value={relation} onChange={(event) => setRelation(event.target.value as MeaningRelation)}>
+          {(Object.keys(MEANING_RELATION) as MeaningRelation[]).map((r) => <option key={r} value={r}>{MEANING_RELATION[r]}</option>)}
+        </select> : null}
+        <button type="button" disabled={!id || taken || (!!base && !baseMeaning)} onClick={add}><Plus size={14} aria-hidden="true" /> Add</button>
       </div>
+      {base && !baseMeaning ? <p className="notice">No meaning “{base}” to build from. Choose one from the list or leave it empty.</p>
+        : baseMeaning ? <p className="muted small">Languages that build words will derive it from their word for “{baseMeaning.gloss}”.</p> : null}
       {taken ? <p className="notice">“{id}” is already in the catalog or your list.</p> : <p className="muted small">{MEANING_TIER[tier].drives}</p>}
     </> : <p className="founding-roots-closed">The catalog’s {concepts().length} meanings are theirs. <button type="button" className="link" onClick={() => setOpen(true)}>Add meanings of your own…</button></p>}
   </section>;
@@ -632,6 +680,20 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
   const riverNames = built?.riverNames ?? [];
   const lakeNames = built?.lakeNames ?? [];
   const nameOf = (id: number) => overview ? peopleLabel(overview, id) : "Settling…";
+  // A people's name is drawn from its words, so the author's roots can
+  // rename it; say so once the draft is rebuilt with them.
+  const rootsKey = founders.map((founder) => JSON.stringify(founder.design.roots ?? [])).join("|");
+  const namesSeen = useRef<{ roots: string; names: string[] } | null>(null);
+  const [renamed, setRenamed] = useState<{ before: string; after: string }[]>([]);
+  useEffect(() => {
+    if (!overview || !currentBuild) return;
+    const names = overview.communities.map((community) => community.name);
+    const prior = namesSeen.current;
+    namesSeen.current = { roots: rootsKey, names };
+    if (!prior || prior.roots === rootsKey || prior.names.length !== names.length) return;
+    setRenamed(names.flatMap((name, i) => name !== prior.names[i] ? [{ before: prior.names[i], after: name }] : []));
+  }, [overview, currentBuild, rootsKey]);
+  const speechKin = speechOwner ? founders.flatMap((founder, index) => founder.key !== speechOwner.key && founder.source === speechOwner.key && overview?.communities[index] ? [nameOf(index)] : []) : [];
   const landName = (region: number) => {
     const named = overview?.places.find((place) => place.region === region)?.names.at(-1)?.spelled;
     return named && overview && map ? landCardLabel(overview, map, region, named) : named ?? "unnamed land";
@@ -822,7 +884,7 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
         <button type="button" onClick={() => requestWorld({ seed: randomSeed(), size })}><RefreshCw size={13} aria-hidden="true" /> Draw other coasts</button>
         {built?.forming && !forming ? <button type="button" className="link" onClick={() => setFormed(null)}>Watch them form</button> : null}
       </div>
-      <p className="founding-seed">Seed <code>{worldSeed}</code>{map ? ` · ${map.radiusKm.toLocaleString()} km radius · ${map.regions.length.toLocaleString()} lands and seas` : ""}</p>
+      <p className="founding-seed"><SeedField seed={worldSeed} onSeed={(seed) => requestWorld({ seed, size })} />{map ? ` · ${map.radiusKm.toLocaleString()} km radius · ${map.regions.length.toLocaleString()} lands and seas` : ""}</p>
       {chartReady && !forming ? <p className="founding-invitation">Select a land on the chart to begin there.</p> : null}
     </>;
   } else if (step === "homeland") {
@@ -1029,8 +1091,8 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
               <Sample rendering={speech.grammar.sample.possession} label="Sample possession" />
               <Sample rendering={speech.grammar.sample.future} label="Sample future" /></> : null}
           </section>
-          <RootsBox key={speechOwner.key} founder={speechOwner} meanings={meanings} update={update} />
           {built ? <MeaningsBox meanings={meanings} fields={built.fields.filter((set) => !["core", "specimen", "custom"].includes(set.id))} onChange={setMeanings} /> : null}
+          <RootsBox key={speechOwner.key} founder={speechOwner} meanings={meanings} update={update} renamed={renamed} kin={speechKin} />
         </> : null}
       </div>
     </>;

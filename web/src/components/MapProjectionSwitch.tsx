@@ -18,10 +18,16 @@ export function useMapProjection(container: RefObject<HTMLElement | null>, initi
   useLayoutEffect(() => {
     const element = container.current;
     if (!element || chosen.current) return;
+    // The map's shape decides once, and again only when the window turns:
+    // a panel widening beside the map is not a reason to change the view.
+    let decided: boolean | null = null;
     const measure = () => {
       if (chosen.current) return;
+      const upright = window.innerHeight > window.innerWidth;
+      if (decided === upright) return;
       const { width, height } = element.getBoundingClientRect();
       if (!width || !height) return;
+      decided = upright;
       setProjection(height > width ? "globe" : "chart");
     };
     const observer = new ResizeObserver(measure);
