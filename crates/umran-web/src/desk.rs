@@ -151,6 +151,47 @@ struct CorrespondenceRow<'a> {
 struct RegularPair {
     pair: Segment,
     support: usize,
+    /// Where in the aligned words the pair stands, counted once per word and
+    /// place: the evidence for conditioning a law on its surroundings.
+    positions: Positions,
+}
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct Positions {
+    initial: usize,
+    between_vowels: usize,
+    #[serde(rename = "final")]
+    final_: usize,
+    elsewhere: usize,
+}
+
+/// Counts the places `pair` stands in each alignment: first, last, between
+/// two vowels (on either side's word), or beside a consonant.
+fn positions(rows: &[compare::Row], pair: Pair) -> Positions {
+    let vowel = |p: Pair| p.0.or(p.1).is_some_and(|id| CATALOG.get(id).is_vowel());
+    let mut out = Positions::default();
+    for row in rows {
+        let line = &row.alignment;
+        let mut seen = [false; 4];
+        for (i, _) in line.iter().enumerate().filter(|(_, p)| **p == pair) {
+            let place = if i == 0 {
+                0
+            } else if i + 1 == line.len() {
+                2
+            } else if vowel(line[i - 1]) && vowel(line[i + 1]) {
+                1
+            } else {
+                3
+            };
+            seen[place] = true;
+        }
+        out.initial += usize::from(seen[0]);
+        out.between_vowels += usize::from(seen[1]);
+        out.final_ += usize::from(seen[2]);
+        out.elsewhere += usize::from(seen[3]);
+    }
+    out
 }
 
 #[derive(Serialize, PartialEq, Eq)]
@@ -195,10 +236,11 @@ fn correspondences<'a>(
                     .iter()
                     .filter(|row| row.alignment.contains(&pair))
                     .count(),
+                positions(&comparison.rows, pair),
             )
         })
         .collect();
-    regular.sort_by(|(a, na), (b, nb)| {
+    regular.sort_by(|(a, na, _), (b, nb, _)| {
         nb.cmp(na).then_with(|| {
             (a.0.map(|p| p.0), a.1.map(|p| p.0)).cmp(&(b.0.map(|p| p.0), b.1.map(|p| p.0)))
         })
@@ -247,9 +289,10 @@ fn correspondences<'a>(
             .collect(),
         regular: regular
             .into_iter()
-            .map(|(pair, support)| RegularPair {
+            .map(|(pair, support, positions)| RegularPair {
                 pair: segment(pair),
                 support,
+                positions,
             })
             .collect(),
         grammar,

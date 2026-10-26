@@ -665,7 +665,13 @@ This bookkeeping makes no random draws and does not itself change replay.
   bare `[long]`/`[short]` match consonants then vowels, while bare
   `[stressed]`/`[unstressed]` match vowel nuclei. Target `open-syllable`
   and `medial` restrict vowel position. Results may delete (`∅`, `0`, `Ø`),
-  change length, `[lengthen before]`, or `[geminate next]`.
+  change length, `[lengthen before]`, or `[geminate next]`. A long
+  sound written `aː` matches only the long one: `aː > a` shortens,
+  `a > aː` lengthens, and `aː > eː` changes quality and keeps length;
+  changing both on one line is refused in favour of two lines.
+  `sound_hints` reads a draft for romanizations the catalog writes
+  otherwise (`sh` for ʃ, `:` for ː, a doubled letter for length, and,
+  given an inventory, a letter the language lacks whose IPA it has).
   `stress > initial|penult|final|weight|free` sets one stress rule per law.
   Each target, result, and immediate environment carries one catalog
   segment or class: no insertion, metathesis, multi-segment replacement,

@@ -1488,6 +1488,14 @@ impl Bench {
                         .sum::<u32>()
                         + p.point.offset
                 });
+                // Read from the action log alone, never a replay.
+                let decision = t.parent.and_then(|p| {
+                    t.actions
+                        .get(p.point.action..)?
+                        .iter()
+                        .find(|a| !matches!(a, Action::Run { .. }))
+                        .map(decision_kind)
+                });
                 TellingView {
                     id: t.id,
                     name: t.name.clone(),
@@ -1496,6 +1504,7 @@ impl Bench {
                     latest,
                     tip,
                     actions: t.actions.len(),
+                    decision,
                 }
             })
             .collect()
@@ -4029,6 +4038,32 @@ struct TellingView {
     latest: u32,
     tip: HistoryPoint,
     actions: usize,
+    /// The kind of decision this telling opened with, if it made one.
+    decision: Option<String>,
+}
+
+/// A decision named by its kind, from the action alone: the names of the
+/// peoples it touched need the world replayed.
+fn decision_kind(action: &Action) -> String {
+    match action {
+        Action::Settle { .. } => "a people settled".into(),
+        Action::Found { .. } | Action::FoundRelated { .. } => "a people founded".into(),
+        Action::Connect { .. } => "two peoples met".into(),
+        Action::Shift { .. } => "a people took up another language".into(),
+        Action::State { .. } => "a state founded".into(),
+        Action::Religion { .. } => "a faith founded".into(),
+        Action::Craft { craft, .. } => {
+            format!("a craft taught: {}", format!("{craft:?}").to_lowercase())
+        }
+        Action::Temper { .. } => "a people's temper turned".into(),
+        Action::Law { .. } => "a sound change from the catalog".into(),
+        Action::Authored { law, .. } => format!("a sound change: {}", law.title),
+        Action::Meaning { meaning } => format!("a meaning of the author's: “{}”", meaning.gloss),
+        Action::Word { concept, ipa, .. } => {
+            format!("a word of the author's: /{ipa}/ for “{concept}”")
+        }
+        Action::Run { .. } => "the years ran".into(),
+    }
 }
 
 #[derive(Serialize)]

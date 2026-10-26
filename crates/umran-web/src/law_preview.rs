@@ -40,11 +40,16 @@ struct Word {
     spelled_after: String,
 }
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct Name {
     kind: &'static str,
     subject: Option<usize>,
     before: String,
     after: String,
+    spelled_before: String,
+    spelled_after: String,
+    /// What a name for others names, as the chart now spells it.
+    of: Option<String>,
 }
 #[derive(Serialize)]
 struct Stress {
@@ -55,6 +60,20 @@ struct Stress {
 impl Bench {
     pub fn check_law(title: &str, source: &str) -> Result<String, String> {
         to_json(&notation::parse(title, source))
+    }
+
+    /// Hints for sounds written as a romanization would, against an
+    /// inventory of IPA sounds (JSON array) or none.
+    pub fn sound_hints(text: &str, inventory: &str, notation: bool) -> Result<String, String> {
+        let sounds: Option<Vec<String>> =
+            serde_json::from_str(inventory).map_err(|e| e.to_string())?;
+        let ids = sounds.map(|sounds| {
+            sounds
+                .iter()
+                .filter_map(|ipa| umran_sim::CATALOG.id_by_ipa(ipa))
+                .collect::<Vec<_>>()
+        });
+        to_json(&notation::sound_hints(text, ids.as_deref(), notation))
     }
 
     pub fn law_preview(&self, point: &str, variety: usize, law: &str) -> Result<String, String> {
@@ -160,12 +179,24 @@ fn preview(world: &World, variety: usize, law: &Law) -> Preview {
                 subject,
                 before: before.form.ipa_stressed(stress),
                 after: name.form.ipa_stressed(next.stress()),
+                spelled_before: speech.spell(&before.form),
+                spelled_after: next.spell(&name.form),
+                of: subject.and_then(|id| named(world, kind, id)),
             });
         } else {
             unchanged_names += 1;
         }
     });
     names.sort_by_key(|n| (n.kind, n.subject));
+    // A length class expands to a rule for vowels and one for consonants;
+    // the author wrote one line, so it reads as one.
+    rules.dedup_by(|next, kept| {
+        next.source == kept.source && {
+            kept.changed += next.changed;
+            kept.unrealisable += next.unrealisable;
+            true
+        }
+    });
     Preview {
         title: law.label.to_string(),
         rules,
@@ -180,11 +211,27 @@ fn preview(world: &World, variety: usize, law: &Law) -> Preview {
     }
 }
 
+/// The chart's present name for what another people's name refers to.
+fn named(world: &World, kind: &str, id: usize) -> Option<String> {
+    let names = match kind {
+        "exonym" => world.places.get(id),
+        "river-exonym" => world.river_names.get(id),
+        "lake-exonym" => world.lake_names.get(id),
+        _ => None,
+    }?;
+    let name = names.last()?;
+    Some(world.varieties[name.variety].spell(&name.name.form))
+}
+
 #[wasm_bindgen]
 impl Workbench {
     #[wasm_bindgen(js_name = checkLaw)]
     pub fn check_law(title: &str, source: &str) -> Result<String, JsValue> {
         Bench::check_law(title, source).map_err(fail)
+    }
+    #[wasm_bindgen(js_name = soundHints)]
+    pub fn sound_hints(text: &str, inventory: &str, notation: bool) -> Result<String, JsValue> {
+        Bench::sound_hints(text, inventory, notation).map_err(fail)
     }
     #[wasm_bindgen(js_name = lawPreview)]
     pub fn law_preview(&self, point: &str, variety: f64, law: &str) -> Result<String, JsValue> {

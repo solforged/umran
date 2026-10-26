@@ -200,7 +200,18 @@ fn line(text: &str, stress: &mut Option<StressRule>) -> Result<Vec<SoundChange>,
         ));
     }
     let targets = matchers(target, true)?;
-    let results = rewrites(result)?;
+    let results = match (long_phone(target), long_phone(result)) {
+        // uː > u shortens, u > uː lengthens, aː > eː keeps the length.
+        (Some(t), None) if t == result => vec![Rewrite::Length(false)],
+        (None, Some(r)) if r == target => vec![Rewrite::Length(true)],
+        (Some(_), Some(r)) => vec![Rewrite::Phone(segment(r)?)],
+        (Some(_), None) | (None, Some(_)) => {
+            return Err(unsupported(
+                "change length and quality on separate lines: aː > a, then a > e",
+            ));
+        }
+        (None, None) => rewrites(result)?,
+    };
     let lefts = environments(left, false)?;
     let rights = environments(right, true)?;
     let mut out = Vec::new();
@@ -282,7 +293,11 @@ fn reading(text: &str) -> String {
         };
         return format!("stress falls {place}");
     }
+    let shortened = a.trim().strip_suffix('ː') == Some(result);
+    let lengthened = result.strip_suffix('ː') == Some(a.trim());
     let outcome = match result.to_ascii_lowercase().as_str() {
+        _ if shortened => "shortens".to_string(),
+        _ if lengthened => "lengthens".to_string(),
         "∅" | "0" | "ø" => "is lost".to_string(),
         "[long]" => "lengthens".into(),
         "[short]" => "shortens".into(),
@@ -417,6 +432,12 @@ fn matchers(text: &str, target: bool) -> Result<Vec<Matcher>, Error> {
         "C" => return Ok(vec![Matcher::AnyConsonant]),
         "V" => return Ok(vec![Matcher::AnyVowel]),
         _ => {}
+    }
+    if let Some(phone) = long_phone(text) {
+        return Ok(vec![Matcher::Length {
+            target: Box::new(Matcher::Phone(segment(phone)?)),
+            long: true,
+        }]);
     }
     if !text.starts_with('[') {
         return Ok(vec![Matcher::Phone(segment(text)?)]);
@@ -575,6 +596,96 @@ fn environments(text: &str, right: bool) -> Result<Vec<Env>, Error> {
         .into_iter()
         .map(Env::Matcher)
         .collect())
+}
+/// A way of writing a sound that the catalog's IPA spells otherwise.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct SoundHint {
+    pub written: String,
+    pub ipa: String,
+}
+
+/// What the author probably meant where `text` writes a sound the way a
+/// romanization would: `sh` for ʃ, `u:` or `uu` for uː, and, given the
+/// language's sounds, `r` for its ɾ. With `notation`, the law notation's own
+/// symbols and feature classes are skipped. Hints only; nothing is rewritten.
+pub fn sound_hints(text: &str, inventory: Option<&[PhonemeId]>, notation: bool) -> Vec<SoundHint> {
+    let has = |id: PhonemeId| inventory.is_none_or(|sounds| sounds.contains(&id));
+    let mut hints: Vec<SoundHint> = Vec::new();
+    let mut hint = |written: &str, ipa: &str| {
+        if written != ipa && !hints.iter().any(|h| h.written == written) {
+            hints.push(SoundHint {
+                written: written.into(),
+                ipa: ipa.into(),
+            });
+        }
+    };
+    let mut tokens = Vec::new();
+    for line in text.lines() {
+        let line = if notation {
+            if line.trim_start().to_ascii_lowercase().starts_with("stress") {
+                continue;
+            }
+            let mut plain = String::new();
+            let mut depth = 0;
+            for c in line.chars() {
+                match c {
+                    '[' => depth += 1,
+                    ']' => depth -= 1,
+                    _ if depth > 0 => {}
+                    '>' | '/' | '_' | '#' | '∅' | 'Ø' => plain.push(' '),
+                    _ => plain.push(c),
+                }
+            }
+            plain.replace("..", " ")
+        } else {
+            line.to_string()
+        };
+        tokens.extend(
+            line.split_whitespace()
+                .filter(|t| !notation || !matches!(*t, "C" | "V" | "0"))
+                .map(str::to_owned),
+        );
+    }
+    for token in &tokens {
+        if token.contains(':') {
+            hint(":", "ː");
+        }
+        let chars: Vec<char> = token.chars().collect();
+        for pair in chars.windows(2) {
+            if pair[0] == pair[1]
+                && let Some(id) = CATALOG.id_by_ipa(&pair[0].to_string())
+                && has(id)
+            {
+                hint(&format!("{0}{0}", pair[0]), &format!("{}ː", pair[0]));
+            }
+        }
+        for (i, segment) in CATALOG.segments.iter().enumerate() {
+            let id = PhonemeId(i as u16);
+            let roman = segment.roman();
+            if roman == segment.ipa() || !token.contains(roman) || !has(id) {
+                continue;
+            }
+            if roman.chars().count() > 1 {
+                hint(roman, segment.ipa());
+            } else if let Some(sounds) = inventory {
+                // A single letter the language lacks, where its own sound is
+                // written that way: r for a tapped ɾ.
+                let lacks = CATALOG
+                    .id_by_ipa(roman)
+                    .is_none_or(|other| !sounds.contains(&other));
+                if lacks {
+                    hint(roman, segment.ipa());
+                }
+            }
+        }
+    }
+    hints
+}
+
+/// A catalog sound written long, as `uː` or `pː`: the sound without its mark.
+fn long_phone(text: &str) -> Option<&str> {
+    text.strip_suffix('ː')
+        .filter(|phone| CATALOG.id_by_ipa(phone).is_some())
 }
 fn segment(text: &str) -> Result<PhonemeId, Error> {
     if let Some(id) = CATALOG.id_by_ipa(text) {
@@ -879,13 +990,14 @@ impl crate::World {
                 visit("lake", Some(id), &p.name);
             }
         }
-        for (id, name) in variety
-            .exonyms
-            .iter()
-            .chain(&variety.river_exonyms)
-            .chain(&variety.lake_exonyms)
-        {
+        for (id, name) in &variety.exonyms {
             visit("exonym", Some(*id), name);
+        }
+        for (id, name) in &variety.river_exonyms {
+            visit("river-exonym", Some(*id), name);
+        }
+        for (id, name) in &variety.lake_exonyms {
+            visit("lake-exonym", Some(*id), name);
         }
     }
 }
@@ -1030,6 +1142,79 @@ mod tests {
                 .contains("a stressed vowel lengthens")
         );
     }
+    #[test]
+    fn a_sound_written_long_shortens_lengthens_or_keeps_its_length() {
+        for (source, before, after) in [
+            ("uː > u", "puːta", "puta"),
+            ("u > uː / _ #", "patu", "patuː"),
+            ("aː > eː", "paːta", "peːta"),
+            ("pː > p", "apːa", "apa"),
+            ("t > d / aː _", "paːta", "paːda"),
+        ] {
+            let report = parse("Length", source);
+            let law = report
+                .law
+                .unwrap_or_else(|| panic!("{source}: {:?}", report.rules))
+                .law(0);
+            assert_eq!(
+                law.apply(
+                    &crate::Form::from_ipa(before).unwrap(),
+                    crate::MinimalWord::Syllable,
+                    StressRule::Initial
+                )
+                .ipa(),
+                after,
+                "{source}"
+            );
+        }
+        // Only the long sound is matched: short u stays.
+        let law = parse("Short", "uː > u").law.unwrap().law(0);
+        let form = crate::Form::from_ipa("putu").unwrap();
+        assert_eq!(
+            law.apply(&form, crate::MinimalWord::Syllable, StressRule::Initial)
+                .ipa(),
+            "putu"
+        );
+        assert!(
+            parse("Short", "uː > u").rules[0]
+                .reading
+                .as_ref()
+                .unwrap()
+                .contains("shortens")
+        );
+        assert_eq!(
+            parse("Both", "aː > e").rules[0].status,
+            RuleStatus::Unsupported
+        );
+    }
+
+    #[test]
+    fn hints_name_the_ipa_a_romanization_means() {
+        let ipa = |sounds: &[&str]| {
+            sounds
+                .iter()
+                .map(|s| CATALOG.id_by_ipa(s).unwrap())
+                .collect::<Vec<_>>()
+        };
+        let hints = |text: &str, sounds: Option<&[PhonemeId]>, notation: bool| {
+            sound_hints(text, sounds, notation)
+                .into_iter()
+                .map(|h| (h.written, h.ipa))
+                .collect::<Vec<_>>()
+        };
+        let pair = |a: &str, b: &str| (a.to_string(), b.to_string());
+        assert_eq!(hints("shah", None, false), vec![pair("sh", "ʃ")]);
+        assert_eq!(hints("ku:", None, false), vec![pair(":", "ː")]);
+        assert!(hints("kuu", None, false).contains(&pair("uu", "uː")));
+        // With a language's sounds, a letter it lacks names its own sound.
+        let tapped = ipa(&["p", "t", "k", "ɾ", "a", "i", "u"]);
+        assert_eq!(hints("lar", Some(&tapped), false), vec![pair("r", "ɾ")]);
+        assert!(hints("pata", Some(&tapped), false).is_empty());
+        // The notation's own marks and feature classes are not sounds.
+        assert!(hints("[voiceless stop] > [voiced] / V _ V", None, true).is_empty());
+        assert_eq!(hints("sh > s / # _", None, true), vec![pair("sh", "ʃ")]);
+    }
+
     #[test]
     fn apocope_protects_last_vowel_and_minimal_word() {
         let law = parse("Apocope", "V > ∅ / _ #").law.unwrap().law(0);

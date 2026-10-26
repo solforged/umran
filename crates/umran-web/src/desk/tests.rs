@@ -140,11 +140,19 @@ fn desk_json_shapes_and_support_count_rows_not_positions() {
     }
     assert_eq!(compared["regular"].as_array().unwrap().len(), 2);
     for regular in compared["regular"].as_array().unwrap() {
-        keys(regular, &["pair", "support"]);
+        keys(regular, &["pair", "support", "positions"]);
         assert_eq!(
             regular["support"], 6,
             "p and a both repeat twice in every row"
         );
+        let positions = &regular["positions"];
+        keys(
+            positions,
+            &["initial", "betweenVowels", "final", "elsewhere"],
+        );
+        for place in positions.as_object().unwrap().values() {
+            assert!(place.as_u64().unwrap() <= 6, "a place counts each row once");
+        }
     }
     let truth = serde_json::to_value(truth(&world, 0, 1, "specimen").unwrap()).unwrap();
     keys(&truth, &["rows", "ancestor", "splitAt"]);
