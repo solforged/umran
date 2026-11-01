@@ -1,9 +1,8 @@
 # The book
 
-Product frame, October 2026. This replaces the direction in `backlog.md`;
-the pieces that document delivered there (settlement planner, tellings,
-comparison, guided founding, motion) survive as workshop tools inside the
-shape described here.
+Product frame, October 2026. This replaces the direction in `backlog.md`.
+The pieces delivered there (settlement planner, tellings, comparison, guided
+founding, motion) survive as workshop tools in the product described here.
 
 ## The sentence
 
@@ -16,8 +15,8 @@ in the way Tolkien was. They set the founding conditions, let regular
 derivation run, and read what came of it as if discovering it. The
 discovery is honest because the derivation is: every sound law is
 regular, every borrowing has a contact behind it, every migration a
-pressure. Nothing is decreed; everything is caused, by land, by accident,
-or by a dated decision of the author's.
+pressure. Every change has a cause: land, accident, or a dated decision
+of the author's.
 
 This is the Toynbee frame the project started with. A people has a land,
 and the land and their way of living on it make their temper. History
@@ -29,7 +28,7 @@ fortunes, speech, in that order.
 
 ## The loop
 
-Not a game loop. A drafting loop.
+The author works in a drafting loop:
 
 ```
 found  →  run  →  read  →  revise  →  run again
@@ -37,16 +36,16 @@ found  →  run  →  read  →  revise  →  run again
 
 - **Found.** Author the constraints: the coasts, who lives where, how they
   live, what sounds they favour, how they name themselves. This is where
-  authorship is thickest, so it is the richest surface.
-- **Run.** Let the years run to a year, in one stroke. Watching year by
-  year is a study tool, kept, not the default.
+  the author has the most choices, so it is the richest interface.
+- **Run.** Run to a chosen year in one stroke. Watching year by year
+  remains available as a study tool.
 - **Read.** The chart, the chronicle, and the cards: the workshop. Every
   name links to its card; every card shows its causes.
 - **Revise.** A dated decision (a people parts, a faith is founded, a
   craft is taught) opens another telling from that year. Tellings are
   drafts of the same world. Compare them at the same year.
-- **Run again.** Until a telling is one you want to keep. Then read it
-  as a book.
+- **Run again.** Repeat until a telling is one you want to keep. Then
+  read it as a book.
 
 Authorship stays at the level of constraints and dated decisions. The
 author never edits a derived form; if *fees* is wrong, the law is wrong,
@@ -54,14 +53,15 @@ and the law is what changes. The engine's regularity is the point.
 
 ## The book's table of contents
 
-What a finished world reads as. Each chapter is drawn from a facade view
-that exists today (`web/src/model.ts`), so the book page is a reading of
-the engine, not a second source. Blank where the engine has nothing yet.
+The finished book follows this chapter order. Each chapter is drawn from
+an existing facade view (`web/src/model.ts`), so the book page is a reading
+of the engine, not a second source. Sections stay blank where the engine
+has nothing yet.
 
 1. **Frontispiece.** The world's name (the landmass the engine names,
    `Hūhupam`, never a people, so it does not drift when a people's name
    erodes), the author, the seed and engine revision, the chart, and the
-   year the book is read at. Which telling, if there are several.
+   year the book is read at. It also names the telling if there are several.
 2. **The lands.** The chart as drawn, its coasts, terrain, rivers, lakes,
    and climate; every named land in a line, with the peoples who hold it,
    and the chronology of its names and who calls it what folded beneath
@@ -90,15 +90,15 @@ the engine, not a second source. Blank where the engine has nothing yet.
    - *Word building*: the builders (affixes or vowel patterns).
    - *Grammar*: the sketch (word order, how the object is marked, where
      the possessor goes), a sample sentence, a possession phrase, and
-     "I saw you" / "You saw me" rendered from the lexicon, the categories
-     the engine models (plural, past, object, future, progressive,
-     genitive: `grammar.markers`), the pronouns with their object and
-     possessive forms and where they stand against the nouns
+     "I saw you" / "You saw me" rendered from the lexicon. List the
+     categories the engine models (plural, past, object, future,
+     progressive, genitive: `grammar.markers`). Show the pronouns with
+     their object and possessive forms, and how these compare with nouns
      (`grammar.pronounCase`, `grammar.possessive`: like the nouns, ahead
-     of them, or keeping a relic the nouns lost), the person marked on the
-     verb and on the thing owned (`grammar.agreement`,
-     `grammar.objectAgreement`, `grammar.possessorAgreement`), and a
-     heading for what it does not model yet, stated as such.
+     of them, or keeping a relic the nouns lost). Show the person marked
+     on the verb and on the thing owned (`grammar.agreement`,
+     `grammar.objectAgreement`, `grammar.possessorAgreement`). End with
+     a heading for what the engine does not model yet, stated as such.
    - *Phrasebook*: a few fixed things to say, "I saw you", "my house",
      "their children", rendered by the grammar as it stands, each with
      the grammar it exercised (`phrasebook`).
@@ -122,32 +122,43 @@ the engine, not a second source. Blank where the engine has nothing yet.
    craft brings) (`StateView`, `ReligionView`, `crafts`, `cities`).
 6. **The chronicle.** The headline entries, by year, with causes where
    recorded, and the author's decisions marked on the entries they
-   produced. It is read in eras, not as a log. An era opens when a state
-   rises or falls, a people conquers another, a faith is founded, or a
-   language becomes classical, and runs at least two hundred years: an
-   opener sooner than that stays a headline inside the era. The era's
-   heading is a few words from the opener's subjects ("Iffi rises"); its
+   produced. It is read in eras.
+
+   An era opens when a state rises or falls, a people conquers another,
+   a faith is founded, or a language becomes classical. It runs at least
+   two hundred years: an opener sooner than that stays a headline inside
+   the era. The era's
+   heading is a few words from the opener's subjects ("Iffi rises"). Its
    full entry is the title. Under the heading, one line tells what
    happened to speech in the era: the languages that arose, how many
-   sound changes fell and on which languages most, new words, and
-   grammar changes, since eras are named for states and faiths and the
-   languages' own history would otherwise sit unseen. Within an era the
-   headline entries stand at full weight (a people appears, parts,
-   moves, or changes tongue; a conquest; a state; a faith and its
-   schisms, conversions, and holy lands; a craft; a city and its
-   speech; a language written, standardised, or made classical; a
-   people ends; a way of life or hard times). The bookkeeping of a
-   year (neighbours, spreads, crowding, the weather, a river, a
-   meaning or spelling, a temper, a sound change, a grammar change)
+   sound changes occurred and which languages had the most, new words,
+   and grammar changes. This keeps the languages' history visible in
+   eras named for states and faiths.
+
+   Within an era, headline entries stand at full weight:
+   - a people appears, parts, moves, or changes tongue
+   - a conquest
+   - a state
+   - a faith and its schisms, conversions, and holy lands
+   - a craft
+   - a city and its speech
+   - a language written, standardised, or made classical
+   - a people ends
+   - a way of life or hard times
+
+   The bookkeeping of a year (neighbours, spreads, crowding, the weather,
+   a river, a meaning or spelling, a temper, a sound change, a grammar change)
    folds into one quiet line under the year, "also that year", which
-   opens to its entries; consecutive quiet years fold into one line
+   opens to its entries. Consecutive quiet years fold into one line
    for the run. A filter to one group or a search unfolds what it
-   matches. Every reading of a chronicle (the chronicle's wide card, a
-   subject's fortunes, and the book) uses the same eras and reads from
-   the beginning; latest first is a choice. The chronicle's card is the
-   table of contents: each era with its span, its heading, the peoples,
-   states, and languages it concerns, and its speech in counts, at the
-   dense scale. The Markdown export keeps every entry.
+   matches.
+
+   Every reading of a chronicle (the chronicle's wide card, a subject's
+   fortunes, and the book) uses the same eras and reads from the
+   beginning, with latest first available as a choice. The chronicle's
+   card is the table of contents: each era with its span, its heading,
+   the peoples, states, and languages it concerns, and its speech in
+   counts, at the dense scale. The Markdown export keeps every entry.
 7. **Notes.** The author's own, dated, with the subjects they refer to.
 8. **Other tellings.** Each draft's name, the year and decision it
    diverged on, and what it kept.
@@ -164,7 +175,7 @@ Namesakes keep their recorded names. Place links add terrain when needed,
 then a compass direction among namesakes on like terrain. A local ordinal
 appears only on labels that remain identical. Compare names shown in the
 same reading, not unrelated historical spellings or exonyms. Cities use
-their land; rivers use their source; lakes use a shore region. Peoples use
+their land, rivers their source, and lakes a shore region. Peoples use
 their heart land ("Kin of Opuw"), and a number only when that land is
 unnamed or shared.
 Successive realms of one people carry their founding year, including in
@@ -175,18 +186,19 @@ remaining-subject count opens that era.
 ## A spherical world, two views
 
 The chart remains the first view on wide screens, with a rotatable inked
-globe beside it as a choice next to the map's navigation controls; a
+globe beside it as a choice next to the map's navigation controls. A
 tall, narrow map opens on the globe instead, since a whole sphere fits a
 portrait screen better than a strip of chart. Once the author picks
 one, that choice holds. Founding, lands, journeys, names, and cards refer
 to the same world in both views.
-A projection is a way of reading, not a decision in the world's history.
+Changing projection changes only the view. It records no decision in the
+world's history.
 Each world opens padded around all living peoples' lands on either view,
 unless its reading place already keeps a camera. The chart room remembers
 each world's chart camera, globe camera and turn, and chosen projection.
 Home always returns to the whole chart or globe. A recorded passage can
-temporarily frame other lands and draw its dated route; ending that reading
-returns to the reader's camera rather than replacing it.
+temporarily frame other lands and draw its dated route. Ending that reading
+restores the reader's camera.
 
 The world is spherical from its founding. A people's known-world lens can
 show how its geographic knowledge grows on either view; it does not change
@@ -195,15 +207,17 @@ historical event, not an automatic stage of this simulator.
 
 ## Screens
 
-Four, each a chapter of the book or a tool for writing one. Anything
-that is neither is residue of the live-game phase and goes.
+The four screens are chapters of the book or tools for writing one.
+Anything that serves neither purpose is left over from the live-game
+phase and should be removed.
 
 ### The chart room (the shelf)
 
-An index of the author's worlds. The last opened world leads, large: its
-miniature, name, year, the last chronicle line, and *Continue*. Other
-worlds below it in a row. Then, smaller: *Found a new world*, *Read a
-chronicle already written* (the sample), *Open a save file*. Tile text is
+The chart room is an index of the author's worlds. The last opened world
+leads, large: its miniature, name, year, the last chronicle line, and
+*Continue*. Other worlds sit below it in a row. Smaller options follow:
+*Found a new world*, *Read a chronicle already written* (the sample),
+*Open a save file*. Tile text is
 the world's name and the last line of its chronicle, never a comma list
 of language names.
 
@@ -237,7 +251,7 @@ one draft on the real engine, saved on the shelf with *Resume*.
    take distinct, reachable homelands, nearest first but with two lands
    between homelands where the land allows. Related speech has real
    ancestry in the engine; matching sound presets alone do not make a
-   family. Then a compact roster above a portrait in derivation order:
+   family. A compact roster sits above a portrait in derivation order:
    - *How they live*: as the land suggests, or farmers, herders, or
      foragers, each card saying how many souls the homeland would feed
      that way (`foundingTraits`), with a line on what the way of life does.
@@ -250,7 +264,8 @@ one draft on the real engine, saved on the shelf with *Resume*.
      conquest and whose words are borrowed) and openness to foreign words,
      three stops each. Kin share their ancestor's.
    - *What they begin with*: crafts, a realm, a faith, each a dated year-0
-     decision. One the engine declines shows as not possible here.
+     decision. If the engine declines a decision, the interface explains
+     that it is not possible here.
    - *What they call their children*: the given names their language
      draws, which move with their way of life and temper.
 
@@ -258,20 +273,21 @@ one draft on the real engine, saved on the shelf with *Resume*.
    clicked; Escape or *Cancel* leaves things as they were. *Start again*
    clears the peoples after asking. Reach is drawn on the chart for the
    selected people, with effort on hover.
-4. **Their speech.** Every preset as a voice card showing the words this
-   people would have under it: the engine's own preview with the seed
-   founding uses, so the chosen card's words are the founded words.
+4. **Their speech.** Every preset appears as a voice card showing the
+   words this people would have under it. This is the engine's own preview,
+   using the founding seed, so the chosen card's words are the founded words.
    *Draw other words* draws another seed; *Shape the sounds by hand…*
    opens the full sound chart. Grammar follows as phrases with sample
    sentences. Related peoples share their ancestral sound and grammar
    choices. *Their own words* takes the author's roots, one `meaning
-   form` to a line in the catalog's sounds; the engine checks each line
-   as it is typed (`checkRoots`), refuses whole with a reason (no such
-   meaning, unreadable sound, a sound this speech lacks, given twice) and
-   offers the nearest meanings, and warns about shapes the knobs would
-   not draw without refusing them. Accepted roots ride on the design, so
-   the chosen voice card and the founded words carry them, kin inherit
-   them, and the recipe replays them; every other word is drawn as before.
+   form` to a line in the catalog's sounds. The engine checks each line
+   as it is typed (`checkRoots`). It rejects invalid input as a whole,
+   gives a reason (no such meaning, unreadable sound, a sound this speech
+   lacks, given twice), and offers the nearest meanings. It warns about
+   shapes the sound settings would not draw but accepts them. Accepted
+   roots are stored in the design: the chosen voice card and the founded
+   words carry them, kin inherit them, and the recipe replays them.
+   Every other word is drawn as before.
 5. **The title page.** Set like a printed book's opening over the
    dimmed chart: the world's name, the author, the peoples, the seed, and
    the year the chronicle runs to (4000 by default). Its verb is *Write
@@ -286,7 +302,8 @@ globe.
 
 ### The workshop (the stage)
 
-The chart, the cards, the chronicle, and the time bar. What changes:
+The workshop brings together the chart, the cards, the chronicle, and the
+time bar. It works as follows:
 
 - The time bar's primary verb is **Run to year N**, defaulting to a long
   span (4000). Play, step, and stop-for move into a study drawer on the
@@ -303,15 +320,15 @@ The chart, the cards, the chronicle, and the time bar. What changes:
   The panel explains that without a new decision the years repeat as
   told, and that deciding something in the past also begins a new telling.
 - At year 0 the open card is the frontispiece: the name, the peoples,
-  *Run*. No tutorial, no stat box. The one-line caption at the foot of
+  *Run*. There is no tutorial or stat box. The one-line caption at the foot of
   the chart does the teaching: "Year 0 · eight peoples settle Hūhupam".
   While the years run, the frontispiece shows the chronicle being written
   in place of *Run*.
 - When the years move, the open card is the frontispiece or something
   that exists at the current year, and the breadcrumb says the current
   year. The folio is a card opened wide; it never has its own title.
-  No banner about previews going stale, because running and deciding
-  are never simultaneous.
+  There is no banner about previews going stale, because running and
+  deciding are never simultaneous.
 - The language card is the primary card; the people card is "who speaks
   it and what happened to them". Both open with the derivation order:
   land, people, fortunes, speech.
@@ -340,18 +357,22 @@ The chart, the cards, the chronicle, and the time bar. What changes:
 - A decision is taken from a card (*Decide…*), dated, and marked in the
   chronicle as the author's. It opens another telling if it is not at
   the tip. Three decisions write language rather than history, and the
-  engine checks each as it is typed: a language's *A sound change* takes
-  a catalog law or one written in the classical notation (`p > f / _ #`,
-  `[voiceless stop] > [voiced] / V _ V`, `a > e / _ .. [front]`,
-  `stress > initial`), read line by line by `checkLaw` and previewed on
-  every living word and name by `lawPreview` before it is let happen;
-  the frontispiece's *A meaning of your own* adds a meaning the catalog
-  lacks, with its field, kind, how bound it is to a way of life, and an
-  optional meaning to build it from, so every living language finds a
-  word for it in the years after (or at founding, where the speech step
-  takes them beside the author's roots); a language's *A word of your
-  own* gives it the author's form for a meaning, in the catalog's IPA and
-  the language's own sounds, which sound change then wears like any word.
+  engine checks each as it is typed:
+
+  - A language's *A sound change* takes a catalog law or one written in
+    the classical notation (`p > f / _ #`,
+    `[voiceless stop] > [voiced] / V _ V`, `a > e / _ .. [front]`,
+    `stress > initial`), read line by line by `checkLaw` and previewed on
+    every living word and name by `lawPreview` before it is applied.
+  - The frontispiece's *A meaning of your own* adds a meaning the catalog
+    lacks, with its field, kind, how bound it is to a way of life, and an
+    optional meaning to build it from. Every living language finds a
+    word for it in the years after (or at founding, where the speech step
+    takes them beside the author's roots).
+  - A language's *A word of your own* gives it the author's form for a
+    meaning, in the catalog's IPA and the language's own sounds, which
+    sound change then wears like any word.
+
 - Labels and layer detail follow one physical scale in kilometres per
   pixel, not a fraction of the world's drawing. At world scale only
   continents and the six largest living peoples are lettered. Below
@@ -389,16 +410,16 @@ The chart, the cards, the chronicle, and the time bar. What changes:
   card never changes this choice. The known-lands action on a language
   card explicitly keeps the author's names when it narrows the lands.
   This is the explorer's lens, a way of reading rather than a mechanic.
-- Two scales on a card. Prose (the head, a section's sentence, an
+- A card uses two scales. Prose (the head, a section's sentence, an
   entry's text) keeps the reading measure. Apparatus (a facts box, a
   roster, a ledger, a leaf's title row, the chronicle's contents) sits
-  at the dense scale the layers menu set: smaller type, tight rows,
+  at the dense scale set in the layers menu: smaller type, tight rows,
   little padding, so a card holds detail without scrolling.
 
 ### The book
 
-A full-window screen, reached from the workshop's cartouche, laid out to
-be read in the order above, with the chart as frontispiece. A contents
+The book is a full-window screen, reached from the workshop's cartouche
+and laid out to be read in the order above, with the chart as frontispiece. A contents
 rail follows the chapter; a saved bookmark keeps the anchor, scroll offset,
 and open sections. It reuses the card sections rather than restating them.
 The last page offers the save file and editions, not a separate export book.
@@ -418,25 +439,26 @@ history in a narrow, unbroken origin cell.
 
 ### At every size
 
-The same four screens on a phone, a folding phone, a tablet, and a
-desktop, arranged by Android's window size classes and no other
-breakpoints: compact below 600 px wide, medium to 840, expanded beyond,
-and a short class below 480 px tall for phones on their side.
+The same four screens serve phones, folding phones, tablets, and desktops.
+They follow Android's window size classes and no other breakpoints:
+compact below 600 px wide, medium to 840, expanded beyond, and a short
+class below 480 px tall for phones on their side.
 
 In the workshop on compact screens the map fills the window and the card
-is a sheet over it, with three detents: a peek that shows the title and the time bar, a
-half that shares the screen with the chart, and the full card. Opening a
-subject raises the sheet to half; a decision on the chart lowers it.
+is a sheet over it, with three detents: a peek that shows the title and
+the time bar, a half that shares the screen with the chart, and the full
+card. Opening a subject raises the sheet to half. A decision on the chart
+lowers it.
 Founding keeps its panel in the same sheet and folds the rail into one
 line, "2 of 6 · The homeland", that opens a menu of the steps. A medium
-screen held upright stacks the chart above the card; expanded screens
+screen held upright stacks the chart above the card. Expanded screens
 keep the card as a column beside the map.
 Touch targets grow to 44 px on coarse pointers, and the frame respects
 the notch and gesture bar.
 
 ## Vocabulary
 
-Six words. Everything the reader sees uses them.
+Everything the reader sees uses these six words.
 
 | Word | Means |
 |---|---|
@@ -472,7 +494,7 @@ otherwise. No facade search or adjacency rule supplies a missing cause.
 | coinage, pronouns, purism, tone | a word needed, a court, foreign prestige, a revival, a purist norm, contact |
 
 Territorial splits, crowding, and ordinary conquest have no recorded
-trigger and say none.
+trigger and do not name one.
 
 The chronicle shows a cause beneath its entry ("after a conquest in
 3425 ↗"), linking to the triggering entry; `lore.ts` names each

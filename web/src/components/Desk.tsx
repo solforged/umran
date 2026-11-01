@@ -27,7 +27,7 @@ export function Desk({ first, second, meanings = "core", ctx, onSaveNote, onStar
   const sets = ctx.engine.meaningSets();
   const id = useId();
   return <section className="philologist-desk" aria-label="The philologist’s desk">
-    <p className="desk-introduction">Read the sounds before the history. Family names, family colours, and descent are kept out of this desk until you reveal the record.</p>
+    <p className="desk-introduction">Study the sounds before revealing the record. Family names, colours, and descent stay covered until then.</p>
     <div className="desk-choices">
       <p>First language <strong>{ctx.overview.varieties[first]?.name ?? "An unrecorded language"}</strong></p>
       <label htmlFor={`${id}-language`}>Compare with
@@ -128,9 +128,9 @@ function RecordedComparison({ comparison, selected, ctx }: { comparison: Corresp
   const truth = use(ctx.engine.truth(ctx.generation, comparison.a, comparison.b, comparison.meanings));
   return <>
     <div className="desk-record-summary">
-      <h3>The recorded history</h3>
+      <h3>The record</h3>
       <p>{truth.ancestor === null ? "No common ancestor is recorded for these languages." : <>Their common ancestor is {ctx.link({ kind: "language", variety: truth.ancestor }, ctx.overview.varieties[truth.ancestor]?.name ?? "an unrecorded language")}{truth.splitAt === null ? "; their parting year is not recorded" : `; they parted in year ${truth.splitAt * YEARS}`}.</>}</p>
-      <p className="muted small">A root history and recurring sounds are different kinds of evidence. Where they differ, read the contact or the missing support, not a grade.</p>
+      <p className="muted small">Recurring sounds show present-day correspondences; the root record shows ancestry and borrowing. Use each word’s evidence to explain any difference.</p>
     </div>
     <AlignedRows comparison={comparison} selected={selected} truth={truth} ctx={ctx} />
   </>;

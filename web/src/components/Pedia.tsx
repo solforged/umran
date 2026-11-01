@@ -626,8 +626,8 @@ function KnownWorldLeaf({ variety, context }: { variety: number; context: Contex
       }
     >
       <p className="muted small">
-        Lands its speakers hold or held, border, or have heard of from peoples they deal with, each as they say its name. A
-        name heard long ago may be stale.
+        Speakers know lands they hold or once held, neighbouring lands, and places heard of through contact. Each bears
+        the name they know. A name learned long ago may differ from what its holders say now.
       </p>
       {[...groups].map(([m, lands]) => (
         <section key={m}>
@@ -737,7 +737,7 @@ function ContinentCard({ landmass, context }: { landmass: number; context: Conte
         </Leaf>
       ) : null}
       <p className="muted small">
-        {name ? <>Entered on the chart from the speech of the {overview.communities[name.people].name}, the first people known to have lived on or heard of it; the name stays as it was written, whatever becomes of their language.</> :
+        {name ? <>This name comes from the speech of the {overview.communities[name.people].name}, the first people known to have lived on or heard of this land. The written name stays fixed as their language changes.</> :
           <>No living people knows any of this land, so the chart has no name for it.</>}{" "}
         Each land is a region of the world; its area is shown in square kilometres. Lands vary in size. Beyond its shores lie{" "}
         <Joined
@@ -1259,7 +1259,7 @@ function WorldCard({ context }: { context: Context }) {
       <Leaf id="compared" title="Words compared" summary={<p>Choose meanings and living languages; the shading shows recorded roots.</p>}>
         <WordsCompared spoken={spoken} context={context} onOpenDesk={(first, second, meanings) => { setDesk({ first, second, meanings }); folio.show("desk"); }} />
       </Leaf>
-      <Leaf id="desk" title="The philologist’s desk" summary={<p>Study a pair of languages from their sounds, with their history covered.</p>}>
+      <Leaf id="desk" title="The philologist’s desk" summary={<p>Study a pair of languages from their sounds, with the family record covered.</p>}>
         <Desk key={desk ? `${desk.first}:${desk.second}:${desk.meanings}` : "first-pair"} first={desk?.first ?? spoken[0].id} second={desk?.second ?? spoken[1].id} meanings={desk?.meanings ?? "core"} ctx={languageChapterContext(context, desk?.first ?? spoken[0].id)} onSaveNote={context.onSaveNote} onStartNote={context.onStartNote} />
       </Leaf>
     </> : null}

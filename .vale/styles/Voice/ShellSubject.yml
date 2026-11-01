@@ -1,0 +1,7 @@
+extends: existence
+message: "'%s' narrates the argument instead of making it; start with the claim or the person making it."
+level: warning
+ignorecase: false
+nonword: true
+tokens:
+  - '(?:^|(?<=[.!?]\s))(?:The|This|That) (?:question|disagreement|dispute|debate|distinction|comparison|mechanism|tension|objection) (?:asks|turns on|centers on|hinges on|rests on|lies in|is whether|is how|is what)\b'

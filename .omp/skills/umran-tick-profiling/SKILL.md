@@ -11,4 +11,10 @@ description: "Use when Umran (formerly langgen) playback is slow: profile per-ge
 4. Browser: rebuild WASM with `bun run build:wasm` (Vite hot-reloads it). Set the stop-for select to `nothing` (otherwise play halts on events and the measure is wrong) and the pace select to `16`. Record the year from `.stage-year`, click `.timebar button.play`, wait 8 s in the eval host (not in a page promise; long page promises get collected), then compute ms per generation as dt / (Δyear / 25). Headless worlds keep growing between runs, so compare at a similar size.
 5. Delete the probe example dir before committing. Run `cargo clippy`, `cargo test --workspace --release`, and `bun run build`.
 
-Known costs: Adapter::new per call (reads the whole lexicon; build one ear per variety with `World::ear`); borrow() stream per contact×direction×concept (fixing it changes replay, so bump ENGINE_REVISION); crowded worlds (100+ peoples) because splits continue on full land.
+Known costs:
+
+- `Adapter::new` reads the whole lexicon per call. Build one ear per variety
+  with `World::ear`.
+- `borrow()` creates a stream per contact×direction×concept. Fixing it changes
+  replay, so bump `ENGINE_REVISION`.
+- Crowded worlds (100+ peoples) keep splitting even on full land.

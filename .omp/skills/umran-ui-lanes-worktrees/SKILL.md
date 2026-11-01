@@ -20,7 +20,18 @@ cp -R web/src/wasm /tmp/umran-<name>-wt/web/src/wasm
 Shared `node_modules` shares vite's deps cache, which can duplicate React (blank page, `reading 'useState'`). Tell lanes to start vite with a throwaway config outside the worktree (`cacheDir: "/tmp/vite-cache-<lane>"`, `resolve.dedupe: ["react","react-dom"]`) on a free port in 5200-5299, never `vite --force`.
 
 ## Brief (`local://brief-<slice>.md`)
-Worktree path; exact allow list of files/functions; the contract as TS signatures and class names; CSS tokens to use; what is "not yours"; proof: `bun run check` once at the end, headless Chromium numbers (bounding boxes, counts, computed styles) and screenshots in day and lamplight (`data-theme` on `<html>`), `tab.errors()` clean beyond requestFailed. When two lanes touch one file (e.g. `Stage.tsx`), make both add the identical shared lines so the cherry-pick conflict is trivial.
+Include the following in each brief:
+
+- The worktree path and exact allow list of files and functions.
+- The contract as TS signatures and class names, with CSS tokens to use.
+- Files and responsibilities outside the lane's scope.
+- Validation: `bun run check` once at the end, headless Chromium numbers
+  (bounding boxes, counts, computed styles), and screenshots in day and
+  lamplight (`data-theme` on `<html>`). `tab.errors()` should be clean beyond
+  requestFailed.
+
+When two lanes touch one file (e.g. `Stage.tsx`), make both add the identical
+shared lines so the cherry-pick conflict is trivial.
 
 ## Launch
 `task` with `tasks[]`, `agent: "astra-engineer"` for logic-heavy lanes, default for the rest, NOT isolated, "Your worktree: /tmp/umran-<name>-wt" in the task text. Answer lane IRC questions fast; approve sensible deviations (e.g. inline `<span role="button">` because `<button>` cannot wrap prose).

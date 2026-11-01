@@ -186,7 +186,7 @@ export function ChartRoom({ revision, shelf, opening, onOpen, onBegin, onSample,
       </details>
     </>}
 
-    <footer className="room-colophon">Worlds live in this browser; the book page exports them as save files or text.</footer>
+    <footer className="room-colophon">Worlds are saved in this browser. Download a save file or an edition from the book.</footer>
 
     <Modal open={removing !== null} title="Remove this world for good?" onClose={() => setRemoving(null)} footer={<>
       <button type="button" onClick={() => setRemoving(null)}>Keep it put away</button>

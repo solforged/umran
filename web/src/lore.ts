@@ -395,7 +395,7 @@ export const TERMS = {
   "way of life":
     "How a people gets its food: gathering and hunting, keeping herds, or farming. Farming feeds many more people on each land, helping farmers’ languages spread over those of foragers.",
   temper:
-    "A people’s settled bent: how warlike, welcoming, devout, hierarchical, restless, and seagoing it is. Peoples inherit it, take it on from those they live among, and change it in answer to what befalls them, as Toynbee held that hard challenges harden a people and long comfort softens it. It shapes how readily they fight, trade, borrow, convert, organize, wander, and take to the sea.",
+    "A people’s settled bent: how warlike, welcoming, devout, hierarchical, restless, and seagoing it is. Peoples inherit it, take on the leanings of those around them, and change in answer to hardship, comfort, and other events. It shapes how readily they fight, trade, borrow, convert, organize, wander, and take to the sea.",
   "sacred language":
     "A language kept for a religion’s teaching and worship. Here its words and sounds stay as they were at the founding, even as the followers’ speech changes.",
   pejoration:
@@ -419,7 +419,7 @@ export const TERMS = {
   "classical language":
     "A language preserved for learned or literary use after everyday speech has changed. Here a court standard is fixed by grammarians or when its state falls.",
   vernacular:
-    "The everyday speech of a community. It can be written while a classical or sacred language remains in formal use. Here beginning to write it marks the end of the modelled high-language writing arrangement.",
+    "The everyday speech of a community. It can be written while a classical or sacred language remains in formal use. Here its speakers begin writing their own speech in place of the high language.",
   doublet:
     "Two words in one language that ultimately come from the same source by different routes. French frêle and fragile are a doublet: one inherited, the other learned from Latin.",
   "given name":
@@ -430,7 +430,7 @@ export const TERMS = {
     "Writing can keep an older form after speech changes. English knight still writes sounds that are no longer said; respelling brings writing closer to speech again.",
   "meaning extension by livelihood":
     "A familiar word taking on a meaning shaped by how people live. Herders may count wealth in cattle: Latin pecunia, “money”, comes from pecus, “cattle”.",
-  "minimal word": "The size sound change never wears a word below. Words founded short or borrowed may already sit below it; sound change cannot wear those words further below it.",
+  "minimal word": "The lower size limit for sound change. Founding and borrowed words may already be shorter; sound change cannot shorten them further.",
   "heavy syllable": "A syllable with two units of weight, or moras: here a long vowel or a short vowel followed by a closing consonant.",
   affix: "A meaningful piece attached to a word: a prefix before the stem or a suffix after it.",
   "root and pattern": "Words built by fitting a consonant root into a pattern of vowels and, sometimes, other sounds.",
@@ -512,7 +512,7 @@ export const POSSESSOR_PHRASE = {
 export const PRONOUN_CASE_PHRASE: Record<PronounCase, string | null> = {
   none: null,
   "like-nouns": "The pronouns mark the object as the nouns do",
-  ahead: "The pronouns have fused their object marker onto the word, ahead of the nouns, which still use a separate one",
+  ahead: "The object marker has fused onto pronouns. Nouns still use a separate word",
   relic: "The nouns have lost their object marking, but the pronouns keep theirs, as English keeps me and him",
 };
 
@@ -520,7 +520,7 @@ export const PRONOUN_CASE_PHRASE: Record<PronounCase, string | null> = {
 export const POSSESSIVE_PHRASE: Record<PronounCase, string | null> = {
   none: null,
   "like-nouns": "A pronoun names its owner's possession as a noun does, with the same genitive",
-  ahead: "The pronouns have their own possessive forms, ahead of the nouns, which still use a separate genitive word, as English my beside of",
+  ahead: "Pronouns have their own possessive forms. Nouns still use a separate genitive word, as English my beside of",
   relic: "The nouns have lost their genitive, but the pronouns keep possessive forms, as English my and his",
 };
 

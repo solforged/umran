@@ -10,9 +10,9 @@ tellings, guided founding, believable geography, and material motion.
    interventions, connected territory partitions, resident allocations and
    journeys. The chart previews all three intents and opens a result linking
    parent, daughter, place and language. A refused or stale choice changes nothing.
-2. **Histories and tellings.** Follow subjects across names and years; mark
-   discoveries; return to the point before an intervention. Give tellings stable
-   identities, resolve their views independently and compare outcomes at the
+2. **Histories and tellings.** Follow subjects across names and years, mark
+   discoveries, and return to the point before an intervention. Give tellings
+   stable identities, resolve their views independently and compare outcomes at the
    same year without joining unrelated IDs.
 3. **Guided founding.** Compose homeland, livelihood, temper, speech and identity
    one people at a time, with a map, specimen and an editable founding charter.
@@ -28,9 +28,10 @@ for an easier implementation or an easier test.
 ## Progress
 
 - The earlier workbench pass is the starting commit, `cdbc093`.
-- Settlement design: one planner with partition, settlers and whole migration;
-  travel uses the existing physical graph. History transactions must include
-  the position within a year, and previews must detect same-year mutations.
+- The settlement design uses one planner with partition, settlers and whole
+  migration. Travel uses the existing physical graph. History transactions
+  must include the position within a year, and previews must detect same-year
+  mutations.
 - Urban residents and state capitals must be included in territorial changes.
 - Delivered the settlement planner and map-side account for all three intents.
   Recorded decisions carry population allocations, actual travel paths, affected
@@ -42,7 +43,7 @@ for an easier implementation or an easier test.
   saved replay (13 history checks). Production web build and five web checks pass.
 - Delivered permanent named tellings, exact parent references and independent
   reading views. Returning before an action is read-only; the first subsequent
-  intervention creates the new account. All peers survive switching and replay.
+  intervention creates the new account. All tellings survive switching and replay.
 - Comparison reads one year in both accounts, bounded by the shorter history,
   with linked chart cameras, people, holdings, language families and word forms.
   Links and continuation resolve against their panel's own telling. Subjects

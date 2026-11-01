@@ -5,3 +5,5 @@
 /dist
 /web/src/wasm
 /brand/fonts
+/.vale/styles/ai-tells/
+/.vale/styles/config/

@@ -1,0 +1,77 @@
+# Configuration-level cases also fail if an enabled package was not installed.
+- name: placeholder verb
+  input: This chapter concerns the language.
+  contains: Voice.Concerns
+
+- name: defensive tail
+  input: This is not merely a list.
+  contains: Voice.DisclaimerTail
+
+- name: semicolon chain
+  input: The peoples grow; they part; their speech changes.
+  contains: Voice.SemicolonDensity
+
+- name: semicolons in separate paragraphs
+  input: |
+    The peoples grow; they part.
+
+    Their speech changes; the chronicle records it.
+  want: ''
+
+- name: argument narration
+  input: The question hinges on the outcome.
+  contains: Voice.ShellSubject
+
+- name: em dash between clauses
+  input: The peoples part—their speech changes.
+  contains: Voice.Dashes
+
+- name: spaced en dash between clauses
+  input: The peoples part – their speech changes.
+  contains: Voice.Dashes
+
+- name: legitimate en dashes
+  input: Seeds 0–39 use V1–V5 and the Leipzig–Jakarta list.
+  want: ''
+
+- name: consequence tail
+  input: The people splits, giving the language a daughter.
+  contains: ai-tells.ConsequenceParticiple
+
+- name: rhetorical contrast
+  input: It's not just a map; it's a story.
+  contains: ai-tells.ContrastiveFormulas
+
+- name: dramatic closer
+  input: This is key.
+  contains: ai-tells.MicDrop
+
+- name: pseudo-cleft
+  input: What changed is the direction.
+  contains: ai-tells.PseudoCleft
+
+- name: shell noun
+  input: The problem is that the name changes.
+  contains: ai-tells.ShellNounCopula
+
+- name: quoted authored copy
+  input: 'The caption says "This is key."'
+  contains: ai-tells.MicDrop
+
+- name: curly-quoted authored copy
+  input: The caption says “This is key.”
+  contains: ai-tells.MicDrop
+
+- name: inline and fenced code
+  input: |
+    Run `This is key.` first.
+
+    ```text
+    What changed is the direction.
+    The peoples part—their speech changes.
+    ```
+  want: ''
+
+- name: source quotation
+  input: '> This is key.'
+  want: ''

@@ -12,6 +12,8 @@
     "build": "bun run build:wasm && bun run check && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test:core": "cargo test --workspace",
+    "lint:prose": "bun scripts/lint-prose.ts",
+    "test:prose": "vale test --no-global --coverage .vale/styles/Voice",
     "parity": "bun scripts/parity.ts",
     "brand": "bun brand/build.js",
     "test:web": "bun test tests"

@@ -126,11 +126,12 @@ This bookkeeping makes no random draws and does not itself change replay.
   root skeleton, never a surface reading that includes a pattern's prefix.
   New words come from curated semantic shifts (`RELATED`) or fresh roots.
 - Grammar (`grammar.rs`) begins with count noun plural and object marking,
-  and verb past, future, and progressive. The object is the thing acted upon:
-  an accusative-like contrast, not a complete case system. Count nouns name separate things,
-  so water, fire, and collective people take neither plural nor object
-  forms. Eligibility is explicit for each concept and follows a word's
-  current senses, not only its first meaning. Designs save each category
+  and verb past, future, and progressive. The object is the thing acted upon.
+  Object marking supplies an accusative-like contrast. A complete case
+  system is not modelled. Count nouns name separate things, so water, fire,
+  and collective people take neither plural nor object forms. Eligibility
+  is explicit for each concept and follows a word's current senses, not
+  only its first meaning. Designs save each category
   as suffix, prefix, particle, or none. A suffix follows its stem; a prefix
   precedes it; a particle is a separate grammatical word. Missing plural
   and past choices in older designs remain suffixes; missing object, future,
@@ -149,20 +150,21 @@ This bookkeeping makes no random draws and does not itself change replay.
   by Bybee, Perkins, and Pagliuca, *The Evolution of Grammar* (1994), and the
   grammaticalization cycle in Hopper and Traugott, *Grammaticalization*.
   Founding bound/particle/none weights are 0.30/0.30/0.40 for future and
-  0.25/0.35/0.40 for progressive, in either morphology family. These are model
-  priors, not measured language frequencies. A language may have no dedicated
+  0.25/0.35/0.40 for progressive, in either morphology family. These values are model
+  priors. They do not estimate language frequencies. A language may have no dedicated
   mark and use context instead.
 - Future and progressive auxiliaries enter, compete, fuse, erode, and renew
   through the same machinery as past. Loss raises the per-generation
   rebuilding chance from 0.0007 toward 0.0087. A new particle takes an initial
   share of 0.12 beside the old form; fusion takes 0.18. The old ending can
-  survive on some verbs while the new auxiliary spreads. These are usage
-  shares, not distinct modal meanings: narrower future senses, separate clitic
-  stages, and combined tense–aspect forms are not modelled. The new categories
-  have their own category keys within each grammar purpose stream; earlier
-  categories' draws are not consumed by them. `Params.tense_aspect` is true by
-  default and false in `static_society()`: turning it off stops their renewal,
-  competition, fusion, and analogy, not founding choices or regular sound laws.
+  survive on some verbs while the new auxiliary spreads. The shares track
+  use of forms rather than distinct modal meanings. Narrower future senses,
+  separate clitic stages, and combined tense–aspect forms are not modelled.
+  The new categories have their own category keys within each grammar
+  purpose stream; earlier categories' draws are not consumed by them.
+  `Params.tense_aspect` is true by default and false in `static_society()`:
+  turning it off stops their renewal, competition, fusion, and analogy,
+  not founding choices or regular sound laws.
 - The genitive marks a countable possessor, as English -'s does. It is a
   category like the object, drawn at founding as bound, particle, or none
   at 0.45/0.35/0.20, and it grammaticalizes from have or hand and erodes
@@ -224,8 +226,8 @@ This bookkeeping makes no random draws and does not itself change replay.
   genitive marking, but not plural marking. Founding builds object paradigms
   after replacing the initial roots, including optional clusivity cells;
   renewal and borrowing acquire the current native object form at sync.
-  A donor's object form enters only as recorded imported-pair evidence,
-  not an automatically productive foreign marker. Pronouns do not serve
+  A donor's object form is recorded as imported-pair evidence. It does
+  not automatically become a productive foreign marker. Pronouns do not serve
   as lexical-extension donors to nouns.
   A separate object particle can fuse on pronouns while nouns keep it as a
   word. Such markers have `Pronouns` scope: noun acquisition and productive
@@ -264,8 +266,8 @@ This bookkeeping makes no random draws and does not itself change replay.
   Among object-marking founders, relics appeared in 1/24 familiar, 3/24
   Semitic, and 1/24 Polynesian histories. At year 4,000 they survived in
   0/2, 3/3, and 1/1 of the respective noun-loss histories: 4/6 pooled,
-  66.7%, within the 35–70% calibration band. These are small denominators,
-  not estimates of language frequencies; matching seed numbers also share
+  66.7%, within the 35–70% calibration band. These small samples do not
+  estimate language frequencies. Matching seed numbers also share
   purpose-keyed social and fusion draws across profiles. The unchanged
   workbench recipe is reported separately: two of its three founders had
   object marking, none began with particles, and one ended with a relic.
@@ -386,8 +388,8 @@ This bookkeeping makes no random draws and does not itself change replay.
   against inanimates. Three-class systems add a remainder or separate
   people from other animates. Larger systems add shape and material cores.
   [Corbett, WALS 30A](https://wals.info/feature/30A) reports none/two/three/four/
-  five-plus at 56.4/19.5/10.1/4.7/9.3%; these modern frequencies constrain
-  the four-millennium outcome, not a claim about prehistoric frequencies.
+  five-plus at 56.4/19.5/10.1/4.7/9.3%. These modern frequencies constrain
+  the four-millennium outcome. Prehistoric frequencies are unspecified.
   Assignment is semantic at the core, by each meaning's
   noun semantics; loans and nouns outside the core are assigned by their
   final sound, as formal gender assigns them. The agreeing word is the
@@ -420,10 +422,11 @@ This bookkeeping makes no random draws and does not itself change replay.
   The possessor precedes its noun with probability 0.80 for SOV, 0.50 for
   SVO, and 0.15 for VSO; otherwise it follows. Each setting has its own
   purpose-keyed stream, after the existing founding choices. Presets fix
-  these as a sketch, not a reconstruction: pie-like, Indic, Iranian, and
-  Caucasian are SOV; Germanic, Bantu, Finnic, and familiar are SVO; Semitic,
-  Polynesian, and Nahuatl are VSO. Possessors follow in Semitic, Polynesian,
-  Bantu, and Nahuatl, and precede in the other named presets.
+  these as an illustrative sketch rather than a reconstruction: pie-like,
+  Indic, Iranian, and Caucasian are SOV; Germanic, Bantu, Finnic, and
+  familiar are SVO; Semitic, Polynesian, and Nahuatl are VSO. Possessors
+  follow in Semitic, Polynesian, Bantu, and Nahuatl, and precede in the
+  other named presets.
 - Eligible words store their complete attached forms and their histories.
   Particles share one marker form instead of copying it across all nouns.
   At most three active forms compete for each word and category. A word
@@ -439,8 +442,8 @@ This bookkeeping makes no random draws and does not itself change replay.
   root tier, consonant–vowel skeleton, and vocalic melody distinguished by
   McCarthy, “A Prosodic Theory of Nonconcatenative Morphology” (1981),
   with Arabic broken plurals beside sound plurals as the main model;
-  Hebrew and Amharic provide related internal-inflection systems. It is
-  a small productive class, not a reconstruction of any of those grammars.
+  Hebrew and Amharic provide related internal-inflection systems. The model implements
+  a small productive class without reconstructing any of those grammars.
   Germanic ablaut (sing/sang) is not added by this mechanism.
 - Internal inflection requires three recoverable root consonants. Known
   derivational prefixes are excluded from that root; other words with too
@@ -448,8 +451,8 @@ This bookkeeping makes no random draws and does not itself change replay.
   truncated or invented root. Eligible founding words draw the pattern
   with probability 0.65–0.85; new words use its current usage share, scaled
   by 0.8 for coinings and 0.4 for loans. A form identical to the base is
-  not acquired as an internal contrast. These are modelling priors, not
-  measured frequencies. Pattern forms enter the ordinary stored paradigm
+  not acquired as an internal contrast. These values are modelling
+  priors rather than measured frequencies. Pattern forms enter the ordinary stored paradigm
   with an 8% affix competitor, whose usage can grow or disappear.
 - Sound laws change the complete internal forms, with the same size and
   last-vowel protections as attached forms. When all living forms of a
@@ -570,12 +573,12 @@ This bookkeeping makes no random draws and does not itself change replay.
   | `child-of-fish` | child.GEN fish | the child's fish |
   | `i-you` | 2sg see.PST 1sg | you saw me |
 
-  `i-you` is the reverse member of the pronoun pair; `see-past` is the
-  first. Ditransitives retain both objects in their frame order and index
-  the first on the verb. The design JSON keeps plural and past
-  choices and adds nullable object, future, progressive, genitive, order, and possessor
-  settings; null or omission draws that setting at founding, while a resolved
-  design saves each drawn value.
+  `i-you` is the reverse member of the pronoun pair, with `see-past` first.
+  Ditransitives retain both objects in their frame order and index the
+  first on the verb. The design JSON keeps plural and past choices and
+  adds nullable object, future, progressive, genitive, order, and possessor
+  settings. Null or omission draws that setting at founding, while a
+  resolved design saves each drawn value.
 - Calibration follows the founding language in each solo run, like the
   lexical statistics, rather than counting its cloned daughters as new
   independent observations. With the default 200 seeds and profiles in
@@ -719,7 +722,8 @@ This bookkeeping makes no random draws and does not itself change replay.
   with a language without harmony, as urban Uzbek under Persian. The distinction
   between exceptional stems and productive endings follows Kiparsky,
   [*Domains of Vowel Harmony*, §§17.1–17.4](https://web.stanford.edu/~kiparsky/Papers/vowelharmony2.pdf);
-  the categorical loss rule is a model, not an estimated historical loss rate.
+  the categorical loss rule is a modelling choice without an estimated
+  historical loss rate.
   Two catalog laws carry
   the rounding and ATR assimilations; the word-level rule is recorded in
   word histories under its own law id. Each decision has its own stream,
@@ -1185,9 +1189,10 @@ This bookkeeping makes no random draws and does not itself change replay.
   concept gets no word before its people holds the requisite idea.
 - Under contact a transparent foreign compound can supply a recipe:
   speakers translate each part into their own current words and put them
-  in their own compound order. This is a calque, not a loan of foreign
-  sounds; absent native parts or an opaque donor prevent it. These
-  choices follow the distinctions and social pressures in Haspelmath,
+  in their own compound order. This is a calque: the recipe is borrowed
+  without its foreign sounds. Absent native parts or an opaque donor
+  prevent it. These choices follow the distinctions and social pressures
+  in Haspelmath,
   [“Lexical borrowing: Concepts and issues” (2009), §§3, 7](https://elearn.univ-tlemcen.dz/pluginfile.php/124991/mod_resource/content/1/lexis.pdf).
   Rates and individual semantic recipes are modelling choices, not
   measured cross-language frequencies.
@@ -1370,10 +1375,10 @@ historical forms.
 `ethos.rs` gives each people six heritable axes in [-1, 1]: `martial`
 (peaceable to martial), `open` (insular to open), `pious` (worldly to
 pious), `hierarchical` (egalitarian to hierarchical), `roving` (rooted to
-roving), and `seaward` (landward to seaward). These are biases, not fixed
-civilizational stages. The author's existing `power` and `openness` remain
-fixed bases; ethos multiplies rates on top, never replaces those bases
-or derives its priors from them.
+roving), and `seaward` (landward to seaward). These axes bias behaviour
+without fixing civilizational stages. The author's existing `power` and
+`openness` remain fixed bases. Ethos multiplies rates on top without
+replacing those bases or deriving its priors from them.
 
 Founding priors, before independent uniform noise in [-0.3, 0.3):
 
@@ -1383,20 +1388,20 @@ Founding priors, before independent uniform noise in [-0.3, 0.3):
 | Herding | +0.3 | 0 | +0.4 |
 | Farming | 0 | +0.3 | -0.35 |
 
-Open and pious start at zero before noise; seaward starts at +0.4 on a
-coast, -0.25 inland. Founding actions may supply `ethos`, a partial object
-of any of the six axes; omitted axes retain their draws. Explicit values
-must be finite and in [-1, 1]. Draws are keyed by `ethos`, community, and
-axis, independently of language generation. Given-name weights read ethos
-at founding as well as when new names enter fashion. Existing martial
-name meanings are spear, shield, war, fight, and bow; there is no wolf
-concept in the lexicon.
+Open and pious start at zero before noise. Seaward starts at +0.4 on a
+coast and -0.25 inland. Founding actions may supply `ethos`, a partial
+object containing any of the six axes. Omitted axes retain their draws.
+Explicit values must be finite and in [-1, 1]. Draws are keyed by `ethos`,
+community, and axis, independently of language generation. Given-name
+weights read ethos at founding as well as when new names enter fashion.
+Existing martial name meanings are spear, shield, war, fight, and bow.
+There is no wolf concept in the lexicon.
 
 The facade's read-only, year-zero `foundingTraits(community)` query returns
 `{ drawn, suggested, feeds }`: the six unauthored ethos axes, the homeland's
 default livelihood, and its food capacity in souls for farming, herding,
 and foraging. It reruns the same independent founding streams using the
-people's identity, homeland, and chosen livelihood; it changes neither
+people's identity, homeland, and chosen livelihood. It changes neither
 history nor future draws. Unknown and ended peoples and later years are
 rejected. Related founders draw their own ethos by this same rule, rather
 than inheriting their source's axes: only standing, openness, and speech
@@ -1410,20 +1415,20 @@ The update closes at most 2% of the weighted gap (a maximum absolute
 change of 0.04), scaling down when total contact weight is below one.
 Separate `temper` streams add independent uniform drift in [-0.012, 0.012)
 per axis per generation. A split copies its parent's ethos with uniform
-drift in [-0.04, 0.04); leavers settling elsewhere add +0.06 roving.
+drift in [-0.04, 0.04). Leavers settling elsewhere add +0.06 roving.
 Language shift keeps ethos. Townsfolk inherit the population-weighted
 mean of the actual residents contributing to the koiné, before those
 residents are debited from their sources.
 
-Challenges and responses are small steps scaled by the room left toward
-the end they push to, so repeated challenges approach an end without
-reaching it, and each one that only rose now has a pull the other way
-tied to the condition passing (Toynbee's response, not a ratchet):
+Challenges and responses move each leaning in small steps, scaled by the
+room left toward the end they push to. Repeated challenges approach an
+end without reaching it. Leanings that previously only rose now also
+ease when the driving condition passes (Toynbee's response, not a ratchet):
 
 - Hardship, once per hard year however many of a people's lands it
-  struck: `+0.08 × (1 − pious)`; `+0.06 × (1 − roving)` when the people's
-  lands were at least 90% full before that generation's hardship, else
-  `−0.04 × (1 + roving)`.
+  struck: piety moves by `+0.08 × (1 − pious)`. Roving moves by
+  `+0.06 × (1 − roving)` when the people's lands were at least 90% full
+  before that generation's hardship, else `−0.04 × (1 + roving)`.
 - Plenty: in a generation a people's lands feed it (crowd below food)
   and no response moved its temper (no hardship, liberation, faith,
   seafaring, or parting) nor a conqueror arrived, piety eases by 15% of
@@ -1432,37 +1437,38 @@ tied to the condition passing (Toynbee's response, not a ratchet):
 - Settling: in such a generation, a farming people or a city's townsfolk
   that neither migrated nor lost a land also loses 6% of the roving above
   its way of life's founding prior (farming −0.35, foraging +0.15,
-  herding +0.4; `−0.06 × (roving − prior)` while above it). Herders and
-  foragers keep their restlessness; the prior, not the people's own
-  founding draw, is the rest because daughters and townsfolk have no draw
-  of their own and a parent's current value would carry a ratchet down
-  its line.
+  herding +0.4, with `−0.06 × (roving − prior)` while above it). Herders and
+  foragers keep their restlessness. The resting value is the prior rather
+  than the people's founding draw: daughters and townsfolk have no draw
+  of their own, and using a parent's current value would carry a ratchet
+  down its line.
 - Throwing off a rule contact: +0.12 martial for the former subjects.
 - Ruling at least one subject for twelve generations:
   `+0.004 × (1 − hierarchical)` per generation thereafter.
 - Twelve generations without a challenge: `−0.003 × (1 + martial)` per
   generation. Hardship, displacement, overcrowding, lands left short by
-  climate, and conquest restart the quiet-span clock; being ruled does
-  not, so a long-ruled people that has not fought grows comfortable like
-  any other.
+  climate, and conquest restart the quiet-span clock. Being ruled does
+  not restart it, so a long-ruled people that has not fought grows
+  comfortable like any other.
 - Learning seafaring: +0.12 seaward.
 - Founding a faith: `+0.12 × (1 − pious)`; conversion: `+0.08 × (1 − pious)`.
 
 A leaning becomes notable when an axis reaches ±0.5 and stays so until it
 falls back inside ±0.35, so drift around the line is not retold. Each
 change records `WorldEvent::Temper` with axis, pole, whether the people
-entered or left it, and cause; a jump from one pole to the other records
+entered or left it, and cause. A jump from one pole to the other records
 the leaving first. Founding leanings are marked without an event, and a
 daughter starts from its own marks before its inheritance drift. Causes
 are `drift`, `inheritance`, `contact`, `hardship`, `freed`, `long-rule`,
 `comfort`, `ease`, `settled`, `seafaring`, `faith`, and `fate`. The
 `Temper { community, axis, amount }` recipe action nudges rather than
-overrides; its signed amount must be finite and in [-1, 1], and the
+overrides. Its signed amount must be finite and in [-1, 1], and the
 people must still live.
+
 Annal kind `temper` exposes `{ axis, pole: "high" | "low", entered,
 cause }`, and other annals expose `temper: null`. End-of-generation ethos
 snapshots use at most one 28-byte entry per changed generation per
-people; `Community::ethos_at` supports historical views and ended peoples
+people. `Community::ethos_at` supports historical views, and ended peoples
 keep their final ethos.
 
 Every effect uses one arithmetic multiplier `clamp(1 + k * axis, 0.25, 2)`:
@@ -1482,10 +1488,10 @@ Every effect uses one arithmetic multiplier `clamp(1 + k * axis, 0.25, 2)`:
 | Given-name meaning weights | relevant axis | 0.75 |
 
 Intermarriage remains author-created: there is no automatic formation
-rate to scale; its borrowing and acculturation use ethos normally.
+rate to scale. Its borrowing and acculturation use ethos normally.
 Colonies likewise have no probabilistic formation rate. Seaward multiplies
 only overseas destinations' existing room/distance score and their room
-comparison against home; land-reached alternatives and travel stay unchanged.
+comparison against home. Land-reached alternatives and travel stay unchanged.
 `Params::static_society()` freezes ethos, including inheritance drift,
 challenge responses, and authored nudges. `Params { ethos_enabled: false,
 ..Params::default() }` draws only zero ethos and disables changes, for a
@@ -1506,9 +1512,9 @@ deviation, with the pooled mean in brackets:
 
 No living people ends beyond ±0.9 on any axis. Before the pulls, pious
 and roving had pooled standard deviations of .010 and .018 with every
-people at the +1 clamp; hierarchical's spread is the founding draw after
-acculturation and has no response of its own beyond long rule, so it
-sits just under .12 before and after. Peoples whose temper left a pole
+people at the +1 clamp. The hierarchical spread reflects the founding
+draw after acculturation. With no response of its own beyond long rule,
+it sits just under .12 before and after. Peoples whose temper left a pole
 on some axis: three-founder 237 of 1,238 (194 on pious, 72 on roving);
 sample 209 of 1,143 (168 and 66). The band test in `ethos.rs` holds the
 same floors over 20 seeds × 160 generations.
@@ -1529,20 +1535,22 @@ Their `--neutral` switch still disables ethos, not the newer geography.
 
 Walking traverses land only. Sea endpoints are unreachable even for
 identity. Seafaring learned by a coastal people sustains a fleet at its
-held ports; the craft alone supplies no ships inland. A fleet begins at
+held ports. The craft alone supplies no ships inland. A fleet begins at
 strength 0.2 and, with automatic crafts enabled, gains up to 0.3 through
 eight generations of sustained coastal shipbuilding. It also gains 0.1
 per additional port and up to 0.4 from cities at those ports, capped at 1.
 Losing every port loses the fleet and its accumulated experience.
+
 Each fleet's passenger capacity is its owner's current population
-multiplied by `0.5 + strength`. This is transport over a generation, not
-a fixed count of hulls: even a modest fleet can take a half-population
-colony, while moving the whole people requires strength at least 0.5.
+multiplied by `0.5 + strength`. Capacity measures transport over a
+generation rather than a fixed count of hulls. Even a modest fleet can
+take a half-population colony, while moving the whole people requires
+strength at least 0.5.
 Population scaling lets a seafaring people's boats grow with its emigrant
 groups, as in Austronesian and Norse settlement, instead of making large
 peoples permanently unable to colonize. A contacted carrier offers one
 quarter of its capacity in rented berths, leaving most transport to its
-own people; contact intensity must be positive. Urban residence alone
+own people. Contact intensity must be positive. Urban residence alone
 is not a held port.
 
 Journeys may walk inland to a port, sail, and continue overland, including
@@ -1556,10 +1564,10 @@ coasts or river flow. Fleet formation, fleet loss, and the first use of
 each directed sea corridor are recorded in the annals. Rented journeys
 strengthen the passenger people's contact with their carriers.
 
-The old automatic sea-movement failure had three gates, not a lack of
-Seafaring. The 40-world cohort uses seeds 0–39, ten per map size, and six
-founders with rotating profiles: three share a coastal homeland and three
-are freely founded. Only founding is authored; all parameters are defaults.
+Three gates blocked the old automatic sea movement even when Seafaring
+was available. The 40-world cohort uses seeds 0–39, ten per map size, and
+six founders with rotating profiles: three share a coastal homeland and three
+are freely founded. Only founding is authored. All parameters are defaults.
 Over 4,000 years the `e12e917` engine recorded 46,107 seafaring
 people-generations but 389 land migrations, no sea migrations, and 2,427
 territorial splits with no travelling settlements. The earlier `fecd8e0`
@@ -1567,32 +1575,33 @@ cohort recorded 363 land migrations and 2,388 splits, also with no sea
 movements. Sea terrain cost three times walking on a plain, plus the
 200-effort-km embarkation and landing overhead. Only 23 of 11,474 coastal
 lands had any boat-shortest destination within the 600-effort-km migration
-radius; none were on Large or Vast maps. Extending sea migration to 1,200
+radius. None were on Large or Vast maps. Extending sea migration to 1,200
 without changing that cost still produced no sea migrations.
 
 Automatic splitting also skipped every one-land people, so its sea-colony
 selector was never reached. That selector gave any roomier neighbour an
 absolute veto over every overseas destination. Automatic pressure-driven
-colonies now reach the selector; land and sea destinations compete by
+colonies now reach the selector. Land and sea destinations compete by
 room per journey effort, with the existing seaward preference. Sea effort
 is 0.5 rather than 3. The migration hazard, walking costs, 600-effort-km
 walking radius, and squared walking distance penalty are unchanged.
+
 The original fleet calibration gave ships the existing 1,200-effort-km
-colony radius, linear distance penalty, and seaward preference; V5's
+colony radius, linear distance penalty, and seaward preference. V5's
 whole-people sea radius is now separated from colony expeditions below.
 The shortest transport route determines its mode before the applicable
-radius is checked; a pointless boat detour cannot turn a distant walk
+radius is checked. A pointless boat detour cannot turn a distant walk
 into a sea migration. Climate still supplies pressure through the same
 cached food capacity, rather than a separate sea bonus. Finally, a
 single-port fleet can mature enough to carry its people without first
-acquiring a city. These are illustrative colonisation rates, not estimates
-fitted to a historical census.
+acquiring a city. These illustrative colonisation rates were not fitted
+to a historical census.
 
 The separate authored maritime controls explicitly found coastal seafarers,
-send half-population colonies, and rent berths for small groups. Their
-expedition radius is a selected finite sea corridor's effort, not a change
-to the natural cohort's defaults. The ignored `fleets_band` test keeps
-their capacity checks separate from spontaneous movements.
+send half-population colonies, and rent berths for small groups. They set
+their expedition radius to the effort of a selected finite sea corridor.
+The natural cohort keeps its default radius. The ignored `fleets_band`
+test keeps their capacity checks separate from spontaneous movements.
 
 With the fix and fleets, the default cohort records 368 land and 53 sea
 migrations (12.59% by sea), 2,465 splits including 13 travelling sea
@@ -1624,8 +1633,8 @@ capacity, and demographic gates:
 | Large | 26.6% → 46.8% | 56 → 141 | 8.45 → 7.70 | 6.00 → 7.67 |
 | Vast | 14.8% → 27.5% | 34 → 489 | 9.94 → 7.79 | 4.64 → 8.67 |
 
-These are coast-to-coast routes, not predictions of complete mixed
-itineraries. On V5, respectively 77.8%, 64.7%, 51.9%, and 62.2% of those
+The table counts coast-to-coast routes. Complete mixed itineraries
+are outside this diagnostic. On V5, respectively 77.8%, 64.7%, 51.9%, and 62.2% of those
 boat-shortest destinations cross between landmasses; on V4 the shares
 were 53.0%, 39.8%, 27.2%, and 12.0%. Neither the 100-effort-km charge at
 each shore nor sea effort of 0.5 changed with V5. Minimum boat-shortest
@@ -1711,7 +1720,7 @@ Vast timing recipe (`calibrate -- geography 1 160 vast 3`), pre-change
 median/p95 step times were 34.71/73.78 ms at 632.76 years/s; with fleets
 and sea movement they are 30.69/66.89 ms at 706.45 years/s. Startup changes
 from 50.46 to 68.93 ms as cheaper sea travel enlarges cached voyage rows.
-These are local measurements, not a portable timing guarantee.
+These timings were measured locally and may differ on other machines.
 
 `World::journey_to` and `journey_between` are directed, including rented
 transport where contact already exists. Walking wins a tie. `apart` is
@@ -1739,21 +1748,22 @@ The facade's pure year-zero `founding_preview` reports each pair's exact
 walking and coast-to-coast voyage effort, retaining routes beyond first
 contact range. `neighbours` means `World::nearness > 0`, the shared/bordering
 land predicate used by `make_contacts`. Otherwise, `walking` means a land
-journey within `Params::trade_reach` (1,800 effort-km by default); `sea`
-means a voyage within that same merchant range when walking is not within
-it; `apart` means neither first journey qualifies. A voyage remains only
-a possibility until someone learns Seafaring. Coastal status, homeland
-landmass, and the nearest other founder accompany the pairs; nearest means
-the smallest finite walking or voyage effort, breaking ties by community ID.
+journey within `Params::trade_reach` (1,800 effort-km by default).
+`sea` means a voyage within that same merchant range when walking is
+not within it. `apart` means neither first journey qualifies. A voyage
+remains only a possibility until someone learns Seafaring. Coastal status,
+homeland landmass, and the nearest other founder accompany the pairs.
+Nearest means the smallest finite walking or voyage effort, breaking ties
+by community ID.
 This preview does not predict later territorial spread or consume draws.
 
 The map bounds sparse walking and voyage rows at 1,800 effort-km.
 Walking rows materialize only when read and retain separate allocations.
 A changed river edge invalidates only materialized rows whose old reachable
-set includes either endpoint; untouched rows are neither searched again
+set includes either endpoint. Untouched rows are neither searched again
 nor copied. This also covers newly shorter paths:
 their first changed edge must be reachable through an unchanged prefix.
-Missing cached destinations are outside a bounded query, not necessarily
+A missing cached destination may be beyond the query bound rather than
 unreachable. Exact pair queries use Dijkstra beyond the cache, and uncapped
 consumers reuse full source rows. Land-only directed access retains these
 cached rows, and rule checks them before searching for a sea route. Mixed
@@ -1763,11 +1773,13 @@ Incoming carrier rows are reused until a contact changes, rather than
 searched again for every prospective partner. Settlement planning searches
 once per inhabited source, not once per destination. Authored larger
 reaches use phase-local rows without mutating the shared map.
+
 Spatial and contact indexes are derived per phase. Successful spread
 redistributes all old holding presence; later migrants see earlier
 migrants' consumed room. These indexes are not additional replay state.
-Urban residence adds population at a city, not a territorial holding or
-borrowable port. The phase indexes distinguish residents from land holders.
+Urban residence adds population at a city without granting a territorial
+holding or a borrowable port. The phase indexes distinguish residents
+from land holders.
 
 Facade overview, annal, word-history, and grammar-history views borrow the
 world's existing sound-law catalog rather than rebuilding it for each view.
@@ -1837,14 +1849,14 @@ conjugate passive margins, young rift seas such as the Red Sea, Andean
 subduction ranges, Japanese island arcs, Himalayan collision plateaus,
 eroded Appalachian and Ural sutures, and Hawaiian hotspot chains. Thin
 rifted provinces can become microcontinents, as with Madagascar, while
-near-sea-level shelves can leave islands like the British Isles. These
-are consequences of the crust history, not separately drawn outlines.
+near-sea-level shelves can leave islands like the British Isles. The crust history produces these features without drawing their
+outlines separately.
 
 Isostasy turns crust thickness into height. Old ocean floor cools and
-deepens; zero-age gaps are shallow ridges. Uplift erodes with elapsed
+deepens. Zero-age gaps are shallow ridges. Uplift erodes with elapsed
 steps. Coast-scale noise has amplitude 0.012, far below the continental
-and oceanic contrast. A seeded spherical-area sea level selects land;
-the bounded signed elevation field also drives `sphere::refine_coasts`.
+and oceanic contrast. A seeded spherical-area sea level selects land.
+The bounded signed elevation field also drives `sphere::refine_coasts`.
 The top 10% of land regions by height are mountains and the next 17% are
 hills. Moisture keeps V5's latitude, coastal distance, relief and
 geographic-wind law. Lakes, channels, rivers and climate use the existing
@@ -1905,13 +1917,13 @@ Occupied means positive living population, including city residents,
 not a remembered name or an extinct people's last holding. Habitable
 means land with positive founding food for at least one livelihood.
 These maps had 757 to 791 habitable regions, averaging 773.45. The
-settled share below uses spherical area, not a count of cells. Entries
-are means across 40 worlds; the same seeds are shared across cohorts.
+settled share below is measured by spherical area rather than cell count.
+Entries are means across 40 worlds; the same seeds are shared across cohorts.
 
 The retained `settlement` example reproduces those before counts exactly and
 adds year 500, occupied landmasses, and cumulative native `World::step` wall
-time. Timing excludes map creation, founding, censuses, and printing. These
-are release-mode means on the same machine, not browser or facade timings.
+time. Timing excludes map creation, founding, censuses, and printing. The figures
+are release-mode means on the same machine. Browser and facade work are excluded.
 
 | Before: founding | Year | Occupied regions | Habitable area settled | Living peoples | Landmasses | Step total (s) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -2004,8 +2016,8 @@ The six-founder grouped cohort separates the gates:
   option in only seventeen migration attempts before capacity, twelve
   afterward. Positive contacts supplied 24 of the 39 boat-shortest
   migration destination rows and 272 of 334 colony destination rows
-  available to the actual parties. These are destination-query counts,
-  not extra journeys or additive causes of failure.
+  available to the actual parties. These counts measure destination queries. They add no journeys and
+  cannot be summed as causes of failure.
 - Climate is not a separate destination veto. Current weather changes
   food and river-route effort. Holding the actual candidate, population,
   occupation, livelihood, and route fixed, substituting founding food
@@ -2015,28 +2027,30 @@ The six-founder grouped cohort separates the gates:
   This isolates the immediate food comparison, not a no-climate replay
   or an attribution of entire failed journeys.
 
-This is a demographic and geographic calibration issue, not a blocked
-V6 expansion rule. A small founding population first fills a large
-food capacity. Default farming growth is 0.07 per generation before
-crowding, herding 0.049, and foraging 0.028; noise, hardship, weather,
-and adoption alter the actual path. The six-founder grouped cohort's
-farmer homelands initially fed a median 62,998 people. In the
+V6 expansion is limited by demographic and geographic calibration,
+while the expansion rule itself remains available. A small founding
+population first fills a large food capacity. Default farming growth is
+0.07 per generation before crowding, herding 0.049, and foraging 0.028;
+noise, hardship, weather, and adoption alter the actual path. The
+six-founder grouped cohort's farmer homelands initially fed a median
+62,998 people. In the
 continuous logistic approximation, a lone 1,000-person farmer group
 needs about 1,619 years to reach 60% of that food at 25 years per
 generation, before its next spread draw. Acquiring land then lowers
 food use again. This is consistent with a quiet first millennium and
-faster later growth, not a promise of worldwide occupation by year 4000.
+faster later growth that can still leave lands unoccupied at year 4000.
 
-The chosen correction is sparse frontier budding, not a larger founding
-census, a longer generation, faster demographic growth, or longer sea reach.
-Ammerman and Cavalli-Sforza's wave of advance combines local dispersal with
-growth at the population's edge; the Fisher–KPP idealization advances at
-`2 * sqrt(r * D)`, rather than waiting for every homeland to fill.
+The chosen correction adds sparse frontier budding while leaving the
+founding census, generation length, demographic growth, and sea reach
+unchanged. Ammerman and Cavalli-Sforza's wave of advance combines local
+dispersal with growth at the population's edge. The Fisher–KPP
+idealization advances at `2 * sqrt(r * D)`, rather than waiting for every
+homeland to fill.
 [Pinhasi, Fort, and Ammerman (2005)](https://doi.org/10.1371/journal.pbio.0030410)
 recovered a European Neolithic range of 0.6–1.3 km/year from 735 dated sites,
 consistent with the earlier roughly 1 km/year estimate. Village budding
 likewise lets households establish nearby settlements before an entire
-region reaches its food capacity. These motivate an early local frontier;
+region reaches its food capacity. These motivate an early local frontier.
 Umran's aggregate peoples and regions are not a numerical Fisher–KPP solver
 or a reconstruction of the LBK.
 
@@ -2129,18 +2143,20 @@ re-timed alone.
 | Six, free | 236 | 1525 years | 100 years |
 | Six, grouped | 189 | 1500 years | 100 years |
 
-These are all founders who began farming, not only those who survived or
-spread; none failed to spread by year 4000 in either survey. The example
-censors any unspread founder above the horizon at 4025 years. The grouped
-three-founder targets hold without widening their bands: median first
-Spread at most 400 years, at least 3% settled by year 1000, and 20–50% by
-year 4000. Six grouped founders end with 38.65 living peoples, 1.12 times
-the before 34.58 (below the 2.5-times ceiling), but reach 14.65 by year
-2000 where they had 6.42. They cost 4.446 seconds, 1.72 times the before
-2.581 (below twice), even after the run-cost pass: more languages live
-for longer, and sound-change assessment is per language. Six freely
-placed founders begin across several landmasses and settle 61.78%; they
-still leave 38.22% unoccupied, and cost 4.057 seconds against 1.834,
+The survey includes all founders who began farming, regardless of later
+survival or spread. None failed to spread by year 4000 in either survey.
+The example censors any unspread founder above the horizon at 4025 years.
+
+The grouped three-founder targets hold without widening their bands:
+median first Spread at most 400 years, at least 3% settled by year 1000,
+and 20–50% by year 4000. Six grouped founders end with 38.65 living
+peoples, 1.12 times the before 34.58 (below the 2.5-times ceiling), but
+reach 14.65 by year 2000 where they had 6.42. They cost 4.446 seconds,
+1.72 times the before 2.581 (below twice), even after the run-cost pass:
+more languages live for longer, and sound-change assessment is per language.
+
+Six freely placed founders begin across several landmasses and settle 61.78%.
+They still leave 38.22% unoccupied, and cost 4.057 seconds against 1.834,
 2.21 times. The explicit run-cost acceptance band is for the six-grouped
 cohort, not every recipe.
 
@@ -2153,19 +2169,19 @@ Knock-on event means through year 4000, before → after:
 | Six, free | 238.25 → 891.40 | 34.65 → 54.75 | 0.246 → 0.115 | 2.95 → 1.60 | 0.07 → 0.20 | 22.05 → 134.90 |
 | Six, grouped | 286.50 → 649.27 | 28.82 → 40.02 | 0.349 → 0.233 | 3.42 → 3.20 | 0.05 → 0.50 | 16.65 → 65.70 |
 
-More occupied lands expose more lands to hardship; the per-land hazard was
-not reduced to hide that consequence. Whole-people migration declines for
-three founders because budding leaves fewer single-land peoples eligible;
-for six grouped founders it is nearly unchanged.
-Sea colonies remain rare; no ship, reach, or migration rule was loosened.
+More occupied lands expose more lands to hardship. The per-land hazard
+was not reduced. Whole-people migration declines for three founders because
+budding leaves fewer single-land peoples eligible.
+For six grouped founders it is nearly unchanged.
+Sea colonies remain rare. No ship, reach, or migration rule was loosened.
 The splits/land column is the mean per-world ratio, not a ratio of means.
-The single-purpose timing band test follows 40 explicit farming founders;
-unit coverage also checks static society, adjacency, population conservation,
+The single-purpose timing band test follows 40 explicit farming founders.
+Unit coverage also checks static society, adjacency, population conservation,
 the occupied-land crowding gate, and meeting locals after a crowded arrival.
 
 `calibrate` (200 seeds × 40 generations, presets in rotation) stays in the
 usual core-retention band: 0.887 before and 0.886 after, against 0.80–0.90.
-Stable ranks 1–20 stay 0.936; ranks 81–100 move 0.825 → 0.823, culture kept
+Stable ranks 1–20 stay 0.936. Ranks 81–100 move 0.825 → 0.823, culture kept
 0.640 → 0.639, sound laws 10.960 → 11.495, and contested concepts
 25.475 → 25.880. Case marking remains 0.550 at founding and moves 0.515 →
 0.520 at the end, with 6/110 founding case languages losing contrast, mean
@@ -2219,10 +2235,14 @@ comparisons were byte-identical. Native/WASM parity passed for 85 worlds
 and 1,043 state/replay checks with zero mismatching states; the release
 workspace suite passed 427 tests, with 15 ignored.
 
-Before the change, eight-second native samples attributed 1,331 of 4,131 grouped
-`World::step` samples, 32.2%, to sound-change candidate assessment;
-1,093, 26.5%, to `Map::set_valley_flows`, chiefly rebuilding affected
-walking-route rows; and 307, 7.4%, to directed `Routes::search`.
+Before the change, eight-second native sampling collected 4,131 grouped
+`World::step` samples:
+
+- 1,331, or 32.2%, were in sound-change candidate assessment.
+- 1,093, or 26.5%, were in `Map::set_valley_flows`, chiefly rebuilding
+  affected walking-route rows.
+- 307, or 7.4%, were in directed `Routes::search`.
+
 The three-founder sample put 44.5% of step samples in river-route
 refresh and 26.8% in sound-change assessment. That eager refresh also
 worked over unoccupied geography, so a sparse population did not make
@@ -2231,11 +2251,11 @@ accounted for 650 of 1,233 overview samples, 52.7%.
 
 Walking neighbourhoods now materialize only when read. Flow-band changes
 invalidate only materialized rows whose old bounded neighbourhood reaches
-a changed edge endpoint; an unchanged prefix to the first changed edge
+a changed edge endpoint. An unchanged prefix to the first changed edge
 covers shorter paths as well as longer ones. Unread rows search the latest
 graph on demand, using the same bounded Dijkstra and accumulation order.
 Cloned maps share completed rows, but invalidate independently. Geography
-equality excludes this derived cache; `route_entry_counts` counts resident
+equality excludes this derived cache. `route_entry_counts` counts resident
 rows, not all potential rows. Voyage rows and directed fleet search are
 unchanged.
 
@@ -2258,9 +2278,9 @@ changed, all sound-law specimens. Freezing such entries would change the
 existing overview contract without changing their event identity.
 The baseline samples put the entire annal path at 52.7% of overview, not
 all of which is safe to memoize. Similarly, cross-generation assessment
-caching needs explicit lexical, grammatical, and profile invalidation;
-the baseline 32.2% sound-candidate share is an upper bound on that opportunity,
-not an additional measured gain.
+caching needs explicit lexical, grammatical, and profile invalidation.
+The baseline 32.2% sound-candidate share is an upper bound on that opportunity.
+It does not measure an additional gain.
 
 These samples locate native work; they do not apportion the reported
 24 browser seconds. Browser running additionally executes WASM,
@@ -2278,32 +2298,36 @@ mesh resolves each body's gulfs. Continental area shares descend sharply:
 the largest two usually hold about half and one quarter of the land.
 Lambert equal-area coordinates and determinant-one elliptic deformation
 keep body size independent of latitude. The largest two bodies have aspect
-factors of 2.6–3.0 and 2.0–2.8; broad second- and third-harmonic outlines
+factors of 2.6–3.0 and 2.0–2.8. Broad second- and third-harmonic outlines
 form gulfs and peninsulas. Their squared mean normalizes continuous area.
-Finer shore detail falls faster than frequency to the power -1.2.
+At finer shore scales, detail falls faster than frequency to the power -1.2.
 The second craton lies near the first, while the rest occupy remaining
-ocean; occasional intervening sea cells form continental straits.
+ocean. Occasional intervening sea cells form continental straits.
 
 Crust grows continuously from each body's thickest cell, with a priority
 frontier and cumulative spherical-area budgets targeting 28.5–31.5% land
 before coast refinement. Flooded province boundaries preserve straits
 without joining differently sized continents. This replaces the old
 branching assembly, rather than retrying unfavorable generated maps.
-Divergence erodes margins; convergent continental domains raise interior
-sutures, and oceanic neighbours supply
-coastal belts. A separate 6.5% emergent-crust budget grows islands along
-oceanic convergence and on shelves one sea cell off the mainland. A seeded,
+Divergence erodes margins. Convergent continental domains raise interior
+sutures, and oceanic neighbours supply coastal belts. A separate 6.5%
+emergent-crust budget grows islands along oceanic convergence and on
+shelves one sea cell off the mainland. A seeded,
 low-frequency shelf field places groups, and flooded straits keep them
 separate. Their characteristic area stays below the physical continent
-cutoff; larger worlds consequently have more islands. No uniform
-microfragment field is added. The measured island band is 3–8% of land,
-with at least two islands at small, six at medium and large, and 15 at vast.
+cutoff. Larger worlds consequently have more islands. No uniform
+microfragment field is added.
+
+The measured island band is 3–8% of land, with at least two islands at
+small, six at medium and large, and 15 at vast.
 `sphere::refine_coasts` still supplies shared coastal detail without changing
-region adjacency. V5 retains V3's moisture
-law and geographic wind, and runs the same lake basins, river channels,
-lake naming, and downstream climate buffering as V4 through the shared
-`GeographyVersion::has_lakes` capability. The new crust generator uses only
-`continental-v5` purpose streams; V4 remains the V3 surface with lakes.
+region adjacency.
+
+V5 retains V3's moisture law and geographic wind, and runs the same lake
+basins, river channels, lake naming, and downstream climate buffering as
+V4 through the shared `GeographyVersion::has_lakes` capability. The new
+crust generator uses only `continental-v5` purpose streams. V4 remains
+the V3 surface with lakes.
 
 `cargo run --release -p umran-sim --example continents -- 40 all` now prints
 V5 and V6 side by side for every map size.
@@ -2339,12 +2363,13 @@ coordinates, `Region.areaKm2`, and authoritative `River.lengthKm`.
 `site` is a derived chart coordinate only. River length
 follows great-circle course segments through the actual confluence or
 shared coastal midpoint. The browser's `cartography.ts` projects this one
-geography as an equirectangular chart or an orthographic globe; d3-geo clips
+geography as an equirectangular chart or an orthographic globe. d3-geo clips
 the seam and horizon. Switching or rotating views changes no history.
 Movement views use the event's recorded `bySea`, not the present coast.
+
 The workshop's reading place keeps optional chart and globe cameras,
-globe rotation and projection under the existing `langgen.place.` key;
-older reading places open without these fields. Without a saved camera,
+globe rotation and projection under the existing `langgen.place.` key.
+Older reading places open without these fields. Without a saved camera,
 `MapView` frames the living communities' recorded `lands`, using their
 geographic boundaries to pad a chart box or face and size the globe.
 Its temporary `story` reading accepts region IDs and dated centre-to-centre
@@ -2437,7 +2462,7 @@ count as `HardTimes`; migrants and daughters keep that exposure. Affected
 rulers also face the existing weaker-rule and collapse paths. State size,
 challenge chances, city thresholds, tribute, and split rules are unchanged.
 An automatic capital is the ruler's best-fed held land, with usable river
-access breaking a food tie; an authored capital is respected.
+access breaking a food tie. An authored capital is respected.
 `Params::static_society()` freezes climate through `climate_enabled = false`.
 Authors cannot currently impose climate targets as replay actions.
 
@@ -2460,10 +2485,11 @@ and name histories with local alternatives in `river(generation, id)` and
 
 The workbench reads those views within the active telling and year. Rivers
 are inked above terrain, with three catchment-width tiers and dashed failed
-flows. Tributaries meet their parent course; open main rivers meet the shared
-coast of their sea mouth, while closed rivers stop within their terminal
-lake cell. The read-only `joinAt` field names the exact
-confluence region; a tributary can border several reaches of its parent.
+flows. Tributaries meet their parent course. Open main rivers meet the
+shared coast of their sea mouth, while closed rivers stop within their
+terminal lake cell. The read-only `joinAt` field names the exact
+confluence region. A tributary can border several reaches of its parent.
+
 Close zoom adds attested names in the selected
 people's speech, falling back to the mouth's speakers. River cards retain
 name records, exonyms, and flow annals. Weather colouring uses zone departures,
@@ -2476,6 +2502,7 @@ are screen-size capped and border strokes do not scale with the camera.
 Each kind of terrain glyph is drawn as one joined path, rebuilt only when
 the globe turns or the zoom changes, so turning the globe repaints seven
 paths rather than thousands of small transformed groups.
+
 A ruled key names the active colouring and enabled overlays. Naming
 speech and known-land veiling are independent, explicit choices; opening
 a people or language card never silently changes the chart's names.
@@ -2504,7 +2531,8 @@ lands share anomalies but differ in susceptibility. Drought is likelier in
 dry climates and where a monsoon can fail. Harsh winters require a cold
 winter baseline. Damaging floods require a low-relief river reach; upstream
 seasonal runoff contributes to their likelihood, including in dry valleys.
-These are fictional risk bands, not calibrated Earth return periods.
+The risk bands are fictional and have not been calibrated to Earth's
+return periods.
 
 Only the strongest food hazard in a land's sampled year is retained.
 Its bottleneck reduces the current generation's feeding capacity, more for
@@ -2514,14 +2542,15 @@ sample restores yields before applying new losses, so shocks do not compound.
 Severe shocks feed the existing hardship and remembered-exposure paths.
 Migration records the active hazard when it reduces food. Livelihood change
 records it only when removing the shock removes the adoption advantage.
+
 Only severe shocks on inhabited land enter the record, as drought, hard
-winter, or flood annals naming the land and its peoples; milder or
+winter, or flood annals naming the land and its peoples. Milder or
 unwitnessed ones still cost food but leave no entry, so a response to them
 has no recorded cause. `Seasons::struck` tallies every sampled hazard for
 the band. Over 40 worlds of 4,000 years, 5.5% of land-years saw drought,
-3.6% a hard winter, and 0.8% a flood; 1,461 severe shocks on inhabited land
-were recorded, and 35 migrations cite one. No harvest loss is reported as
-deaths.
+3.6% a hard winter, and 0.8% a flood. There were 1,461 recorded severe
+shocks on inhabited land, and 35 migrations cite one. No harvest loss is
+reported as deaths.
 `Params::static_society()` disables hazards through `seasons_enabled = false`.
 
 Seasonal hardship can shorten rule and leave fewer subjects shifting to a
@@ -2576,19 +2605,21 @@ cargo run --release -p umran-web --example provenance
 ```
 
 The faith report's `seeded` setup begins with three peoples sharing one
-authored faith; everything thereafter uses default parameters. Over seeds
+authored faith. Everything thereafter uses default parameters. Over seeds
 0–39 for 4,000 years it gives 69 schisms (median 2, maximum 4 per world
 and per faith family), none by succession, and holy-land changes in 32
 worlds (80%). The 2× holy-war bonus applies to 824 eligible conquest
 comparisons. These measurements precede physical travel and the revised
 workbench sample. `natural` leaves that starting faith out.
+
 The earlier `sample` band had 9 schisms (median 0, maximum 1), six
 unseeded faiths, holy-land changes in 19 worlds, and 46 holy-war checks.
 Its `sample-unseeded` control had eight unseeded faiths and two schisms.
+
 The current `sample` follows the workbench's fixed founding lands, early
 sea realm and writing, and authored conquest, faith, and shift at year
 2,500. `sample-unseeded` omits only that authored faith. Other map seeds
-can refuse this fixed recipe; the report counts those refusals separately.
+can refuse this fixed recipe. The report counts those refusals separately.
 
 ## Not yet modelled
 

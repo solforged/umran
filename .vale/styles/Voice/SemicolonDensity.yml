@@ -1,0 +1,6 @@
+extends: occurrence
+message: "Found %d semicolons in this paragraph; split a sentence or two."
+level: warning
+scope: paragraph
+max: 1
+token: ';'

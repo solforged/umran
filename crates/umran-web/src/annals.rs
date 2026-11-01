@@ -2446,7 +2446,7 @@ fn grammar_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> 
                     let note = match &marker.origin {
                         MarkerOrigin::Founding => match marker.kind {
                             MarkerKind::None => {
-                                "No overt marker is a founding choice, not a defective grammar.".into()
+                                "This category had no overt marker at founding.".into()
                             }
                             _ => "This marker was part of the founding grammar.".into(),
                         },
@@ -2455,7 +2455,7 @@ fn grammar_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> 
                             source_form,
                             ..
                         } => format!(
-                            "The word *{}*, “{}”, /{}/, acquired a grammatical job while its lexical use remained. This development is called grammaticalization.",
+                            "The word *{}*, “{}”, /{}/, gained a grammatical use and kept its lexical meaning. This is grammaticalization.",
                             variety.spell(source_form),
                             world.concepts[*concept].gloss,
                             source_form.ipa_stressed(variety.stress_at(marker.born))
@@ -2598,7 +2598,7 @@ fn grammar_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> 
                             world.concepts[word.first_sense].gloss
                         ),
                         vec![
-                            "Both the base and its marked form were acquired together. A borrowed marked form does not by itself make the foreign pattern productive on native words.".into(),
+                            "The base and marked form were borrowed as a pair. Extending their pattern to native words is a separate change.".into(),
                         ],
                         GrammarAnnalEvent::ImportedPair {
                             lexeme: lexeme.0,

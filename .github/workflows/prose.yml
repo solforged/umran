@@ -1,0 +1,26 @@
+name: Prose
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  prose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - name: Install Vale 3.25.1
+        run: |
+          mkdir -p "$RUNNER_TEMP/vale"
+          cd "$RUNNER_TEMP/vale"
+          curl -fsSLO https://github.com/vale-cli/vale/releases/download/v3.25.1/vale_3.25.1_Linux_64-bit.tar.gz
+          echo '4bf5c5176b682b1da0830f471584d3494f1c2e27ee3029e1ad6f6661d4962182  vale_3.25.1_Linux_64-bit.tar.gz' | sha256sum --check
+          tar -xzf vale_3.25.1_Linux_64-bit.tar.gz vale
+          echo "$RUNNER_TEMP/vale" >> "$GITHUB_PATH"
+      - run: vale sync --no-global
+      - run: bun run test:prose
+      - run: bun run lint:prose

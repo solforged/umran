@@ -1,0 +1,7 @@
+extends: existence
+message: "Use a comma, period, or parentheses instead of a dash between clauses."
+level: warning
+nonword: true
+tokens:
+  - '—'
+  - '\s–\s'

@@ -3,27 +3,34 @@
 How the workbench records, replays, and stores a world.
 
 A history is a seed, a map size, and ordered `Action`s (`chronicle.rs`):
-found, connect, settle, shift, state, religion, craft, law, temper, meaning, word, run. The
-seed draws the map as well as the history. Found records the naming, the
-full design, the language's own seed, the one its preview used, so
-founding gives exactly the previewed words and names, and optionally the
-land the people settles (without one the world chooses) and any leanings
-of its temper (the rest are drawn). A settlement records its intent,
-destination, departing share, optional daughter naming, and contact intensity.
-Partition divides held territory around two hearts; settlers draw a share from
-every inhabited land; migration moves the whole community without replacing
-its language. Without a naming choice the new people chooses. State makes a people a
-state, with its court at one of its lands (its heart if none is given); a
-rule contact makes the more prestigious side rule the other's state.
-Religion raises a founder among a people, and a faith with him; craft has
-a people come upon a craft it lacks; temper nudges one leaning of a
-people's temper, which then drifts and answers events as before.
+found, connect, settle, shift, state, religion, craft, law, temper, meaning,
+word, run. The seed draws the map as well as the history.
+
+Found records the naming, full design, and language's own seed (the one
+its preview used), so founding gives exactly the previewed words and
+names. It also records an optional homeland and chosen temper leanings.
+The world chooses a land if none is given and draws the remaining leanings.
+
+A settlement records its intent, destination, departing share, optional
+daughter naming, and contact intensity. Partition divides held territory
+around two hearts. Settlers draw a share from every inhabited land.
+Migration moves the whole community without replacing its language.
+Without a naming choice the new people chooses its name.
+
+State makes a people a state, with its court at one of its lands (its
+heart if none is given). A rule contact makes the more prestigious side
+rule the other's state. Religion establishes a faith and its founder
+among a people. Craft lets a people discover a craft it lacks. Temper
+nudges one leaning of a people's temper, which then drifts and responds
+to events as before.
+
 `Meaning` appends a world-local meaning (id, gloss, field, class,
-countability, tier, and optional derivation base and relation); before
+countability, tier, and optional derivation base and relation). Before
 founding it receives a root, and later living languages coin words for it.
-`Word` records a language index, meaning id, and catalog IPA, making the
-author's form dominant at that reading while retaining competing forms.
+`Word` records a language index, meaning id, and catalog IPA. It makes
+the author's form dominant at that reading while retaining competing forms.
 Both are authored decisions with an annal, and follow their telling's replay.
+
 A law records the living language's index and a catalog id
 (`{"kind":"law","variety":0,"law":"spirantization"}`), applying it at the
 reading year. `lawChoices(point, variety)` previews eligible laws without
@@ -31,15 +38,16 @@ altering that reading, ordered by changed living words, then catalog order.
 Its `recent` flag reports the usual sixty-generation quiet span, but does
 not prevent an author's repeat application. `Authored` records a law the
 author wrote in notation (`title`, `source`, the parsed `rules`, an
-optional `stress`); replay applies the stored rules and never reparses
-the source, and the law then spreads by wave like a catalog law.
+optional `stress`). Replay applies the stored rules and never reparses
+the source. The law then spreads by wave like a catalog law.
 `lawPreview(point, variety, law)` applies a catalog or authored law to a
-clone of the reading and lists every word and name it changes; the
+clone of the reading and lists every word and name it changes. The
 stateless `checkLaw(title, source)` reads the notation line by line.
+
 Consecutive runs merge up to the per-action limit, so playback stays a compact
 account. Any past generation is recovered by replaying, with checkpoints every
-10 generations; the timeline needs no separate data. Running to a year
-applies one `run` action per animation frame at the present; a step or
+10 generations. The timeline needs no separate data. Running to a year
+applies one `run` action per animation frame at the present. A step or
 "until something happens" can continue a past reading as a new telling.
 The past-reading panel **Continue in another telling** shows its last
 recorded decision and a year to write through. Confirmation uses `act_at`
@@ -47,8 +55,8 @@ at the exact reading point for the first generation, preserving the
 original telling atomically, then the workshop runs the new telling to
 that year through the same chunked run loop. The new telling and its
 unfinished target are saved as soon as the first chunk succeeds.
-The panel explains that without a new decision the years repeat as told;
-deciding something in the past also begins a new telling.
+The panel explains that without a new decision the years repeat as told.
+Deciding something in the past also begins a new telling.
 
 An exact `HistoryPoint` names an action position and an offset into a run, so
 two choices in the same year remain distinguishable. A run's endpoint uses its
@@ -101,11 +109,11 @@ of later language shifts.
 Nothing written is thrown away. Each `Telling` has a permanent ID, editable
 name, complete action log and optional parent `ReadingRef` (a telling ID plus
 an exact `HistoryPoint`). The founding account is a telling too. Returning
-before an action only moves the reading; it neither edits history nor creates
+before an action only moves the reading. It neither edits history nor creates
 another account. The first successful action from that earlier reading creates
 a child telling, preserving the parent's whole future. Even equal continuations
-keep distinct identities. Reading a telling never activates or alters it;
-continuing at its tip extends that account, and continuing earlier forks it.
+keep distinct identities. Reading a telling never activates or alters it.
+Continuing at its tip extends that account, and continuing earlier forks it.
 
 The facade gives each reading its own read-only view of the world. Overview,
 lexicon, word history, family and map views all use that telling and exact point.
@@ -120,11 +128,11 @@ conversion; valid integer IDs still have to exist in the requested reading.
 Comparison reads both tellings at one year, bounded by the shorter recorded
 history. It never silently advances either. Ancestry identifies the last proven
 shared reading, normalizing run endpoints before comparing prefixes. Only
-entities already present at that reading can be followed across both accounts;
-equal numeric IDs born after divergence do not establish identity. The two
+entities already present at that reading can be followed across both accounts.
+Equal numeric IDs born after divergence do not establish identity. The two
 charts share a camera, while their populations, holdings, language families and
-word forms come from their own views. Following a link opens that telling;
-continuing either panel is an explicit intervention.
+word forms come from their own views. Following a link opens that telling.
+Continuing either panel is an explicit intervention.
 The comparison opens with its divergence year and recorded decision.
 Its speech reading lists laws unique to either side, changed specimen
 forms, loans by donor, and descendant-language counts for languages
@@ -132,7 +140,7 @@ shared before divergence. Each law, word, and donor link opens that
 side's evidence at the comparison year. Speech reads wait independently
 of the comparison's charts and accounts.
 Only shared languages with differing evidence are shown. Equal loan
-counts by donor do not make a difference; an empty comparison keeps only
+counts by donor do not make a difference. An empty comparison keeps only
 the line “The tellings speak alike so far.”
 
 The workbench shows one overlaid sheet at a time. Opening Find or a
@@ -155,25 +163,26 @@ older saves keep their kind and archived flag and remain visible.
 Saves are recipes (`Recipe`: format, `ENGINE_REVISION`, seed, map size,
 active telling ID and all telling records), not resolved states.
 The import validates identities, parent references and shared action prefixes.
-An unreadable inactive telling stays retained; it does not prevent reading a
+An unreadable inactive telling is retained and does not prevent reading a
 valid active account. Bump `ENGINE_REVISION` whenever a change would make an
 existing recipe replay differently. Revision 33 changes flat geography to
 a sphere, replacing region identities: the engine refuses earlier recipes
 and the shelf opens recovery with the original data still downloadable.
 An imported older file is refused without changing saved worlds. Its
-region IDs are never guessed onto the new map. A recipe also records its
-`geography` version (`spherical-v1`, `continental-v2`, `continental-v3`,
+region IDs are never guessed onto the new map.
+
+A recipe also records its `geography` version (`spherical-v1`, `continental-v2`, `continental-v3`,
 `continental-v4`, `continental-v5`, `continental-v6`),
 so a change to how the land is drawn adds a version rather than redrawing
-saved worlds; new worlds use `GeographyVersion::CURRENT`. V3 fixes the
+saved worlds. New worlds use `GeographyVersion::CURRENT`. V3 fixes the
 geographic direction of zonal wind. V4 adds lakes, endorheic drainage, and
 river channels. V5 adds unequal continental crust while retaining V4's lake
 pipeline. V6 moves continental crust through a short deterministic
 plate-drift history before generating the same lakes and rivers. V1–V5
-retain their recorded generators; V1–V3 keep their earlier lake-free maps,
-drainage, rivers, and climate. Missing geography still means `spherical-v1`, never the
-current default. For later revision mismatches, replay still works with a
-warning that the history may differ.
+retain their recorded generators. V1–V3 keep their earlier lake-free maps,
+drainage, rivers, and climate. Missing geography still means `spherical-v1`,
+never the current default. For later revision mismatches, replay still
+works with a warning that the history may differ.
 Shelf miniatures use the saved geography version for compatible spherical
 recipes (revision 33 through the running revision). Earlier revisions and
 unrecognized geography are not guessed onto a new map.
@@ -191,22 +200,25 @@ world's history autosaves under localStorage key `langgen.book.<id>`, and
 `langgen.shelf.v1` lists them with their titles and the one last open.
 `langgen.place.<id>` keeps where the reader was in that world: the
 telling, exact reading, year, and open card. Reopening the world returns
-there; a place that no longer resolves (another engine revision, a
-removed telling) is ignored and the world opens at its latest year.
+there. If a place no longer resolves (another engine revision, a removed
+telling), it is ignored and the world opens at its latest year.
+
 These keys, the look key `langgen.look`, and the recipe format
 `langgen-sim-recipe` keep the project's first name and the shelf's first
 metaphor. The named-telling schema replaces the former active-log/set-aside-log
-shape; incompatible recipes open recovery with their original text intact. The
+shape. Incompatible recipes open recovery with their original text intact. The
 single-world save `langgen.sim.v1` is copied onto the shelf once as "An
 earlier history" and left in place, as is the older `langgen.workbench.v2`.
-*Put away* keeps a world's save and reading place off the main shelf;
+
+*Put away* keeps a world's save and reading place off the main shelf.
 *Bring back* restores it. Permanent removal requires putting it away first
 and confirming.
+
 Unreadable saves or an unreadable shelf open recovery without being
-overwritten; save failures stay visible and export still works. Storage is
+overwritten. Save failures stay visible and export still works. Storage is
 local to the browser, not synced. The sample world (`web/src/sample.ts`)
 is a fixed recipe of four thousand years, offered in the chart room and
-at the top of founding; opening it puts a fresh copy on the shelf.
+at the top of founding. Opening it puts a fresh copy on the shelf.
 
 A world is titled by the author at founding, or else named after its
 earliest-named continent (`worldName` in `shelf.ts`); a continent's name
@@ -230,28 +242,29 @@ Chart and Globe are two projections of the same spherical world. The
 the recipe. Turning, zooming, or switching views makes no authored decision
 and does not change replay.
 
-The first visit opens the chart room, even when it is empty; founding
+The first visit opens the chart room, even when it is empty. Founding
 and the sample are explicit choices there. Later visits resume the world
 left open, including one reopened without making changes. Returning to
 the chart room clears that resume choice, so reloading stays there. Hash
 routes (`web/src/route.ts`) name the chart room, a founding draft, a world,
-and a book chapter; an explicit route takes precedence over resume.
-The world's cartouche on the stage opens the way back; the brand mark in
+and a book chapter. An explicit route takes precedence over resume.
+The world's cartouche on the stage opens the way back. The brand mark in
 founding is the same link. The book is a full-window screen with a contents
 rail. Its bookmark keeps the chapter, anchor, scroll offset, and open
 sections in the reading place, without replacing the workshop's cards,
-layers, or camera. Editions read its own chapters.
+layers, or camera. Editions read the book's own chapters.
 Runs save their unfinished target and latest completed chunks. Leaving
 the stage saves the latest generation before recording the chart room as
-the next launch destination; a resumed unfinished run offers continuation.
+the next launch destination. A resumed unfinished run offers continuation.
 
 The production workbench is also an installable offline app. Its service
-worker caches the app shell and WebAssembly engine, not worlds; saved
+worker caches the app shell and WebAssembly engine, not worlds. Saved
 recipes keep the same localStorage keys. Worker cache cleanup never
 touches the shelf. Worlds created or advanced offline save normally.
+
 Updates wait for "Save and reload", which saves even an actively playing
 world before reloading. A failed save blocks the reload and leaves export
 available. Accepting an update in one window does not force other open
 windows to reload. Installing does not sync worlds between browsers or
-devices; where an installed app has separate storage, move worlds by
+devices. Where an installed app has separate storage, move worlds by
 exporting and importing recipes.

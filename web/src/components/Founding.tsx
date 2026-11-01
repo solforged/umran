@@ -140,7 +140,7 @@ function openDesign(id?: string): OpenedDraft {
       const design: unknown = raw === null ? null : JSON.parse(raw);
       if (isDraftDesign(design)) return { design, id, notice: null };
     } catch { /* Leave the original manuscript untouched. */ }
-    return { design: freshDesign(), id: null, notice: "That founding draft could not be opened; a fresh founding is open, and the saved draft has not been changed." };
+    return { design: freshDesign(), id: null, notice: "This founding draft could not be opened. A new draft is open; the saved draft is unchanged." };
   }
   return { design: freshDesign(), id: null, notice: null };
 }
@@ -197,9 +197,9 @@ function rootTrouble(root: RootCheck): string {
   }
 }
 const ROOT_WARNING: Record<RootCheck["warnings"][number], string> = {
-  cluster: "a cluster their shape avoids",
-  length: "longer than their words run",
-  final: "an ending their shape avoids",
+  cluster: "a consonant cluster this speech does not normally use",
+  length: "longer than this speech normally allows",
+  final: "a final consonant this speech does not normally use",
 };
 
 /// The author's own words, one `meaning form` to a line, checked against
@@ -270,7 +270,7 @@ function MeaningsBox({ meanings, fields, onChange }: { meanings: Meaning[]; fiel
   return <section className="founding-roots founding-meanings">
     <h4>Meanings of your own</h4>
     {open ? <>
-      <p>Add what the catalog lacks: <i>hearth</i>, <i>to forge</i>, <i>sacred</i>. Every people founded here draws a word for it, and roots above may name it by its short name.</p>
+      <p>Add what the catalog lacks: <i>hearth</i>, <i>to forge</i>, <i>sacred</i>. Each people founded here gains a word for it. To give it a root above, use its short name.</p>
       {meanings.length ? <ul className="founding-roots-check">{meanings.map((meaning) => <li key={meaning.id} className="ok">
         <span className="founding-roots-meaning">{meaning.gloss}</span>
         <span className="muted small"><code>{meaning.id}</code> · {MEANING_CLASS[meaning.class === "event" ? "event" : meaning.class === "property" ? "property" : meaning.countable ? "count" : "mass"].replace(/ \(.*\)$/, "").toLowerCase()} · {fields.find((set) => set.id === meaning.field)?.label ?? meaning.field}</span>
@@ -290,7 +290,7 @@ function MeaningsBox({ meanings, fields, onChange }: { meanings: Meaning[]; fiel
         </select>
         <button type="button" disabled={!id || taken} onClick={add}><Plus size={14} aria-hidden="true" /> Add</button>
       </div>
-      {taken ? <p className="notice">“{id}” is a meaning already; the catalog or your list has it.</p> : <p className="muted small">{MEANING_TIER[tier].drives}</p>}
+      {taken ? <p className="notice">“{id}” is already in the catalog or your list.</p> : <p className="muted small">{MEANING_TIER[tier].drives}</p>}
     </> : <p className="founding-roots-closed">The catalog’s {concepts().length} meanings are theirs. <button type="button" className="link" onClick={() => setOpen(true)}>Add meanings of your own…</button></p>}
   </section>;
 }
@@ -502,7 +502,7 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
       // A refused replay is not permission to replace the saved design.
       installDesign({
         design: freshDesign(), id: null,
-        notice: "That founding draft could not be rebuilt; a fresh founding is open, and the saved draft has not been changed.",
+        notice: "This founding draft could not be rebuilt. A new draft is open; the saved draft is unchanged.",
       });
     };
     const build = async () => {

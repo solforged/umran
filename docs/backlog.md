@@ -11,9 +11,9 @@ more interesting to read as it grows. More engine detail is useful when the
 reader can discover it, understand it, and make a different history from it.
 
 The working loop is **observe → notice → investigate → intervene → compare**.
-The chart supplies place; the encyclopedia supplies context; the chronicle
-supplies time. Names and events should lead between all three without losing
-the reader's place. Preserve the explorer's chart, the account book, and the
+The chart supplies place, the encyclopedia context, and the chronicle time.
+Names and events should lead between all three without losing the reader's
+place. Preserve the explorer's chart, the account book, and the
 folio laid over the map.
 
 Choose the strongest long-term design for this vision. Backward compatibility
@@ -108,8 +108,8 @@ The new chronicle is a useful index. The next step is continuity across time.
 - Offer an overview by era, with quiet summaries of repeated minor events and
   every original entry still available. The reader chooses when to zoom in.
 - Keep a small notebook of bookmarked discoveries, named years, and questions
-  to return to. A long playthrough should collect the reader's observations,
-  not only the simulator's output.
+  to return to. A long playthrough should collect the reader's observations
+  alongside the simulator's output.
 - Let the reader follow a developing story during playback and stop for that
   subject, instead of choosing only a broad event type.
 - Put related entries within reach: from a conquest to its rulers, subjected
@@ -117,9 +117,9 @@ The new chronicle is a useful index. The next step is continuity across time.
 
 Do not invent causes from adjacency in a log. A true cause-and-consequence
 view needs structured evidence from Rust: a triggering event, mechanism, and
-participants stable within that telling. Colony → new faith → conquest →
-borrowed sacred vocabulary is an investigation to support, not a story to
-assert when the engine has not recorded the links.
+participants stable within that telling. Support investigations such as
+colony → new faith → conquest → borrowed sacred vocabulary. Assert those
+links only where the engine has recorded them.
 
 Acceptance: start with one unfamiliar word, discover the faith or encounter
 that brought it, see where its speakers lived at that time, follow its later
@@ -166,7 +166,7 @@ encounters. It should feel like assembling an expedition's first reports.
 - End with an intelligible founding charter: who lives where, how their
   speech differs, and the first questions this world might answer.
 - Keep fast random setup available for repeat visits. Guided setup should
-  add understanding, not become mandatory ceremony.
+  help readers understand their choices while remaining optional.
 
 Acceptance: create three recognizably different peoples, understand why they
 may or may not meet, revise the second one without losing the others, and
@@ -193,7 +193,7 @@ not the same as geographically convincing.
   rivers/climate work rather than creating a second geography model.
 - Name regional theatres honestly and keep km, travel effort, and map size
   visible where they affect a choice. Distinguish a regional sea, small
-  continents, and a globe; do not merely stretch existing cells.
+  continents, and a globe instead of stretching existing cells.
 - Make zoom disclose appropriate detail: continental relationships at a
   distance, routes and holdings closer in, local names when readable.
 - Benchmark both setup and long histories at the largest size. Rendering,
@@ -214,17 +214,19 @@ Use short, interruptible transitions with a clear source and destination.
   entry motion and reduced-motion handling.
 - Keep text stable while reading. Avoid ongoing parchment effects and
   unrelated movement during playback.
-- Animate meaningful change on the map—arrival, departure, a new boundary—
-  without implying travel paths or causation the engine does not supply.
+- Animate meaningful change on the map, such as arrival, departure, or a new
+  boundary, without implying travel paths or causation the engine does not
+  supply.
 - Preserve keyboard focus through transitions, support rapid repeated actions,
   and offer immediate motion-free changes with reduced motion enabled.
 
 Acceptance: open and dismiss cards, folios, and dialogs repeatedly on desktop
 and phone without delayed clicks, stolen focus, or movement after dismissal.
 
-Delivered: interruptible paired opening and closing for dialogs, folios and
-settlement accounts; directional card turns and keyboard-only heading focus;
-brief ink emphasis when following a moment or returning through the trail.
+This pass delivered interruptible paired opening and closing for dialogs,
+folios and settlement accounts. It also delivered directional card turns,
+keyboard-only heading focus, and brief ink emphasis when following a moment
+or returning through the trail.
 Only one sheet is visible at a time. A dialog temporarily lifts the folio,
 then restores its chosen leaf and filters; comparison returns to Tellings.
 On a phone, a reopened folio's selected tab is the visible focus destination.

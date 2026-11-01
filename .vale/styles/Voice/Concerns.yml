@@ -1,0 +1,6 @@
+extends: existence
+message: "'%s' is a placeholder verb; say what the thing claims, argues, or asks."
+level: warning
+ignorecase: true
+tokens:
+  - '(?:concerns|concerned)\s+(?:how|what|whether|why|which|who|the|a|an|its|his|her|their|only|not)'
