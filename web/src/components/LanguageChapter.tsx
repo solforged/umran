@@ -148,8 +148,8 @@ function LawLedger({ variety, ctx }: SectionProps) {
         {occurrence.arrival.kind === "authored" ? <span className="pen" title="The author’s decision"><Feather size={12} aria-hidden="true" /></span> : null}
         <button type="button" className="link law-select" aria-pressed={sameOccurrence(selected, occurrence.ref)} onClick={() => setSelected(sameOccurrence(selected, occurrence.ref) ? null : occurrence.ref)}>{occurrence.label}</button>
         {ctx.link(lawSubject(occurrence.ref), "Read this application")}
-        {ctx.onWriteLaw && occurrence.rules.length ? <button type="button" className="link law-write-again" title="Open the law form with this law written out, to change it or give it to a living language"
-          onClick={() => ctx.onWriteLaw!({ title: occurrence.label, source: occurrence.rules.filter((rule, i) => occurrence.rules.indexOf(rule) === i).join("\n"), variety: variety.spoken ? variety.id : -1 })}>Write one like it…</button> : null}
+        {ctx.onWriteLaw && occurrence.source ? <button type="button" className="link law-write-again" title="Open the law form with this law written out, to change it or give it to a living language"
+          onClick={() => ctx.onWriteLaw!({ title: occurrence.label, source: occurrence.source!, variety: variety.spoken ? variety.id : -1 })}>Write one like it…</button> : null}
       </div>
       <LawEvidence variety={variety} occurrence={occurrence} ctx={ctx} />
     </li>)}</ol> : <p className="muted">No sound laws yet.</p>}

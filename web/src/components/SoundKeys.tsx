@@ -1,5 +1,5 @@
 import { useMemo, type RefObject } from "react";
-import { catalogSounds, soundHints } from "../engine";
+import { catalogSounds, soundHints, writeHint } from "../engine";
 import type { SoundHint } from "../model";
 
 type Field = HTMLInputElement | HTMLTextAreaElement;
@@ -10,7 +10,8 @@ const NOTATION = [">", "/", "_", "#", "∅", "C", "V"];
 /// A language's sounds as keys that type their catalog IPA where the caret
 /// is, so the author need not hunt for ʃ or ɾ; and, beneath, the sounds the
 /// text seems to write as a romanization would (`sh` for ʃ), each a button
-/// that writes it in IPA throughout. The engine reads the hints.
+/// that writes it in IPA throughout. The engine reads the hints and writes
+/// them; this component never edits a form itself.
 export function SoundKeys({ sounds, field, value, sounding, onChange, onHint, notation = false, long = true }: {
   /// The language's sounds in catalog IPA, or null where none is chosen yet.
   sounds: string[] | null;
@@ -57,7 +58,7 @@ export function SoundKeys({ sounds, field, value, sounding, onChange, onHint, no
       {notation ? <><span className="sound-keys-gap" aria-hidden="true" />{NOTATION.map((mark) => key(mark, `notation: ${mark}`))}</> : null}
     </div> : null}
     {hints.length ? <p className="sound-keys-hints small" role="status">In the catalog’s IPA: {hints.map((hint, i) => <span key={hint.written}>{i ? ", " : ""}
-      <button type="button" className="link" title={`Write ${hint.ipa} for every ${hint.written}`} onClick={() => onHint ? onHint(hint) : onChange(value.replaceAll(hint.written, hint.ipa))}>
+      <button type="button" className="link" title={`Write ${hint.ipa} for every ${hint.written}`} onClick={() => onHint ? onHint(hint) : onChange(writeHint(value, sounds, notation, hint.written))}>
         <code>{hint.written}</code> is <code>{hint.ipa}</code></button></span>)}.</p> : null}
   </div>;
 }

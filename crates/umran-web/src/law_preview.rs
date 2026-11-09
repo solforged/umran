@@ -57,6 +57,17 @@ struct Stress {
     after: StressRule,
 }
 
+/// An inventory of IPA sounds (a JSON array) as catalog ids, or none.
+fn inventory_ids(inventory: &str) -> Result<Option<Vec<umran_sim::PhonemeId>>, String> {
+    let sounds: Option<Vec<String>> = serde_json::from_str(inventory).map_err(|e| e.to_string())?;
+    Ok(sounds.map(|sounds| {
+        sounds
+            .iter()
+            .filter_map(|ipa| umran_sim::CATALOG.id_by_ipa(ipa))
+            .collect()
+    }))
+}
+
 impl Bench {
     pub fn check_law(title: &str, source: &str) -> Result<String, String> {
         to_json(&notation::parse(title, source))
@@ -65,15 +76,25 @@ impl Bench {
     /// Hints for sounds written as a romanization would, against an
     /// inventory of IPA sounds (JSON array) or none.
     pub fn sound_hints(text: &str, inventory: &str, notation: bool) -> Result<String, String> {
-        let sounds: Option<Vec<String>> =
-            serde_json::from_str(inventory).map_err(|e| e.to_string())?;
-        let ids = sounds.map(|sounds| {
-            sounds
-                .iter()
-                .filter_map(|ipa| umran_sim::CATALOG.id_by_ipa(ipa))
-                .collect::<Vec<_>>()
-        });
+        let ids = inventory_ids(inventory)?;
         to_json(&notation::sound_hints(text, ids.as_deref(), notation))
+    }
+
+    /// `text` with the hint for `written` taken, against the same inventory.
+    /// The engine rewrites the sounds; the page never edits a form itself.
+    pub fn write_hint(
+        text: &str,
+        inventory: &str,
+        notation: bool,
+        written: &str,
+    ) -> Result<String, String> {
+        let ids = inventory_ids(inventory)?;
+        Ok(notation::write_hint(
+            text,
+            ids.as_deref(),
+            notation,
+            written,
+        ))
     }
 
     pub fn law_preview(&self, point: &str, variety: usize, law: &str) -> Result<String, String> {
@@ -233,6 +254,15 @@ impl Workbench {
     pub fn sound_hints(text: &str, inventory: &str, notation: bool) -> Result<String, JsValue> {
         Bench::sound_hints(text, inventory, notation).map_err(fail)
     }
+    #[wasm_bindgen(js_name = writeHint)]
+    pub fn write_hint(
+        text: &str,
+        inventory: &str,
+        notation: bool,
+        written: &str,
+    ) -> Result<String, JsValue> {
+        Bench::write_hint(text, inventory, notation, written).map_err(fail)
+    }
     #[wasm_bindgen(js_name = lawPreview)]
     pub fn law_preview(&self, point: &str, variety: f64, law: &str) -> Result<String, JsValue> {
         self.bench
@@ -248,5 +278,27 @@ impl ReadView {
             .borrow()
             .law_preview(point, entity_id(variety).map_err(fail)?, law)
             .map_err(fail)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Bench;
+
+    #[test]
+    fn a_hint_is_taken_by_the_engine_against_the_same_inventory() {
+        // No inventory: a doubled letter is a long sound, a class is not.
+        assert_eq!(
+            Bench::write_hint("ss > s / [stressed] _", "null", true, "ss").unwrap(),
+            "sː > s / [stressed] _"
+        );
+        // With the language's sounds, the letter it lacks names its own.
+        let sounds = r#"["p","t","k","ɾ","a","i","u"]"#;
+        let hints = Bench::sound_hints("lar", sounds, false).unwrap();
+        assert_eq!(hints, r#"[{"written":"r","ipa":"ɾ"}]"#);
+        assert_eq!(Bench::write_hint("lar", sounds, false, "r").unwrap(), "laɾ");
+        // A hint the engine does not offer is not written.
+        assert_eq!(Bench::write_hint("lar", sounds, false, "l").unwrap(), "lar");
+        assert!(Bench::write_hint("lar", "not json", false, "r").is_err());
     }
 }

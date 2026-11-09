@@ -904,6 +904,9 @@ export interface LawOccurrence {
   label: string;
   /// The law's rules as the author wrote them, or as the catalog spells them.
   rules: string[];
+  /// The law in notation the engine reads back as these same rules, for
+  /// *Write one like it…*; null where the notation cannot say this law.
+  source: string | null;
   arrival: { kind: "own" } | { kind: "wave"; from: number } | { kind: "inherited"; ancestor: number }
     | { kind: "authored"; decision: number } | { kind: "substrate" } | { kind: "unrecorded" };
   annal: string | null;

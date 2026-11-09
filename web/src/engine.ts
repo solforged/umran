@@ -363,6 +363,12 @@ export function soundHints(text: string, inventory: string[] | null, notation = 
   return JSON.parse(Workbench.soundHints(text, JSON.stringify(inventory), notation)) as SoundHint[];
 }
 
+/// The text with one hint taken: the engine writes the catalog IPA where
+/// the text writes sounds, leaving the law notation's own words alone.
+export function writeHint(text: string, inventory: string[] | null, notation: boolean, written: string): string {
+  return Workbench.writeHint(text, JSON.stringify(inventory), notation, written);
+}
+
 // Design helpers; call only after `loadCatalog` has resolved, which
 // initializes the page's module.
 export function presetDesign(preset: string, seed: number): LanguageDesign {

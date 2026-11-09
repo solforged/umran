@@ -379,8 +379,10 @@ time bar. It works as follows:
     every living word and name by `lawPreview` before it is applied.
     The language's sounds sit as keys beneath the rules, with a hint
     where the text writes a romanization (`sh`, `:`, doubled vowels) for
-    the catalog's IPA. A language's law ledger offers *Write one like
-    it…*, which opens the form with a recorded law's rules to adapt.
+    the catalog's IPA. Taking a hint is the engine's rewrite, so a class
+    such as `[stressed]` keeps its spelling. A language's law ledger offers
+    *Write one like it…* on each law the notation can say, which opens the
+    form with that law's rules to adapt.
   - The frontispiece's *A meaning of your own* adds a meaning the catalog
     lacks, with its field, kind, how bound it is to a way of life, and an
     optional meaning to build it from. Every living language finds a

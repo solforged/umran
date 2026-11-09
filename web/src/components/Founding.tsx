@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, ChevronDown, Feather, LocateFixed, Plus, RefreshCw } from "lucide-react";
-import { attempt, checkRoots, concepts, createEngine, message, presetDesign, preview } from "../engine";
+import { attempt, checkRoots, concepts, createEngine, message, presetDesign, preview, writeHint } from "../engine";
 import type { Action, Catalog, Craft, Engine, EthosAxis, Forming, FoundingPreview, FoundingTraits, GrammarChoice, GrammarDesign, LakeNamesView, LanguageDesign, Livelihood, MapSize, Meaning, MeaningField, MeaningRelation, MeaningSet, MeaningTier, Naming, Overview, PossessorOrder, RiverNamesView, RootCheck, SoundHint, Variety, WordOrder, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { countWord, ETHOS_AXES, ETHOS_DRIVES, ETHOS_POLES, hue, landCardLabel, LIVELIHOOD_DRIVES, LIVELIHOOD_NAME, MARKING_PHRASE, MEANING_CLASS, MEANING_RELATION, MEANING_TIER, MILD, OPENNESS, OPENNESS_DRIVES, peopleLabel, POSSESSOR_PHRASE, STANDING, STANDING_DRIVES, STRONG, TERRAIN_NAME, WORD_ORDER_PHRASE } from "../lore";
@@ -229,9 +229,10 @@ function RootsBox({ founder, meanings, update, renamed, kin }: {
   const box = useRef<HTMLTextAreaElement>(null);
   const pickable = useMemo(() => [...concepts(), ...meanings.map((meaning) => ({ id: meaning.id, gloss: meaning.gloss, pronoun: false, custom: true }))], [meanings]);
   // A hint rewrites the sounds of each line, never its meaning.
-  const writeHint = (hint: SoundHint) => {
+  const takeHint = (hint: SoundHint) => {
     const lines = text.split("\n");
-    for (const root of report?.roots ?? []) lines[root.line - 1] = `${root.meaning} ${root.ipa.replaceAll(hint.written, hint.ipa)}`;
+    const sounds = founder.design.sounds.map((sound) => sound.ipa);
+    for (const root of report?.roots ?? []) lines[root.line - 1] = `${root.meaning} ${writeHint(root.ipa, sounds, false, hint.written)}`;
     setText(lines.join("\n"));
   };
   const replaceMeaning = (root: RootCheck, concept: string) => {
@@ -246,7 +247,7 @@ function RootsBox({ founder, meanings, update, renamed, kin }: {
       <textarea ref={box} className="founding-roots-text" aria-label="The author’s roots" value={text} rows={Math.min(12, Math.max(3, text.split("\n").length + 1))}
         spellCheck={false} autoCapitalize="off" autoCorrect="off" onChange={(event) => setText(event.target.value)} />
       <SoundKeys sounds={founder.design.sounds.map((sound) => sound.ipa)} field={box} value={text}
-        sounding={report?.roots.map((root) => root.ipa).join(" ")} onChange={setText} onHint={writeHint} />
+        sounding={report?.roots.map((root) => root.ipa).join(" ")} onChange={setText} onHint={takeHint} />
       <MeaningPick meanings={pickable} label="Add a line for a meaning" onPick={(concept) => {
         const next = `${text.replace(/\n*$/, "")}${text.trim() ? "\n" : ""}${concept.id} `;
         setText(next);

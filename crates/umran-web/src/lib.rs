@@ -1489,13 +1489,7 @@ impl Bench {
                         + p.point.offset
                 });
                 // Read from the action log alone, never a replay.
-                let decision = t.parent.and_then(|p| {
-                    t.actions
-                        .get(p.point.action..)?
-                        .iter()
-                        .find(|a| !matches!(a, Action::Run { .. }))
-                        .map(decision_kind)
-                });
+                let decision = self.chronicle.opening_decision(t.id).map(decision_kind);
                 TellingView {
                     id: t.id,
                     name: t.name.clone(),

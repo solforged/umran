@@ -99,6 +99,8 @@ struct LawOccurrence<'a> {
     order: usize,
     label: String,
     rules: Vec<String>,
+    /// The law in notation that reads back as these rules, where it can.
+    source: Option<String>,
     arrival: Arrival,
     annal: Option<String>,
     words: Vec<LawWord<'a>>,
@@ -576,6 +578,7 @@ fn law_occurrences<'a>(
                 rules: world
                     .law_by_id(&id)
                     .map_or_else(Vec::new, Law::rule_sources),
+                source: world.law_by_id(&id).and_then(Law::writable_source),
                 arrival,
                 annal: has_annal.then(|| format!("sounds:{owner}:{generation}")),
                 words: Vec::new(),
