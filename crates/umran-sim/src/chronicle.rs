@@ -282,6 +282,25 @@ impl Chronicle {
             .ok_or_else(|| format!("there is no telling {id}"))
     }
 
+    /// The decision a telling opened with: the first thing recorded after the
+    /// years it kept from its parent. `None` for the first telling, and for
+    /// one that opened by running on, whatever it decided later.
+    pub fn opening_decision(&self, id: TellingId) -> Option<&Action> {
+        let telling = self.telling(id).ok()?;
+        let parent = telling.parent?;
+        let kept =
+            Self::prefix_of(&self.telling(parent.telling).ok()?.actions, parent.point).ok()?;
+        // Running on lengthens the last kept run, so the kept years no
+        // longer stand at the head of the log as they were kept.
+        if !telling.actions.starts_with(&kept) {
+            return None;
+        }
+        telling
+            .actions
+            .get(kept.len())
+            .filter(|action| !matches!(action, Action::Run { .. }))
+    }
+
     pub fn rename(&mut self, id: TellingId, name: &str) -> Result<(), String> {
         let name = name.trim();
         if name.is_empty() || name.chars().count() > 120 {
@@ -1740,6 +1759,27 @@ mod tests {
                 .iter()
                 .any(|(_, e)| matches!(e, crate::WorldEvent::Shift { .. }))
         );
+    }
+
+    #[test]
+    fn a_telling_names_only_the_decision_it_opened_with() {
+        let shift = Action::Shift {
+            community: 1,
+            toward: 0,
+        };
+        // Decided at a past year: the telling opens with that decision.
+        let mut c = sample();
+        c.branch_at(20);
+        c.act(shift.clone()).unwrap();
+        c.act(Action::Run { generations: 5 }).unwrap();
+        assert_eq!(c.opening_decision(c.active()), Some(&shift));
+        assert_eq!(c.opening_decision(0), None);
+        // Continued by running on and decided later: it opened with none.
+        let mut c = sample();
+        c.branch_at(20);
+        c.act(Action::Run { generations: 5 }).unwrap();
+        c.act(shift).unwrap();
+        assert_eq!(c.opening_decision(c.active()), None);
     }
 
     #[test]

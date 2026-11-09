@@ -667,11 +667,16 @@ This bookkeeping makes no random draws and does not itself change replay.
   and `medial` restrict vowel position. Results may delete (`∅`, `0`, `Ø`),
   change length, `[lengthen before]`, or `[geminate next]`. A long
   sound written `aː` matches only the long one: `aː > a` shortens,
-  `a > aː` lengthens, and `aː > eː` changes quality and keeps length;
-  changing both on one line is refused in favour of two lines.
+  `a > aː` lengthens, and `aː > eː` changes quality and keeps length.
+  Changing both on one line is refused in favour of two lines. A long
+  sound can also be lost or shortened by class (`aː > ∅`, `aː > [short]`).
   `sound_hints` reads a draft for romanizations the catalog writes
   otherwise (`sh` for ʃ, `:` for ː, a doubled letter for length, and,
   given an inventory, a letter the language lacks whose IPA it has).
+  `write_hint` takes one hint: it writes the IPA wherever the draft writes
+  sounds and leaves feature classes and stress lines as typed.
+  `Law::writable_source` gives a law in notation only when that text reads
+  back as the law's own rules. About two thirds of the catalog's laws do.
   `stress > initial|penult|final|weight|free` sets one stress rule per law.
   Each target, result, and immediate environment carries one catalog
   segment or class: no insertion, metathesis, multi-segment replacement,

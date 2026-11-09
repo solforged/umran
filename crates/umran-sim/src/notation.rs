@@ -205,6 +205,8 @@ fn line(text: &str, stress: &mut Option<StressRule>) -> Result<Vec<SoundChange>,
         (Some(t), None) if t == result => vec![Rewrite::Length(false)],
         (None, Some(r)) if r == target => vec![Rewrite::Length(true)],
         (Some(_), Some(r)) => vec![Rewrite::Phone(segment(r)?)],
+        // A long sound may also be lost or take a class: aː > ∅, aː > [short].
+        (Some(_), None) if CATALOG.id_by_ipa(result).is_none() => rewrites(result)?,
         (Some(_), None) | (None, Some(_)) => {
             return Err(unsupported(
                 "change length and quality on separate lines: aː > a, then a > e",
@@ -247,17 +249,19 @@ fn reading(text: &str) -> String {
     let (b, env) = rest
         .split_once('/')
         .map_or((rest, None), |(b, e)| (b, Some(e.trim())));
+    // Capital C and V are the classes; lower-case c and v are sounds.
     let class = |term: &str| -> String {
-        let lower = term.trim().to_ascii_lowercase();
-        match lower.as_str() {
-            "c" => "a consonant".into(),
-            "v" => "a vowel".into(),
-            "#" => "the edge of the word".into(),
-            "[stressed]" => "a stressed vowel".into(),
-            "[unstressed]" => "an unstressed vowel".into(),
+        let term = term.trim();
+        let lower = term.to_ascii_lowercase();
+        match (term, lower.as_str()) {
+            ("C", _) => "a consonant".into(),
+            ("V", _) => "a vowel".into(),
+            ("#", _) => "the edge of the word".into(),
+            (_, "[stressed]") => "a stressed vowel".into(),
+            (_, "[unstressed]") => "an unstressed vowel".into(),
             _ => match lower.strip_prefix('[').and_then(|t| t.strip_suffix(']')) {
                 Some(terms) => format!("a {} sound", terms.trim()),
-                None => term.trim().to_string(),
+                None => term.to_string(),
             },
         }
     };
@@ -295,10 +299,11 @@ fn reading(text: &str) -> String {
     }
     let shortened = a.trim().strip_suffix('ː') == Some(result);
     let lengthened = result.strip_suffix('ː') == Some(a.trim());
+    // The zero is ∅, 0, or capital Ø, as `rewrites` reads it; ø is a vowel.
     let outcome = match result.to_ascii_lowercase().as_str() {
         _ if shortened => "shortens".to_string(),
         _ if lengthened => "lengthens".to_string(),
-        "∅" | "0" | "ø" => "is lost".to_string(),
+        _ if matches!(result, "∅" | "0" | "Ø") => "is lost".to_string(),
         "[long]" => "lengthens".into(),
         "[short]" => "shortens".into(),
         "[lengthen before]" => "is lost and lengthens the vowel before it".into(),
@@ -607,7 +612,7 @@ pub struct SoundHint {
 /// What the author probably meant where `text` writes a sound the way a
 /// romanization would: `sh` for ʃ, `u:` or `uu` for uː, and, given the
 /// language's sounds, `r` for its ɾ. With `notation`, the law notation's own
-/// symbols and feature classes are skipped. Hints only; nothing is rewritten.
+/// symbols and feature classes are skipped. Hints only; `write_hint` rewrites.
 pub fn sound_hints(text: &str, inventory: Option<&[PhonemeId]>, notation: bool) -> Vec<SoundHint> {
     let has = |id: PhonemeId| inventory.is_none_or(|sounds| sounds.contains(&id));
     let mut hints: Vec<SoundHint> = Vec::new();
@@ -621,27 +626,25 @@ pub fn sound_hints(text: &str, inventory: Option<&[PhonemeId]>, notation: bool) 
     };
     let mut tokens = Vec::new();
     for line in text.lines() {
-        let line = if notation {
-            if line.trim_start().to_ascii_lowercase().starts_with("stress") {
-                continue;
+        let mut plain = String::new();
+        for (sounds, part) in sounding(line, notation) {
+            if !sounds {
+                plain.push(' ');
+            } else if notation {
+                plain.extend(part.chars().map(|c| match c {
+                    '>' | '/' | '_' | '#' | '∅' | 'Ø' => ' ',
+                    c => c,
+                }));
+            } else {
+                plain.push_str(part);
             }
-            let mut plain = String::new();
-            let mut depth = 0;
-            for c in line.chars() {
-                match c {
-                    '[' => depth += 1,
-                    ']' => depth -= 1,
-                    _ if depth > 0 => {}
-                    '>' | '/' | '_' | '#' | '∅' | 'Ø' => plain.push(' '),
-                    _ => plain.push(c),
-                }
-            }
-            plain.replace("..", " ")
-        } else {
-            line.to_string()
-        };
+        }
+        if notation {
+            plain = plain.replace("..", " ");
+        }
         tokens.extend(
-            line.split_whitespace()
+            plain
+                .split_whitespace()
                 .filter(|t| !notation || !matches!(*t, "C" | "V" | "0"))
                 .map(str::to_owned),
         );
@@ -680,6 +683,77 @@ pub fn sound_hints(text: &str, inventory: Option<&[PhonemeId]>, notation: bool) 
         }
     }
     hints
+}
+
+/// `text` with one of its hints taken: `written` becomes the catalog's IPA
+/// wherever the text writes sounds. In the law notation, feature classes
+/// (`[stressed]`, `[short]`) and stress lines keep their spelling. A
+/// `written` that `sound_hints` does not offer for this text changes nothing.
+pub fn write_hint(
+    text: &str,
+    inventory: Option<&[PhonemeId]>,
+    notation: bool,
+    written: &str,
+) -> String {
+    let Some(hint) = sound_hints(text, inventory, notation)
+        .into_iter()
+        .find(|hint| hint.written == written)
+    else {
+        return text.to_owned();
+    };
+    text.split('\n')
+        .map(|line| {
+            sounding(line, notation)
+                .into_iter()
+                .map(|(sounds, part)| {
+                    if sounds {
+                        part.replace(&hint.written, &hint.ipa)
+                    } else {
+                        part.to_owned()
+                    }
+                })
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// A line cut into the stretches that write sounds and those that do not.
+/// Outside the law notation the whole line writes sounds. Within it, a
+/// feature class in brackets and the whole of a stress line do not.
+fn sounding(line: &str, notation: bool) -> Vec<(bool, &str)> {
+    if !notation {
+        return vec![(true, line)];
+    }
+    if line.trim_start().to_ascii_lowercase().starts_with("stress") {
+        return vec![(false, line)];
+    }
+    let mut parts = Vec::new();
+    let (mut start, mut depth) = (0, 0usize);
+    for (at, c) in line.char_indices() {
+        match c {
+            '[' => {
+                if depth == 0 {
+                    parts.push((true, &line[start..at]));
+                    start = at;
+                }
+                depth += 1;
+            }
+            ']' if depth > 0 => {
+                depth -= 1;
+                if depth == 0 {
+                    let end = at + c.len_utf8();
+                    parts.push((false, &line[start..end]));
+                    start = end;
+                }
+            }
+            _ => {}
+        }
+    }
+    // An unclosed class is still a class being typed, not sounds.
+    parts.push((depth == 0, &line[start..]));
+    parts.retain(|(_, part)| !part.is_empty());
+    parts
 }
 
 /// A catalog sound written long, as `uː` or `pː`: the sound without its mark.
@@ -774,6 +848,34 @@ impl Law {
             sources.push(format!("stress > {}", stress.id()));
         }
         sources
+    }
+
+    /// The law written in notation that reads back as these same rules, for
+    /// an author to adapt. `None` where the notation cannot say this law:
+    /// its display source would be refused or would mean something else.
+    pub fn writable_source(&self) -> Option<String> {
+        let source = self.source.clone().unwrap_or_else(|| {
+            let mut lines: Vec<String> = Vec::new();
+            for line in self.rule_sources() {
+                if !lines.contains(&line) {
+                    lines.push(line);
+                }
+            }
+            lines.join("\n")
+        });
+        let read = parse("law", &source).law?;
+        let unnamed = |rule: &SoundChange| SoundChange {
+            id: String::new(),
+            ..rule.clone()
+        };
+        let same = read.stress == self.stress
+            && read.rules.len() == self.rules.len()
+            && read
+                .rules
+                .iter()
+                .zip(&self.rules)
+                .all(|(a, b)| unnamed(a) == unnamed(b));
+        same.then_some(source)
     }
 }
 
@@ -1150,6 +1252,8 @@ mod tests {
             ("aː > eː", "paːta", "peːta"),
             ("pː > p", "apːa", "apa"),
             ("t > d / aː _", "paːta", "paːda"),
+            ("aː > [short]", "paːta", "pata"),
+            ("aː > ∅ / _ #", "pataː", "pat"),
         ] {
             let report = parse("Length", source);
             let law = report
@@ -1213,6 +1317,77 @@ mod tests {
         // The notation's own marks and feature classes are not sounds.
         assert!(hints("[voiceless stop] > [voiced] / V _ V", None, true).is_empty());
         assert_eq!(hints("sh > s / # _", None, true), vec![pair("sh", "ʃ")]);
+    }
+
+    #[test]
+    fn plain_words_tell_a_sound_from_a_class_and_a_vowel_from_the_zero() {
+        let reading = |source: &str| {
+            let report = parse("Read", source);
+            report.rules[0]
+                .reading
+                .clone()
+                .unwrap_or_else(|| panic!("{source}: {:?}", report.rules))
+        };
+        assert_eq!(reading("v > f"), "v becomes f");
+        assert_eq!(
+            reading("V > ∅ / _ #"),
+            "a vowel is lost at the end of a word"
+        );
+        assert_eq!(reading("a > ø"), "a becomes ø");
+        assert_eq!(reading("a > Ø / _ #"), "a is lost at the end of a word");
+        assert_eq!(
+            reading("p > f / V _ V"),
+            "p becomes f between a vowel and a vowel"
+        );
+    }
+
+    #[test]
+    fn a_law_is_offered_for_rewriting_only_where_it_reads_back_the_same() {
+        // What the author wrote is its own source.
+        let written = parse("Hush", "p > f / _ #\nstress > penult").law.unwrap();
+        assert_eq!(
+            written.law(3).writable_source().as_deref(),
+            Some("p > f / _ #\nstress > penult")
+        );
+        // A catalog law is offered only when its display text parses to the
+        // very rules it applies, and some of the catalog must qualify.
+        let catalog = crate::laws::catalog();
+        let mut writable = 0;
+        for law in &catalog {
+            let Some(source) = law.writable_source() else {
+                continue;
+            };
+            writable += 1;
+            let read = parse("law", &source).law.expect(&source);
+            assert_eq!(read.rules.len(), law.rules.len(), "{}", law.id);
+        }
+        assert!(writable > 0, "no catalog law can be written again");
+        println!("{writable} of {} catalog laws read back", catalog.len());
+        // A recipe whose stored rules no longer match its text is not offered.
+        let mut edited = written.clone();
+        edited.source = "p > b / _ #\nstress > penult".into();
+        assert_eq!(edited.law(3).writable_source(), None);
+    }
+
+    #[test]
+    fn a_hint_is_written_into_sounds_and_never_into_notation() {
+        let source = "ss > s / [stressed] _\nsh > s / _ [short]\nstress > initial\n";
+        assert_eq!(
+            write_hint(source, None, true, "ss"),
+            "sː > s / [stressed] _\nsh > s / _ [short]\nstress > initial\n"
+        );
+        assert_eq!(
+            write_hint(source, None, true, "sh"),
+            "ss > s / [stressed] _\nʃ > s / _ [short]\nstress > initial\n"
+        );
+        // Outside the notation every letter writes a sound.
+        assert_eq!(write_hint("shash", None, false, "sh"), "ʃaʃ");
+        // Only a hint the engine offers for this text is taken.
+        assert_eq!(write_hint(source, None, true, "st"), source);
+        assert_eq!(write_hint("[short", None, true, "sh"), "[short");
+        // A rewritten law still reads.
+        let law = parse("Hush", &write_hint("sh > s / # _", None, true, "sh"));
+        assert!(law.law.is_some());
     }
 
     #[test]
