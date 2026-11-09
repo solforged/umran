@@ -21,3 +21,19 @@ jobs:
       - run: cargo test --workspace
       - run: bun install --frozen-lockfile
       - run: bun run build
+      # The web tests import the generated WASM bindings, so they follow the build.
+      - run: bun run test:web
+
+  # Native and WASM histories must match exactly. The check takes several
+  # minutes, so it runs beside the others.
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run parity
