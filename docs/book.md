@@ -441,7 +441,9 @@ The book is a full-window screen, reached from the workshop's cartouche
 and laid out to be read in the order above, with the chart as frontispiece. A contents
 rail follows the chapter; a saved bookmark keeps the anchor, scroll offset,
 and open sections. It reuses the card sections rather than restating them.
-The last page offers the save file and editions, not a separate export book.
+The last page offers the save file, the frozen world, and editions, not a
+separate export book. The frozen world is the save file with the reading's
+resolved world beside the recipe as data (`frozen`, `docs/history.md`).
 
 The seal, contents, and frontispiece appear before the engine finishes
 reading the chapters. Lands, each people, and each language section wait

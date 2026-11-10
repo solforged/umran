@@ -51,7 +51,8 @@ Read further when the task touches it:
 - `route.ts` names hash routes for the chart room, founding drafts, worlds,
   and book chapters. `App.tsx` holds view state and actions.
 - `edition.ts` and `print.css` render editions from the book's own chapters.
-  `takeout.ts` downloads files.
+  `takeout.ts` downloads files. The facade's `frozen.rs` writes the frozen
+  world: a save with the world it resolved to beside the recipe as data.
 - `lore.ts` holds shared names, mechanism phrases for recorded causes, and
   the linguistic glossary.
 - `styles.css` and `chart.css` hold the one look: an explorer's chart of

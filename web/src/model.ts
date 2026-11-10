@@ -1340,6 +1340,9 @@ export interface ReadEngine {
   wordTable(generation: number, varieties: number[], concepts: string[]): Read<WordTable>;
   nameQuarry(generation: number, variety: number): Read<NameQuarry>;
   save(): string;
+  /// The save file with the world as this reading resolved it beside the
+  /// recipe, as text: megabytes, so it is asked for when wanted and not kept.
+  frozen(generation: number): Promise<string>;
   /// The author's decisions in this reading's telling, up to its point.
   decisions(): Read<DecisionView[]>;
 }

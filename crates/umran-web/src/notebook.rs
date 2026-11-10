@@ -102,4 +102,9 @@ pub(crate) struct Document {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub earlier_revisions: Vec<u32>,
+    /// A frozen file carries the world its recipe resolved to (`frozen.rs`).
+    /// A save is read without it: only the recipe is replayed.
+    #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
+    pub frozen: Option<serde::de::IgnoredAny>,
 }

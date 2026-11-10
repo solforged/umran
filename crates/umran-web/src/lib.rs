@@ -5,6 +5,7 @@ mod annals;
 mod desk;
 mod evidence;
 mod extract;
+mod frozen;
 mod law_preview;
 mod meanings;
 mod notebook;
@@ -41,6 +42,9 @@ use umran_sim::{
 };
 use umran_sim::{LanguageDesign, MorphologyKind, Naming, Segment, Variety};
 use wasm_bindgen::prelude::*;
+
+/// Years in a generation. `model.ts` mirrors it.
+pub(crate) const YEARS: u32 = 25;
 
 /// The browser-facing history; `Bench` holds the logic so it can be tested
 /// natively, where `JsValue` is unavailable.
@@ -617,17 +621,23 @@ impl Bench {
     }
 
     pub fn save(&self) -> Result<String, String> {
+        serde_json::to_string_pretty(&self.document()).map_err(|e| e.to_string())
+    }
+
+    /// The save as a document: the recipe under its stamp, with the notes,
+    /// the title, and the author.
+    fn document(&self) -> Document {
         let mut recipe = self.chronicle.recipe();
         let (revision, earlier_revisions) = self.stamp();
         recipe.revision = revision;
-        serde_json::to_string_pretty(&Document {
+        Document {
             recipe,
             notebook: self.notebook.clone(),
             title: self.title.clone(),
             author: self.author.clone(),
             earlier_revisions,
-        })
-        .map_err(|e| e.to_string())
+            frozen: None,
+        }
     }
 
     /// The revision a save made now is stamped with, and the revisions that
@@ -1938,53 +1948,7 @@ impl Bench {
             Some((_, world)) => world,
             None => self.world(generation),
         };
-        let mut annals = annals(world);
-        // Authored decisions happen after the year's simulation. Keep their
-        // exact order so the chronicle's latest moment is the choice just made.
-        annals.sort_by_key(|a| (a.generation, a.before.map(|p| p.action)));
-        let spoken = world.spoken();
-        // When each language arose: a daughter when it parted, a founding
-        // language when its people was founded. A people's first language
-        // is the one its first shift left, or the one it speaks if none.
-        let mut born: Vec<u32> = world
-            .varieties
-            .iter()
-            .map(|v| v.parent.map_or(0, |f| f.generation))
-            .collect();
-        for (g, event) in &world.events {
-            if let WorldEvent::Found { community } = event {
-                let first = world
-                    .events
-                    .iter()
-                    .find_map(|(_, e)| match e {
-                        WorldEvent::Shift {
-                            community: c, from, ..
-                        } if c == community => Some(*from),
-                        _ => None,
-                    })
-                    .unwrap_or(world.communities[*community].variety);
-                born[first] = *g;
-            }
-        }
-        let law_label = |id: &str| {
-            world
-                .law_by_id(id)
-                .map_or_else(|| substrate_label(id), |l| l.label.to_string())
-        };
-        // Every language that hears another people's name, built once:
-        // building an ear reads its whole lexicon.
-        let mut ears: Vec<Option<umran_sim::adapt::Adapter>> = vec![None; world.varieties.len()];
-        for k in &world.contacts {
-            for c in [k.a, k.b] {
-                let v = world.communities[c].variety;
-                if ears[v].is_none() {
-                    ears[v] = Some(world.ear(v));
-                }
-            }
-        }
-        // Which state, if any, each language is the standard of.
-        let standards = world.standards();
-        let view = Overview {
+        to_json(&Overview {
             telling,
             at_tip,
             seed,
@@ -1996,243 +1960,9 @@ impl Bench {
             saved_revision,
             first_revision,
             timeline,
-            communities: world
-                .communities
-                .iter()
-                .enumerate()
-                .map(|(id, c)| CommunityView {
-                    id,
-                    parents: c.parents.clone(),
-                    name: world.community_name(id),
-                    meaning: c.name.meaning.clone(),
-                    ipa: c.name.form.ipa_stressed(
-                        world
-                            .variety_of(id)
-                            .stress_at(c.ended.unwrap_or(world.generation)),
-                    ),
-                    coined: c.name.coined,
-                    faith: c.faith,
-                    crafts: c.crafts.clone(),
-                    fleet: c.fleet.clone(),
-                    // Only when it was written differently, not just said so.
-                    once: c
-                        .name
-                        .log
-                        .first()
-                        .and_then(|e| match &e.event {
-                            Event::SoundLaw { before, .. } => {
-                                Some(world.variety_of(id).title(before))
-                            }
-                            _ => None,
-                        })
-                        .filter(|once| *once != world.community_name(id)),
-                    exonyms: world
-                        .contacts
-                        .iter()
-                        .filter_map(|k| match (k.a == id, k.b == id) {
-                            (true, _) => Some(k.b),
-                            (_, true) => Some(k.a),
-                            _ => None,
-                        })
-                        .map(|by| Exonym {
-                            by,
-                            name: world.exonym_heard(
-                                ears[world.communities[by].variety]
-                                    .as_ref()
-                                    .expect("every contact's languages have ears"),
-                                id,
-                                by,
-                            ),
-                        })
-                        // A neighbour that says the name as they do adds nothing.
-                        .filter(|e| e.name != world.community_name(id))
-                        .collect(),
-                    variety: c.variety,
-                    size: c.size,
-                    prestige: c.prestige,
-                    power: c.power,
-                    openness: c.openness,
-                    ethos: c.ethos_at(generation),
-                    region: c.home(),
-                    lands: c.lands.clone(),
-                    livelihood: c.livelihood,
-                    ended: c.ended,
-                    ended_into: world.events.iter().find_map(|(_, e)| match *e {
-                        WorldEvent::Ended { community, into } if community == id => into,
-                        _ => None,
-                    }),
-                })
-                .collect(),
-            varieties: world
-                .varieties
-                .iter()
-                .enumerate()
-                .map(|(id, v)| {
-                    let (consonants, vowels) = v.inventory();
-                    VarietyView {
-                        id,
-                        name: language_label(world, id),
-                        meaning: v.name.meaning.clone(),
-                        parent: v.parent.map(|f| f.variety),
-                        forked_at: v.parent.map(|f| f.generation),
-                        koine_of: (!v.koine_of.is_empty()).then(|| makeup_views(&v.koine_of)),
-                        family: world.family(id),
-                        spoken: spoken[id],
-                        born: born[id],
-                        // When its last speakers took up another language
-                        // or came to an end.
-                        silent_since: (!spoken[id])
-                            .then(|| {
-                                world.events.iter().rev().find_map(|(g, e)| match e {
-                                    WorldEvent::Shift { from, .. } if *from == id => Some(*g),
-                                    WorldEvent::Ended { community, .. }
-                                        if world.communities[*community].variety == id =>
-                                    {
-                                        Some(*g)
-                                    }
-                                    _ => None,
-                                })
-                            })
-                            .flatten(),
-                        consonants: ipas(&consonants),
-                        vowels: ipas(&vowels),
-                        laws: v
-                            .laws
-                            .iter()
-                            .map(|(generation, law)| LawView {
-                                generation: *generation,
-                                id: law.clone(),
-                                label: law_label(law),
-                                from: v
-                                    .waves
-                                    .iter()
-                                    .find(|(g, w, _)| (*g, w) == (*generation, law))
-                                    .map(|&(_, _, f)| f),
-                                decision: world
-                                    .authored_laws
-                                    .get(&(id, *generation, law.clone()))
-                                    .copied(),
-                            })
-                            .collect(),
-                        words: v.lexicon.living().count(),
-                        word_building: word_building(v),
-                        builders: builders(v),
-                        minimal_word: v.minimal.label(),
-                        stress: v.stress().id(),
-                        tones: v.tones(),
-                        tonal: v.tonal,
-                        geminates: v.lexicon.living().any(|w| {
-                            w.form
-                                .segs
-                                .iter()
-                                .any(|s| s.long && !CATALOG.get(s.phone).is_vowel())
-                        }),
-                        specimen: specimen(v, world.generation),
-                        how_synthetic: v.grammar.summary.how_synthetic,
-                        contrast_retention: v.grammar.summary.contrast_retention,
-                        grammar: grammar_view(world, id),
-                        pronouns: pronoun_view(v),
-                        harmony: v.harmony.as_ref().map(|h| HarmonyView {
-                            feature: h.feature,
-                            since: h.since,
-                            lost: h.lost,
-                        }),
-                        standard_of: standards[id],
-                        own_words: own_words(world, id),
-                        names: v
-                            .given
-                            .iter()
-                            .map(|g| GivenView {
-                                name: v.title(&g.name.form),
-                                ipa: g.name.form.ipa_stressed(v.stress()),
-                                meaning: g.name.meaning.clone(),
-                                from: g.from,
-                            })
-                            .collect(),
-                        name_style: v.style,
-                        written: v.written,
-                        sacred_of: world.religions.iter().position(|r| r.sacred == id),
-                        classical_of: world.classical_of(id),
-                        purism: v
-                            .purism
-                            .iter()
-                            .map(|episode| PurismView {
-                                since: episode.since,
-                                cause: Some(episode.cause),
-                                replaced: episode
-                                    .replaced
-                                    .iter()
-                                    .map(|word| PuristWordView {
-                                        concept: &world.concepts[word.concept].id,
-                                        loan: word.loan_form.clone(),
-                                        native: word.native_form.clone(),
-                                    })
-                                    .collect(),
-                            })
-                            .collect(),
-                        high: v.high,
-                        vernacular: v.vernacular,
-                        // How much of the core its written form still
-                        // shares with its speech, while it is spoken.
-                        kept_from_high: v.high.filter(|_| spoken[id]).map(|h| {
-                            umran_sim::compare::intelligibility(
-                                &world.varieties[h].lexicon,
-                                &v.lexicon,
-                            )
-                        }),
-                        known_lands: world
-                            .known_lands(id)
-                            .into_iter()
-                            .filter_map(|region| {
-                                let name = world.known_place(id, region)?;
-                                Some(KnownLandView {
-                                    region,
-                                    spelled: v.title(&name.form),
-                                    ipa: name.form.ipa_stressed(v.stress()),
-                                })
-                            })
-                            .collect(),
-                    }
-                })
-                .collect(),
-            states: state_views(world),
-            cities: world
-                .cities
-                .iter()
-                .enumerate()
-                .map(|(id, city)| CityView {
-                    id,
-                    state: city.state,
-                    region: city.region,
-                    name: NameView::new(
-                        &world.varieties[world.standard_variety(city.state)],
-                        &world.city_name(id),
-                    ),
-                    size: world.city_size(id),
-                    since: city.since,
-                    townsfolk: city.townsfolk,
-                    makeup: makeup_views(&city.makeup),
-                })
-                .collect(),
-            religions: religion_views(world),
-            crafts: craft_views(world),
-            continents: continent_views(world),
-            contacts: world
-                .contacts
-                .iter()
-                .map(|c| ContactView {
-                    a: c.a,
-                    b: c.b,
-                    intensity: c.intensity,
-                    kind: kebab(&format!("{:?}", c.kind)),
-                })
-                .collect(),
-            places: place_views(world),
-            moves: move_views(world),
-            annals,
             tellings,
-        };
-        to_json(&view)
+            world: world_view(world),
+        })
     }
 
     /// Chance-corrected sound similarity of current same-meaning core words
@@ -2260,37 +1990,7 @@ impl Bench {
 
     /// Every concept's current word in `variety` at `generation`.
     pub fn lexicon(&mut self, generation: u32, variety: usize) -> Result<String, String> {
-        let world = self.world(generation);
-        let v = world
-            .varieties
-            .get(variety)
-            .ok_or("No such language variety.")?;
-        let rows: Vec<LexiconRow> = v
-            .lexicon
-            .slots
-            .iter()
-            .filter_map(|slot| {
-                let dominant = slot.dominant()?;
-                let word = v.lexicon.get(dominant);
-                Some(LexiconRow {
-                    concept: &world.concepts[slot.concept].id,
-                    gloss: &world.concepts[slot.concept].gloss,
-                    field: world.concepts[slot.concept].field.label(),
-                    field_order: world.concepts[slot.concept].field as u8,
-                    rank: world.concepts[slot.concept].stability,
-                    class: v.gender.class_of(word.id),
-                    form: lexicon_form(world, variety, word),
-                    competing_forms: slot
-                        .variants
-                        .iter()
-                        .filter(|variant| variant.lexeme != dominant)
-                        .map(|variant| lexicon_form(world, variety, v.lexicon.get(variant.lexeme)))
-                        .collect(),
-                    competitors: slot.variants.len() - 1,
-                })
-            })
-            .collect();
-        to_json(&rows)
+        to_json(&lexicon_rows(self.world(generation), variety)?)
     }
 
     /// Every sound of `variety` at `generation` with how many current
@@ -2566,28 +2266,7 @@ impl Bench {
         if id >= world.map.rivers.len() {
             return Err("No such river.".into());
         }
-        let names = &world.river_names[id];
-        let spoken = world.spoken();
-        to_json(&RiverNamesView {
-            river: id,
-            names: names
-                .iter()
-                .map(|name| place_name_view(world, name))
-                .collect(),
-            exonyms: world
-                .varieties
-                .iter()
-                .enumerate()
-                .filter(|(v, _)| spoken[*v] && names.last().is_some_and(|p| p.variety != *v))
-                .filter_map(|(v, speech)| {
-                    let (_, name) = speech
-                        .river_exonyms
-                        .iter()
-                        .find(|(river, _)| *river == id)?;
-                    Some(place_exonym_view(world, v, name))
-                })
-                .collect(),
-        })
+        to_json(&river_names(world, id))
     }
 
     /// All names and living local forms of a static lake identity as
@@ -2597,25 +2276,7 @@ impl Bench {
         if id >= world.map.lakes.len() {
             return Err("No such lake.".into());
         }
-        let names = &world.lake_names[id];
-        let spoken = world.spoken();
-        to_json(&LakeNamesView {
-            lake: id,
-            names: names
-                .iter()
-                .map(|name| place_name_view(world, name))
-                .collect(),
-            exonyms: world
-                .varieties
-                .iter()
-                .enumerate()
-                .filter(|(v, _)| spoken[*v] && names.last().is_some_and(|p| p.variety != *v))
-                .filter_map(|(v, speech)| {
-                    let (_, name) = speech.lake_exonyms.iter().find(|(lake, _)| *lake == id)?;
-                    Some(place_exonym_view(world, v, name))
-                })
-                .collect(),
-        })
+        to_json(&lake_names(world, id))
     }
 
     /// What each living people says for `concept` at `generation`, as a
@@ -2886,6 +2547,371 @@ impl Bench {
         }
         out.sort_by_key(|m| m.generation);
         out
+    }
+}
+
+/// Every concept's current word in `variety`, with the forms competing
+/// with it.
+pub(crate) fn lexicon_rows(world: &World, variety: usize) -> Result<Vec<LexiconRow<'_>>, String> {
+    let v = world
+        .varieties
+        .get(variety)
+        .ok_or("No such language variety.")?;
+    Ok(v.lexicon
+        .slots
+        .iter()
+        .filter_map(|slot| {
+            let dominant = slot.dominant()?;
+            let word = v.lexicon.get(dominant);
+            Some(LexiconRow {
+                concept: &world.concepts[slot.concept].id,
+                gloss: &world.concepts[slot.concept].gloss,
+                field: world.concepts[slot.concept].field.label(),
+                field_order: world.concepts[slot.concept].field as u8,
+                rank: world.concepts[slot.concept].stability,
+                class: v.gender.class_of(word.id),
+                form: lexicon_form(world, variety, word),
+                competing_forms: slot
+                    .variants
+                    .iter()
+                    .filter(|variant| variant.lexeme != dominant)
+                    .map(|variant| lexicon_form(world, variety, v.lexicon.get(variant.lexeme)))
+                    .collect(),
+                competitors: slot.variants.len() - 1,
+            })
+        })
+        .collect())
+}
+
+/// All names and living local forms of a river as they stand in `world`.
+pub(crate) fn river_names(world: &World, id: usize) -> RiverNamesView {
+    let names = &world.river_names[id];
+    let spoken = world.spoken();
+    RiverNamesView {
+        river: id,
+        names: names
+            .iter()
+            .map(|name| place_name_view(world, name))
+            .collect(),
+        exonyms: world
+            .varieties
+            .iter()
+            .enumerate()
+            .filter(|(v, _)| spoken[*v] && names.last().is_some_and(|p| p.variety != *v))
+            .filter_map(|(v, speech)| {
+                let (_, name) = speech
+                    .river_exonyms
+                    .iter()
+                    .find(|(river, _)| *river == id)?;
+                Some(place_exonym_view(world, v, name))
+            })
+            .collect(),
+    }
+}
+
+/// All names and living local forms of a lake as they stand in `world`.
+pub(crate) fn lake_names(world: &World, id: usize) -> LakeNamesView {
+    let names = &world.lake_names[id];
+    let spoken = world.spoken();
+    LakeNamesView {
+        lake: id,
+        names: names
+            .iter()
+            .map(|name| place_name_view(world, name))
+            .collect(),
+        exonyms: world
+            .varieties
+            .iter()
+            .enumerate()
+            .filter(|(v, _)| spoken[*v] && names.last().is_some_and(|p| p.variety != *v))
+            .filter_map(|(v, speech)| {
+                let (_, name) = speech.lake_exonyms.iter().find(|(lake, _)| *lake == id)?;
+                Some(place_exonym_view(world, v, name))
+            })
+            .collect(),
+    }
+}
+
+/// The world as it stands in `world`'s generation, apart from the session
+/// reading it: every people, language, state, faith, craft, and named place,
+/// and the chronicle so far.
+fn world_view(world: &World) -> WorldView<'_> {
+    let mut annals = annals(world);
+    // Authored decisions happen after the year's simulation. Keep their
+    // exact order so the chronicle's latest moment is the choice just made.
+    annals.sort_by_key(|a| (a.generation, a.before.map(|p| p.action)));
+    let spoken = world.spoken();
+    // When each language arose: a daughter when it parted, a founding
+    // language when its people was founded. A people's first language
+    // is the one its first shift left, or the one it speaks if none.
+    let mut born: Vec<u32> = world
+        .varieties
+        .iter()
+        .map(|v| v.parent.map_or(0, |f| f.generation))
+        .collect();
+    for (g, event) in &world.events {
+        if let WorldEvent::Found { community } = event {
+            let first = world
+                .events
+                .iter()
+                .find_map(|(_, e)| match e {
+                    WorldEvent::Shift {
+                        community: c, from, ..
+                    } if c == community => Some(*from),
+                    _ => None,
+                })
+                .unwrap_or(world.communities[*community].variety);
+            born[first] = *g;
+        }
+    }
+    let law_label = |id: &str| {
+        world
+            .law_by_id(id)
+            .map_or_else(|| substrate_label(id), |l| l.label.to_string())
+    };
+    // Every language that hears another people's name, built once:
+    // building an ear reads its whole lexicon.
+    let mut ears: Vec<Option<umran_sim::adapt::Adapter>> = vec![None; world.varieties.len()];
+    for k in &world.contacts {
+        for c in [k.a, k.b] {
+            let v = world.communities[c].variety;
+            if ears[v].is_none() {
+                ears[v] = Some(world.ear(v));
+            }
+        }
+    }
+    // Which state, if any, each language is the standard of.
+    let standards = world.standards();
+    WorldView {
+        communities: world
+            .communities
+            .iter()
+            .enumerate()
+            .map(|(id, c)| CommunityView {
+                id,
+                parents: c.parents.clone(),
+                name: world.community_name(id),
+                meaning: c.name.meaning.clone(),
+                ipa: c.name.form.ipa_stressed(
+                    world
+                        .variety_of(id)
+                        .stress_at(c.ended.unwrap_or(world.generation)),
+                ),
+                coined: c.name.coined,
+                faith: c.faith,
+                crafts: c.crafts.clone(),
+                fleet: c.fleet.clone(),
+                // Only when it was written differently, not just said so.
+                once: c
+                    .name
+                    .log
+                    .first()
+                    .and_then(|e| match &e.event {
+                        Event::SoundLaw { before, .. } => Some(world.variety_of(id).title(before)),
+                        _ => None,
+                    })
+                    .filter(|once| *once != world.community_name(id)),
+                exonyms: world
+                    .contacts
+                    .iter()
+                    .filter_map(|k| match (k.a == id, k.b == id) {
+                        (true, _) => Some(k.b),
+                        (_, true) => Some(k.a),
+                        _ => None,
+                    })
+                    .map(|by| Exonym {
+                        by,
+                        name: world.exonym_heard(
+                            ears[world.communities[by].variety]
+                                .as_ref()
+                                .expect("every contact's languages have ears"),
+                            id,
+                            by,
+                        ),
+                    })
+                    // A neighbour that says the name as they do adds nothing.
+                    .filter(|e| e.name != world.community_name(id))
+                    .collect(),
+                variety: c.variety,
+                size: c.size,
+                prestige: c.prestige,
+                power: c.power,
+                openness: c.openness,
+                ethos: c.ethos_at(world.generation),
+                region: c.home(),
+                lands: c.lands.clone(),
+                livelihood: c.livelihood,
+                ended: c.ended,
+                ended_into: world.events.iter().find_map(|(_, e)| match *e {
+                    WorldEvent::Ended { community, into } if community == id => into,
+                    _ => None,
+                }),
+            })
+            .collect(),
+        varieties: world
+            .varieties
+            .iter()
+            .enumerate()
+            .map(|(id, v)| {
+                let (consonants, vowels) = v.inventory();
+                VarietyView {
+                    id,
+                    name: language_label(world, id),
+                    meaning: v.name.meaning.clone(),
+                    parent: v.parent.map(|f| f.variety),
+                    forked_at: v.parent.map(|f| f.generation),
+                    koine_of: (!v.koine_of.is_empty()).then(|| makeup_views(&v.koine_of)),
+                    family: world.family(id),
+                    spoken: spoken[id],
+                    born: born[id],
+                    // When its last speakers took up another language
+                    // or came to an end.
+                    silent_since: (!spoken[id])
+                        .then(|| {
+                            world.events.iter().rev().find_map(|(g, e)| match e {
+                                WorldEvent::Shift { from, .. } if *from == id => Some(*g),
+                                WorldEvent::Ended { community, .. }
+                                    if world.communities[*community].variety == id =>
+                                {
+                                    Some(*g)
+                                }
+                                _ => None,
+                            })
+                        })
+                        .flatten(),
+                    consonants: ipas(&consonants),
+                    vowels: ipas(&vowels),
+                    laws: v
+                        .laws
+                        .iter()
+                        .map(|(generation, law)| LawView {
+                            generation: *generation,
+                            id: law.clone(),
+                            label: law_label(law),
+                            from: v
+                                .waves
+                                .iter()
+                                .find(|(g, w, _)| (*g, w) == (*generation, law))
+                                .map(|&(_, _, f)| f),
+                            decision: world
+                                .authored_laws
+                                .get(&(id, *generation, law.clone()))
+                                .copied(),
+                        })
+                        .collect(),
+                    words: v.lexicon.living().count(),
+                    word_building: word_building(v),
+                    builders: builders(v),
+                    minimal_word: v.minimal.label(),
+                    stress: v.stress().id(),
+                    tones: v.tones(),
+                    tonal: v.tonal,
+                    geminates: v.lexicon.living().any(|w| {
+                        w.form
+                            .segs
+                            .iter()
+                            .any(|s| s.long && !CATALOG.get(s.phone).is_vowel())
+                    }),
+                    specimen: specimen(v, world.generation),
+                    how_synthetic: v.grammar.summary.how_synthetic,
+                    contrast_retention: v.grammar.summary.contrast_retention,
+                    grammar: grammar_view(world, id),
+                    pronouns: pronoun_view(v),
+                    harmony: v.harmony.as_ref().map(|h| HarmonyView {
+                        feature: h.feature,
+                        since: h.since,
+                        lost: h.lost,
+                    }),
+                    standard_of: standards[id],
+                    own_words: own_words(world, id),
+                    names: v
+                        .given
+                        .iter()
+                        .map(|g| GivenView {
+                            name: v.title(&g.name.form),
+                            ipa: g.name.form.ipa_stressed(v.stress()),
+                            meaning: g.name.meaning.clone(),
+                            from: g.from,
+                        })
+                        .collect(),
+                    name_style: v.style,
+                    written: v.written,
+                    sacred_of: world.religions.iter().position(|r| r.sacred == id),
+                    classical_of: world.classical_of(id),
+                    purism: v
+                        .purism
+                        .iter()
+                        .map(|episode| PurismView {
+                            since: episode.since,
+                            cause: Some(episode.cause),
+                            replaced: episode
+                                .replaced
+                                .iter()
+                                .map(|word| PuristWordView {
+                                    concept: &world.concepts[word.concept].id,
+                                    loan: word.loan_form.clone(),
+                                    native: word.native_form.clone(),
+                                })
+                                .collect(),
+                        })
+                        .collect(),
+                    high: v.high,
+                    vernacular: v.vernacular,
+                    // How much of the core its written form still
+                    // shares with its speech, while it is spoken.
+                    kept_from_high: v.high.filter(|_| spoken[id]).map(|h| {
+                        umran_sim::compare::intelligibility(&world.varieties[h].lexicon, &v.lexicon)
+                    }),
+                    known_lands: world
+                        .known_lands(id)
+                        .into_iter()
+                        .filter_map(|region| {
+                            let name = world.known_place(id, region)?;
+                            Some(KnownLandView {
+                                region,
+                                spelled: v.title(&name.form),
+                                ipa: name.form.ipa_stressed(v.stress()),
+                            })
+                        })
+                        .collect(),
+                }
+            })
+            .collect(),
+        states: state_views(world),
+        cities: world
+            .cities
+            .iter()
+            .enumerate()
+            .map(|(id, city)| CityView {
+                id,
+                state: city.state,
+                region: city.region,
+                name: NameView::new(
+                    &world.varieties[world.standard_variety(city.state)],
+                    &world.city_name(id),
+                ),
+                size: world.city_size(id),
+                since: city.since,
+                townsfolk: city.townsfolk,
+                makeup: makeup_views(&city.makeup),
+            })
+            .collect(),
+        religions: religion_views(world),
+        crafts: craft_views(world),
+        continents: continent_views(world),
+        contacts: world
+            .contacts
+            .iter()
+            .map(|c| ContactView {
+                a: c.a,
+                b: c.b,
+                intensity: c.intensity,
+                kind: kebab(&format!("{:?}", c.kind)),
+            })
+            .collect(),
+        places: place_views(world),
+        moves: move_views(world),
+        annals,
     }
 }
 
@@ -3364,7 +3390,7 @@ fn history(world: &World, variety: usize, word: &Lexeme) -> Vec<HistoryLine> {
         text: match word.origin {
             Origin::Authored => format!(
                 "Given by the author in year {}, in their own hand",
-                word.born * 25
+                word.born * YEARS
             ),
             Origin::Founding => format!(
                 "A root of the founding language, for “{}”",
@@ -4029,27 +4055,35 @@ struct Overview<'a> {
     /// when it is not this one. It outlasts the session that first reread it.
     first_revision: Option<u32>,
     timeline: Vec<Marker>,
-    communities: Vec<CommunityView>,
-    varieties: Vec<VarietyView<'a>>,
-    contacts: Vec<ContactView>,
-    /// Every state that has stood, in the order they arose.
-    states: Vec<StateView>,
-    cities: Vec<CityView>,
-    /// Every religion founded, in order.
-    religions: Vec<ReligionView>,
-    /// Each continent, as it was known in this generation.
-    continents: Vec<ContinentView>,
-    /// The crafts, where each began, and who holds it now.
-    crafts: Vec<CraftView>,
-    /// What each land that has been held is called, through history.
-    places: Vec<PlaceView>,
-    /// Peoples going to new land: migrations, and split-offs settling
-    /// away from home.
-    moves: Vec<MoveView>,
-    /// What happened, in order, told as a chronicle.
-    annals: Vec<Annal>,
     /// Tellings set aside, with what they told that this one does not.
     tellings: Vec<TellingView>,
+    #[serde(flatten)]
+    world: WorldView<'a>,
+}
+
+/// What a reading shows of the world itself. A frozen record keeps the same.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WorldView<'a> {
+    pub(crate) communities: Vec<CommunityView>,
+    pub(crate) varieties: Vec<VarietyView<'a>>,
+    pub(crate) contacts: Vec<ContactView>,
+    /// Every state that has stood, in the order they arose.
+    pub(crate) states: Vec<StateView>,
+    pub(crate) cities: Vec<CityView>,
+    /// Every religion founded, in order.
+    pub(crate) religions: Vec<ReligionView>,
+    /// Each continent, as it was known in this generation.
+    pub(crate) continents: Vec<ContinentView>,
+    /// The crafts, where each began, and who holds it now.
+    pub(crate) crafts: Vec<CraftView>,
+    /// What each land that has been held is called, through history.
+    pub(crate) places: Vec<PlaceView>,
+    /// Peoples going to new land: migrations, and split-offs settling
+    /// away from home.
+    pub(crate) moves: Vec<MoveView>,
+    /// What happened, in order, told as a chronicle.
+    pub(crate) annals: Vec<Annal>,
 }
 
 #[derive(Serialize)]

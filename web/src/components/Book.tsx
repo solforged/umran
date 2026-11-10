@@ -8,6 +8,7 @@ import * as lore from "../lore";
 import { CONTACT_NAME, countWord, faithTeaching, LIVELIHOOD_NAME, seasonalPhrase, TENET_NOUN, TERRAIN_NAME, temperament, weatherDeparture } from "../lore";
 import { findAnnal, individualAnnals } from "../history";
 import { eraBirths, eras, isQuiet, listed, quietLine, quietRuns, speechLine, type Era } from "../eras";
+import { message } from "../engine";
 import { download, fileName } from "../takeout";
 import { EditionContext, editionReading, makeEdition } from "../edition";
 import { CHAPTER, ChapterSummary, type ChapterContext } from "./LanguageChapter";
@@ -751,6 +752,18 @@ function EditionActions({ reading }: { reading: Parameters<typeof Book>[0] }) {
   const { title, engine, generation, overview, catalog, worldId } = reading;
   // Read when the page opens: a save made while it is open keeps at most one more.
   const [kept] = useState(() => keptOriginals(worldId));
+  const [freezing, setFreezing] = useState(false);
+  const freeze = async () => {
+    setError(null);
+    setFreezing(true);
+    try {
+      download(fileName(title, `year-${generation * YEARS}.frozen.json`), await engine.frozen(generation), "application/json");
+    } catch (failure) {
+      setError(message(failure));
+    } finally {
+      setFreezing(false);
+    }
+  };
   const make = async (format: "print" | "html" | "markdown") => {
     if (job.current) return;
     const controller = new AbortController();
@@ -818,6 +831,7 @@ function EditionActions({ reading }: { reading: Parameters<typeof Book>[0] }) {
       <li><button type="button" disabled={progress !== null} onClick={() => void make("markdown")}>As text</button>{" "}<span className="muted">The same complete book as Markdown, with every recorded entry.</span></li>
       <li className="takeout-choice"><label><input type="checkbox" checked={apparatus} onChange={(event) => setApparatus(event.currentTarget.checked)} /> With every word’s evidence</label>{" "}<span className="muted">Origins, senses, paradigms, and cognates opened under every word of every language; the ledgers alone otherwise. Many times longer.</span></li>
       <li><button type="button" onClick={() => download(fileName(title, "json"), engine.save(), "application/json")}>As a save file</button>{" "}<span className="muted">The world, every telling, and all the author’s notes; open it from the chart room.</span></li>
+      <li><button type="button" disabled={freezing} onClick={() => void freeze()}>{freezing ? "Freezing the world…" : "As a frozen world"}</button>{" "}<span className="muted">The save file with the world written out beside it as data: every people, language, word, name, and chronicle entry as it stands in year {generation * YEARS}. It opens like any save, and what it records stays as written under any engine.</span></li>
       {kept.map((original) => <li key={original.revision}><button type="button" onClick={() => download(`${fileName(title, `revision-${original.revision}`)}.json`, original.raw, "application/json")}>As it was saved under revision {original.revision}</button>{" "}<span className="muted">The save file before a later engine reread it. It replays exactly only on that revision.</span></li>)}
     </ul> : null}
     {error ? <p role="alert">{error}</p> : null}

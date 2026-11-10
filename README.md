@@ -27,7 +27,8 @@ It runs entirely in your browser, with no backend.
 4. **Try another telling.** Return to an earlier year and make a decision
    to branch the history. The first future stays available for comparison.
 5. **Read the book.** Open it from the world's menu. **Take it elsewhere**
-   prints an edition or downloads a web page, Markdown, or a save file.
+   prints an edition or downloads a web page, Markdown, a save file, or
+   the world frozen as data.
 
 ![The book, with its contents rail, frontispiece, and chart](docs/images/book.jpg)
 

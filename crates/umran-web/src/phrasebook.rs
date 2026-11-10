@@ -132,7 +132,7 @@ enum Note {
 }
 
 #[derive(Serialize)]
-pub(super) struct Phrase {
+pub(crate) struct Phrase {
     id: &'static str,
     #[serde(flatten)]
     pub(super) rendering: GrammarRendering,
@@ -376,13 +376,16 @@ impl Bench {
             .varieties
             .get(variety)
             .ok_or("No such language variety.")?;
-        to_json(
-            &FRAMES
-                .iter()
-                .filter_map(|f| render(v, generation, f))
-                .collect::<Vec<_>>(),
-        )
+        to_json(&phrases(v, generation))
     }
+}
+
+/// Every fixed utterance `v` can say in `generation`, by its own grammar.
+pub(crate) fn phrases(v: &Variety, generation: u32) -> Vec<Phrase> {
+    FRAMES
+        .iter()
+        .filter_map(|f| render(v, generation, f))
+        .collect()
 }
 #[wasm_bindgen]
 impl Workbench {

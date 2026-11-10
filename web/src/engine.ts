@@ -198,6 +198,7 @@ class Reading implements ReadEngine {
   wordTable(generation: number, varieties: number[], concepts: string[]) { return this.ask<WordTable>("wordTable", generation, JSON.stringify(varieties), JSON.stringify(concepts)); }
   nameQuarry(generation: number, variety: number) { return this.ask<NameQuarry>("nameQuarry", generation, variety); }
   save() { return this.world.save(); }
+  frozen(generation: number) { return this.world.call("frozen", [generation], this.scope) as Promise<string>; }
   decisions() { return this.ask<DecisionView[]>("decisions"); }
 }
 

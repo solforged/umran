@@ -276,7 +276,10 @@ chapter order. Long ledgers stay folded until wanted.
 just the book, save a self-contained web page with its fonts, chart, and
 chapter links, or take the complete text as Markdown. Choose whether to
 include every word's evidence. A save file keeps the world, all its
-tellings, and the author's notes for further work.
+tellings, and the author's notes for further work. A frozen world is that
+save file with the world written out beside it as data: every people,
+language, word, name, and chronicle entry as it stands in the year the
+book reads. It opens like any save.
 
 ## Offline use and saving
 
@@ -307,7 +310,9 @@ The engine changes between editions, and a newer one can tell the same
 world differently. Umran warns when a world was saved by another engine
 revision and keeps that save as it stood. Download it from the warning or
 from **Take it elsewhere** in the book. The frontispiece records the
-revision the world was first written under.
+revision the world was first written under. A newer engine replays a
+frozen world's recipe like any other, but the record in the file stays as
+it was written. Freeze a world whose names you mean to keep.
 
 Worlds saved before engine revision 33 keep their original data and open
 recovery. Their old flat-map land IDs cannot be replayed on the new sphere.

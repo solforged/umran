@@ -206,11 +206,30 @@ build can yet supply.
 Shelf miniatures use the saved geography version for compatible spherical
 recipes (revision 33 through the running revision). Earlier revisions and
 unrecognized geography are not guessed onto a new map.
-Resolved-state saves remain possible later work if exact preservation
-across versions matters.
+
+A frozen file is a save with the world one reading resolved written beside
+the recipe as data (`Bench::frozen`, `frozen.rs`). Its `frozen` member
+carries the record's `version`, the engine `revision` that resolved it,
+the `telling`, `point`, and `generation` read, and `yearsPerGeneration`.
+The world follows under the names the workbench reads it by:
+`communities`, `varieties`, `contacts`, `states`, `cities`, `religions`,
+`continents`, `crafts`, `places`, `rivers`, `lakes`, `moves`, and
+`annals`. Each variety, spoken or silent, also carries its whole
+`lexicon`, its `nameQuarry`, and its `phrasebook`. Lands are numbered by
+region of the recipe's geography version, which does not change with the
+engine. The record's `revision` can be newer than the recipe's stamp,
+since a reread save keeps its stamp until history is written into it.
+
+Loading a frozen file replays the recipe and passes over the record, so
+it opens as the save it carries and takes no longer to load. A fixed
+reading freezes its own point, keeps the whole recipe, and opens on its
+telling. The book's last page writes one for the year it reads. Nothing
+yet reads the record back: comparing it with a later engine's replay, and
+opening it without replaying, are later work.
 
 The save document flattens that recipe alongside the notebook and optional
-`title` and `author` strings, and `earlierRevisions` when it has any. Old
+`title` and `author` strings, `earlierRevisions` when it has any, and
+`frozen` in a frozen file. Old
 saves without these fields load with neither set. `title()` and `author()` read this document metadata; `setTitle` and
 `setAuthor` update it, with an empty string clearing the field. Export and
 import preserve both without changing actions, simulation state, or revision.

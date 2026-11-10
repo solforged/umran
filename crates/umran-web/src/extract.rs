@@ -140,7 +140,7 @@ fn word_table<'a>(
 }
 
 #[derive(Serialize)]
-struct NameQuarry {
+pub(crate) struct NameQuarry {
     generation: u32,
     variety: usize,
     /// Every given name in fashion.
@@ -196,7 +196,7 @@ fn origin_label(origin: PlaceOrigin) -> &'static str {
     }
 }
 
-fn name_quarry(world: &World, variety: usize) -> Result<NameQuarry, String> {
+pub(crate) fn name_quarry(world: &World, variety: usize) -> Result<NameQuarry, String> {
     let v = world
         .varieties
         .get(variety)
