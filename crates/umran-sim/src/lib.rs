@@ -65,7 +65,7 @@ pub mod world;
 pub use causes::{Cause, Mechanism};
 pub use change::{Env, Matcher, Rewrite, SoundChange, apply_all};
 pub use chronicle::{
-    Action, Chronicle, ENGINE_REVISION, FORMAT, HistoryPoint, ReadingRef, Recipe, Telling,
+    Action, Chronicle, ENGINE_REVISION, FORMAT, HistoryPoint, LeftOut, ReadingRef, Recipe, Telling,
     TellingId,
 };
 pub use climate::{Climate, ClimateCause, ClimateChange, RegionClimate, ZoneClimate};

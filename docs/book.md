@@ -43,7 +43,10 @@ found  →  run  →  read  →  revise  →  run again
   name links to its card; every card shows its causes.
 - **Revise.** A dated decision (a people parts, a faith is founded, a
   craft is taught) opens another telling from that year. Tellings are
-  drafts of the same world. Compare them at the same year.
+  drafts of the same world. Compare them at the same year. A decision
+  can also be changed or dropped where it stands: *Tell it again…* on
+  its card writes a new telling that repeats the later years and
+  decisions around the change.
 - **Run again.** Repeat until a telling is one you want to keep. Then
   read it as a book.
 

@@ -17,7 +17,7 @@ export const READ_METHODS = {
 } as const satisfies Record<string, true>;
 /// Workbench methods that change the world; each answers with its new status.
 export const WRITE_METHODS = {
-  act: true, actAt: true, untilAt: true, runUntilEvent: true, branch: true,
+  act: true, actAt: true, retell: true, untilAt: true, runUntilEvent: true, branch: true,
   restore: true, rename: true, saveNote: true, removeNote: true, setTitle: true,
   setAuthor: true,
 } as const satisfies Record<string, true>;

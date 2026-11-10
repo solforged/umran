@@ -97,6 +97,9 @@ interface Context {
   onDialog: (kind: InterventionKind, community: number, draft?: LawDraft) => void;
   onReconsider: (annal: Annal) => void;
   onReturnBefore: (point: HistoryPoint) => void;
+  /// Tell this telling again as a new one, with the decision behind
+  /// `annal` changed in its form (`change`) or left out.
+  onRetell: (annal: Annal, change: boolean) => void;
   /// Tell the history again as a telling set aside told it.
   onRestore: (telling: number) => void;
   onRenameTelling: (telling: number, name: string) => void;
@@ -2364,6 +2367,12 @@ function EventCard({ annal, context }: { annal: Annal; context: Context }) {
         <SettlementAccount plan={annal.settlement.plan} overview={overview} map={context.map} recorded />
       </> : null}
       {annal.before ? <button type="button" className="reconsider" onClick={() => annal.settlement ? context.onReconsider(annal) : context.onReturnBefore(annal.before!)}>Return before this decision</button> : null}
+      {annal.before && annal.decision !== undefined ? <Popover label="Tell it again" trigger={(props) => <button type="button" className="reconsider" disabled={context.running != null} {...props}>Tell it again…</button>}>
+        {(close) => <>
+          {annal.settlement || annal.kind === "found" ? null : <button type="button" onClick={() => { close(); context.onRetell(annal, true); }}>With this decision changed…</button>}
+          <button type="button" onClick={() => { close(); context.onRetell(annal, false); }}>Without this decision</button>
+        </>}
+      </Popover> : null}
       {annal.variety !== null && annal.specimen.length > 0 ? (
         <Specimen
           words={annal.specimen}

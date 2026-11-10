@@ -1043,6 +1043,26 @@ pub struct Contact {
     pub cause: Option<crate::Cause>,
 }
 
+impl World {
+    /// The generation each people arose in: by founding, by parting from
+    /// another, or by settlement.
+    pub fn people_born(&self) -> Vec<u32> {
+        let mut born = vec![0; self.communities.len()];
+        for (generation, event) in &self.events {
+            let made = match event {
+                WorldEvent::Found { community } => Some(*community),
+                WorldEvent::Split { daughter, .. } => Some(*daughter),
+                WorldEvent::Settlement(record) => record.daughter,
+                _ => None,
+            };
+            if let Some(slot) = made.and_then(|c| born.get_mut(c)) {
+                *slot = *generation;
+            }
+        }
+        born
+    }
+}
+
 /// The event positions produced by one authored action in this telling.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Decision {

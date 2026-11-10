@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { loadCatalog, loadEngine, message } from "./engine";
-import type { Action, Catalog, DecisionView, Drift, Engine, HistoryPoint, NotebookNote, Overview, ReadEngine, SettlementChoice, SettlementPreview, WorldMap } from "./model";
+import type { Action, Annal, Catalog, DecisionView, Drift, Engine, HistoryPoint, NotebookNote, Overview, ReadEngine, SettlementChoice, SettlementPreview, WorldMap } from "./model";
 import type { Focus } from "./components/Pedia";
 import { YEARS } from "./model";
 import { ActionDialog, type DialogKind, type LawDraft } from "./components/ActionDialog";
@@ -56,6 +56,15 @@ const FREEZE_AFTER = 5000;
 
 /// Longest wait for something to happen before giving up.
 const EVENT_LIMIT = 400;
+
+/// The form that makes a decision of each kind again. A founding and a
+/// settlement have their own screens, so they have none here.
+const DECISION_DIALOG: Partial<Record<DecisionView["kind"], DialogKind>> = {
+  connect: "connect", shift: "shift", state: "state", religion: "religion", craft: "craft",
+  temper: "temper", law: "law", authored: "law", meaning: "meaning", word: "word",
+};
+/// A chronicle sentence without its emphasis marks.
+const plain = (text: string) => text.replace(/\*/g, "");
 
 const DECISION_NAME: Record<DecisionView["kind"], string> = {
   settle: "the settlement", found: "the founding", "found-related": "the founding",
@@ -117,6 +126,8 @@ export default function App() {
   const [community, setCommunity] = useState(0);
   const [dialog, setDialog] = useState<DialogKind | null>(null);
   const [lawDraft, setLawDraft] = useState<LawDraft | null>(null);
+  /// The decision the open dialog is to replace, in a retelling.
+  const [revising, setRevising] = useState<{ telling: number; decision: number } | null>(null);
   const [route, setRoute] = useState<Route>({ kind: "shelf" });
   const routeRef = useRef<Route>(route);
   const page = route.kind === "world" ? route.page : "stage";
@@ -614,6 +625,43 @@ export default function App() {
   // later years are set aside, not lost.
   const perform = run;
 
+  /// Tells a telling again as a new one, with one decision replaced or
+  /// left out, and says which later decisions could not be made again.
+  const retell = useCallback(async (telling: number, decision: number, action: Action | null) => {
+    const current = engine.current;
+    if (!current || !overview) return;
+    pendingWrites.current++;
+    try {
+      const retold = await current.retell(telling, overview.mutation, decision, action);
+      await changed(overview);
+      persist();
+      const left = retold.leftOut.map((entry) =>
+        `${entry.text ? plain(entry.text) : "A decision"}${entry.generation === null ? "" : ` (year ${entry.generation * YEARS})`}: ${entry.reason}`);
+      setInfo(`This is a new telling, with that decision ${action ? "changed" : "left out"}. The telling it came from is kept under Other tellings.${
+        left.length ? ` ${left.length === 1 ? "One later decision" : `${left.length} later decisions`} could not be made again. ${left.join(" ")}` : ""}`);
+    } catch (e) {
+      setError(message(e));
+    }
+    finally { pendingWrites.current--; }
+  }, [overview, changed, persist]);
+
+  /// Opens the form of the decision behind `annal` at the point before it,
+  /// to replace it in a retelling; or retells at once without it.
+  const reviseDecision = useCallback(async (annal: Annal, change: boolean) => {
+    if (!frame || annal.decision === undefined || !annal.before) return;
+    const telling = frame.overview.telling;
+    if (!change) { void retell(telling, annal.decision, null); return; }
+    try {
+      const decision = (await frame.reading.decisions()).find((entry) => entry.index === annal.decision);
+      const kind = decision ? DECISION_DIALOG[decision.kind] : undefined;
+      if (!decision || !kind) { setInfo("A decision of this kind cannot be changed in place. Return before it and decide again, or tell it again without it."); return; }
+      if (!await show({ telling: frame.telling, point: annal.before, viewing: null })) return;
+      setRevising({ telling, decision: annal.decision });
+      setLawDraft(decision.law ?? null);
+      setDialog(kind);
+    } catch (e) { setError(message(e)); }
+  }, [frame, retell, show]);
+
   const readTelling = useCallback(async (telling: number, at?: number, focus?: Focus) => {
     const world = engine.current;
     if (!world) return;
@@ -1011,14 +1059,17 @@ export default function App() {
         open={dialog !== null}
         kind={liftedDialog.value}
         lawDraft={lawDraft}
+        retelling={revising !== null}
         catalog={catalog}
         overview={overview}
         engine={frame.reading}
         selected={selected}
-        onClose={() => setDialog(null)}
+        onClose={() => { setDialog(null); setRevising(null); }}
         onAction={(action) => {
           setDialog(null);
-          perform(action);
+          setRevising(null);
+          if (revising) void retell(revising.telling, revising.decision, action);
+          else perform(action);
         }}
       />
     ) : null;
@@ -1050,6 +1101,7 @@ export default function App() {
         onRemoveNote={removeNote}
         onReadNote={openNote}
         onReadPoint={(point) => void show({ telling: overview.telling, point, viewing: null })}
+        onRetell={(annal, change) => void reviseDecision(annal, change)}
         canUndo={canUndo}
         undoDestination={undoDestination}
         selected={selected}
@@ -1070,7 +1122,7 @@ export default function App() {
         onDismissRun={dismissRun}
         onNextEvent={() => nextEvent(EVENT_LIMIT)}
         onUndo={strike}
-        onDialog={(kind, draft) => { setLawDraft(draft ?? null); setDialog(kind); }}
+        onDialog={(kind, draft) => { setRevising(null); setLawDraft(draft ?? null); setDialog(kind); }}
         runOnOpen={firstRun}
         onRunOpened={() => setFirstRun(null)}
       />

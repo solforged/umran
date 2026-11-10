@@ -1469,6 +1469,9 @@ export interface Engine {
   speechDelta(left: number, right: number, generation: number): Read<SpeechDelta>;
   rename(telling: number, name: string): Promise<void>;
   actAt(reading: ReadingRef, mutation: number, action: Action): Promise<void>;
+  /// Tells `telling` again as a new telling with decision `decision` (its
+  /// action index) replaced by `action`, or left out when `action` is null.
+  retell(telling: number, mutation: number, decision: number, action: Action | null): Promise<Retold>;
   untilAt(reading: ReadingRef, mutation: number, limit: number): Promise<number>;
   act(action: Action): Promise<void>;
   runUntilEvent(limit: number): Promise<number>;
@@ -1572,6 +1575,15 @@ export interface DecisionView {
   variety: number | null;
   /// Original annal ids, including members of grouped entries.
   annals: string[];
+  /// A law the author wrote, as written, for the law form to begin from.
+  law?: { title: string; source: string; variety: number };
+}
+
+/// What a retelling answers: the new telling, and each later decision it
+/// could not make again, in the words of the telling it came from.
+export interface Retold {
+  telling: number;
+  leftOut: { generation: number | null; kind: DecisionView["kind"] | null; text: string | null; reason: string }[];
 }
 
 export type GrammarCategory = "plural" | "past" | "object" | "future" | "progressive" | "genitive";

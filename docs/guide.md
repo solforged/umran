@@ -229,6 +229,14 @@ each. Each link opens the right telling. Either can be continued from the
 year in view. Returning before an action only moves your reading: the
 first new choice starts another telling.
 
+A decision's card also offers **Tell it again…**, to change that one
+decision or drop it without making the later ones again by hand. The new
+telling repeats every later year and decision. A decision is left out,
+and named with its reason, when the world refuses it or when the people
+or language it concerns did not arise the same way. A founding or a
+settlement can be dropped this way but not changed; return before it to
+decide again. The telling you were reading stays as it is.
+
 ![Two tellings compared at year 4000, with differences in sound laws, loans, and descendants](images/tellings.jpg)
 
 ## Study languages

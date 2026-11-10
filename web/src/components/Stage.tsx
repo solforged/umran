@@ -145,6 +145,7 @@ export function Stage({
   onRemoveNote,
   onReadNote,
   onReadPoint,
+  onRetell,
   comparisonReturn,
   sheetReturn,
   mapMotion,
@@ -198,6 +199,7 @@ export function Stage({
   onRemoveNote: (id: string) => Promise<string | null>;
   onReadNote: (note: NotebookNote) => Promise<string | null>;
   onReadPoint: (point: HistoryPoint) => void;
+  onRetell: (annal: Annal, change: boolean) => void;
   comparisonReturn: number;
   sheetReturn: number;
   mapMotion: RefObject<MapMotionReading | null>;
@@ -1037,6 +1039,7 @@ export function Stage({
         }}
         onReconsider={reconsider}
         onReturnBefore={(point) => { halt(); onReadPoint(point); }}
+        onRetell={(annal, change) => { halt(); onRetell(annal, change); }}
       />
       </Sheet>
 

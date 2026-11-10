@@ -58,6 +58,24 @@ unfinished target are saved as soon as the first chunk succeeds.
 The panel explains that without a new decision the years repeat as told.
 Deciding something in the past also begins a new telling.
 
+`Chronicle::retell(index, replacement)` tells the active telling again as
+a child telling, with the decision at `index` replaced, or left out when
+there is no replacement. Every later run and decision is applied again in
+order. A later decision is left out, and returned with its reason
+(`LeftOut`), when the world refuses it or when it names a people or a
+language that is not the same one in the retelling. Peoples and languages
+go by number, so sameness needs care. Until a run follows the change, the
+original is applied beside the retelling and whatever each decision made
+is paired exactly; dropping a founding renumbers the later founders. After
+a run, a people or language is the same only if it holds the same place
+among those born since, arose in the same year, and has the same parents.
+A refused replacement changes nothing. The facade's `retell(telling,
+mutation, decision, action)` answers with the new telling and the
+decisions left out, in the words of the telling it came from. A decision's
+card offers it as *Tell it again…*, and the dialog that replaces a
+decision opens on the reading before it. A written law opens with its own
+rules (`DecisionView.law`).
+
 An exact `HistoryPoint` names an action position and an offset into a run, so
 two choices in the same year remain distinguishable. A run's endpoint uses its
 full offset and stays fixed when playback extends that run. `act_at` validates

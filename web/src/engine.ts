@@ -37,6 +37,7 @@ import type {
   SettlementPreview,
   Story,
   DecisionView,
+  Retold,
   LawOccurrence,
   WordLife,
   LoanTrail,
@@ -293,6 +294,9 @@ class World implements Engine {
   async rename(telling: number, name: string) { await this.write("rename", telling, name); }
   async actAt(reading: ReadingRef, mutation: number, action: Action) {
     await this.write("actAt", JSON.stringify(reading), mutation, JSON.stringify(action));
+  }
+  async retell(telling: number, mutation: number, decision: number, action: Action | null) {
+    return json(await this.write("retell", telling, mutation, decision, JSON.stringify(action))) as Retold;
   }
   async untilAt(reading: ReadingRef, mutation: number, limit: number) {
     return await this.write("untilAt", JSON.stringify(reading), mutation, limit) as number;

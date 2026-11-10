@@ -222,6 +222,84 @@ fn spherical_geography() -> GeographyVersion {
     GeographyVersion::SphericalV1
 }
 
+/// A decision a retelling did not repeat: its place in the telling it came
+/// from, and why.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct LeftOut {
+    pub action: usize,
+    pub reason: String,
+}
+
+/// Which peoples and languages of a telling are the same ones in its
+/// retelling. The tables hold those matched exactly; `since` is how many of
+/// each the retelling had when years first passed after the change.
+struct Same {
+    peoples: Vec<Option<usize>>,
+    tongues: Vec<Option<usize>>,
+    since: (usize, usize),
+}
+
+impl Same {
+    /// The retelling's number for people `c` of the original, if the same
+    /// people lives there.
+    fn people(&self, told: &World, born: &[u32], retold: &World, c: usize) -> Option<usize> {
+        if let Some(known) = self.peoples.get(c) {
+            return *known;
+        }
+        let new = c - self.peoples.len() + self.since.0;
+        let (old, found) = (told.communities.get(c)?, retold.communities.get(new)?);
+        let parents: Option<Vec<usize>> = old
+            .parents
+            .iter()
+            .map(|&p| self.people(told, born, retold, p))
+            .collect();
+        (parents? == found.parents && born.get(c) == retold.people_born().get(new)).then_some(new)
+    }
+
+    fn tongue(&self, told: &World, retold: &World, v: usize) -> Option<usize> {
+        if let Some(known) = self.tongues.get(v) {
+            return *known;
+        }
+        let new = v - self.tongues.len() + self.since.1;
+        let (old, found) = (
+            told.varieties.get(v)?.parent?,
+            retold.varieties.get(new)?.parent?,
+        );
+        (self.tongue(told, retold, old.variety)? == found.variety
+            && old.generation == found.generation)
+            .then_some(new)
+    }
+}
+
+impl Action {
+    /// This decision with its peoples and languages numbered as another
+    /// telling numbers them, or `None` if one of them is not there.
+    fn renumbered(
+        &self,
+        people: impl Fn(usize) -> Option<usize>,
+        tongue: impl Fn(usize) -> Option<usize>,
+    ) -> Option<Self> {
+        let mut action = self.clone();
+        match &mut action {
+            Action::Settle { choice } => choice.community = people(choice.community)?,
+            Action::FoundRelated { source, .. } => *source = people(*source)?,
+            Action::Connect { a, b, .. } => (*a, *b) = (people(*a)?, people(*b)?),
+            Action::Shift { community, toward } => {
+                (*community, *toward) = (people(*community)?, people(*toward)?);
+            }
+            Action::State { community, .. }
+            | Action::Religion { community }
+            | Action::Craft { community, .. }
+            | Action::Temper { community, .. } => *community = people(*community)?,
+            Action::Law { variety, .. }
+            | Action::Authored { variety, .. }
+            | Action::Word { variety, .. } => *variety = tongue(*variety)?,
+            Action::Found { .. } | Action::Run { .. } | Action::Meaning { .. } => {}
+        }
+        Some(action)
+    }
+}
+
 /// Where a replay has got to: the next action, and how far into it if it
 /// is a run.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -530,6 +608,110 @@ impl Chronicle {
             .retain(|_, (cursor, _)| cursor.action < unchanged);
         self.latest = self.replay_to(u32::MAX);
         Ok(())
+    }
+
+    /// Tells the active telling again as a new one, with the decision at
+    /// `index` replaced or, with no `replacement`, left out. The telling it
+    /// came from stands as it was. Every later year is run again, and every
+    /// later decision is made again where the peoples and languages it
+    /// names are still the same ones; the rest are returned with the
+    /// reason each was left out. A refusal of the replacement itself
+    /// changes nothing.
+    ///
+    /// Peoples and languages go by number, and a changed past can number
+    /// them otherwise. Until years pass again the original is told
+    /// alongside, so each one a decision made is matched exactly. After
+    /// that, one stands for the same in both tellings only if it holds the
+    /// same place among those born since, arose in the same year, and has
+    /// the same parents.
+    pub fn retell(
+        &mut self,
+        index: usize,
+        replacement: Option<Action>,
+    ) -> Result<Vec<LeftOut>, String> {
+        let original = self.actions().to_vec();
+        match (original.get(index), &replacement) {
+            (None, _) => return Err("There is no such decision in this telling.".into()),
+            (Some(Action::Run { .. }), _) | (_, Some(Action::Run { .. })) => {
+                return Err("Passing years are not a decision to change.".into());
+            }
+            _ => {}
+        }
+        let mut candidate = self.clone();
+        candidate.branch_at_point(HistoryPoint {
+            action: index,
+            offset: 0,
+        })?;
+        let told = &self.latest;
+        let told_born = told.people_born();
+        // The original told beside the retelling while no years pass.
+        let mut beside = Some(candidate.latest.clone());
+        let shared = |world: &World| (world.communities.len(), world.varieties.len());
+        let (people, tongues) = shared(&candidate.latest);
+        let mut same = Same {
+            peoples: (0..people).map(Some).collect(),
+            tongues: (0..tongues).map(Some).collect(),
+            since: (people, tongues),
+        };
+        let mut left_out = Vec::new();
+        for (at, action) in original.iter().enumerate().skip(index) {
+            if let Action::Run { .. } = action {
+                if beside.take().is_some() {
+                    same.since = shared(&candidate.latest);
+                }
+                candidate.act(action.clone())?;
+                continue;
+            }
+            let made = shared(&candidate.latest);
+            let again = if at == index {
+                replacement.clone().map(Ok)
+            } else {
+                Some(
+                    action
+                        .renumbered(
+                            |c| same.people(told, &told_born, &candidate.latest, c),
+                            |v| same.tongue(told, &candidate.latest, v),
+                        )
+                        .ok_or_else(|| {
+                            "It concerns a people or a language that did not arise the same way in this telling."
+                                .to_string()
+                        }),
+                )
+            };
+            let done = match again {
+                None => false,
+                Some(Ok(action)) if at == index => {
+                    candidate.act(action)?;
+                    true
+                }
+                Some(again) => match again.and_then(|action| candidate.act(action)) {
+                    Ok(()) => true,
+                    Err(reason) => {
+                        left_out.push(LeftOut { action: at, reason });
+                        false
+                    }
+                },
+            };
+            // Whatever the original decision made is matched to what the
+            // retelling made in its place, in order, or to nothing.
+            if let Some(world) = &mut beside {
+                if apply(world, action, at).is_err() {
+                    beside = None;
+                    same.since = shared(&candidate.latest);
+                    continue;
+                }
+                let now = shared(&candidate.latest);
+                let pair = |table: &mut Vec<Option<usize>>, to: usize, from: usize, end: usize| {
+                    for k in 0..to - table.len() {
+                        table.push(Some(from + k).filter(|&new| done && new < end));
+                    }
+                };
+                pair(&mut same.peoples, world.communities.len(), made.0, now.0);
+                pair(&mut same.tongues, world.varieties.len(), made.1, now.1);
+            }
+        }
+        *self = candidate;
+        Ok(left_out)
     }
 
     /// Activate a telling by identity. Its peers and metadata remain intact.
@@ -1718,6 +1900,163 @@ mod tests {
         .unwrap();
         c.act(Action::Run { generations: 22 }).unwrap();
         c
+    }
+
+    /// A telling made afresh of these actions.
+    fn told(actions: &[Action]) -> Chronicle {
+        let mut c = Chronicle::new(7, MapSize::default());
+        for action in actions {
+            c.act(action.clone()).unwrap();
+        }
+        c
+    }
+
+    #[test]
+    fn a_retelling_changes_or_drops_one_decision_and_repeats_the_rest() {
+        let original = sample();
+        let actions = original.actions().to_vec();
+        // Without the state: every other decision and year again.
+        let mut c = original.clone();
+        assert_eq!(c.retell(5, None).unwrap(), Vec::new());
+        let mut expected = actions.clone();
+        expected.remove(5);
+        assert_eq!(c.actions(), told(&expected).actions());
+        assert!(same(c.latest(), told(&expected).latest()));
+        // The telling it came from stands, and the new one hangs from the
+        // point before the decision.
+        assert_eq!(c.telling(0).unwrap().actions, actions);
+        assert_ne!(c.active(), 0);
+        assert_eq!(
+            c.telling(c.active()).unwrap().parent,
+            Some(ReadingRef {
+                telling: 0,
+                point: HistoryPoint {
+                    action: 5,
+                    offset: 0
+                }
+            })
+        );
+        // With the meeting changed: the settlement and the state follow.
+        let mut c = original.clone();
+        let weaker = Action::Connect {
+            a: 0,
+            b: 1,
+            intensity: 0.2,
+            contact: ContactKind::Trade,
+        };
+        assert_eq!(c.retell(3, Some(weaker.clone())).unwrap(), Vec::new());
+        let mut expected = actions.clone();
+        expected[3] = weaker;
+        assert_eq!(c.actions(), expected);
+        assert!(same(c.latest(), told(&expected).latest()));
+        // The same decision again is the same history, peoples born since
+        // the change included.
+        let mut c = original.clone();
+        c.act(Action::Run { generations: 40 }).unwrap();
+        let late = c.latest().communities.len() - 1;
+        assert!(late > 1, "the sample needs a people born along the way");
+        c.act(Action::Temper {
+            community: late,
+            axis: crate::Axis::Pious,
+            amount: 0.2,
+        })
+        .unwrap();
+        let before = c.clone();
+        assert_eq!(c.retell(3, Some(actions[3].clone())).unwrap(), Vec::new());
+        assert_eq!(c.actions(), before.actions());
+        assert!(same(c.latest(), before.latest()));
+    }
+
+    #[test]
+    fn a_retelling_renumbers_or_leaves_out_what_the_change_unsettles() {
+        let temper = |community| Action::Temper {
+            community,
+            axis: crate::Axis::Pious,
+            amount: 0.2,
+        };
+        let mut c = told(&[
+            found("Hill", "familiar"),
+            found("Coast", "polynesian"),
+            temper(1),
+            temper(0),
+            Action::Run { generations: 5 },
+            Action::Religion { community: 1 },
+            Action::State {
+                community: 0,
+                capital: None,
+            },
+        ]);
+        // Without the first founding the second people is numbered first,
+        // and what concerned the first people has no one to concern.
+        let left = c.retell(0, None).unwrap();
+        assert_eq!(
+            c.actions(),
+            [
+                found("Coast", "polynesian"),
+                temper(0),
+                Action::Run { generations: 5 },
+                Action::Religion { community: 0 },
+            ]
+        );
+        assert_eq!(c.latest().communities.len(), 1);
+        assert_eq!(
+            c.latest().community_name_at(0, 0),
+            told(&[found("Coast", "polynesian")])
+                .latest()
+                .community_name_at(0, 0)
+        );
+        assert_eq!(left.iter().map(|l| l.action).collect::<Vec<_>>(), [3, 6]);
+        assert!(
+            left.iter()
+                .all(|l| l.reason.contains("did not arise the same way"))
+        );
+        // A decision the retold world refuses is left out with its reason:
+        // a state put where the nudge was makes the later one a second.
+        let state = Action::State {
+            community: 0,
+            capital: None,
+        };
+        let mut c = told(&[
+            found("Hill", "familiar"),
+            temper(0),
+            state.clone(),
+            Action::Run { generations: 3 },
+        ]);
+        let left = c.retell(1, Some(state.clone())).unwrap();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].action, 2);
+        assert!(!left[0].reason.is_empty());
+        assert_eq!(
+            c.actions(),
+            [
+                found("Hill", "familiar"),
+                state,
+                Action::Run { generations: 3 }
+            ]
+        );
+    }
+
+    #[test]
+    fn a_refused_retelling_changes_nothing() {
+        let mut c = sample();
+        let before = c.recipe();
+        // The author's own change must stand, or nothing is retold.
+        assert!(
+            c.retell(
+                3,
+                Some(Action::Connect {
+                    a: 0,
+                    b: 0,
+                    intensity: 0.5,
+                    contact: ContactKind::Trade,
+                })
+            )
+            .is_err()
+        );
+        assert!(c.retell(2, None).is_err());
+        assert!(c.retell(5, Some(Action::Run { generations: 1 })).is_err());
+        assert!(c.retell(99, None).is_err());
+        assert_eq!(c.recipe(), before);
     }
 
     #[test]

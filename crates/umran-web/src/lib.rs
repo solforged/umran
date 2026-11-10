@@ -201,6 +201,18 @@ impl Workbench {
         self.bench.act_at(point, mutation, action).map_err(fail)
     }
 
+    pub fn retell(
+        &mut self,
+        telling: TellingId,
+        mutation: u32,
+        decision: usize,
+        action: &str,
+    ) -> Result<String, JsValue> {
+        self.bench
+            .retell(telling, mutation, decision, action)
+            .map_err(fail)
+    }
+
     pub fn previous(&self, reading: &str) -> Result<String, JsValue> {
         self.bench.previous(reading).map_err(fail)
     }
@@ -514,6 +526,17 @@ pub struct DecisionView {
     /// The resulting language for founding, settlement, or shift.
     pub variety: Option<usize>,
     pub annals: Vec<String>,
+    /// A law the author wrote, as written, for the law form to begin from.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub law: Option<LawDraft>,
+}
+
+/// A written law's title, rules, and language.
+#[derive(Serialize)]
+pub struct LawDraft {
+    pub title: String,
+    pub source: String,
+    pub variety: usize,
 }
 
 /// A loaded save's stamp, the engine revisions that wrote its history
@@ -713,8 +736,13 @@ impl Bench {
     }
 
     fn decision_views(&self, world: &World) -> Vec<DecisionView> {
+        Self::decisions_of(self.chronicle.actions(), world)
+    }
+
+    /// The decisions among `actions`, as `world`, which they made, tells them.
+    fn decisions_of(actions: &[Action], world: &World) -> Vec<DecisionView> {
         let mut generation = 0;
-        let mut actions = self.chronicle.actions().iter().enumerate();
+        let mut actions = actions.iter().enumerate();
         let mut views = Vec::with_capacity(world.decisions.len());
         for decision in &world.decisions {
             let (_, action) = actions
@@ -947,6 +975,14 @@ impl Bench {
                 Action::Run { .. } => unreachable!("runs are not decisions"),
             };
             views.push(DecisionView {
+                law: match action {
+                    Action::Authored { variety, law } => Some(LawDraft {
+                        title: law.title.clone(),
+                        source: law.source.clone(),
+                        variety: *variety,
+                    }),
+                    _ => None,
+                },
                 index: decision.action,
                 generation,
                 kind,
@@ -1378,6 +1414,53 @@ impl Bench {
         self.mutation = self.mutation.wrapping_add(1);
         self.cached = None;
         Ok(())
+    }
+
+    /// Tells `telling` again as a new telling with one decision changed
+    /// (`action`, JSON) or left out (`null`). `decision` is its number in
+    /// that telling, as `decisions` lists it. The answer names the new
+    /// telling and each later decision that could not be made again, in
+    /// the words of the telling it came from, with the reason.
+    pub fn retell(
+        &mut self,
+        telling: TellingId,
+        mutation: u32,
+        decision: usize,
+        action: &str,
+    ) -> Result<String, String> {
+        if mutation != self.mutation {
+            return Err(
+                "This telling has changed since you opened the decision. Open it again before changing it.".into(),
+            );
+        }
+        let replacement: Option<Action> =
+            serde_json::from_str(action).map_err(|e| format!("Malformed action: {e}"))?;
+        let mut candidate = if telling == self.chronicle.active() {
+            self.chronicle.clone()
+        } else {
+            self.chronicle.reading(telling)?
+        };
+        let told = Self::decisions_of(candidate.actions(), candidate.latest());
+        let left = candidate.retell(decision, replacement)?;
+        self.chronicle = candidate;
+        self.mutation = self.mutation.wrapping_add(1);
+        self.cached = None;
+        let left_out: Vec<serde_json::Value> = left
+            .iter()
+            .map(|left| {
+                let view = told.iter().find(|view| view.index == left.action);
+                serde_json::json!({
+                    "generation": view.map(|view| view.generation),
+                    "kind": view.map(|view| view.kind),
+                    "text": view.map(|view| view.text.as_str()),
+                    "reason": left.reason,
+                })
+            })
+            .collect();
+        to_json(&serde_json::json!({
+            "telling": self.chronicle.active(),
+            "leftOut": left_out,
+        }))
     }
 
     pub fn previous(&self, reading: &str) -> Result<String, String> {
@@ -6516,6 +6599,91 @@ mod tests {
             "kind": "found", "naming": {"kind": "people"}, "design": design, "seed": name.len(), "power": 0.5, "openness": 0.5
         })
         .to_string()
+    }
+
+    #[test]
+    fn a_decision_is_changed_or_dropped_in_a_new_telling() {
+        let mut bench = Bench::new(7, "small").unwrap();
+        bench.act(&found("Test", "familiar")).unwrap();
+        let law = |source: &str| {
+            let law = umran_sim::notation::parse("Soft endings", source)
+                .law
+                .unwrap();
+            serde_json::json!({"kind": "authored", "variety": 0, "law": law}).to_string()
+        };
+        bench.act(&law("∅ > e / C _ #")).unwrap();
+        bench.act(r#"{"kind":"run","generations":4}"#).unwrap();
+        bench
+            .act(r#"{"kind":"temper","community":0,"axis":"pious","amount":0.2}"#)
+            .unwrap();
+        let overview: serde_json::Value =
+            serde_json::from_str(&bench.overview(4).unwrap()).unwrap();
+        let mutation = overview["mutation"].as_u64().unwrap() as u32;
+        let saved = bench.save().unwrap();
+        // A stale preview, a refused change, and a run change nothing.
+        assert!(
+            bench
+                .retell(0, mutation.wrapping_add(1), 1, "null")
+                .is_err()
+        );
+        assert!(
+            bench
+                .retell(
+                    0,
+                    mutation,
+                    1,
+                    &law("∅ > e / C _ #").replace("\"variety\":0", "\"variety\":9")
+                )
+                .is_err()
+        );
+        assert!(bench.retell(0, mutation, 2, "null").is_err());
+        assert_eq!(bench.save().unwrap(), saved);
+        // The law rewritten: a new telling, with the later nudge repeated.
+        let answer: serde_json::Value =
+            serde_json::from_str(&bench.retell(0, mutation, 1, &law("∅ > a / C _ #")).unwrap())
+                .unwrap();
+        assert_eq!(answer["telling"], 1);
+        assert_eq!(answer["leftOut"], serde_json::json!([]));
+        let decisions: serde_json::Value =
+            serde_json::from_str(&bench.decisions().unwrap()).unwrap();
+        assert_eq!(
+            decisions
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|d| d["kind"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["found", "authored", "temper"]
+        );
+        let speech = &bench.chronicle.latest().varieties[0];
+        assert_eq!(bench.chronicle.latest().generation, 4);
+        assert!(
+            speech
+                .lexicon
+                .living()
+                .all(|w| w.form.is_vowel(w.form.segs.len() - 1))
+        );
+        // The first telling still holds its own law, and both are saved.
+        let reloaded = Bench::load(&bench.save().unwrap()).unwrap();
+        assert_eq!(reloaded.chronicle.tellings().len(), 2);
+        assert_eq!(reloaded.chronicle.active(), 1);
+        let Action::Authored { law: first, .. } = &reloaded.chronicle.tellings()[0].actions[1]
+        else {
+            panic!("the first telling keeps its law");
+        };
+        assert_eq!(first.source, "∅ > e / C _ #");
+        // The law dropped from the first telling, read while the second is open.
+        let mutation = serde_json::from_str::<serde_json::Value>(&bench.overview(4).unwrap())
+            .unwrap()["mutation"]
+            .as_u64()
+            .unwrap() as u32;
+        let answer: serde_json::Value =
+            serde_json::from_str(&bench.retell(0, mutation, 1, "null").unwrap()).unwrap();
+        assert_eq!(answer["telling"], 2);
+        let decisions: serde_json::Value =
+            serde_json::from_str(&bench.decisions().unwrap()).unwrap();
+        assert_eq!(decisions.as_array().unwrap().len(), 2);
+        assert_eq!(bench.chronicle.tellings()[2].parent.unwrap().telling, 0);
     }
 
     #[test]

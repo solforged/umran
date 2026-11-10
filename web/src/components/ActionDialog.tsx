@@ -58,12 +58,15 @@ export function ActionDialog({
   engine,
   selected,
   lawDraft = null,
+  retelling = false,
   onClose,
   onAction,
 }: {
   open: boolean;
   kind: Exclude<DialogKind, "found">;
   lawDraft?: LawDraft | null;
+  /// The decision made here replaces an earlier one in a new telling.
+  retelling?: boolean;
   catalog: Catalog;
   overview: Overview;
   engine: ReadEngine;
@@ -316,9 +319,12 @@ export function ActionDialog({
         </>
       }
     >
-      <p className="telling-note">A decision in year {overview.generation * YEARS}.
+      {retelling ? <p className="telling-note">
+        This takes the place of the decision made in year {overview.generation * YEARS}, in a new telling.
+        The years and decisions after it are told again, and the telling you were reading stays as it is.
+      </p> : <p className="telling-note">A decision in year {overview.generation * YEARS}.
         {!overview.atTip ? <> This begins another telling. The years through {overview.latest * YEARS} stay in the chronicle.</> : null}
-      </p>
+      </p>}
       <form id={`form-${kind}`} className="form" onSubmit={submit}>
         {body}
       </form>
