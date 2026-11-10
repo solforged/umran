@@ -339,6 +339,11 @@ revision the world was first written under. A newer engine replays a
 frozen world's recipe like any other, but the record in the file stays as
 it was written. Freeze a world whose names you mean to keep.
 
+A world saved by a newer edition than the one running does not open. This
+happens in a window left open across an update, or with a file from a
+newer copy. Umran says so and leaves the save untouched; reload to update,
+then open it again.
+
 Worlds saved before engine revision 33 keep their original data and open
 recovery. Their old flat-map land IDs cannot be replayed on the new sphere.
 Spherical saves retain their recorded geography when opened, exported, or

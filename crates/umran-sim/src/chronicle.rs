@@ -200,6 +200,20 @@ pub struct Recipe {
     pub tellings: Vec<Telling>,
 }
 
+impl Recipe {
+    /// Why a save stamped `revision` is refused, if a newer engine wrote
+    /// it. That engine may have written actions or members this one would
+    /// drop or misread without knowing it, so the save stays as it is. A
+    /// caller that cannot parse a save at all asks this of its stamp first.
+    pub fn from_newer_engine(revision: u32) -> Option<String> {
+        (revision > ENGINE_REVISION).then(|| {
+            format!(
+                "This world was saved by a newer Umran, engine revision {revision}. This is revision {ENGINE_REVISION}, which cannot read it faithfully. Update Umran, then open the world again."
+            )
+        })
+    }
+}
+
 fn spherical_geography() -> GeographyVersion {
     GeographyVersion::SphericalV1
 }
@@ -657,6 +671,9 @@ impl Chronicle {
     pub fn from_recipe(recipe: &Recipe) -> Result<Self, String> {
         if recipe.format != FORMAT {
             return Err(format!("not a {FORMAT} file"));
+        }
+        if let Some(refusal) = Recipe::from_newer_engine(recipe.revision) {
+            return Err(refusal);
         }
         if recipe.revision < SPHERICAL_GEOGRAPHY_REVISION {
             return Err("This save uses the earlier flat geography. Its original is still available for recovery; it cannot be replayed on a spherical world.".into());
@@ -1984,13 +2001,24 @@ mod tests {
             assert_eq!(recipe.geography, GeographyVersion::SphericalV1);
             assert!(Chronicle::from_recipe(&recipe).is_err());
         }
-        for revision in [SPHERICAL_GEOGRAPHY_REVISION, ENGINE_REVISION + 1] {
+        for revision in [SPHERICAL_GEOGRAPHY_REVISION, ENGINE_REVISION] {
             saved["revision"] = revision.into();
             let recipe: Recipe = serde_json::from_value(saved.clone()).unwrap();
             let restored = Chronicle::from_recipe(&recipe).unwrap();
             assert!(same(restored.latest(), source.latest()));
             assert_eq!(restored.latest().communities[0].home(), home);
         }
+        // A save from a newer engine is refused by name, not replayed.
+        saved["revision"] = (ENGINE_REVISION + 1).into();
+        let recipe: Recipe = serde_json::from_value(saved).unwrap();
+        let refused = Chronicle::from_recipe(&recipe).unwrap_err();
+        assert!(
+            refused.starts_with(&format!(
+                "This world was saved by a newer Umran, engine revision {}.",
+                ENGINE_REVISION + 1
+            )),
+            "{refused}"
+        );
     }
 
     #[test]

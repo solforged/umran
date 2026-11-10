@@ -596,8 +596,14 @@ impl Bench {
 
     /// Restores a saved recipe.
     pub fn load(json: &str) -> Result<Bench, String> {
-        let document: Document =
-            serde_json::from_str(json).map_err(|e| format!("Not an Umran save: {e}"))?;
+        let document: Document = serde_json::from_str(json).map_err(|e| {
+            // A newer engine's save may hold what this one cannot even parse.
+            serde_json::from_str::<serde_json::Value>(json)
+                .ok()
+                .and_then(|save| u32::try_from(save["revision"].as_u64()?).ok())
+                .and_then(umran_sim::Recipe::from_newer_engine)
+                .unwrap_or_else(|| format!("Not an Umran save: {e}"))
+        })?;
         let recipe = document.recipe;
         let chronicle = Chronicle::from_recipe(&recipe)?;
         let provenance = Provenance {
@@ -8923,12 +8929,30 @@ mod tests {
         assert_eq!(current.map().unwrap(), bench.map().unwrap());
         // Later spherical revisions keep the ordinary mismatch warning rather
         // than incorrectly taking the pre-spherical recovery path.
-        original["revision"] = (ENGINE_REVISION + 1).into();
+        original["revision"] = (ENGINE_REVISION - 1).into();
         let mut different_revision = Bench::load(&original.to_string()).unwrap();
         let overview: serde_json::Value =
             serde_json::from_str(&different_revision.overview(0).unwrap()).unwrap();
-        assert_eq!(overview["savedRevision"], ENGINE_REVISION + 1);
+        assert_eq!(overview["savedRevision"], ENGINE_REVISION - 1);
         assert_eq!(different_revision.map().unwrap(), current.map().unwrap());
+        // A save from a newer engine is refused: this one might drop what
+        // it does not know and then save over it.
+        original["revision"] = (ENGINE_REVISION + 1).into();
+        let refused = Bench::load(&original.to_string()).err().unwrap();
+        assert!(refused.contains("saved by a newer Umran"), "{refused}");
+        assert!(refused.contains("Update Umran"), "{refused}");
+        // So is one holding an action this engine has never heard of.
+        original["tellings"][0]["actions"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({"kind": "not-yet-invented"}));
+        assert_eq!(Bench::load(&original.to_string()).err().unwrap(), refused);
+        original["revision"] = ENGINE_REVISION.into();
+        let unreadable = Bench::load(&original.to_string()).err().unwrap();
+        assert!(
+            unreadable.starts_with("Not an Umran save: "),
+            "{unreadable}"
+        );
     }
     #[test]
     fn specimens_show_pure_stress_movement_and_consonant_length() {

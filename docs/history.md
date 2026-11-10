@@ -181,8 +181,12 @@ pipeline. V6 moves continental crust through a short deterministic
 plate-drift history before generating the same lakes and rivers. V1–V5
 retain their recorded generators. V1–V3 keep their earlier lake-free maps,
 drainage, rivers, and climate. Missing geography still means `spherical-v1`,
-never the current default. For later revision mismatches, replay still
-works with a warning that the history may differ.
+never the current default. A save from an earlier spherical revision still
+replays, with a warning that says what reads differently. A save stamped
+with a revision newer than the running engine is refused by name
+(`Chronicle::from_recipe`): an older build could drop actions or members it
+does not know and then save over them. The save stays as it is and opens
+recovery, which asks the reader to update Umran.
 
 A save keeps the stamp of the engine revision that wrote its history. A
 world loaded from another revision keeps that stamp while its action logs
