@@ -202,7 +202,7 @@ function writeShelf(shelf: Shelf): Shelf {
 }
 
 /// The engine revision a save is stamped with, if it can be read.
-function stamp(raw: string): number | null {
+export function stamp(raw: string): number | null {
   try {
     const recipe: unknown = JSON.parse(raw);
     return record(recipe) && indexNumber(recipe.revision) ? recipe.revision : null;

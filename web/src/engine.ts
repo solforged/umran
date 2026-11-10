@@ -3,6 +3,7 @@ import type {
   Naming,
   Action,
   Catalog,
+  Drift,
   Engine,
   FoundingPreview,
   GeographyVersion,
@@ -252,6 +253,7 @@ class World implements Engine {
   author() { return this.status.author; }
   notebook() { return this.notes; }
   tip(): ReadEngine { return this.present; }
+  async drift(file: string) { return json(await this.call("drift", [file], null)) as Drift; }
   read(telling: number, point?: HistoryPoint | null): ReadEngine {
     const encoded = point ? JSON.stringify(point) : "";
     const key = `${telling}:${encoded}`;

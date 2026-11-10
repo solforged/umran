@@ -53,6 +53,10 @@ Read further when the task touches it:
 - `edition.ts` and `print.css` render editions from the book's own chapters.
   `takeout.ts` downloads files. The facade's `frozen.rs` writes the frozen
   world: a save with the world it resolved to beside the recipe as data.
+- `archive.ts` keeps each world's frozen record per engine revision in
+  IndexedDB and asks the browser to keep the site's data. The facade's
+  `drift.rs` compares a record with this engine's replay, and the
+  revision warning shows the result (`DriftNotice`).
 - `lore.ts` holds shared names, mechanism phrases for recorded causes, and
   the linguistic glossary.
 - `styles.css` and `chart.css` hold the one look: an explorer's chart of

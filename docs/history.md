@@ -223,9 +223,35 @@ since a reread save keeps its stamp until history is written into it.
 Loading a frozen file replays the recipe and passes over the record, so
 it opens as the save it carries and takes no longer to load. A fixed
 reading freezes its own point, keeps the whole recipe, and opens on its
-telling. The book's last page writes one for the year it reads. Nothing
-yet reads the record back: comparing it with a later engine's replay, and
-opening it without replaying, are later work.
+telling. The book's last page writes one for the year it reads.
+
+The archive (`web/src/archive.ts`) keeps frozen records in IndexedDB,
+database `umran`, store `frozen`, keyed by world id and engine revision
+and gzipped where the browser can. The shelf's saves stay in
+`localStorage`: they are small, and saving them is synchronous so that a
+closing page can still save. Five seconds after the last save, the app
+freezes the present telling at its latest year and keeps it as this
+revision's record, replacing only this revision's earlier one. It does so
+only while the save's stamp is the running revision, so a record is
+always an engine's reading of history it wrote itself. A record missed
+because the tab closed is taken when the world next opens under the same
+engine. A frozen file opened from the chart room brings its record with
+it. Removing a world for good removes its records.
+
+`Bench::drift` (`drift.rs`) compares a frozen record with this engine's
+replay to the record's telling and point. It reports whether the two read
+the same, the year the chronicles part ways, the peoples and languages
+with other names, and counts and examples of the names and words that
+differ. Peoples and languages are matched by number, and numbers by
+value, so a file rewritten by another JSON tool still compares. When a
+world opens under another revision, the warning carries that comparison
+against the latest record an earlier revision left, and offers the record
+for download. The book's last page lists every earlier revision's record.
+Opening a record without replaying is later work.
+
+The app asks the browser to keep the site's data
+(`navigator.storage.persist`) after the first save of a session. The
+chart room's colophon says whether it agreed and offers to ask again.
 
 The save document flattens that recipe alongside the notebook and optional
 `title` and `author` strings, `earlierRevisions` when it has any, and

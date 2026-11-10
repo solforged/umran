@@ -338,6 +338,32 @@ select {
   background: transparent;
 }
 
+/* What a newer engine reads differently: counts in the notice's own
+   sentence, examples folded beneath it on the dense scale. */
+.notice .drift {
+  margin-top: 0.3rem;
+}
+
+.notice .drift summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.notice .drift table {
+  width: auto;
+  max-width: 100%;
+  margin-top: 0.3rem;
+  border-collapse: collapse;
+  font-size: var(--dense-size);
+}
+
+.notice .drift :is(th, td) {
+  padding: var(--dense-row) 1.2rem var(--dense-row) 0;
+  font-weight: normal;
+  text-align: left;
+  vertical-align: baseline;
+}
+
 /* Every slider, radio, and checkbox, in the dialogs as on the time bar,
    takes the rubric rather than the browser's blue. */
 input[type="range"],

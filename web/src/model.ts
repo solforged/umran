@@ -1359,6 +1359,28 @@ export interface FoundingTraits {
   /// Souls their homeland would feed under each way of life.
   feeds: Record<Livelihood, number>;
 }
+/// What this engine reads differently from a frozen record, at the point
+/// the record was read at. Peoples and languages are matched by number.
+export interface Drift {
+  /// The engine revision that wrote the record, and this one.
+  was: number;
+  now: number;
+  generation: number;
+  same: boolean;
+  /// The generation of the first chronicle entry that differs.
+  partsWays: number | null;
+  peoples: { total: number; changed: DriftExample[] };
+  languages: { total: number; changed: DriftExample[] };
+  /// Lands, cities, states, and faiths.
+  names: { total: number; changed: number; examples: DriftExample[] };
+  words: { total: number; changed: number; examples: DriftExample[] };
+}
+export interface DriftExample {
+  of: string;
+  was: string;
+  /// Null when this engine has no such thing.
+  now: string | null;
+}
 /// An open world on the engine's thread. What a reload must save, and what
 /// the page shows of the world itself, is kept here synchronously and
 /// refreshed by every change; everything else is read through a `ReadEngine`.
@@ -1371,6 +1393,8 @@ export interface Engine {
   notebook(): NotebookNote[];
   /// The present telling as it stands; a new reading after every change.
   tip(): ReadEngine;
+  /// What this engine reads differently from the frozen file's record.
+  drift(file: string): Promise<Drift>;
   read(telling: number, point?: HistoryPoint | null): ReadEngine;
   map(): Read<WorldMap>;
   /// Copy an untouched year-zero base, sharing its generated geography.

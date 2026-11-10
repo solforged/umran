@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { loadCatalog, loadEngine, message } from "./engine";
-import type { Action, Catalog, DecisionView, Engine, HistoryPoint, NotebookNote, Overview, ReadEngine, SettlementChoice, SettlementPreview, WorldMap } from "./model";
+import type { Action, Catalog, DecisionView, Drift, Engine, HistoryPoint, NotebookNote, Overview, ReadEngine, SettlementChoice, SettlementPreview, WorldMap } from "./model";
 import type { Focus } from "./components/Pedia";
 import { YEARS } from "./model";
 import { ActionDialog, type DialogKind, type LawDraft } from "./components/ActionDialog";
@@ -16,6 +16,8 @@ import { Founding } from "./components/Founding";
 import { Pending } from "./components/Pending";
 import { sampleWorld } from "./sample";
 import { download, fileName } from "./takeout";
+import { askToKeep, frozenRecords, frozenText, keepFrozen, removeFrozen, type FrozenMeta } from "./archive";
+import { DriftReport } from "./components/DriftNotice";
 import { useLiftedValue } from "./motion";
 import { format as formatRoute, parse, push, replace, type Route } from "./route";
 import { EVENT_KIND } from "./lore";
@@ -39,6 +41,7 @@ import {
   savePlace,
   scanBooks,
   setLast,
+  stamp,
   StaleSave,
   worldName,
   type BookEntry,
@@ -46,6 +49,10 @@ import {
   type ScannedBook,
   type Shelf as ShelfIndex,
 } from "./shelf";
+
+/// How long after a save the world's frozen record is retaken, so a run of
+/// saves freezes once.
+const FREEZE_AFTER = 5000;
 
 /// Longest wait for something to happen before giving up.
 const EVENT_LIMIT = 400;
@@ -154,6 +161,37 @@ export default function App() {
       });
     }
   }, []);
+  // The frozen record: how this engine reads the world it has saved, kept
+  // in the archive so a later engine can say what it reads differently.
+  // Taken when saving has paused. A record missed here is taken the next
+  // time the world opens under this engine.
+  const freezing = useRef<number | null>(null);
+  const askedToKeep = useRef(false);
+  const freezeLater = useCallback(() => {
+    if (freezing.current !== null) window.clearTimeout(freezing.current);
+    freezing.current = window.setTimeout(() => {
+      freezing.current = null;
+      const world = engine.current;
+      const saved = openedBook.current;
+      const tip = present.current;
+      if (!world || !saved || !tip || readyId.current !== saved.id) return;
+      if (runningRef.current || pendingWrites.current > 0) { freezeLater(); return; }
+      // Only an engine's reading of history it has itself written is a
+      // record of the world as its author read it.
+      if (stamp(world.save()) !== tip.revision) return;
+      const { id, revision } = saved;
+      void (async () => {
+        const kept = (await frozenRecords(id)).find((record) => record.revision === tip.revision);
+        if (kept?.saved === revision) return;
+        const text = await world.tip().frozen(world.latest());
+        // A save made meanwhile takes its own record.
+        if (engine.current !== world || openedBook.current?.id !== id || openedBook.current.revision !== revision) return;
+        await keepFrozen({ id, revision: tip.revision, generation: world.latest(), saved: revision }, text);
+      })().catch(() => { /* The save stands; the record is retaken after the next one. */ });
+    }, FREEZE_AFTER);
+  }, []);
+  useEffect(() => () => { if (freezing.current !== null) window.clearTimeout(freezing.current); }, []);
+
   const persist = useCallback(() => {
     const world = engine.current;
     const saved = openedBook.current;
@@ -197,12 +235,15 @@ export default function App() {
       keepPlace();
       setNewerBook(null);
       setSaveError(null);
+      freezeLater();
+      // Now there is a world worth keeping, ask the browser to keep it.
+      if (!askedToKeep.current) { askedToKeep.current = true; void askToKeep(); }
       return true;
     } catch (e) {
       setSaveError(`Not saved in this browser: ${message(e)}. The book's save file still works.`);
       return false;
     }
-  }, [keepPlace]);
+  }, [keepPlace, freezeLater]);
 
   const startWriting = useCallback((target: number) => {
     runningRef.current = true; setWriting(true);
@@ -307,6 +348,7 @@ export default function App() {
     if (request !== openingRequest.current || engine.current !== next) return false;
     chartPlace.current = place?.chart;
     readyId.current = id;
+    freezeLater();
     setNotebook(next.notebook());
     setWorldMap(map);
     setCompareWith(null);
@@ -336,7 +378,7 @@ export default function App() {
     setView({ kind: "book", id });
     if (fresh) setUnsaved(true);
     return true;
-  }, [show]);
+  }, [show, freezeLater]);
 
   const [focus, setFocus] = useState<Focus>({ kind: "world" });
   placeRef.current.focus = focus;
@@ -485,6 +527,26 @@ export default function App() {
   const toShelf = useCallback(() => navigate({ kind: "shelf" }), [navigate]);
 
   const overview = frame?.overview ?? null;
+
+  // A world saved under another revision: compare this engine's reading
+  // with the last record that revision left, if the archive has one.
+  const [drift, setDrift] = useState<{ record: FrozenMeta; report: Drift } | null>(null);
+  const savedRevision = overview?.savedRevision ?? null;
+  const runningRevision = overview?.revision ?? null;
+  useEffect(() => {
+    setDrift(null);
+    const world = engine.current;
+    if (bookId === null || savedRevision === null || runningRevision === null || !world) return;
+    let superseded = false;
+    void (async () => {
+      const record = (await frozenRecords(bookId)).filter((kept) => kept.revision !== runningRevision).at(-1);
+      const text = record ? await frozenText(bookId, record.revision) : null;
+      if (!record || text === null || superseded) return;
+      const report = await world.drift(text);
+      if (!superseded && engine.current === world) setDrift({ record, report });
+    })().catch(() => { /* Without a comparison the warning says only that it may differ. */ });
+    return () => { superseded = true; };
+  }, [bookId, savedRevision, runningRevision]);
   const latest = frame?.latest ?? 0;
   const generation = overview?.generation ?? 0;
   const selected = overview ? Math.min(community, overview.communities.length - 1) : 0;
@@ -722,9 +784,22 @@ export default function App() {
   };
 
   const importFile = async (file: File) => {
+    const id = newBookId();
+    let recorded = false;
     try {
-      await adopt(newBookId(), await loadEngine(await file.text()), true);
+      const text = await file.text();
+      const next = await loadEngine(text);
+      // A frozen file brings its record: how the engine that froze it read it.
+      try {
+        const frozen = (JSON.parse(text) as { frozen?: { revision?: unknown; generation?: unknown } }).frozen;
+        if (frozen && typeof frozen.revision === "number" && typeof frozen.generation === "number") {
+          await keepFrozen({ id, revision: frozen.revision, generation: frozen.generation, saved: 0 }, text);
+          recorded = true;
+        }
+      } catch { /* The world still opens; only the comparison is lost. */ }
+      await adopt(id, next, true);
     } catch (e) {
+      if (recorded) void removeFrozen(id).catch(() => undefined);
       setError(`Could not bring in ${file.name}: ${message(e)}`);
     }
   };
@@ -811,7 +886,11 @@ export default function App() {
             catch (e) { setError(`Could not bring it back: ${message(e)}`); return false; }
           }}
           onRemoveForGood={(id) => {
-            try { setShelf(removeForGood(id)); return true; }
+            try {
+              setShelf(removeForGood(id));
+              void removeFrozen(id).catch(() => undefined);
+              return true;
+            }
             catch (e) { setError(`Could not remove it: ${message(e)}`); return false; }
           }}
           onDownload={(id) => {
@@ -835,16 +914,24 @@ export default function App() {
   const notices = (
     <>
       {overview.savedRevision !== null ? (
-        <p className="notice">
+        <div className="notice">
           This world was saved with engine revision {overview.savedRevision}; this is revision{" "}
-          {overview.revision}, so its chronicle and languages may differ from when it was saved.
-          The save is kept as it stood.{" "}
+          {overview.revision}
+          {drift ? <>. <DriftReport drift={drift.report} /></> : ", so its chronicle and languages may differ from when it was saved."}
+          {" "}The save is kept as it stood.{" "}
           <button type="button" className="link" onClick={() => {
             const original = saveAsWritten(view.id, overview.savedRevision!);
             if (original === null) setError("That save could not be found in this browser.");
             else download(`${fileName(title, `revision-${overview.savedRevision}`)}.json`, original);
           }}>Download it as it was saved</button>
-        </p>
+          {drift ? <>{" · "}<button type="button" className="link" onClick={() => {
+            const { revision, generation } = drift.record;
+            void frozenText(view.id, revision).then((text) => {
+              if (text === null) setError("That record could not be found in this browser.");
+              else download(fileName(title, `year-${generation * YEARS}.revision-${revision}.frozen.json`), text);
+            }, (e: unknown) => setError(message(e)));
+          }}>Download the world as it read then</button></> : null}
+        </div>
       ) : null}
       {error ? (
         <p className="notice error" role="alert">

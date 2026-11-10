@@ -3,6 +3,7 @@ import { Archive, ArrowRight, FileUp } from "lucide-react";
 import { landMap } from "../engine";
 import { YEARS, type WorldMap } from "../model";
 import { SAMPLE_LAND } from "../sample";
+import { askToKeep, keeping, type Keeping } from "../archive";
 import { bookLand, isBookEntry, type BookEntry, type BookLand, type DraftEntry, type Shelf, type ShelfPeople } from "../shelf";
 import { Miniature } from "./MapView";
 import { Modal } from "./Modal";
@@ -26,6 +27,24 @@ function Chart({ land, peoples }: { land: BookLand | null; peoples?: ShelfPeople
   // or overlay saved region IDs while another recipe's geography is loading.
   const map = loaded && loaded.seed === seed && loaded.size === size && loaded.geography === geography ? loaded.map : null;
   return <Miniature map={map ?? UNKNOWN} peoples={map ? peoples : []} />;
+}
+
+/// Whether the browser has agreed to keep what is saved here. A browser that
+/// has not may clear saved worlds when the device runs short of space.
+function Kept() {
+  const [state, setState] = useState<Keeping>("unknown");
+  const [asked, setAsked] = useState(false);
+  useEffect(() => {
+    let left = false;
+    void keeping().then((now) => { if (!left) setState(now); });
+    return () => { left = true; };
+  }, []);
+  if (state === "kept") return <> This browser has agreed to keep them.</>;
+  if (state === "unknown") return null;
+  return <> This browser may clear them if the device runs short of space.{" "}
+    {asked ? "It did not agree. Keep save files as backups."
+      : <button type="button" className="link" onClick={() => void askToKeep().then((now) => { setState(now); setAsked(true); })}>Ask it to keep them</button>}
+  </>;
 }
 
 /// An author's worlds, with the last-opened chart leading and founding
@@ -186,7 +205,7 @@ export function ChartRoom({ revision, shelf, opening, onOpen, onBegin, onSample,
       </details>
     </>}
 
-    <footer className="room-colophon">Worlds are saved in this browser. Download a save file or an edition from the book.</footer>
+    <footer className="room-colophon">Worlds are saved in this browser. Download a save file or an edition from the book.<Kept /></footer>
 
     <Modal open={removing !== null} title="Remove this world for good?" onClose={() => setRemoving(null)} footer={<>
       <button type="button" onClick={() => setRemoving(null)}>Keep it put away</button>

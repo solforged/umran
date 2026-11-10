@@ -19,6 +19,7 @@ import { Told } from "./Told";
 import { format } from "../route";
 import { Pending, useAnswer } from "./Pending";
 import { keptOriginals, readPlace, savePlace, type ReadingPlace } from "../shelf";
+import { frozenRecords, frozenText, type FrozenMeta } from "../archive";
 import "./book.css";
 
 const CONTENTS = [
@@ -752,6 +753,25 @@ function EditionActions({ reading }: { reading: Parameters<typeof Book>[0] }) {
   const { title, engine, generation, overview, catalog, worldId } = reading;
   // Read when the page opens: a save made while it is open keeps at most one more.
   const [kept] = useState(() => keptOriginals(worldId));
+  // What earlier engine revisions last recorded of this world.
+  const [recorded, setRecorded] = useState<FrozenMeta[]>([]);
+  useEffect(() => {
+    let left = false;
+    frozenRecords(worldId).then((records) => {
+      if (!left) setRecorded(records.filter((record) => record.revision !== catalog.revision));
+    }, () => undefined);
+    return () => { left = true; };
+  }, [worldId, catalog.revision]);
+  const takeRecord = async (record: FrozenMeta) => {
+    setError(null);
+    try {
+      const text = await frozenText(worldId, record.revision);
+      if (text === null) setError("That record could not be found in this browser.");
+      else download(fileName(title, `year-${record.generation * YEARS}.revision-${record.revision}.frozen.json`), text, "application/json");
+    } catch (failure) {
+      setError(message(failure));
+    }
+  };
   const [freezing, setFreezing] = useState(false);
   const freeze = async () => {
     setError(null);
@@ -833,6 +853,7 @@ function EditionActions({ reading }: { reading: Parameters<typeof Book>[0] }) {
       <li><button type="button" onClick={() => download(fileName(title, "json"), engine.save(), "application/json")}>As a save file</button>{" "}<span className="muted">The world, every telling, and all the author’s notes; open it from the chart room.</span></li>
       <li><button type="button" disabled={freezing} onClick={() => void freeze()}>{freezing ? "Freezing the world…" : "As a frozen world"}</button>{" "}<span className="muted">The save file with the world written out beside it as data: every people, language, word, name, and chronicle entry as it stands in year {generation * YEARS}. It opens like any save, and what it records stays as written under any engine.</span></li>
       {kept.map((original) => <li key={original.revision}><button type="button" onClick={() => download(`${fileName(title, `revision-${original.revision}`)}.json`, original.raw, "application/json")}>As it was saved under revision {original.revision}</button>{" "}<span className="muted">The save file before a later engine reread it. It replays exactly only on that revision.</span></li>)}
+      {recorded.map((record) => <li key={`read-${record.revision}`}><button type="button" onClick={() => void takeRecord(record)}>As revision {record.revision} read it</button>{" "}<span className="muted">The frozen world that engine last recorded, in year {record.generation * YEARS}. Its record is how the world read before a later engine reread it.</span></li>)}
     </ul> : null}
     {error ? <p role="alert">{error}</p> : null}
     {progress ? createPortal(<dialog className="edition-progress" aria-labelledby="edition-progress-title"

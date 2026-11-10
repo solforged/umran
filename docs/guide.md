@@ -299,7 +299,9 @@ kept rather than one overwriting the other. Installing does not upload or
 sync them. Some browsers keep an installed app's storage separate from its
 browser tab, so export a save file and open it in the app if needed. Keep
 exported backups. Clearing site data can remove both worlds and offline
-files.
+files. A browser may also clear a site's data when the device runs short
+of space. Umran asks it not to once a world is saved, and the foot of the
+chart room says whether it agreed.
 
 New editions offer **Save and reload** rather than interrupting playback.
 Reloading first saves the latest generation; if saving fails, the update
@@ -307,9 +309,14 @@ waits so you can export the world. Other open windows wait for their own
 reload.
 
 The engine changes between editions, and a newer one can tell the same
-world differently. Umran warns when a world was saved by another engine
-revision and keeps that save as it stood. Download it from the warning or
-from **Take it elsewhere** in the book. The frontispiece records the
+world differently. Umran keeps a record of each world as the engine last
+read it. When a world was saved by another engine revision, the warning
+says what the new one reads differently: the year the chronicles part
+ways, which peoples and languages have other names, and how many names
+and words differ, with examples under *What differs*. It also says when
+nothing differs. Umran keeps that save as it stood. Download it, or the
+world as it read then, from the warning or from **Take it elsewhere** in
+the book. The frontispiece records the
 revision the world was first written under. A newer engine replays a
 frozen world's recipe like any other, but the record in the file stays as
 it was written. Freeze a world whose names you mean to keep.
