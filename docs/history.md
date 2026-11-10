@@ -74,7 +74,9 @@ mutation, decision, action)` answers with the new telling and the
 decisions left out, in the words of the telling it came from. A decision's
 card offers it as *Tell it again…*, and the dialog that replaces a
 decision opens on the reading before it. A written law opens with its own
-rules (`DecisionView.law`).
+rules (`DecisionView.law`), and a founding opens the sound designer on its
+recorded design (`DecisionView.founding`). The replacement keeps the
+founding's homeland, livelihood, temper, grammar, roots, and affixes.
 
 An exact `HistoryPoint` names an action position and an offset into a run, so
 two choices in the same year remain distinguishable. A run's endpoint uses its

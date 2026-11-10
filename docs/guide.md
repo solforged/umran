@@ -233,9 +233,12 @@ A decision's card also offers **Tell it again…**, to change that one
 decision or drop it without making the later ones again by hand. The new
 telling repeats every later year and decision. A decision is left out,
 and named with its reason, when the world refuses it or when the people
-or language it concerns did not arise the same way. A founding or a
-settlement can be dropped this way but not changed; return before it to
-decide again. The telling you were reading stays as it is.
+or language it concerns did not arise the same way. Changing a founding
+opens the sound designer on the speech as it was decided. The people's
+homeland, way of life, temper, grammar, and the words and affixes you
+gave them stay, so one sound can change without typing the roots again.
+A settlement can be dropped this way but not changed; return before it
+to decide again. The telling you were reading stays as it is.
 
 ![Two tellings compared at year 4000, with differences in sound laws, loans, and descendants](images/tellings.jpg)
 

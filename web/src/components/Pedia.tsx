@@ -2369,7 +2369,7 @@ function EventCard({ annal, context }: { annal: Annal; context: Context }) {
       {annal.before ? <button type="button" className="reconsider" onClick={() => annal.settlement ? context.onReconsider(annal) : context.onReturnBefore(annal.before!)}>Return before this decision</button> : null}
       {annal.before && annal.decision !== undefined ? <Popover label="Tell it again" trigger={(props) => <button type="button" className="reconsider" disabled={context.running != null} {...props}>Tell it again…</button>}>
         {(close) => <>
-          {annal.settlement || annal.kind === "found" ? null : <button type="button" onClick={() => { close(); context.onRetell(annal, true); }}>With this decision changed…</button>}
+          {annal.settlement ? null : <button type="button" onClick={() => { close(); context.onRetell(annal, true); }}>With this decision changed…</button>}
           <button type="button" onClick={() => { close(); context.onRetell(annal, false); }}>Without this decision</button>
         </>}
       </Popover> : null}

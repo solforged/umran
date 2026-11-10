@@ -1577,6 +1577,8 @@ export interface DecisionView {
   annals: string[];
   /// A law the author wrote, as written, for the law form to begin from.
   law?: { title: string; source: string; variety: number };
+  /// A founding as it was decided, for the sound designer to begin from.
+  founding?: Extract<Action, { kind: "found" }>;
 }
 
 /// What a retelling answers: the new telling, and each later decision it

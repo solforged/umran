@@ -529,6 +529,10 @@ pub struct DecisionView {
     /// A law the author wrote, as written, for the law form to begin from.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub law: Option<LawDraft>,
+    /// A founding as it was decided, design and all, for the sound
+    /// designer to begin from.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub founding: Option<Action>,
 }
 
 /// A written law's title, rules, and language.
@@ -975,6 +979,7 @@ impl Bench {
                 Action::Run { .. } => unreachable!("runs are not decisions"),
             };
             views.push(DecisionView {
+                founding: matches!(action, Action::Found { .. }).then(|| action.clone()),
                 law: match action {
                     Action::Authored { variety, law } => Some(LawDraft {
                         title: law.title.clone(),
@@ -6654,6 +6659,26 @@ mod tests {
                 .map(|d| d["kind"].as_str().unwrap())
                 .collect::<Vec<_>>(),
             ["found", "authored", "temper"]
+        );
+        // Each decision carries what its form begins from.
+        assert_eq!(
+            decisions[1]["law"],
+            serde_json::json!({"title": "Soft endings", "source": "∅ > a / C _ #", "variety": 0})
+        );
+        assert_eq!(decisions[0]["founding"]["kind"], "found");
+        assert!(decisions[0]["founding"]["design"]["sounds"].is_array());
+        assert!(decisions[2].get("founding").is_none() && decisions[2].get("law").is_none());
+        // A founding reshaped keeps every later decision.
+        let mut founding = decisions[0]["founding"].clone();
+        founding["design"]["geminates"] = 0.4.into();
+        let mut reshaped = Bench::load(&bench.save().unwrap()).unwrap();
+        let answer: serde_json::Value =
+            serde_json::from_str(&reshaped.retell(1, 0, 0, &founding.to_string()).unwrap())
+                .unwrap();
+        assert_eq!(answer["leftOut"], serde_json::json!([]));
+        assert_eq!(
+            reshaped.chronicle.actions().len(),
+            bench.chronicle.actions().len()
         );
         let speech = &bench.chronicle.latest().varieties[0];
         assert_eq!(bench.chronicle.latest().generation, 4);

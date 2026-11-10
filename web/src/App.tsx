@@ -127,7 +127,7 @@ export default function App() {
   const [dialog, setDialog] = useState<DialogKind | null>(null);
   const [lawDraft, setLawDraft] = useState<LawDraft | null>(null);
   /// The decision the open dialog is to replace, in a retelling.
-  const [revising, setRevising] = useState<{ telling: number; decision: number } | null>(null);
+  const [revising, setRevising] = useState<{ telling: number; decision: number; founding?: Extract<Action, { kind: "found" }> } | null>(null);
   const [route, setRoute] = useState<Route>({ kind: "shelf" });
   const routeRef = useRef<Route>(route);
   const page = route.kind === "world" ? route.page : "stage";
@@ -653,10 +653,10 @@ export default function App() {
     if (!change) { void retell(telling, annal.decision, null); return; }
     try {
       const decision = (await frame.reading.decisions()).find((entry) => entry.index === annal.decision);
-      const kind = decision ? DECISION_DIALOG[decision.kind] : undefined;
+      const kind = decision?.founding ? "found" : decision ? DECISION_DIALOG[decision.kind] : undefined;
       if (!decision || !kind) { setInfo("A decision of this kind cannot be changed in place. Return before it and decide again, or tell it again without it."); return; }
       if (!await show({ telling: frame.telling, point: annal.before, viewing: null })) return;
-      setRevising({ telling, decision: annal.decision });
+      setRevising({ telling, decision: annal.decision, ...(decision.founding ? { founding: decision.founding } : {}) });
       setLawDraft(decision.law ?? null);
       setDialog(kind);
     } catch (e) { setError(message(e)); }
@@ -1042,15 +1042,32 @@ export default function App() {
 
   const dialogs =
     liftedDialog.value === "found" ? (
-      <Modal open={dialog !== null} wide title="A new people arrives" onClose={() => setDialog(null)}>
-        {!overview.atTip ? <p className="telling-note">Writing in year {generation * YEARS} begins another telling. The years through {latest * YEARS} stay in the chronicle.</p> : null}
+      <Modal open={dialog !== null} wide title={revising?.founding ? "Their speech, shaped again" : "A new people arrives"} onClose={() => { setDialog(null); setRevising(null); }}>
+        {revising?.founding ? <p className="telling-note">
+          This takes the place of their founding in a new telling. Their homeland, way of life, and temper stay as decided, and so do the words and affixes you gave them.
+          The years and decisions after it are told again, and the telling you were reading stays as it is.
+        </p> : !overview.atTip ? <p className="telling-note">Writing in year {generation * YEARS} begins another telling. The years through {latest * YEARS} stay in the chronicle.</p> : null}
         <Designer
+          key={revising?.founding ? `again-${revising.decision}` : "new"}
           catalog={catalog}
-          submit="Found them"
-          onCancel={() => setDialog(null)}
+          submit={revising?.founding ? "Tell it again with this speech" : "Found them"}
+          {...(revising?.founding ? { initial: revising.founding } : {})}
+          onCancel={() => { setDialog(null); setRevising(null); }}
           onFound={(f) => {
             setDialog(null);
-            perform(foundingAction(f));
+            setRevising(null);
+            if (revising?.founding) {
+              // Only what the designer shapes is replaced: the grammar,
+              // words, and affixes given at founding stay with the people.
+              const given = revising.founding.design;
+              const design = {
+                ...f.design,
+                ...(given.grammar ? { grammar: given.grammar } : {}),
+                ...(given.roots?.length ? { roots: given.roots } : {}),
+                ...(given.affixes?.length ? { affixes: given.affixes } : {}),
+              };
+              void retell(revising.telling, revising.decision, { ...revising.founding, naming: f.naming, seed: f.seed, power: f.power, openness: f.openness, design });
+            } else perform(foundingAction(f));
           }}
         />
       </Modal>
