@@ -1,6 +1,7 @@
-// Save files and tabular downloads. Book editions come from edition.ts.
+// Downloads: save files, and the files the engine writes for taking out.
+// Book editions come from edition.ts.
 
-import { YEARS, type LexiconRow, type NameQuarry, type WordTable } from "./model";
+import type { Taken } from "./model";
 
 export function download(name: string, text: string, type = "application/json") {
   const url = URL.createObjectURL(new Blob([text], { type }));
@@ -22,57 +23,10 @@ export function fileName(title: string, extension: string): string {
   return `${slug || "umran"}.${extension}`;
 }
 
-export function origin(row: LexiconRow): string {
-  if (row.origin.authored) return "the author's root";
-  switch (row.origin.kind) {
-    case "borrowed":
-    case "derived":
-      return `from ${row.origin.from}`;
-    case "kept":
-      return `kept from ${row.origin.from}`;
-    default:
-      return row.origin.kind;
-  }
+/// Save a file the engine wrote, named after what it holds. A CSV gets a
+/// byte-order mark here so that a spreadsheet program reads its IPA as
+/// Unicode; the engine's own text has none, for programs that read it.
+export function saveTaken(taken: Taken, title?: string) {
+  const text = taken.media.startsWith("text/csv") ? `\uFEFF${taken.text}` : taken.text;
+  download(fileName(title ? `${title} ${taken.name}` : taken.name, taken.extension), text, taken.media);
 }
-
-function cell(text: string): string {
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-}
-
-/// A glossary as CSV: one row per meaning, with the word, its sounds, its
-/// semantic field, and where it came from.
-export function glossaryCsv(rows: LexiconRow[]): string {
-  const lines = [["word", "said", "ipa", "meaning", "field", "origin"]];
-  for (const r of rows) lines.push([r.spelled, r.said ?? "", r.ipa, r.gloss, r.field, origin(r)]);
-  return lines.map((l) => l.map(cell).join(",")).join("\n") + "\n";
-}
-
-/// A word table as CSV: one row per meaning, two columns per language (the
-/// word and its sounds), then the root number of each, so that cognates can
-/// be told from same-meaning strangers after the sheet leaves the app.
-export function wordTableCsv(table: WordTable): string {
-  const names = table.varieties.map((variety) => variety.name);
-  const lines = [["meaning", ...names.flatMap((name) => [name, `${name} (IPA)`]), ...names.map((name) => `${name} root`), ...names.map((name) => `${name} origin`)]];
-  for (const row of table.rows) {
-    lines.push([
-      row.gloss,
-      ...row.cells.flatMap((word) => word ? [word.spelled, word.ipa] : ["", ""]),
-      ...row.cells.map((word) => word ? String(word.root + 1) : ""),
-      ...row.cells.map((word) => word ? (word.authored ? "the author's root" : word.origin.kind) : ""),
-    ]);
-  }
-  return lines.map((l) => l.map(cell).join(",")).join("\n") + "\n";
-}
-
-/// Every name a language uses as CSV: what kind of thing it names, the name,
-/// its sounds, what its parts meant, and since when.
-export function nameQuarryCsv(quarry: NameQuarry): string {
-  const lines = [["kind", "name", "ipa", "meaning", "since", "origin"]];
-  for (const name of quarry.given) lines.push(["given name", name.name, name.ipa, name.meaning, "", name.from === null ? "" : "sacred"]);
-  for (const name of quarry.peoples) lines.push(["people", name.name, name.ipa, name.meaning, String(name.since * YEARS), ""]);
-  for (const name of quarry.places) lines.push([name.feature, name.name, name.ipa, name.meaning, String(name.since * YEARS), name.origin]);
-  for (const name of quarry.states) lines.push(["state", name.name, name.ipa, name.meaning, "", ""]);
-  for (const name of quarry.faiths) lines.push(["faith", name.name, name.ipa, name.meaning, "", ""]);
-  return lines.map((l) => l.map(cell).join(",")).join("\n") + "\n";
-}
-

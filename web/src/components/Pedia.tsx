@@ -21,13 +21,11 @@ import {
   Waves,
   CloudSunRain,
   X,
-  Download,
   type LucideIcon,
 } from "lucide-react";
 import type { Annal, Catalog, CityView, Community, Craft, CraftView, DecisionView, ReadEngine, Ethos, HistoryPoint, HolyLand, LakeNamesView, LawOccurrenceRef, MeaningSet, NotebookNote, Overview, Read, ReligionView, RenderingRow, RiverNamesView, ShrineKind, StateView, Subject, Variety, WordMap, WordTable, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { resolveMeanings } from "../quarry";
-import { download, fileName, wordTableCsv } from "../takeout";
 import { causePhrase, CHRONICLE, CONTACT_NAME, countWord, ETHOS_AXES, ETHOS_POLES, EVENT_KIND, faithTeaching, FAITH_HOW, FAITH_NAME, FALL_NAME, howCame, howNamed, hue, landCardLabel, LEG_BY, LIVELIHOOD_NAME, otherNames, peopleLabel, peoplePhrases, RISE_NAME, SCHISM_CAUSE, seasonalPhrase, stateLabel, STRONG, temperament, TENET_NOUN, TERRAIN_NAME, unnamedName, weatherDeparture } from "../lore";
 import { cityLabel, continentLabel, waterLabel, weatherZoneLabel } from "../lore";
 import { filterHistory, findAnnal, individualAnnals, relatedMoments, searchText, subjectHistory, HISTORY_GROUPS, INITIAL_HISTORY, type HistoryView } from "../history";
@@ -49,6 +47,7 @@ import { Popover } from "./Popover";
 import { CHAPTER, ChapterSummary, LawEvidence, LoanCauseText, WordOrigin, type ChapterContext } from "./LanguageChapter";
 import { Margin } from "./Margin";
 import { Pending, useAnswer } from "./Pending";
+import { TakeOut } from "./TakeOut";
 import { MeaningPick } from "./MeaningPick";
 import { Desk } from "./Desk";
 import { attempt, concepts } from "../engine";
@@ -1150,9 +1149,16 @@ function WordsCompared({ spoken, context, onOpenDesk }: { spoken: Variety[]; con
   const [meanings, setMeanings] = useState("specimen");
   const [own, setOwn] = useState("");
   const [excluded, setExcluded] = useState<number[]>([]);
+  // Languages no longer spoken join the list when asked: the silent, with
+  // their words as the last speakers left them, and the sacred and
+  // classical, as they were fixed.
+  const [added, setAdded] = useState<number[]>([]);
   const [chosenReference, setChosenReference] = useState(spoken[0].id);
-  const rows = spoken.filter((variety) => !excluded.includes(variety.id)).sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
-  const reference = rows.find((variety) => variety.id === chosenReference) ?? rows[0];
+  const byName = (a: Variety, b: Variety) => a.name.localeCompare(b.name) || a.id - b.id;
+  const silent = context.overview.varieties.filter((variety) => !variety.spoken && variety.born <= context.generation).sort(byName);
+  const living = spoken.filter((variety) => !excluded.includes(variety.id)).sort(byName);
+  const rows = [...living, ...silent.filter((variety) => added.includes(variety.id))];
+  const reference = living.find((variety) => variety.id === chosenReference) ?? living[0];
   const sets = context.engine.meaningSets();
   // The author's own meanings resolve beside the catalog's.
   const catalog = useAnswer(context.engine.meanings(context.generation), true) ?? concepts();
@@ -1167,9 +1173,9 @@ function WordsCompared({ spoken, context, onOpenDesk }: { spoken: Variety[]; con
         <ComparedMeanings reading={sets} meanings={meanings} onChange={setMeanings} id={`${id}-meanings`} />
       </Pending>
       <label htmlFor={`${id}-reference`}>Compare each row with
-        <select id={`${id}-reference`} value={reference?.id ?? ""} disabled={!rows.length} onChange={(event) => setChosenReference(Number(event.currentTarget.value))}>
-          {!rows.length ? <option value="">Choose a language below</option> : null}
-          {rows.map((variety) => <option key={variety.id} value={variety.id}>{variety.name}</option>)}
+        <select id={`${id}-reference`} value={reference?.id ?? ""} disabled={!living.length} onChange={(event) => setChosenReference(Number(event.currentTarget.value))}>
+          {!living.length ? <option value="">Choose a living language below</option> : null}
+          {living.map((variety) => <option key={variety.id} value={variety.id}>{variety.name}</option>)}
         </select>
       </label>
     </div>
@@ -1181,15 +1187,18 @@ function WordsCompared({ spoken, context, onOpenDesk }: { spoken: Variety[]; con
       </p>
     </div> : null}
     <details className="compared-language-choice">
-      <summary>Languages in the list · {rows.length} of {spoken.length}</summary>
-      <fieldset><legend>Living languages</legend>{[...spoken].sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id).map((variety) => <label key={variety.id}>
+      <summary>Languages in the list · {rows.length} of {spoken.length + silent.length}</summary>
+      <fieldset><legend>Living languages</legend>{[...spoken].sort(byName).map((variety) => <label key={variety.id}>
         <input type="checkbox" checked={!excluded.includes(variety.id)} onChange={(event) => setExcluded(event.currentTarget.checked ? excluded.filter((id) => id !== variety.id) : [...excluded, variety.id])} />{variety.name}
       </label>)}</fieldset>
+      {silent.length ? <fieldset><legend>Languages no longer spoken, as they last stood</legend>{silent.map((variety) => <label key={variety.id}>
+        <input type="checkbox" checked={added.includes(variety.id)} onChange={(event) => setAdded(event.currentTarget.checked ? [...added, variety.id] : added.filter((id) => id !== variety.id))} />{variety.name}
+      </label>)}</fieldset> : null}
     </details>
     <p className="muted small"><strong>Recorded roots.</strong> Words shaded alike share a root in the record. Open a pair in the desk to study its current sounds before revealing that history.</p>
     {table && reference ? <Pending reading={table} label="Reading the words in these meanings…">
       <WordsComparedTable reading={table} reference={reference} meanings={meanings === "own" ? "core" : meanings} context={context} onOpenDesk={onOpenDesk} />
-    </Pending> : <p className="muted">{rows.length ? "Name at least one meaning this world knows." : "Choose at least one language for the list, and two to open a pair in the desk."}</p>}
+    </Pending> : <p className="muted">{!reference ? "Choose at least one living language for the list, and two to open a pair in the desk." : "Name at least one meaning this world knows."}</p>}
   </>;
 }
 
@@ -1216,12 +1225,14 @@ function WordsComparedTable({ reading, reference, meanings, context, onOpenDesk 
               : <span className="muted">–</span>}</span>
           </td>;
         })}
-        <td className="compared-desk-action">{variety.id === reference.id ? <span className="muted small">Reference language</span> : <button type="button" className="link" aria-label={`Open ${reference.name} and ${variety.name} in the desk`} onClick={() => onOpenDesk(reference.id, variety.id, meanings)}>Open in the desk</button>}</td>
+        <td className="compared-desk-action">{variety.id === reference.id ? <span className="muted small">Reference language</span>
+          : variety.silentSince !== null || !context.overview.varieties[variety.id]?.spoken ? <span className="muted small">{variety.silentSince !== null ? `Silent since year ${variety.silentSince * YEARS}` : "Not spoken"}</span>
+          : <button type="button" className="link" aria-label={`Open ${reference.name} and ${variety.name} in the desk`} onClick={() => onOpenDesk(reference.id, variety.id, meanings)}>Open in the desk</button>}</td>
       </tr>)}</tbody>
     </table>
     {!table.rows.length ? <p className="muted">No words are recorded for these meanings.</p> : null}
-    <p className="compared-take"><button type="button" className="link" onClick={() => download(fileName(`${context.title ?? "umran"}-words`, "csv"), wordTableCsv(table), "text/csv;charset=utf-8")}>
-      <Download size={13} aria-hidden="true" /> Take this sheet as CSV</button> <span className="muted small">{table.rows.length} meanings × {table.varieties.length} languages, with root numbers.</span></p>
+    <TakeOut engine={context.engine} generation={context.generation} title={context.title} choices={[["Take this sheet as CSV", { what: "words", varieties: table.varieties.map((variety) => variety.id), concepts: table.rows.map((row) => row.concept) }]]}>
+      {table.rows.length} meanings × {table.varieties.length} languages, with root numbers and each root’s first form.</TakeOut>
   </div>;
 }
 
@@ -1259,7 +1270,7 @@ function WorldCard({ context }: { context: Context }) {
       </tbody></table>
     </Leaf>
     {spoken.length > 1 ? <>
-      <Leaf id="compared" title="Words compared" summary={<p>Choose meanings and living languages; the shading shows recorded roots.</p>}>
+      <Leaf id="compared" title="Words compared" summary={<p>Choose meanings and languages; the shading shows recorded roots.</p>}>
         <WordsCompared spoken={spoken} context={context} onOpenDesk={(first, second, meanings) => { setDesk({ first, second, meanings }); folio.show("desk"); }} />
       </Leaf>
       <Leaf id="desk" title="The philologist’s desk" summary={<p>Study a pair of languages from their sounds, with the family record covered.</p>}>
@@ -1321,6 +1332,8 @@ function FamilyTrees({ context }: { context: Context }) {
         onOpen={(id) => context.go({ kind: "language", variety: id })}
         onOpenLaw={context.go}
       />
+      <TakeOut engine={context.engine} generation={context.generation} title={context.title} choices={[["Take every family as Newick trees", { what: "tree", family: null }]]}>
+        One tree to a line, for tree-drawing and phylogenetics programs. Branch lengths are in years.</TakeOut>
     </Leaf>
   );
 }

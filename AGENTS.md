@@ -53,6 +53,9 @@ Read further when the task touches it:
 - `edition.ts` and `print.css` render editions from the book's own chapters.
   `takeout.ts` downloads files. The facade's `frozen.rs` writes the frozen
   world: a save with the world it resolved to beside the recipe as data.
+- The facade's `takeout.rs` writes every file that leaves as data (`take`):
+  CSV sheets, the law ledger, interlinear text, and Newick trees.
+  `components/TakeOut.tsx` offers them; no serializer lives in the page.
 - `archive.ts` keeps each world's frozen record per engine revision in
   IndexedDB and asks the browser to keep the site's data. The facade's
   `drift.rs` compares a record with this engine's replay, and the

@@ -357,12 +357,16 @@ time bar. It works as follows:
   languages' common ancestor and parting year. Differences between
   recurring support and root history are explained, never graded.
   *Words compared* chooses its meaning set, living-language subset, and
-  reference language; its shading is labelled *Recorded roots*. *A list
-  of your own…* takes any meanings by id or gloss, names the ones the
-  catalog lacks with the nearest ids, and the sheet leaves as CSV with
-  each word's sounds, root number, and origin (`wordTable`). A language's
-  *Names* section likewise leaves as CSV with every name it uses
-  (`nameQuarry`).
+  reference language; its shading is labelled *Recorded roots*.
+  Languages no longer spoken can join the list as they last stood. *A list of your
+  own…* takes any meanings by id or gloss and names the ones the catalog
+  lacks with the nearest ids.
+- A section's data leaves as a file from a link under it (`TakeOut`): the
+  lexicon, names, and compared words as CSV, the sound laws as text in
+  the law form's notation or as JSON, the phrasebook as interlinear text,
+  and a family as a Newick tree. The facade writes every file (`take`,
+  `takeout.rs`); the page only names what to take. `docs/guide.md` lists
+  what each holds.
 - *Take it elsewhere* makes the edition with the ledgers alone unless
   *With every word's evidence* is chosen, which opens every word's
   origins, senses, paradigms, and cognates and multiplies the text by

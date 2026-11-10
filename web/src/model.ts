@@ -1244,7 +1244,8 @@ export interface WordMap {
 /// root numbered the same wherever it appears.
 export interface WordTable {
   generation: number;
-  varieties: { id: number; name: string }[];
+  /// A language that has fallen silent keeps its words as they stood then.
+  varieties: { id: number; name: string; silentSince: number | null }[];
   rows: {
     concept: string;
     gloss: string;
@@ -1287,6 +1288,32 @@ export interface FoundingPreview {
     landmass: number;
     nearestOther: number | null;
   }[];
+}
+
+/// What to take out of a world. Languages go by number, meanings by id.
+export type Take =
+  /// Every current word of one language, competing words included, as CSV.
+  | { what: "lexicon"; variety: number }
+  /// Every name one language carries, as CSV.
+  | { what: "names"; variety: number }
+  /// One language's sound laws in order, in the notation the law form reads.
+  | { what: "laws"; variety: number }
+  /// The same ledger as JSON, with each law's forms before and after.
+  | { what: "laws-data"; variety: number }
+  /// One language's phrasebook as interlinear text.
+  | { what: "phrasebook"; variety: number }
+  /// Chosen meanings across chosen languages as CSV, with roots and first forms.
+  | { what: "words"; varieties: number[]; concepts: string[] }
+  /// One language family as a Newick tree, or every family, one per line.
+  | { what: "tree"; family: number | null };
+
+/// A file the engine wrote, ready to save.
+export interface Taken {
+  /// What it holds, in words: the file is named after this.
+  name: string;
+  extension: string;
+  media: string;
+  text: string;
 }
 
 /// An engine answer from its thread. React's `use` reads one synchronously
@@ -1343,6 +1370,9 @@ export interface ReadEngine {
   /// The save file with the world as this reading resolved it beside the
   /// recipe, as text: megabytes, so it is asked for when wanted and not kept.
   frozen(generation: number): Promise<string>;
+  /// A file to take out of the world as this reading has it, written by
+  /// the engine: asked for when wanted and not kept.
+  take(generation: number, what: Take): Promise<Taken>;
   /// The author's decisions in this reading's telling, up to its point.
   decisions(): Read<DecisionView[]>;
 }

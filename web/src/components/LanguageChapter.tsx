@@ -1,9 +1,8 @@
 import { use, useState, type ReactNode } from "react";
-import { Download, Feather } from "lucide-react";
+import { Feather } from "lucide-react";
 import type { Catalog, GrammarMarker, HistoryLine, LawOccurrence, LawOccurrenceRef, LexiconRow, LoanCause, Overview, PhraseNote, ReadEngine, Subject, Variant, Variety, WorldMap } from "../model";
 import { YEARS } from "../model";
 import type { LawDraft } from "./ActionDialog";
-import { download, fileName, nameQuarryCsv } from "../takeout";
 import { agreementPhrase, agreementStep, CONTACT_NAME, landCardLabel, MARKING_PHRASE, peopleLabel, POSSESSIVE_PHRASE, POSSESSOR_PHRASE, PRONOUN_CASE_PHRASE, stateLabel, STRESS_RULE, WORD_ORDER_PHRASE } from "../lore";
 import { individualAnnals, findAnnal } from "../history";
 import { Dictionary, INITIAL_DICTIONARY, type DictionaryView } from "./Dictionary";
@@ -14,6 +13,7 @@ import { WordGloss } from "./WordGloss";
 import { Explained } from "./Explained";
 import { ChangeCauseText, EvidenceForm, LifeRibbon, lawSubject, occurrenceAnchor, occurrenceKey, sameOccurrence } from "./LifeRibbon";
 import { Pending } from "./Pending";
+import { TakeOut } from "./TakeOut";
 import { EditionContext } from "../edition";
 import { eras, languageEraChange } from "../eras";
 import "./chapter.css";
@@ -66,6 +66,8 @@ export function Position({ variety: v, ctx }: SectionProps) {
     <p>{v.parent === null ? <>A founding language of its family, first spoken in {year(v.born)}.</> : <>Descended from {language(v.parent, ctx)}, parted in {year(v.forkedAt ?? v.born)}.</>} {v.spoken ? "Spoken now." : `Silent${v.silentSince === null ? " now" : ` since ${year(v.silentSince)}`}.`}</p>
     <p>Family: {language(v.family, ctx)}. Daughters: {daughters.length ? daughters.map((d, i) => <span key={d.id}>{i ? ", " : ""}{language(d.id, ctx)}</span>) : "none recorded"}.</p>
     <FamilyTree overview={ctx.overview} family={v.family} chosen={v.id} onOpen={(id) => ctx.open({ kind: "language", variety: id })} onOpenLaw={ctx.open} />
+    {ctx.overview.varieties.some((other) => other.family === v.family && other.id !== v.id) ? <TakeOut engine={ctx.engine} generation={ctx.generation} choices={[["Take this family as a Newick tree", { what: "tree", family: v.family }]]}>
+      For tree-drawing and phylogenetics programs. Branch lengths are in years.</TakeOut> : null}
     <h4>Core-word sound similarity</h4>
     <p className="muted small">This compares the current forms for the same core meanings, corrects for chance, and is not a count of shared roots.</p>
     {kin.length ? <ul className="roster">{kin.map((k) => <li key={k.other} className="meter-row">{language(k.other, ctx)} <meter min={0} max={1} value={k.score} /> <span>{Math.round(k.score * 100)}%</span></li>)}</ul> : <p className="muted">No other spoken language has a core-word sound similarity of at least 5%.</p>}
@@ -153,6 +155,8 @@ function LawLedger({ variety, ctx }: SectionProps) {
       </div>
       <LawEvidence variety={variety} occurrence={occurrence} ctx={ctx} />
     </li>)}</ol> : <p className="muted">No sound laws yet.</p>}
+    {occurrences.length ? <TakeOut engine={ctx.engine} generation={ctx.generation} choices={[["Take the laws as text", { what: "laws", variety: variety.id }], ["As data (JSON)", { what: "laws-data", variety: variety.id }]]}>
+      The text gives each law in the notation the law form reads. The data adds every form before and after.</TakeOut> : null}
   </div>;
 }
 
@@ -236,6 +240,8 @@ export function Phrasebook({ variety: v, ctx }: SectionProps) {
     {phrases.map((phrase) => <div key={phrase.id} className="phrase">
       <Sample rendering={phrase} label={phrase.notes.length ? phrase.notes.map((note) => PHRASE_NOTE[note]).join("; ").replace(/^./, (c) => c.toUpperCase()) : "Said plainly"} />
     </div>)}
+    <TakeOut engine={ctx.engine} generation={ctx.generation} choices={[["Take the phrasebook as interlinear text", { what: "phrasebook", variety: v.id }]]}>
+      Each phrase with its sounds and a gloss set under every word.</TakeOut>
   </div>;
 }
 
@@ -346,11 +352,12 @@ export function Lexicon({ variety, ctx }: SectionProps) {
       evidenceBelow={complete}
       rowId={ctx.wordAnchor ? (row) => ctx.wordAnchor!(variety.id, row.concept) : undefined}
       fieldMap />
+    <TakeOut engine={ctx.engine} generation={ctx.generation} choices={[["Take the lexicon as CSV", { what: "lexicon", variety: variety.id }]]}>
+      Every current word with its sounds, field, and origin, competing words included.</TakeOut>
   </div>;
 }
 
 export function Names({ variety: v, ctx }: SectionProps) {
-  const { complete } = use(EditionContext);
   const lands = ctx.overview.places.flatMap((p) => p.names.filter((n) => n.variety === v.id).map((n) => ({ region: p.region, name: n })));
   const peoples = ctx.overview.communities.filter((c) => c.variety === v.id);
   const otherNames = ctx.overview.communities.flatMap((c) => c.exonyms
@@ -379,8 +386,8 @@ export function Names({ variety: v, ctx }: SectionProps) {
         <span className="word">{name.name}</span> for {people(community, ctx)}, as {people(name.by, ctx)} call them.
       </li>)}
     </ul></> : null}
-    {!complete ? <p className="compared-take" data-edition-omit><button type="button" className="link" onClick={() => void ctx.engine.nameQuarry(ctx.generation, v.id).then((quarry) => download(fileName(`${v.name}-names`, "csv"), nameQuarryCsv(quarry), "text/csv;charset=utf-8"))}>
-      <Download size={13} aria-hidden="true" /> Take every name as CSV</button> <span className="muted small">Given names, peoples, lands, rivers, lakes, cities, states, and faiths, with what each meant.</span></p> : null}
+    <TakeOut engine={ctx.engine} generation={ctx.generation} choices={[["Take every name as CSV", { what: "names", variety: v.id }]]}>
+      Given names, peoples, lands, rivers, lakes, cities, states, and faiths, with what each meant.</TakeOut>
   </div>;
 }
 

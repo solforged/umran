@@ -59,6 +59,8 @@ import type {
   Phrase,
   SoundHint,
   SoundInfo,
+  Take,
+  Taken,
 } from "./model";
 import type { EngineReply, EngineRequest, EngineStatus, Opened, ReadMethod, WriteMethod, Written } from "./engineProtocol";
 
@@ -200,6 +202,7 @@ class Reading implements ReadEngine {
   nameQuarry(generation: number, variety: number) { return this.ask<NameQuarry>("nameQuarry", generation, variety); }
   save() { return this.world.save(); }
   frozen(generation: number) { return this.world.call("frozen", [generation], this.scope) as Promise<string>; }
+  take(generation: number, what: Take) { return this.world.call("take", [generation, JSON.stringify(what)], this.scope).then(json) as Promise<Taken>; }
   decisions() { return this.ask<DecisionView[]>("decisions"); }
 }
 

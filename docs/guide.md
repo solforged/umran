@@ -252,8 +252,8 @@ and names before and after, and to the chronicle entry behind it.
 ![A language's sound laws, with bands of meanings above the dated ledger](images/law.png)
 
 **Words compared** takes any list of meanings. Words from the same root
-(cognates) share shading. Download a CSV sheet with each word's sounds,
-root number, and origin. A language's names can also be downloaded as CSV.
+(cognates) share shading. Languages no longer spoken can join the list,
+with their words as they last stood.
 
 ![Basic words across related languages, shaded by shared root](images/cognates.png)
 
@@ -265,6 +265,24 @@ beside the method's evidence. The comparative method never reads that
 record.
 
 ![The desk after revealing the record, with recurring sound pairs, ancestry, and recorded roots](images/desk.jpg)
+
+## Take the data out
+
+Under the section it comes from, a link downloads that section as a file
+for other tools. The engine writes each file from the year being read.
+
+| File | Found under | What it holds |
+| --- | --- | --- |
+| Lexicon, CSV | A language's lexicon | One row per current word: meaning, spelling, speech, IPA, noun class, field, origin, source, the year it entered, and whether it is the main word or a competing one. The `id` column names the meaning and is the same in every language. |
+| Names, CSV | A language's names | Given names, peoples, lands, rivers, lakes, cities, states, and faiths, with what each meant. |
+| Sound laws, text | A language's sound laws | Every law in order, with its year and how it arrived. Each is in the notation the law form reads, so it can be pasted there and given to another language. |
+| Sound laws, JSON | A language's sound laws | The same ledger with every word, grammatical form, and name before and after each law. |
+| Phrasebook, text | A language's phrasebook | Interlinear text, the layout linguists give examples in: each phrase, its sounds, and a gloss set under every word, then a translation. |
+| Words compared, CSV | The world's card | One row per meaning, with each language's word, its sounds, its root number, and its origin. Words with the same root number are cognates. The last column gives each root its first form. |
+| Family tree, Newick | A language's position, and the world's family trees | Each family as a tree for tree-drawing and phylogenetics programs, with branch lengths in years. Every language is a tip that ends when it fell silent, or in the year being read. |
+
+A CSV file opens with a byte-order mark, so that a spreadsheet program
+reads its IPA correctly.
 
 ## Read and export the book
 
