@@ -64,7 +64,11 @@ This bookkeeping makes no random draws and does not itself change replay.
   meaning must be one a founding language has a word for (not a pronoun
   cell a language may lack, nor a meaning that waits for a craft, a way of
   life, or a faith), the form must read in the catalog, have a vowel, and
-  use only the design's sounds, and no meaning may have two roots. Shapes
+  use only the design's sounds, and no meaning may have two roots. Other
+  spellings of the same sound are read as the catalog's
+  (`phoneme::canonical_ipa`): ɡ, tie bars and ligatures on affricates,
+  Greek letters for their IPA lookalikes. Nothing written is dropped, so a
+  stress mark is still refused, with the reason. Shapes
   the knobs would never draw are accepted; the facade reports them as
   warnings. At founding the root is the year-0 word for its meaning,
   verbatim and unaccented; the draw it replaces is still made and reserved

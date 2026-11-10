@@ -61,6 +61,10 @@ impl RootError {
     pub fn describe(&self, root: &Root) -> String {
         match self {
             Self::UnknownConcept => format!("The catalog has no meaning “{}”.", root.concept),
+            Self::BadIpa(Some(at)) if matches!(at.as_str(), "ˈ" | "ˌ") => format!(
+                "The root /{}/ for “{}” marks its stress. Stress follows the language's rule, so leave the mark out.",
+                root.ipa, root.concept
+            ),
             Self::BadIpa(Some(at)) => format!(
                 "The root /{}/ for “{}” cannot be read at “{at}”.",
                 root.ipa, root.concept

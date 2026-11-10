@@ -163,6 +163,49 @@ pub struct Catalog {
     pub segments: Vec<Segment>,
 }
 
+/// IPA as the catalog spells it, from the spellings authors paste. Each
+/// rewrite is another way to write the same sound, never a guess at what
+/// was meant: the single-storey ɡ, a tie bar or a ligature on an affricate,
+/// a Greek letter for its IPA lookalike, a typographic apostrophe on an
+/// ejective. Nothing the author wrote is dropped: a stress mark still stops
+/// the reading. Romanizations (`sh` for ʃ) are not read here either: they
+/// are ambiguous, and `notation::sound_hints` offers them to the author.
+pub fn canonical_ipa(raw: &str) -> std::borrow::Cow<'_, str> {
+    let rewrite = |c: char| -> Option<&'static str> {
+        Some(match c {
+            'ɡ' => "g",
+            // Tie bars, above and below.
+            '\u{361}' | '\u{35C}' => "",
+            'ʦ' => "ts",
+            'ʣ' => "dz",
+            'ʧ' => "tʃ",
+            'ʤ' => "dʒ",
+            '’' => "ʼ",
+            'ε' => "ɛ",
+            'γ' => "ɣ",
+            'φ' => "ɸ",
+            'α' => "ɑ",
+            'ꭓ' => "χ",
+            'ǝ' => "ə",
+            // The letters ɪ and ʊ replaced in 1989.
+            'ɩ' => "ɪ",
+            'ɷ' => "ʊ",
+            _ => return None,
+        })
+    };
+    if !raw.chars().any(|c| rewrite(c).is_some()) {
+        return raw.into();
+    }
+    let mut out = String::with_capacity(raw.len());
+    for c in raw.chars() {
+        match rewrite(c) {
+            Some(written) => out.push_str(written),
+            None => out.push(c),
+        }
+    }
+    out.into()
+}
+
 impl Catalog {
     fn builtin() -> Self {
         let mut segments = Vec::new();
@@ -295,6 +338,7 @@ impl Catalog {
     }
 
     pub fn id_by_ipa(&self, ipa: &str) -> Option<PhonemeId> {
+        let ipa = canonical_ipa(ipa);
         self.segments
             .iter()
             .position(|s| s.ipa() == ipa)
@@ -317,7 +361,7 @@ impl Catalog {
 
     /// Greedy longest-match parse of an IPA string into catalog ids.
     pub fn parse_ipa(&self, raw: &str) -> Option<Vec<PhonemeId>> {
-        let s: String = raw
+        let s: String = canonical_ipa(raw)
             .chars()
             .filter(|c| !c.is_whitespace() && *c != '.')
             .collect();
@@ -351,3 +395,44 @@ impl Catalog {
 }
 
 pub static CATALOG: LazyLock<Catalog> = LazyLock::new(Catalog::builtin);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Form;
+
+    #[test]
+    fn pasted_ipa_reads_as_the_catalog_spells_it() {
+        for (pasted, catalog) in [
+            ("ɡat͡ʃa", "gatʃa"),
+            ("t͜sada", "tsada"),
+            ("ʦaʣa", "tsadza"),
+            ("ʧiʤa", "tʃidʒa"),
+            ("k’ata", "kʼata"),
+            ("pεγa", "pɛɣa"),
+            ("φαꭓǝ", "ɸɑχə"),
+            ("pɩtɷ", "pɪtʊ"),
+            ("ɡʷaɡʱa", "gʷagʱa"),
+        ] {
+            assert_eq!(canonical_ipa(pasted), catalog);
+            assert_eq!(
+                Form::from_ipa(pasted),
+                Form::from_ipa(catalog),
+                "{pasted} reads as {catalog}"
+            );
+            assert!(Form::from_ipa(pasted).is_some(), "{pasted}");
+        }
+        assert_eq!(CATALOG.id_by_ipa("ɡ"), CATALOG.id_by_ipa("g"));
+        assert_eq!(CATALOG.id_by_ipa("ʧ"), CATALOG.id_by_ipa("tʃ"));
+        // What the catalog already spells is handed back untouched.
+        assert!(matches!(
+            canonical_ipa("gatʃaː"),
+            std::borrow::Cow::Borrowed(_)
+        ));
+        // A romanization is still not IPA: it is offered as a hint instead.
+        assert!(Form::from_ipa("sha:").is_none());
+        // Nor is anything dropped: a stress mark says something the catalog
+        // cannot keep, so the form is refused and not trimmed.
+        assert!(Form::from_ipa("ˈkata").is_none());
+    }
+}
