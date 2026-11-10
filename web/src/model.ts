@@ -666,6 +666,8 @@ export interface HistoryPoint {
 export interface Overview {
   telling: number;
   atTip: boolean;
+  /// The author alone writes this world's sound laws; it draws none itself.
+  ownLaws: boolean;
   point: HistoryPoint;
   mutation: number;
   seed: number;
@@ -815,6 +817,8 @@ export interface TellingView {
   actions: number;
   /// The kind of decision the telling opened with, if it made one.
   decision: string | null;
+  /// Kept out of the way: still saved and read, off the main list.
+  putAway: boolean;
 }
 export interface Comparison {
   generation: number;
@@ -1468,6 +1472,12 @@ export interface Engine {
   compare(left: number, right: number, generation: number): Read<Comparison>;
   speechDelta(left: number, right: number, generation: number): Read<SpeechDelta>;
   rename(telling: number, name: string): Promise<void>;
+  /// Puts a telling out of the way or brings it back; it stays saved.
+  putAway(telling: number, away: boolean): Promise<void>;
+  /// Removes for good a telling that was put away.
+  removeTelling(telling: number): Promise<void>;
+  /// Settles, before the first year, whether the author alone writes sound laws.
+  setOwnLaws(ownLaws: boolean): Promise<void>;
   actAt(reading: ReadingRef, mutation: number, action: Action): Promise<void>;
   /// Tells `telling` again as a new telling with decision `decision` (its
   /// action index) replaced by `action`, or left out when `action` is null.

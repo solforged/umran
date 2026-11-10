@@ -18,7 +18,7 @@ export const READ_METHODS = {
 /// Workbench methods that change the world; each answers with its new status.
 export const WRITE_METHODS = {
   act: true, actAt: true, retell: true, untilAt: true, runUntilEvent: true, branch: true,
-  restore: true, rename: true, saveNote: true, removeNote: true, setTitle: true,
+  restore: true, rename: true, putAway: true, removeTelling: true, setOwnLaws: true, saveNote: true, removeNote: true, setTitle: true,
   setAuthor: true,
 } as const satisfies Record<string, true>;
 export type ReadMethod = keyof typeof READ_METHODS;

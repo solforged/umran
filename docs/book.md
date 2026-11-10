@@ -52,7 +52,11 @@ found  →  run  →  read  →  revise  →  run again
 
 Authorship stays at the level of constraints and dated decisions. The
 author never edits a derived form; if *fees* is wrong, the law is wrong,
-and the law is what changes. The engine's regularity is the point.
+and the law is what changes. The engine's regularity is the point. One
+constraint is set for the whole world on the title page: *Only the sound
+laws I write* stops the world drawing sound laws and tones of its own, for
+an author deriving daughter languages by hand. Every other change still
+runs.
 
 ## The book's table of contents
 

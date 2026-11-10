@@ -72,6 +72,9 @@ interface DraftDesign {
   title: string | null;
   author: string;
   years: number | null;
+  /// The author alone writes this world's sound laws. Absent in drafts
+  /// from before the choice, where the world draws its own.
+  ownLaws?: boolean;
   settling: Settling;
   groupCount: number;
   nextKey: number;
@@ -381,6 +384,7 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
   const [title, setTitle] = useState<string | null>(opening.design.title);
   const [author, setAuthor] = useState(opening.design.author);
   const [years, setYears] = useState(opening.design.years ?? NaN);
+  const [ownLaws, setOwnLaws] = useState(opening.design.ownLaws === true);
   const [projection, setProjection] = useMapProjection(mapContainer);
   const [adjusting, setAdjusting] = useState<number | null>(null);
   const [redraw, setRedraw] = useState<{ seed: number; size: MapSize } | null>(null);
@@ -418,8 +422,9 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
   const design = useMemo<DraftDesign>(() => ({
     version: 1, seed: worldSeed, size, founders, meanings, step: STEPS.findIndex((entry) => entry.id === step),
     selected, land: inspected, title, author, years: Number.isFinite(years) ? years : null,
+    ...(ownLaws ? { ownLaws } : {}),
     settling, groupCount, nextKey: nextKey.current,
-  }), [worldSeed, size, founders, meanings, step, selected, inspected, title, author, years, settling, groupCount]);
+  }), [worldSeed, size, founders, meanings, step, selected, inspected, title, author, years, ownLaws, settling, groupCount]);
   const rawDesign = useMemo(() => JSON.stringify(design), [design]);
   const manuscript = useRef({ design, raw: rawDesign, built });
   manuscript.current = { design, raw: rawDesign, built };
@@ -485,6 +490,7 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
     setTitle(design.title);
     setAuthor(design.author);
     setYears(design.years ?? NaN);
+    setOwnLaws(design.ownLaws === true);
     setSettling(design.settling);
     setGroupCount(design.groupCount);
     setMoving(null);
@@ -852,7 +858,10 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
     const id = draftId.current ?? newBookId();
     handedOver.current = true;
     window.clearTimeout(saving.current);
-    onBegin(engine.current, title?.trim() && title.trim() !== defaultTitle ? title.trim() : null, author.trim() || null, years, id)
+    const world = engine.current;
+    // Settled before the first year passes, since every year depends on it.
+    world.setOwnLaws(ownLaws)
+      .then(() => onBegin(world, title?.trim() && title.trim() !== defaultTitle ? title.trim() : null, author.trim() || null, years, id))
       .catch((failure: unknown) => { handedOver.current = false; setError(message(failure)); keepDraft(); });
   };
   const formedNow = useCallback(() => setFormed(worldKey), [worldKey]);
@@ -1131,6 +1140,10 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
       </span>)}.</p>
       <p className="founding-title-years"><label>Their chronicle runs to year <input type="number" aria-label="Years to write" min={YEARS} step={YEARS} value={Number.isNaN(years) ? "" : years}
         onChange={(event) => setYears(event.currentTarget.valueAsNumber)} /></label></p>
+      <label className="check founding-own-laws">
+        <input type="checkbox" checked={ownLaws} onChange={(event) => setOwnLaws(event.currentTarget.checked)} />
+        <span>Only the sound laws I write. <small>The world draws no <Explained term="sound law">sound law</Explained> of its own and no tones arise, so each language changes its sounds by your laws alone. Words are still coined, borrowed, and replaced, and this cannot be changed once the years begin.</small></span>
+      </label>
       <p className="founding-seed">Seed <code>{worldSeed}</code> · {catalog.mapSizes.find((choice) => choice.id === size)?.name} world</p>
     </section>;
   }

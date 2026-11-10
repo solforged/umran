@@ -227,6 +227,21 @@ impl Workbench {
         self.bench.rename(telling, name).map_err(fail)
     }
 
+    #[wasm_bindgen(js_name = putAway)]
+    pub fn put_away(&mut self, telling: u32, away: bool) -> Result<(), JsValue> {
+        self.bench.put_away(telling, away).map_err(fail)
+    }
+
+    #[wasm_bindgen(js_name = removeTelling)]
+    pub fn remove_telling(&mut self, telling: u32) -> Result<(), JsValue> {
+        self.bench.remove_telling(telling).map_err(fail)
+    }
+
+    #[wasm_bindgen(js_name = setOwnLaws)]
+    pub fn set_own_laws(&mut self, own_laws: bool) -> Result<(), JsValue> {
+        self.bench.set_own_laws(own_laws).map_err(fail)
+    }
+
     pub fn compare(&self, left: u32, right: u32, generation: u32) -> Result<String, JsValue> {
         self.bench.compare(left, right, generation).map_err(fail)
     }
@@ -1530,6 +1545,31 @@ impl Bench {
         Ok(())
     }
 
+    /// Puts a telling out of the way or brings it back. It stays saved.
+    pub fn put_away(&mut self, telling: TellingId, away: bool) -> Result<(), String> {
+        self.chronicle.put_away(telling, away)?;
+        self.mutation = self.mutation.wrapping_add(1);
+        Ok(())
+    }
+
+    /// Removes for good a telling that was put away.
+    pub fn remove_telling(&mut self, telling: TellingId) -> Result<(), String> {
+        self.chronicle.remove(telling)?;
+        self.mutation = self.mutation.wrapping_add(1);
+        self.readings.get_mut().clear();
+        Ok(())
+    }
+
+    /// Settles, before the first year passes, whether the author alone
+    /// writes this world's sound laws.
+    pub fn set_own_laws(&mut self, own_laws: bool) -> Result<(), String> {
+        self.chronicle.set_own_laws(own_laws)?;
+        self.mutation = self.mutation.wrapping_add(1);
+        self.cached = None;
+        self.readings.get_mut().clear();
+        Ok(())
+    }
+
     pub fn until_at(&mut self, reading: &str, mutation: u32, limit: u32) -> Result<u32, String> {
         if limit == 0 {
             return Ok(0);
@@ -1670,6 +1710,7 @@ impl Bench {
                     tip,
                     actions: t.actions.len(),
                     decision,
+                    put_away: t.put_away,
                 }
             })
             .collect()
@@ -2045,12 +2086,14 @@ impl Bench {
         let tellings = self.tellings();
         let telling = self.chronicle.active();
         let at_tip = self.chronicle.end() == point;
+        let own_laws = self.chronicle.own_laws();
         let world = match &exact {
             Some((_, world)) => world,
             None => self.world(generation),
         };
         to_json(&Overview {
             telling,
+            own_laws,
             at_tip,
             seed,
             point,
@@ -4253,6 +4296,8 @@ fn sound_view(id: PhonemeId, seg: Segment) -> SoundView {
 #[serde(rename_all = "camelCase")]
 struct Overview<'a> {
     telling: TellingId,
+    /// The author alone writes this world's sound laws.
+    own_laws: bool,
     at_tip: bool,
     seed: u64,
     point: HistoryPoint,
@@ -4351,6 +4396,9 @@ struct TellingView {
     actions: usize,
     /// The kind of decision this telling opened with, if it made one.
     decision: Option<String>,
+    /// Kept out of the way: still saved and read, off the main list.
+    #[serde(rename = "putAway")]
+    put_away: bool,
 }
 
 /// A decision named by its kind, from the action alone: the names of the
@@ -6604,6 +6652,55 @@ mod tests {
             "kind": "found", "naming": {"kind": "people"}, "design": design, "seed": name.len(), "power": 0.5, "openness": 0.5
         })
         .to_string()
+    }
+
+    #[test]
+    fn tellings_are_put_away_and_a_world_keeps_to_the_authors_laws() {
+        let mut bench = Bench::new(7, "small").unwrap();
+        bench.act(&found("Test", "familiar")).unwrap();
+        let read = |bench: &mut Bench| -> serde_json::Value {
+            let at = bench.latest();
+            serde_json::from_str(&bench.overview(at).unwrap()).unwrap()
+        };
+        assert_eq!(read(&mut bench)["ownLaws"], false);
+        bench.set_own_laws(true).unwrap();
+        bench.act(r#"{"kind":"run","generations":30}"#).unwrap();
+        let overview = read(&mut bench);
+        assert_eq!(overview["ownLaws"], true);
+        assert_eq!(overview["varieties"][0]["laws"], serde_json::json!([]));
+        assert!(bench.set_own_laws(false).is_err());
+        // The save says what it needs, and reads back the same world.
+        let saved: serde_json::Value = serde_json::from_str(&bench.save().unwrap()).unwrap();
+        assert_eq!(saved["needs"], serde_json::json!(["own-laws"]));
+        let mut reloaded = Bench::load(&bench.save().unwrap()).unwrap();
+        assert_eq!(read(&mut reloaded)["ownLaws"], true);
+        assert_eq!(
+            reloaded.chronicle.latest().varieties[0].lexicon,
+            bench.chronicle.latest().varieties[0].lexicon
+        );
+        // A second telling; the first is put away, brought back, and then
+        // removed for good only once it is put away.
+        let mutation = overview["mutation"].as_u64().unwrap() as u32;
+        bench
+            .retell(0, mutation, 0, &found("Test", "polynesian"))
+            .unwrap();
+        assert!(bench.put_away(1, true).is_err());
+        assert!(bench.remove_telling(0).is_err());
+        bench.put_away(0, true).unwrap();
+        let tellings = read(&mut bench)["tellings"].clone();
+        assert_eq!(tellings[0]["putAway"], true);
+        assert_eq!(tellings[1]["putAway"], false);
+        let kept = Bench::load(&bench.save().unwrap()).unwrap();
+        assert!(kept.chronicle.tellings()[0].put_away);
+        bench.put_away(0, false).unwrap();
+        bench.put_away(0, true).unwrap();
+        bench.remove_telling(0).unwrap();
+        let tellings = read(&mut bench)["tellings"].clone();
+        assert_eq!(tellings.as_array().unwrap().len(), 1);
+        assert_eq!(tellings[0]["parent"], serde_json::Value::Null);
+        let reloaded = Bench::load(&bench.save().unwrap()).unwrap();
+        assert_eq!(reloaded.chronicle.tellings().len(), 1);
+        assert_eq!(reloaded.chronicle.recipe().last_telling, 0);
     }
 
     #[test]

@@ -19,7 +19,11 @@ through five steps over the chart:
    or neighbours with languages of their own.
 4. Shape their speech. Every sound preset previews this people's words.
    You can also supply roots and grammatical affixes of your own.
-5. Finish the title page and choose the year to write through.
+5. Finish the title page and choose the year to write through. Tick
+   **Only the sound laws I write** to derive every language by your own
+   laws: the world then draws no sound law of its own and no tones arise.
+   Words are still coined, borrowed, and replaced. The choice is settled
+   once the years begin.
 
 **Write the chronicle** runs the years to that date. An unfinished founding
 can be resumed from the chart room. To explore without founding, choose
@@ -217,6 +221,10 @@ shape its speech:
 
 You can stop at any year, return to the past, and try something different.
 Every telling keeps its name and future, ready to read or continue again.
+**Put away** moves a telling you are not reading off the list while
+keeping it saved. A telling that is put away can be brought back or
+removed for good. Tellings that began from a removed one are kept, and so
+are the notes written in it.
 
 Choose **Continue in another telling** from a past year to run from there
 while keeping the first future. Compare two tellings at the same year.

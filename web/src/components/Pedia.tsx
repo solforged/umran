@@ -103,6 +103,10 @@ interface Context {
   /// Tell the history again as a telling set aside told it.
   onRestore: (telling: number) => void;
   onRenameTelling: (telling: number, name: string) => void;
+  /// Put a telling out of the way, or bring it back; it stays saved.
+  onPutAwayTelling: (telling: number, away: boolean) => void;
+  /// Remove for good a telling that was put away.
+  onRemoveTelling: (telling: number) => void;
   onCompare: (telling: number) => void;
   /// The folio page open over the map, by its section's id.
   leaf: string | null;
@@ -1432,6 +1436,9 @@ function HistoryCard({ generation, context }: { generation?: number; context: Co
     setDestination({ kind: "year", generation });
     folio.show("history");
   }, [generation]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The telling being read is always listed, put away or not.
+  const kept = overview.tellings.filter((t) => !t.putAway || t.id === overview.telling);
+  const putAway = overview.tellings.filter((t) => t.putAway && t.id !== overview.telling);
   return (
     <>
       <CardHead icon={ScrollText} kind={overview.tellings.find((t) => t.id === overview.telling)?.name ?? "This telling"} title="The chronicle" />
@@ -1454,18 +1461,39 @@ function HistoryCard({ generation, context }: { generation?: number; context: Co
         {count === 0 ? <p className="index-empty">No entries match these filters. Try a different name or broaden the filters.</p> : null}
         <EraReading contents={contents} lines={lines} decisions={choices} view={view} update={update} births revealGeneration={generation} context={context} />
       </Leaf>
-      <Leaf id="tellings" title="Other tellings" summary={<p>{overview.tellings.length} {overview.tellings.length === 1 ? "telling" : "tellings"} kept. Name them, read them, or compare the same year.</p>}>
+      <Leaf id="tellings" title="Other tellings" summary={<p>{kept.length} {kept.length === 1 ? "telling" : "tellings"} kept{putAway.length ? `, ${putAway.length} put away` : ""}. Name them, read them, or compare the same year.</p>}>
         <section className="other-tellings">
           <p className="muted small">Each telling keeps its name, its decisions, and its own future. Read freely; deciding in the past begins a new telling.</p>
-          {overview.tellings.map((telling) => <article key={telling.id} className={`telling-entry${telling.id === overview.telling ? " current" : ""}`}>
+          {kept.map((telling) => <article key={telling.id} className={`telling-entry${telling.id === overview.telling ? " current" : ""}`}>
             <label>Name of this telling<input aria-label={`Name of ${telling.name}`} defaultValue={telling.name} key={telling.name}
               onBlur={(e) => { if (e.target.value.trim() !== telling.name) context.onRenameTelling(telling.id, e.target.value); }}
               onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} maxLength={120} /></label>
             <p className="small">{telling.id === overview.telling ? "This telling · " : ""}Through year {telling.latest * YEARS}
               {telling.parent ? ` · from ${overview.tellings.find((t) => t.id === telling.parent?.telling)?.name ?? "an earlier telling"}, year ${(telling.from ?? 0) * YEARS}, ${telling.decision ? `on ${telling.decision}` : "with no new decision yet"}` : " · the first telling"}</p>
             <div className="row">{telling.id !== overview.telling ? <><button type="button" onClick={() => context.onRestore(telling.id)}>Read this telling</button>
-              <button type="button" onClick={() => context.onCompare(telling.id)}>Compare these tellings</button></> : null}</div>
+              <button type="button" onClick={() => context.onCompare(telling.id)}>Compare these tellings</button>
+              <button type="button" onClick={() => context.onPutAwayTelling(telling.id, true)}>Put away</button></> : null}</div>
           </article>)}
+          {putAway.length ? <details className="tellings-put-away">
+            <summary>Put away ({putAway.length})</summary>
+            <p className="muted small">These tellings are still saved. Bring one back to read or compare it. Only from here can one be removed for good.</p>
+            {putAway.map((telling) => <article key={telling.id} className="telling-entry">
+              <p><strong>{telling.name}</strong></p>
+              <p className="small">Through year {telling.latest * YEARS}{telling.decision ? ` · began on ${telling.decision}` : ""}</p>
+              <div className="row">
+                <button type="button" onClick={() => context.onPutAwayTelling(telling.id, false)}>Bring back</button>
+                <Popover label={`Remove ${telling.name} for good`} role="dialog" trigger={(props) => <button type="button" {...props}>Remove for good…</button>}>
+                  {(close) => <>
+                    <p className="small">This removes {telling.name} and its decisions from this world for good. Notes written in it stay in your notebook, and tellings that began from it are kept. This cannot be undone.</p>
+                    <div className="row">
+                      <button type="button" onClick={close}>Keep it put away</button>
+                      <button type="button" className="primary" onClick={() => { close(); context.onRemoveTelling(telling.id); }}>Remove it for good</button>
+                    </div>
+                  </>}
+                </Popover>
+              </div>
+            </article>)}
+          </details> : null}
         </section>
       </Leaf>
     </>

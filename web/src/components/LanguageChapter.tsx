@@ -143,7 +143,7 @@ function LawLedger({ variety, ctx }: SectionProps) {
   const occurrences = reads.flatMap((read) => use(read)).sort((a, b) => a.ref.generation - b.ref.generation || a.ref.index - b.ref.index || a.ref.law.localeCompare(b.ref.law));
   return <div className="language-section">
     <LifeRibbon variety={variety.id} ctx={ctx} selected={selected} />
-    <p className="muted small">A dated ledger of regular changes, from earliest to latest. Choose an application to highlight its ticks above. Each application shows the recorded forms before and after.</p>
+    <p className="muted small">A dated ledger of regular changes, from earliest to latest. Choose an application to highlight its ticks above. Each application shows the recorded forms before and after.{ctx.overview.ownLaws ? " This world draws no sound law of its own: every law here is the author’s, written for this language or spread to it from a neighbour." : ""}</p>
     {occurrences.length ? <ol className="law-ledger">{occurrences.map((occurrence) => <li key={occurrenceKey(occurrence.ref)} id={occurrence.ref.variety === variety.id ? occurrenceAnchor(occurrence.ref) : undefined} data-law={occurrence.ref.law} data-selected={sameOccurrence(selected, occurrence.ref) || undefined}>
       <div className="law-ledger-head">
         <span className="gen">{occurrence.ref.generation * YEARS}</span>

@@ -126,7 +126,26 @@ capital loss before the choice is applied. Its chronicle card can return to
 the point immediately before the decision. Community ancestry is independent
 of later language shifts.
 
-Nothing written is thrown away. Each `Telling` has a permanent ID, editable
+A world can be founded so that the author alone writes its sound laws
+(`Chronicle::set_own_laws`, settable only while no telling holds a run).
+Its worlds are made with the sound-change and tone rates at zero. Words
+still compete, are coined and borrowed, and a written law still spreads by
+wave. The recipe records this as a need, `"needs": ["own-laws"]`. An
+engine that does not know a need refuses the save, since replaying
+without it would tell another world. A plain world's recipe has no
+`needs`. The overview's `ownLaws` reports it.
+
+A telling can be put away (`Telling::put_away`, off the list but saved and
+readable) and brought back. Only a telling that is put away, and is not
+the one being read, can be removed for good (`Chronicle::remove`). A
+telling that began from it then hangs from the telling the removed one
+began from, at the earlier of the two partings, or stands alone if there
+was none. The recipe's `last_telling` keeps the highest identity a removed
+telling held, so a later telling never takes it. Notes written in a
+removed telling stay in the notebook.
+
+Nothing is thrown away unless the author removes it.
+Each `Telling` has a permanent ID, editable
 name, complete action log and optional parent `ReadingRef` (a telling ID plus
 an exact `HistoryPoint`). The founding account is a telling too. Returning
 before an action only moves the reading. It neither edits history nor creates

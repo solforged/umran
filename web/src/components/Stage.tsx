@@ -122,6 +122,8 @@ export function Stage({
   onBook,
   onRestore,
   onRenameTelling,
+  onPutAwayTelling,
+  onRemoveTelling,
   onCompare,
   onScrub,
   onTick,
@@ -172,6 +174,8 @@ export function Stage({
   /// Tell the history again as a telling set aside told it.
   onRestore: (telling: number) => void;
   onRenameTelling: (telling: number, name: string) => void;
+  onPutAwayTelling: (telling: number, away: boolean) => void;
+  onRemoveTelling: (telling: number) => void;
   onCompare: (telling: number) => void;
   onScrub: (generation: number) => Promise<HistoryPoint | null>;
   /// One generation at the present, while the years pass on their own.
@@ -1015,6 +1019,8 @@ export function Stage({
         onUndo={onUndo}
         onRestore={onRestore}
         onRenameTelling={onRenameTelling}
+        onPutAwayTelling={onPutAwayTelling}
+        onRemoveTelling={onRemoveTelling}
         onCompare={(telling) => {
           comparing.current = true;
           liftThen(() => onCompare(telling), document.querySelector<HTMLElement>(".leaf-title[data-leaf=tellings]"));

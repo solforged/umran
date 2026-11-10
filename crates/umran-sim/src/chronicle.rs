@@ -185,6 +185,9 @@ pub struct Telling {
     pub name: String,
     pub parent: Option<ReadingRef>,
     pub actions: Vec<Action>,
+    /// Kept out of the way, off the list of tellings. It stays saved.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub put_away: bool,
 }
 
 /// A saved history: enough to replay it exactly on the same engine revision.
@@ -202,6 +205,36 @@ pub struct Recipe {
     pub geography: GeographyVersion,
     pub active: TellingId,
     pub tellings: Vec<Telling>,
+    /// The highest identity a telling of this world has held, where one
+    /// removed for good held a higher one than any that remain. A later
+    /// telling never takes a removed one's identity.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub last_telling: TellingId,
+    /// Parts of the engine this world cannot be read without. An engine
+    /// that does not know one refuses the save instead of replaying it as
+    /// another world.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub needs: Vec<String>,
+}
+
+fn is_zero(id: &TellingId) -> bool {
+    *id == 0
+}
+
+/// The need a recipe states when its author alone writes sound laws.
+const OWN_LAWS: &str = "own-laws";
+
+/// The world's parameters. Where the author alone writes sound laws, the
+/// world draws none of its own and no tone arises unbidden. Words still
+/// compete, are coined and borrowed, and a written law still spreads to
+/// neighbouring speech.
+fn params(own_laws: bool) -> Params {
+    let mut params = Params::default();
+    if own_laws {
+        params.sound_change_rate = 0.0;
+        params.tone_rate = 0.0;
+    }
+    params
 }
 
 impl Recipe {
@@ -324,6 +357,8 @@ pub struct Chronicle {
     pub geography: GeographyVersion,
     active: TellingId,
     tellings: Vec<Telling>,
+    last_telling: TellingId,
+    own_laws: bool,
     latest: World,
     checkpoints: BTreeMap<u32, (Cursor, World)>,
 }
@@ -345,8 +380,11 @@ impl Chronicle {
                 name: "The first telling".into(),
                 parent: None,
                 actions: Vec::new(),
+                put_away: false,
             }],
-            latest: World::with_geography(seed, Params::default(), map, geography),
+            last_telling: 0,
+            own_laws: false,
+            latest: World::with_geography(seed, params(false), map, geography),
             checkpoints: BTreeMap::new(),
         }
     }
@@ -407,6 +445,83 @@ impl Chronicle {
             .find(|t| t.id == id)
             .ok_or_else(|| format!("there is no telling {id}"))?
             .name = name.into();
+        Ok(())
+    }
+
+    /// Puts a telling out of the way, or brings it back. Either way it
+    /// stays saved and can be read.
+    pub fn put_away(&mut self, id: TellingId, away: bool) -> Result<(), String> {
+        if away && id == self.active {
+            return Err("Read another telling before putting this one away.".into());
+        }
+        self.tellings
+            .iter_mut()
+            .find(|t| t.id == id)
+            .ok_or_else(|| format!("there is no telling {id}"))?
+            .put_away = away;
+        Ok(())
+    }
+
+    /// Removes for good a telling that was put away. A telling that began
+    /// from it hangs instead from the telling it began from itself, at the
+    /// earlier of the two partings, or stands alone if there is none.
+    pub fn remove(&mut self, id: TellingId) -> Result<(), String> {
+        let gone = self.telling(id)?.clone();
+        if id == self.active {
+            return Err("The telling being read cannot be removed.".into());
+        }
+        if !gone.put_away {
+            return Err("Put the telling away before removing it for good.".into());
+        }
+        let above = gone.parent.and_then(|up| {
+            let log = self.telling(up.telling).ok()?.actions.clone();
+            Some((up, log))
+        });
+        for telling in &mut self.tellings {
+            let Some(from) = telling.parent.filter(|from| from.telling == id) else {
+                continue;
+            };
+            telling.parent = above.as_ref().and_then(|(up, log)| {
+                let point = up.point.min(from.point);
+                let shared = Self::prefix_of(log, point).ok()?;
+                holds(&telling.actions, &shared).then_some(ReadingRef {
+                    telling: up.telling,
+                    point,
+                })
+            });
+        }
+        self.tellings.retain(|t| t.id != id);
+        self.last_telling = self.last_telling.max(id);
+        Ok(())
+    }
+
+    /// Whether the author alone writes this world's sound laws.
+    pub fn own_laws(&self) -> bool {
+        self.own_laws
+    }
+
+    /// Settles whether the author alone writes sound laws. It is settled
+    /// before the first year passes, since every year told depends on it.
+    pub fn set_own_laws(&mut self, own_laws: bool) -> Result<(), String> {
+        if own_laws == self.own_laws {
+            return Ok(());
+        }
+        let run = |t: &Telling| t.actions.iter().any(|a| matches!(a, Action::Run { .. }));
+        if self.tellings.iter().any(run) {
+            return Err(
+                "Years have passed in this world. How its sounds change was settled at its founding.".into(),
+            );
+        }
+        let latest = Self::replay(
+            self.seed,
+            self.map,
+            self.geography,
+            own_laws,
+            self.actions(),
+        )?;
+        self.own_laws = own_laws;
+        self.latest = latest;
+        self.checkpoints.clear();
         Ok(())
     }
 
@@ -506,7 +621,7 @@ impl Chronicle {
             return Ok(self.latest.clone());
         }
         let actions = self.prefix(point)?;
-        Self::replay(self.seed, self.map, self.geography, &actions)
+        Self::replay(self.seed, self.map, self.geography, self.own_laws, &actions)
     }
 
     /// Each action with the generation it happened at.
@@ -591,6 +706,7 @@ impl Chronicle {
             .map(|t| t.id)
             .max()
             .unwrap_or(0)
+            .max(self.last_telling)
             .checked_add(1)
             .ok_or("Too many tellings in this world")?;
         let parent = ReadingRef {
@@ -602,6 +718,7 @@ impl Chronicle {
             name: format!("Telling {}", u64::from(id) + 1),
             parent: Some(parent),
             actions: kept,
+            put_away: false,
         });
         self.active = id;
         self.checkpoints
@@ -723,6 +840,7 @@ impl Chronicle {
             self.seed,
             self.map,
             self.geography,
+            self.own_laws,
             &self.telling(id)?.actions,
         )?;
         self.active = id;
@@ -735,9 +853,10 @@ impl Chronicle {
         seed: u64,
         map: MapSize,
         geography: GeographyVersion,
+        own_laws: bool,
         actions: &[Action],
     ) -> Result<World, String> {
-        let mut world = World::with_geography(seed, Params::default(), map, geography);
+        let mut world = World::with_geography(seed, params(own_laws), map, geography);
         for (i, action) in actions.iter().enumerate() {
             apply(&mut world, action, i).map_err(|e| format!("action {}: {e}", i + 1))?;
         }
@@ -805,8 +924,12 @@ impl Chronicle {
             .next_back()
             .map(|(_, (c, w))| (*c, w.clone()))
             .unwrap_or_else(|| {
-                let fresh =
-                    World::with_geography(self.seed, Params::default(), self.map, self.geography);
+                let fresh = World::with_geography(
+                    self.seed,
+                    params(self.own_laws),
+                    self.map,
+                    self.geography,
+                );
                 (Cursor::default(), fresh)
             });
         while cursor.action < self.actions().len() {
@@ -848,6 +971,12 @@ impl Chronicle {
             geography: self.geography,
             active: self.active,
             tellings: self.tellings.clone(),
+            last_telling: self.last_telling,
+            needs: if self.own_laws {
+                vec![OWN_LAWS.into()]
+            } else {
+                Vec::new()
+            },
         }
     }
 
@@ -861,6 +990,12 @@ impl Chronicle {
         if let Some(refusal) = Recipe::from_newer_engine(recipe.revision) {
             return Err(refusal);
         }
+        if let Some(unknown) = recipe.needs.iter().find(|need| *need != OWN_LAWS) {
+            return Err(format!(
+                "This world uses a part of Umran this version does not have ({unknown}). Update Umran, then open the world again."
+            ));
+        }
+        let own_laws = recipe.needs.iter().any(|need| need == OWN_LAWS);
         if recipe.revision < SPHERICAL_GEOGRAPHY_REVISION {
             return Err("This save uses the earlier flat geography. Its original is still available for recovery; it cannot be replayed on a spherical world.".into());
         }
@@ -896,7 +1031,15 @@ impl Chronicle {
             geography: recipe.geography,
             active: recipe.active,
             tellings: recipe.tellings.clone(),
-            latest: Self::replay(recipe.seed, recipe.map, recipe.geography, &active.actions)?,
+            last_telling: recipe.last_telling,
+            own_laws,
+            latest: Self::replay(
+                recipe.seed,
+                recipe.map,
+                recipe.geography,
+                own_laws,
+                &active.actions,
+            )?,
             checkpoints: BTreeMap::new(),
         })
     }
@@ -2033,6 +2176,132 @@ mod tests {
                 state,
                 Action::Run { generations: 3 }
             ]
+        );
+    }
+
+    #[test]
+    fn a_telling_is_put_away_and_only_then_removed_for_good() {
+        let mut c = sample();
+        c.retell(5, None).unwrap();
+        let second = c.active();
+        c.act(Action::Run { generations: 2 }).unwrap();
+        c.retell(3, None).unwrap();
+        let third = c.active();
+        assert_eq!((second, third), (1, 2));
+        assert_eq!(c.telling(third).unwrap().parent.unwrap().telling, second);
+        // The telling being read stays, and nothing goes without being
+        // put away first.
+        assert!(c.put_away(third, true).is_err());
+        assert!(c.remove(second).is_err());
+        c.put_away(second, true).unwrap();
+        assert!(c.telling(second).unwrap().put_away);
+        // Put away is still saved and still read.
+        let kept = Chronicle::from_recipe(&c.recipe()).unwrap();
+        assert!(kept.telling(second).unwrap().put_away);
+        kept.reading(second).unwrap();
+        c.put_away(second, false).unwrap();
+        assert!(!c.telling(second).unwrap().put_away);
+        // Removed, its child hangs from the first telling at the earlier
+        // parting, and the save still reads.
+        c.put_away(second, true).unwrap();
+        c.remove(second).unwrap();
+        assert!(c.telling(second).is_err());
+        assert_eq!(
+            c.telling(third).unwrap().parent,
+            Some(ReadingRef {
+                telling: 0,
+                point: HistoryPoint {
+                    action: 3,
+                    offset: 0
+                }
+            })
+        );
+        Chronicle::from_recipe(&c.recipe()).unwrap();
+        // Without the first telling the last one stands alone.
+        c.put_away(0, true).unwrap();
+        c.remove(0).unwrap();
+        assert_eq!(c.telling(third).unwrap().parent, None);
+        let reread = Chronicle::from_recipe(&c.recipe()).unwrap();
+        assert!(same(reread.latest(), c.latest()));
+        // A removed telling's identity is never given again.
+        c.branch_at_point(HistoryPoint {
+            action: 1,
+            offset: 0,
+        })
+        .unwrap();
+        let fourth = c.active();
+        c.restore(third).unwrap();
+        c.put_away(fourth, true).unwrap();
+        c.remove(fourth).unwrap();
+        c.branch_at_point(HistoryPoint {
+            action: 1,
+            offset: 0,
+        })
+        .unwrap();
+        assert_eq!((fourth, c.active()), (3, 4));
+        let reread = Chronicle::from_recipe(&c.recipe()).unwrap();
+        assert_eq!(reread.recipe(), c.recipe());
+    }
+
+    #[test]
+    fn a_world_of_the_authors_own_laws_draws_none_itself() {
+        let lawless = |own: bool| {
+            let mut c = Chronicle::new(7, MapSize::default());
+            c.act(found("Hill", "familiar")).unwrap();
+            c.act(found("Coast", "polynesian")).unwrap();
+            c.set_own_laws(own).unwrap();
+            c.act(Action::Run { generations: 60 }).unwrap();
+            c
+        };
+        let plain = lawless(false);
+        let laws = |c: &Chronicle| {
+            c.latest()
+                .varieties
+                .iter()
+                .map(|v| v.laws.len())
+                .sum::<usize>()
+        };
+        assert!(laws(&plain) > 0, "sixty generations draw some law");
+        // A plain world's save says nothing new.
+        let text = serde_json::to_string(&plain.recipe()).unwrap();
+        assert!(
+            !text.contains("needs") && !text.contains("last_telling") && !text.contains("put_away")
+        );
+        let mut own = lawless(true);
+        assert_eq!(laws(&own), 0);
+        assert!(own.latest().varieties.iter().all(|v| v.tonal.is_none()));
+        // The author's law is the only one, and the save replays the same.
+        let law = crate::notation::parse("Hush", "∅ > e / C _ #").law.unwrap();
+        own.act(Action::Authored { variety: 0, law }).unwrap();
+        own.act(Action::Run { generations: 20 }).unwrap();
+        let ledger: Vec<_> = own
+            .latest()
+            .varieties
+            .iter()
+            .flat_map(|v| v.laws.iter().map(|(_, id)| id.to_string()))
+            .collect();
+        assert!(
+            !ledger.is_empty() && ledger.iter().all(|id| id.starts_with("authored:hush")),
+            "{ledger:?}"
+        );
+        let recipe = own.recipe();
+        assert_eq!(recipe.needs, ["own-laws"]);
+        let reread = Chronicle::from_recipe(&recipe).unwrap();
+        assert!(reread.own_laws());
+        assert!(same(reread.latest(), own.latest()));
+        assert!(same(
+            &reread.world_at_point(reread.point_at(30)).unwrap(),
+            &own.world_at_point(own.point_at(30)).unwrap()
+        ));
+        // Once years have passed it is settled, and an engine that does
+        // not know a need refuses the save.
+        assert!(own.set_own_laws(false).is_err());
+        let mut unknown = recipe.clone();
+        unknown.needs.push("dreams".into());
+        assert!(
+            Chronicle::from_recipe(&unknown)
+                .unwrap_err()
+                .contains("dreams")
         );
     }
 

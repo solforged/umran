@@ -506,7 +506,7 @@ export function Book(props: {
             ...overview.cities.map((city) => ({ id: `city-${city.id}`, label: lore.cityLabel(overview, map, city) }))]
           : activeChapter === "chronicle" ? chronicle.map((era) => ({ id: `era-${era.start}`, label: `${era.start * YEARS}–${era.end * YEARS} · ${era.heading}` }))
             : activeChapter === "notes" ? [...notes].sort((a, b) => a.generation - b.generation).map((note) => ({ id: `note-${note.id}`, label: note.title }))
-              : activeChapter === "tellings" ? overview.tellings.filter((other) => other.id !== overview.telling).map((other) => ({ id: `telling-${other.id}`, label: other.name })) : [];
+              : activeChapter === "tellings" ? overview.tellings.filter((other) => other.id !== overview.telling && !other.putAway).map((other) => ({ id: `telling-${other.id}`, label: other.name })) : [];
   const head = (index: number) => (
     <header className="book-running-head">
       <span>{index + 1} · {CONTENTS[index][1]}</span>
@@ -715,8 +715,8 @@ export function Book(props: {
       </section>
       <section className="book-chapter" id="book-tellings" data-book-chapter="tellings">
         {head(7)}<h2>Other tellings</h2>
-        {overview.tellings.some((other) => other.id !== overview.telling)
-          ? overview.tellings.filter((other) => other.id !== overview.telling).map((other) => <Pending key={other.id} reading={engine} label={`Reading ${other.name}…`}><TellingChapter telling={other} decisionsFor={decisionsFor} onRead={onReadTelling} onCompare={onCompare} complete={complete} /></Pending>)
+        {overview.tellings.some((other) => other.id !== overview.telling && !other.putAway)
+          ? overview.tellings.filter((other) => other.id !== overview.telling && !other.putAway).map((other) => <Pending key={other.id} reading={engine} label={`Reading ${other.name}…`}><TellingChapter telling={other} decisionsFor={decisionsFor} onRead={onReadTelling} onCompare={onCompare} complete={complete} /></Pending>)
           : <p className="muted">This is the only telling.</p>}
       </section>
       <section className="book-chapter" id="book-elsewhere" data-book-chapter="elsewhere">

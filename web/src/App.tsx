@@ -685,6 +685,17 @@ export default function App() {
     finally { pendingWrites.current--; }
   };
 
+  /// A change to the list of tellings that leaves the one being read alone.
+  const shelve = async (change: (world: Engine) => Promise<void>) => {
+    pendingWrites.current++;
+    try {
+      if (engine.current) await change(engine.current);
+      if (frame) await show(frame, () => setVersion((v) => v + 1));
+      persist();
+    } catch (e) { setError(message(e)); }
+    finally { pendingWrites.current--; }
+  };
+
   const saveNote = async (note: NotebookNote): Promise<string | null> => {
     pendingWrites.current++;
     try {
@@ -1127,6 +1138,8 @@ export default function App() {
         onBook={(chapter) => navigate({ kind: "world", id: view.id, page: "book", ...(chapter ? { chapter } : {}) })}
         onRestore={readTelling}
         onRenameTelling={renameTelling}
+        onPutAwayTelling={(telling, away) => void shelve((world) => world.putAway(telling, away))}
+        onRemoveTelling={(telling) => void shelve((world) => world.removeTelling(telling))}
         onCompare={setCompareWith}
         onScrub={scrub}
         onTick={tick}

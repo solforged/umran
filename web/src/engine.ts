@@ -292,6 +292,9 @@ class World implements Engine {
   compare(left: number, right: number, generation: number) { return this.own<Comparison>("compare", left, right, generation); }
   speechDelta(left: number, right: number, generation: number) { return this.own<SpeechDelta>("speechDelta", left, right, generation); }
   async rename(telling: number, name: string) { await this.write("rename", telling, name); }
+  async putAway(telling: number, away: boolean) { await this.write("putAway", telling, away); }
+  async removeTelling(telling: number) { await this.write("removeTelling", telling); }
+  async setOwnLaws(ownLaws: boolean) { await this.write("setOwnLaws", ownLaws); }
   async actAt(reading: ReadingRef, mutation: number, action: Action) {
     await this.write("actAt", JSON.stringify(reading), mutation, JSON.stringify(action));
   }
