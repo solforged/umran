@@ -67,6 +67,19 @@ pub enum Rewrite {
     Compensate,
     /// Pitch changes and the consonant loss that conditions them.
     Tone(crate::tone::Change),
+    /// The target stays and a sound appears beside it, after it or before
+    /// (epenthesis).
+    Insert {
+        phone: PhonemeId,
+        after: bool,
+    },
+    /// The target and the segment after it trade places (metathesis).
+    SwapNext,
+    /// The target and the segment after it become this one sound. It
+    /// keeps the target's length.
+    Fuse(PhonemeId),
+    /// The target becomes these two sounds, both short.
+    Break(PhonemeId, PhonemeId),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -77,6 +90,25 @@ pub enum Env {
     /// Matches the nucleus of the immediately following syllable in this
     /// word, across consonants and morpheme boundaries, never another word.
     FollowingSyllableVowel(Matcher),
+    /// Holds wherever the inner environment does not, the word's edge
+    /// included: "not after s" holds at the start of a word.
+    Not(Box<Env>),
+    /// Several positions read outward from the target: the first beside
+    /// it, the next one further off. Every position but the last must hold
+    /// a segment, so only the last can be the word's edge.
+    Run(Vec<Env>),
+}
+
+/// What a rule makes of one word: an outcome for each input segment, the
+/// sounds that appear beside them, and where lexical stress lands.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Outcome {
+    /// What each input segment becomes. `None` is a loss.
+    pub segs: Vec<Option<Seg>>,
+    /// Sounds that appear, in order: the input segment each stands beside,
+    /// whether it follows that segment, and the sound.
+    pub added: Vec<(usize, bool, Seg)>,
+    stress: Option<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -188,19 +220,42 @@ impl Env {
         match self {
             Self::FollowingSyllableVowel(_) => true,
             Self::Matcher(m) => m.needs_syllables(),
+            Self::Not(env) => env.needs_syllables(),
+            Self::Run(envs) => envs.iter().any(Self::needs_syllables),
             _ => false,
         }
     }
 
+    /// Whether this holds at `i`, the position beside the target on its
+    /// `right` or its left, or past the word's edge where `i` is `None`.
     fn at(
         &self,
         form: &Form,
         i: Option<usize>,
         target: usize,
+        right: bool,
         syllables: &[crate::form::Syllable],
         stress: Option<usize>,
     ) -> bool {
         match self {
+            Self::Not(env) => !env.at(form, i, target, right, syllables, stress),
+            Self::Run(envs) => {
+                let mut next = i;
+                envs.iter().enumerate().all(|(k, env)| {
+                    let here = next;
+                    if here.is_none() && k + 1 < envs.len() {
+                        return false;
+                    }
+                    next = here.and_then(|j| {
+                        if right {
+                            (j + 1 < form.segs.len()).then_some(j + 1)
+                        } else {
+                            j.checked_sub(1)
+                        }
+                    });
+                    env.at(form, here, target, right, syllables, stress)
+                })
+            }
             Self::Any => true,
             Self::WordEdge => i.is_none(),
             Self::Matcher(m) => i.is_some_and(|i| m.at(form, i, syllables, stress)),
@@ -220,7 +275,7 @@ impl Rewrite {
     fn apply(&self, id: PhonemeId) -> Option<PhonemeId> {
         match (self, CATALOG.get(id)) {
             (Rewrite::Delete | Rewrite::GeminateNext | Rewrite::Compensate, _) => None,
-            (Rewrite::Phone(p), _) => Some(*p),
+            (Rewrite::Phone(p) | Rewrite::Fuse(p) | Rewrite::Break(p, _), _) => Some(*p),
             (
                 Rewrite::Consonant {
                     place,
@@ -290,11 +345,14 @@ impl SoundChange {
         (0..form.segs.len())
             .filter(|&i| {
                 if !self.target.at(form, i, &syllables, accent)
-                    || !self.left.at(form, i.checked_sub(1), i, &syllables, accent)
+                    || !self
+                        .left
+                        .at(form, i.checked_sub(1), i, false, &syllables, accent)
                     || !self.right.at(
                         form,
                         (i + 1 < form.segs.len()).then_some(i + 1),
                         i,
+                        true,
                         &syllables,
                         accent,
                     )
@@ -353,14 +411,20 @@ impl SoundChange {
             None
         };
         let rhythmic = matches!(self.target, Matcher::RhythmicVowel { .. });
+        // A swap or a fusion takes the segment after its target too.
+        let pair = matches!(self.result, Rewrite::SwapNext | Rewrite::Fuse(_));
         let accent = stress.map(|s| syllables[s].nucleus);
         let eligible = move |i| {
-            self.target.at(form, i, &syllables, stress)
-                && self.left.at(form, i.checked_sub(1), i, &syllables, stress)
+            (!pair || i + 1 < form.segs.len())
+                && self.target.at(form, i, &syllables, stress)
+                && self
+                    .left
+                    .at(form, i.checked_sub(1), i, false, &syllables, stress)
                 && self.right.at(
                     form,
                     (i + 1 < form.segs.len()).then_some(i + 1),
                     i,
+                    true,
                     &syllables,
                     stress,
                 )
@@ -374,8 +438,11 @@ impl SoundChange {
             0
         };
         let mut after = 0;
+        // The first segment no earlier hit has taken: of two overlapping
+        // pairs, the one further left wins.
+        let mut free = 0;
         (0..form.segs.len()).filter_map(move |i| {
-            if !eligible(i) {
+            if i < free || !eligible(i) {
                 return None;
             }
             if rhythmic {
@@ -395,6 +462,22 @@ impl SoundChange {
             let out = match self.result {
                 Rewrite::Length(long) => Some(Seg { long, ..seg }),
                 Rewrite::Tone(change) => change.segment(form, i),
+                Rewrite::SwapNext => Some(form.segs[i + 1]),
+                Rewrite::Break(first, _) => Some(Seg {
+                    phone: first,
+                    long: false,
+                    tone: seg.tone.filter(|_| CATALOG.get(first).is_vowel()),
+                }),
+                // A vowel fused from a consonant and a vowel keeps the
+                // vowel's pitch.
+                Rewrite::Fuse(phone) => Some(Seg {
+                    phone,
+                    tone: seg
+                        .tone
+                        .or(form.segs[i + 1].tone)
+                        .filter(|_| CATALOG.get(phone).is_vowel()),
+                    ..seg
+                }),
                 _ => self.result.apply(seg.phone).map(|phone| Seg {
                     phone,
                     tone: seg.tone.filter(|_| CATALOG.get(phone).is_vowel()),
@@ -407,7 +490,16 @@ impl SoundChange {
                     .is_some_and(|(j, tone)| form.segs[j].tone != Some(tone)),
                 _ => false,
             };
-            (out != Some(seg) || pitch).then_some((i, out))
+            // These change the word even where the target itself stands.
+            let reshapes = matches!(
+                self.result,
+                Rewrite::Insert { .. } | Rewrite::Fuse(_) | Rewrite::Break(..)
+            );
+            let hit = out != Some(seg) || pitch || reshapes;
+            if hit && pair {
+                free = i + 2;
+            }
+            hit.then_some((i, out))
         })
     }
 
@@ -437,7 +529,7 @@ impl SoundChange {
 
     /// One actual outcome per input segment, including neighbor lengthening
     /// and last-vowel protection. A validated no-hit input needs no allocation.
-    pub(crate) fn outcome(&self, form: &Form, rule: StressRule) -> Option<Vec<Option<Seg>>> {
+    pub(crate) fn outcome(&self, form: &Form, rule: StressRule) -> Option<Outcome> {
         let mut hits = self.hits(form, rule);
         let first = hits.next();
         if first.is_none()
@@ -451,8 +543,22 @@ impl SoundChange {
             return None;
         }
         let mut outcome: Vec<Option<Seg>> = form.segs.iter().copied().map(Some).collect();
+        let mut added = Vec::new();
+        // An added vowel takes the pitch of the vowel it stands beside.
+        let beside = |i: usize, phone: PhonemeId| Seg {
+            phone,
+            long: false,
+            tone: form.segs[i].tone.filter(|_| CATALOG.get(phone).is_vowel()),
+        };
         for (i, out) in first.into_iter().chain(hits) {
             outcome[i] = out;
+            match self.result {
+                Rewrite::SwapNext => outcome[i + 1] = Some(form.segs[i]),
+                Rewrite::Fuse(_) => outcome[i + 1] = None,
+                Rewrite::Insert { phone, after } => added.push((i, after, beside(i, phone))),
+                Rewrite::Break(_, second) => added.push((i, true, beside(i, second))),
+                _ => {}
+            }
             let neighbor = match self.result {
                 Rewrite::GeminateNext => {
                     (i + 1 < form.segs.len() && !form.is_vowel(i + 1)).then_some(i + 1)
@@ -474,30 +580,47 @@ impl SoundChange {
                 seg.tone = Some(tone);
             }
         }
-        let vowel_survives = outcome
-            .iter()
-            .any(|o| o.is_some_and(|s| CATALOG.get(s.phone).is_vowel()));
+        let vowel = |s: &Seg| CATALOG.get(s.phone).is_vowel();
+        let vowel_survives = outcome.iter().any(|o| o.as_ref().is_some_and(vowel))
+            || added.iter().any(|(.., s)| vowel(s));
         if !vowel_survives && let Some(i) = (0..form.segs.len()).rev().find(|&i| form.is_vowel(i)) {
             outcome[i] = Some(form.segs[i]);
         }
-        Some(outcome)
+        // Trading places moves no vowel past another, so the stressed
+        // vowel is still the same one counted from the start.
+        let stress = if matches!(self.result, Rewrite::SwapNext) {
+            form.stress.filter(|&s| s < form.vowel_count())
+        } else {
+            form.stress_after(&outcome, &added)
+        };
+        Some(Outcome {
+            segs: outcome,
+            added,
+            stress,
+        })
     }
 
-    pub(crate) fn from_outcome(form: &Form, outcome: &[Option<Seg>], edge: usize) -> (Form, usize) {
-        let stress = form.stress_after(outcome);
-        let mut segs = Vec::with_capacity(form.segs.len());
+    pub(crate) fn from_outcome(form: &Form, outcome: &Outcome, edge: usize) -> (Form, usize) {
+        let stress = outcome.stress;
+        let mut added = outcome.added.iter().peekable();
+        let mut segs = Vec::with_capacity(form.segs.len() + outcome.added.len());
         let mut new_index = if form.boundaries.is_empty() {
             Vec::new()
         } else {
             Vec::with_capacity(form.segs.len() + 1)
         };
         let mut mapped_edge = 0;
-        for (i, out) in outcome.iter().enumerate() {
+        for (i, out) in outcome.segs.iter().enumerate() {
             if !form.boundaries.is_empty() {
                 new_index.push(segs.len());
             }
-            if let Some(seg) = out {
-                segs.push(*seg);
+            // An added sound stays on its own segment's side of a morpheme
+            // boundary and of the grammatical edge.
+            let beside = added.next_if(|&&(at, ..)| at == i).copied();
+            let before = beside.filter(|&(_, after, _)| !after).map(|(.., seg)| seg);
+            let after = beside.filter(|&(_, after, _)| after).map(|(.., seg)| seg);
+            for seg in before.into_iter().chain(*out).chain(after) {
+                segs.push(seg);
                 mapped_edge += usize::from(i < edge);
             }
         }
@@ -770,6 +893,126 @@ mod tests {
         assert_eq!(out.ipa(), "ktim");
         assert_eq!(edge, 3);
         assert_eq!(out.stress, Some(0));
+    }
+
+    #[test]
+    fn added_and_traded_sounds_keep_stress_boundaries_and_edges() {
+        let rule = |target: Matcher, result: Rewrite, left: Env, right: Env| SoundChange {
+            id: "test".into(),
+            target,
+            result,
+            left,
+            right,
+        };
+        // A vowel added before the stressed one moves the count along.
+        let prothesis = rule(
+            Matcher::Phone(id("s")),
+            Rewrite::Insert {
+                phone: id("e"),
+                after: false,
+            },
+            Env::WordEdge,
+            Env::Matcher(Matcher::AnyConsonant),
+        );
+        let mut word = form("skola");
+        word.stress = Some(0);
+        word.boundaries = vec![3];
+        let (out, edge) = prothesis.apply_with_edge(&word, StressRule::Free, 3);
+        assert_eq!(out.ipa(), "eskola");
+        assert_eq!((out.stress, edge), (Some(1), 4));
+        assert_eq!(out.boundaries, vec![4]);
+        // A sound added after its segment stays on that segment's side of
+        // a boundary and of the edge; one added before stays on its own.
+        let after_t = rule(
+            Matcher::Phone(id("t")),
+            Rewrite::Insert {
+                phone: id("e"),
+                after: true,
+            },
+            Env::Any,
+            Env::Matcher(Matcher::AnyConsonant),
+        );
+        let mut word = form("patka");
+        word.boundaries = vec![3];
+        let (out, edge) = after_t.apply_with_edge(&word, StressRule::Initial, 3);
+        assert_eq!(out.ipa(), "pateka");
+        assert_eq!((out.boundaries.clone(), edge), (vec![4], 4));
+        let before_k = rule(
+            Matcher::Phone(id("k")),
+            Rewrite::Insert {
+                phone: id("e"),
+                after: false,
+            },
+            Env::Matcher(Matcher::AnyConsonant),
+            Env::Any,
+        );
+        let (out, edge) = before_k.apply_with_edge(&word, StressRule::Initial, 3);
+        assert_eq!(out.ipa(), "pateka");
+        assert_eq!((out.boundaries.clone(), edge), (vec![3], 3));
+        // Trading places keeps the stress on the same vowel.
+        let swap = rule(
+            Matcher::Phone(id("r")),
+            Rewrite::SwapNext,
+            Env::Any,
+            Env::Any,
+        );
+        let mut word = form("tra");
+        word.stress = Some(0);
+        assert_eq!(swap.apply(&word, StressRule::Free).ipa(), "tar");
+        assert_eq!(swap.apply(&word, StressRule::Free).stress, Some(0));
+        let mut word = form("katra");
+        word.stress = Some(1);
+        let out = swap.apply(&word, StressRule::Free);
+        assert_eq!((out.ipa(), out.stress), ("katar".into(), Some(1)));
+        // A fused pair is one sound: the stress stays with it, and a word
+        // never loses its last vowel to a fusion.
+        let fuse = rule(
+            Matcher::Phone(id("a")),
+            Rewrite::Fuse(id("e")),
+            Env::Any,
+            Env::Matcher(Matcher::Phone(id("i"))),
+        );
+        let mut word = form("kaita");
+        word.stress = Some(0);
+        let out = fuse.apply(&word, StressRule::Free);
+        assert_eq!((out.ipa(), out.stress), ("keta".into(), Some(0)));
+        let mut word = form("takai");
+        word.stress = Some(2);
+        let out = fuse.apply(&word, StressRule::Free);
+        assert_eq!((out.ipa(), out.stress), ("take".into(), Some(1)));
+        let to_glide = rule(
+            Matcher::Phone(id("i")),
+            Rewrite::Fuse(id("j")),
+            Env::Any,
+            Env::Matcher(Matcher::Phone(id("a"))),
+        );
+        assert_eq!(
+            to_glide.apply(&form("tia"), StressRule::Initial).ipa(),
+            "tja"
+        );
+        // A broken vowel hands its stress to the vowel that remains.
+        let breaking = rule(
+            Matcher::Phone(id("e")),
+            Rewrite::Break(id("j"), id("e")),
+            Env::Any,
+            Env::Any,
+        );
+        let mut word = form("pate");
+        word.stress = Some(1);
+        let out = breaking.apply(&word, StressRule::Free);
+        assert_eq!((out.ipa(), out.stress), ("patje".into(), Some(1)));
+        // The pair needs its second sound, and a run stops at the edge.
+        assert_eq!(swap.apply(&form("tar"), StressRule::Initial).ipa(), "tar");
+        let run = rule(
+            Matcher::Phone(id("t")),
+            Rewrite::Phone(id("d")),
+            Env::Run(vec![Env::Matcher(Matcher::AnyVowel), Env::WordEdge]),
+            Env::Not(Box::new(Env::Matcher(Matcher::Phone(id("i"))))),
+        );
+        assert_eq!(
+            run.apply(&form("atati"), StressRule::Initial).ipa(),
+            "adati"
+        );
     }
 
     #[test]

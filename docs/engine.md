@@ -691,6 +691,20 @@ This bookkeeping makes no random draws and does not itself change replay.
   `a > aː` lengthens, and `aː > eː` changes quality and keeps length.
   Changing both on one line is refused in favour of two lines. A long
   sound can also be lost or shortened by class (`aː > ∅`, `aː > [short]`).
+  Each side of the blank holds up to three positions (`_ sC`, `V s _`),
+  read outward from the target, with `#` only at the far end. `!s` holds
+  wherever s does not stand, the word's edge included, and takes one
+  sound or one class. Four shapes change the count of sounds. A sound
+  appears (`∅ > e / # _ sC`, epenthesis): the rule hangs it on the sound
+  after the blank, or on the one before where none follows. Two sounds
+  trade places (`sk > ks`, or `[fricative] > [swap next] / _ [stop]`,
+  metathesis). Two become one (`ai > e`). One becomes two (`e > je`).
+  Sounds written together read as the longest spelling the catalog knows,
+  so `ts` is the affricate and `t s` the two sounds. Every match reads the
+  word as it stood, so `∅ > a / C _ C` fills each gap at once, and of two
+  overlapping pairs the left one is taken. An added sound stays on its
+  neighbour's side of a morpheme boundary, and lexical stress stays on
+  its vowel. The engine's own catalog draws none of these shapes.
   `sound_hints` reads a draft for romanizations the catalog writes
   otherwise (`sh` for ʃ, `:` for ː, a doubled letter for length, and,
   given an inventory, a letter the language lacks whose IPA it has).
@@ -699,9 +713,9 @@ This bookkeeping makes no random draws and does not itself change replay.
   `Law::writable_source` gives a law in notation only when that text reads
   back as the law's own rules. About two thirds of the catalog's laws do.
   `stress > initial|penult|final|weight|free` sets one stress rule per law.
-  Each target, result, and immediate environment carries one catalog
-  segment or class: no insertion, metathesis, multi-segment replacement,
-  or authored tone. Unsupported combinations are reported rather than
+  A target or result holds at most two sounds, and a class stands alone
+  there: no longer replacement, no class on either side of a merger, and
+  no authored tone. Unsupported combinations are reported rather than
   dropping constraints. The title is required and limited to 60 characters.
   Actions save the compiled rules and display source separately; replay
   never reparses the source. The id includes title slug and generation;

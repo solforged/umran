@@ -203,19 +203,32 @@ impl Form {
 
     /// Keep lexical stress on its surviving nucleus. If that nucleus is
     /// deleted, use the next surviving vowel, or the last if none follows.
-    pub(crate) fn stress_after(&self, outcome: &[Option<Seg>]) -> Option<usize> {
+    /// A vowel `added` beside a segment (after it or before) counts where
+    /// it stands.
+    pub(crate) fn stress_after(
+        &self,
+        outcome: &[Option<Seg>],
+        added: &[(usize, bool, Seg)],
+    ) -> Option<usize> {
         let stressed = self.stress?;
         let nucleus = (0..self.segs.len())
             .filter(|&i| self.is_vowel(i))
             .nth(stressed)?;
+        let vowel = |s: &Seg| CATALOG.get(s.phone).is_vowel();
+        let added_before = added
+            .iter()
+            .filter(|(at, after, s)| vowel(s) && (*at < nucleus || *at == nucleus && !after))
+            .count();
         let before = outcome[..nucleus]
             .iter()
-            .filter(|s| s.is_some_and(|s| CATALOG.get(s.phone).is_vowel()))
-            .count();
+            .filter(|s| s.as_ref().is_some_and(vowel))
+            .count()
+            + added_before;
         let count = outcome
             .iter()
-            .filter(|s| s.is_some_and(|s| CATALOG.get(s.phone).is_vowel()))
-            .count();
+            .filter(|s| s.as_ref().is_some_and(vowel))
+            .count()
+            + added.iter().filter(|(.., s)| vowel(s)).count();
         (count > 0).then(|| before.min(count - 1))
     }
 

@@ -211,7 +211,9 @@ impl Law {
                 if minimal.blocks(&current, &next) {
                     continue;
                 }
-                for (i, &out) in outcome.iter().enumerate() {
+                // A sound that only appears replaces none, so it weighs
+                // nothing here.
+                for (i, &out) in outcome.segs.iter().enumerate() {
                     let old = current.segs[i];
                     if out == Some(old) {
                         continue;
@@ -220,7 +222,7 @@ impl Law {
                         // Assimilation adopts the following surviving
                         // consonant's sound as well as its length.
                         Rewrite::GeminateNext if out.is_none() => {
-                            outcome.get(i + 1).and_then(|s| s.map(|s| s.phone))
+                            outcome.segs.get(i + 1).and_then(|s| s.map(|s| s.phone))
                         }
                         _ => out.map(|s| s.phone),
                     };

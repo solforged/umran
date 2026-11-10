@@ -5,7 +5,7 @@ import type { SoundHint } from "../model";
 type Field = HTMLInputElement | HTMLTextAreaElement;
 
 /// The law notation's own marks, offered beside a language's sounds.
-const NOTATION = [">", "/", "_", "#", "∅", "C", "V"];
+const NOTATION = [">", "/", "_", "#", "∅", "!", "C", "V"];
 
 /// A language's sounds as keys that type their catalog IPA where the caret
 /// is, so the author need not hunt for ʃ or ɾ; and, beneath, the sounds the

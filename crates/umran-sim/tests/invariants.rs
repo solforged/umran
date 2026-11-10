@@ -146,6 +146,9 @@ fn environment(
             .position(|s| s.onset.contains(&at) || s.nucleus == at || s.coda.contains(&at))
             .and_then(|n| syllables.get(n + 1))
             .is_some_and(|s| contextual(matcher, form, s.nucleus, syllables, stress)),
+        // Only an author writes these. The engine's own laws, which this
+        // oracle checks, never hold them.
+        Env::Not(_) | Env::Run(_) => unreachable!("an authored environment"),
     }
 }
 
@@ -202,6 +205,7 @@ fn reference_rule(rule: &SoundChange, before: &Form, stress_rule: StressRule) ->
             Env::Matcher(matcher) => needs_syllables(matcher),
             Env::FollowingSyllableVowel(_) => true,
             Env::Any | Env::WordEdge => false,
+            Env::Not(_) | Env::Run(_) => unreachable!("an authored environment"),
         });
     let syllables = if needs {
         before.syllables()

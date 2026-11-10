@@ -196,8 +196,58 @@ fn line(text: &str, stress: &mut Option<StressRule>) -> Result<Vec<SoundChange>,
     };
     if target.is_empty() || result.is_empty() {
         return Err(shape(
-            "target and result are required; insertion is not supported",
+            "target and result are required; write ∅ where there is no sound",
         ));
+    }
+    let lefts = side(left, false)?;
+    let rights = side(right, true)?;
+    if nothing(target) {
+        return insertion(result, &lefts, &rights);
+    }
+    if let Some([first, second]) = pair(target) {
+        if rights.iter().flatten().any(reaches) {
+            return Err(unsupported(".. reads on from a single target"));
+        }
+        let result = match sounds(result).as_deref() {
+            Ok([a, b]) if (*a, *b) == (second, first) => Rewrite::SwapNext,
+            Ok([(phone, false)]) => Rewrite::Fuse(*phone),
+            Ok([(_, true)]) => {
+                return Err(unsupported(
+                    "change length on its own line: ai > e, then e > eː",
+                ));
+            }
+            _ => {
+                return Err(unsupported(
+                    "two sounds may trade places (sk > ks) or become one (ai > e)",
+                ));
+            }
+        };
+        // The second sound is the first thing to the target's right.
+        let mut after = vec![vec![Env::Matcher(sound_matcher(second))]];
+        after.extend(rights);
+        return rules(
+            vec![sound_matcher(first)],
+            &[result],
+            &runs(&lefts, false),
+            &runs(&after, true),
+        );
+    }
+    // A class beside another sound is not a segment the catalog lacks.
+    let mixed = |text: &str| {
+        elements(text).is_ok_and(|tokens| {
+            tokens.len() > 1
+                && tokens
+                    .iter()
+                    .any(|(_, token)| matches!(*token, "C" | "V") || token.starts_with('['))
+        })
+    };
+    if mixed(target) {
+        return Err(unsupported(
+            "a class changes alone; to trade places write r > [swap next] / _ V",
+        ));
+    }
+    if mixed(result) {
+        return Err(unsupported("a result is one class, or one or two sounds"));
     }
     let targets = matchers(target, true)?;
     let results = match (long_phone(target), long_phone(result)) {
@@ -214,11 +264,24 @@ fn line(text: &str, stress: &mut Option<StressRule>) -> Result<Vec<SoundChange>,
         }
         (None, None) => rewrites(result)?,
     };
-    let lefts = environments(left, false)?;
-    let rights = environments(right, true)?;
+    rules(
+        targets,
+        &results,
+        &runs(&lefts, false),
+        &runs(&rights, true),
+    )
+}
+
+/// One rule for every way the line's classes expand.
+fn rules(
+    targets: Vec<Matcher>,
+    results: &[Rewrite],
+    lefts: &[Env],
+    rights: &[Env],
+) -> Result<Vec<SoundChange>, Error> {
     let mut out = Vec::new();
     for target in targets {
-        for result in &results {
+        for result in results {
             let incompatible = match result {
                 Rewrite::Vowel { .. } => !matcher_vocalic(&target),
                 Rewrite::Consonant { .. } => matcher_vocalic(&target),
@@ -227,8 +290,8 @@ fn line(text: &str, stress: &mut Option<StressRule>) -> Result<Vec<SoundChange>,
             if incompatible {
                 return Err(shape("result features cannot be carried by the target"));
             }
-            for left in &lefts {
-                for right in &rights {
+            for left in lefts {
+                for right in rights {
                     out.push(SoundChange {
                         id: String::new(),
                         target: target.clone(),
@@ -243,12 +306,238 @@ fn line(text: &str, stress: &mut Option<StressRule>) -> Result<Vec<SoundChange>,
     Ok(out)
 }
 
+/// The zero is ∅, 0, or capital Ø; ø is a vowel.
+fn nothing(text: &str) -> bool {
+    matches!(text, "∅" | "0" | "Ø")
+}
+
+/// A sound that appears where none was (epenthesis). A rule needs a
+/// segment to act on, so the new sound hangs on a neighbour: the sound
+/// after the blank where the line names one, otherwise the sound before.
+fn insertion(
+    result: &str,
+    lefts: &[Vec<Env>],
+    rights: &[Vec<Env>],
+) -> Result<Vec<SoundChange>, Error> {
+    if long_phone(result).is_some() {
+        return Err(unsupported(
+            "a new sound is short; lengthen it on its own line",
+        ));
+    }
+    let phone = segment(result)?;
+    let anchors = |position: &Vec<Env>| -> Option<Vec<Matcher>> {
+        position
+            .iter()
+            .map(|env| match env {
+                Env::Matcher(m) => Some(m.clone()),
+                _ => None,
+            })
+            .collect()
+    };
+    let (targets, after, lefts, rights) = if let Some(found) = rights.first().and_then(anchors) {
+        (found, false, lefts, &rights[1..])
+    } else if let Some(found) = lefts.last().and_then(anchors) {
+        (found, true, &lefts[..lefts.len() - 1], rights)
+    } else {
+        return Err(shape(
+            "say what the new sound stands beside, as in ∅ > e / # _ sC",
+        ));
+    };
+    rules(
+        targets,
+        &[Rewrite::Insert { phone, after }],
+        &runs(lefts, false),
+        &runs(rights, true),
+    )
+}
+
+/// Two catalog sounds written as a target, as `sk` or `ai`. A spelling the
+/// catalog reads as one sound, as `ts`, stays that sound; write `t s`.
+fn pair(text: &str) -> Option<[(PhonemeId, bool); 2]> {
+    if text.starts_with('[') || CATALOG.id_by_ipa(text).is_some() || long_phone(text).is_some() {
+        return None;
+    }
+    <[_; 2]>::try_from(sounds(text).ok()?).ok()
+}
+
+/// Catalog sounds written together or apart, each with whether it is
+/// written long. The longest spelling the catalog knows is read first.
+fn sounds(text: &str) -> Result<Vec<(PhonemeId, bool)>, Error> {
+    let canonical = crate::phoneme::canonical_ipa(text);
+    let mut rest = canonical.trim();
+    let mut out = Vec::new();
+    while !rest.is_empty() {
+        let Some(found) = CATALOG
+            .segments
+            .iter()
+            .filter(|p| rest.starts_with(p.ipa()))
+            .max_by_key(|p| p.ipa().len())
+        else {
+            return Err(segment(text)
+                .err()
+                .unwrap_or_else(|| shape(format!("cannot read {text}"))));
+        };
+        rest = &rest[found.ipa().len()..];
+        let long = rest.starts_with('ː');
+        if long {
+            rest = &rest['ː'.len_utf8()..];
+        }
+        out.push((CATALOG.id_by_ipa(found.ipa()).expect("catalog sound"), long));
+        rest = rest.trim_start();
+    }
+    Ok(out)
+}
+
+fn sound_matcher((phone, long): (PhonemeId, bool)) -> Matcher {
+    if long {
+        Matcher::Length {
+            target: Box::new(Matcher::Phone(phone)),
+            long,
+        }
+    } else {
+        Matcher::Phone(phone)
+    }
+}
+
+fn reaches(env: &Env) -> bool {
+    matches!(env, Env::FollowingSyllableVowel(_))
+}
+
+/// One side of the blank cut into what stands at each position: `#`, `C`,
+/// `V`, a bracketed class, or a run of sounds, each perhaps negated by `!`.
+fn elements(text: &str) -> Result<Vec<(bool, &str)>, Error> {
+    let mut out = Vec::new();
+    let mut rest = text.trim_start();
+    while let Some(first) = rest.chars().next() {
+        let negated = first == '!';
+        if negated {
+            rest = rest[1..].trim_start();
+        }
+        let end = match rest.chars().next() {
+            None => return Err(shape("! needs a sound or a class after it")),
+            Some('#' | 'C' | 'V') => 1,
+            Some('[') => rest
+                .find(']')
+                .map(|at| at + 1)
+                .ok_or_else(|| shape("expected [feature terms]"))?,
+            Some(_) => rest
+                .find(|c: char| c.is_whitespace() || matches!(c, '#' | 'C' | 'V' | '[' | '!'))
+                .unwrap_or(rest.len()),
+        };
+        if end == 0 {
+            return Err(shape("! needs a sound or a class after it"));
+        }
+        out.push((negated, &rest[..end]));
+        rest = rest[end..].trim_start();
+    }
+    Ok(out)
+}
+
+/// One side of the blank as its positions in reading order. Each position
+/// lists the alternatives its class expands to.
+fn side(text: &str, right: bool) -> Result<Vec<Vec<Env>>, Error> {
+    if text.starts_with("..") {
+        return Ok(vec![environments(text, right)?]);
+    }
+    let mut out: Vec<Vec<Env>> = Vec::new();
+    for (negated, token) in elements(text)? {
+        let single = matches!(token, "#" | "C" | "V")
+            || token.starts_with('[')
+            || long_phone(token).is_some()
+            || CATALOG.id_by_ipa(token).is_some();
+        let mut found: Vec<Vec<Env>> = match sounds(token) {
+            Ok(several) if !single => several
+                .into_iter()
+                .map(|sound| vec![Env::Matcher(sound_matcher(sound))])
+                .collect(),
+            _ => vec![environments(token, right)?],
+        };
+        if negated {
+            // "Neither bilabial nor labiodental" is not a choice between
+            // two rules, so a class that expands cannot be negated.
+            let [position] = &mut found[..] else {
+                return Err(unsupported(format!("!{token} must name one sound")));
+            };
+            let [env] = &position[..] else {
+                return Err(unsupported(format!("!{token} must name one class")));
+            };
+            *position = vec![Env::Not(Box::new(env.clone()))];
+        }
+        out.extend(found);
+    }
+    let edge = |position: &Vec<Env>| {
+        position.iter().any(|env| match env {
+            Env::WordEdge => true,
+            Env::Not(inner) => **inner == Env::WordEdge,
+            _ => false,
+        })
+    };
+    let outer = if right {
+        out.len().saturating_sub(1)
+    } else {
+        0
+    };
+    if out
+        .iter()
+        .enumerate()
+        .any(|(at, position)| at != outer && edge(position))
+    {
+        return Err(shape("# is the edge of the word; nothing stands beyond it"));
+    }
+    if out.len() > 3 {
+        return Err(unsupported(
+            "at most three sounds on each side of the blank",
+        ));
+    }
+    Ok(out)
+}
+
+/// Every environment the positions of one side spell, read outward from
+/// the blank.
+fn runs(positions: &[Vec<Env>], right: bool) -> Vec<Env> {
+    let mut outward: Vec<&Vec<Env>> = positions.iter().collect();
+    if !right {
+        outward.reverse();
+    }
+    match outward[..] {
+        [] => vec![Env::Any],
+        [only] => only.clone(),
+        _ => {
+            let mut out: Vec<Vec<Env>> = vec![Vec::new()];
+            for position in outward {
+                out = out
+                    .into_iter()
+                    .flat_map(|run| {
+                        position.iter().map(move |env| {
+                            let mut run = run.clone();
+                            run.push(env.clone());
+                            run
+                        })
+                    })
+                    .collect();
+            }
+            out.into_iter().map(Env::Run).collect()
+        }
+    }
+}
+
 /// Plain words for an accepted line, read by the author beside the notation.
 fn reading(text: &str) -> String {
     let (a, rest) = text.split_once('>').expect("checked rule");
     let (b, env) = rest
         .split_once('/')
         .map_or((rest, None), |(b, e)| (b, Some(e.trim())));
+    let (a, result) = (a.trim(), b.trim());
+    if a.eq_ignore_ascii_case("stress") {
+        let place = match result.to_ascii_lowercase().as_str() {
+            "initial" => "on the first syllable",
+            "penult" => "on the next to last syllable",
+            "final" => "on the last syllable",
+            "weight" => "on a heavy next to last syllable, otherwise the one before it",
+            _ => "where each word has it",
+        };
+        return format!("stress falls {place}");
+    }
     // Capital C and V are the classes; lower-case c and v are sounds.
     let class = |term: &str| -> String {
         let term = term.trim();
@@ -265,49 +554,100 @@ fn reading(text: &str) -> String {
             },
         }
     };
+    // One side of the blank: its sounds in words, whether it reaches the
+    // word's edge, and whether it is one sound ruled out.
+    let named = |side: &str| -> (String, bool, bool) {
+        let tokens = elements(side).unwrap_or_default();
+        let edge = tokens.contains(&(false, "#"));
+        let sounds: Vec<&(bool, &str)> = tokens.iter().filter(|t| **t != (false, "#")).collect();
+        if let [(true, only)] = sounds[..] {
+            return (class(only), edge, true);
+        }
+        let names: Vec<String> = sounds
+            .iter()
+            .map(|(negated, token)| {
+                if *negated {
+                    format!("anything but {}", class(token))
+                } else {
+                    class(token)
+                }
+            })
+            .collect();
+        (names.join(" then "), edge, false)
+    };
     let context = match env {
         None => String::new(),
-        Some("_ #") => " at the end of a word".into(),
-        Some("# _") => " at the start of a word".into(),
         Some(e) => {
             let (left, right) = e.split_once('_').unwrap_or((e, ""));
             let (left, right) = (left.trim(), right.trim());
-            match (left.is_empty(), right.strip_prefix("..")) {
-                (true, Some(next)) => format!(" when the next syllable has {}", class(next.trim())),
-                (false, Some(next)) => format!(
-                    " after {} when the next syllable has {}",
-                    class(left),
-                    class(next.trim())
-                ),
-                (true, None) if right.is_empty() => String::new(),
-                (true, None) => format!(" before {}", class(right)),
-                (false, None) if right.is_empty() => format!(" after {}", class(left)),
-                (false, None) => format!(" between {} and {}", class(left), class(right)),
+            let (after, starts, not_after) = named(left);
+            let (after_words, except_after) = if not_after {
+                (
+                    format!("anything but {after}"),
+                    format!(" except after {after}"),
+                )
+            } else {
+                (after.clone(), format!(" after {after}"))
+            };
+            if let Some(next) = right.strip_prefix("..") {
+                let next = class(next.trim());
+                let place = if after.is_empty() {
+                    String::new()
+                } else {
+                    except_after
+                };
+                format!("{place} when the next syllable has {next}")
+            } else {
+                let (before, ends, not_before) = named(right);
+                let mut place = match (after.is_empty(), before.is_empty()) {
+                    (true, true) => String::new(),
+                    (false, true) => except_after,
+                    (true, false) if not_before => format!(" except before {before}"),
+                    (true, false) => format!(" before {before}"),
+                    (false, false) if not_before => {
+                        format!(" between {after_words} and anything but {before}")
+                    }
+                    (false, false) => format!(" between {after_words} and {before}"),
+                };
+                place.push_str(match (starts, ends) {
+                    (true, true) => " as a whole word",
+                    (true, false) => " at the start of a word",
+                    (false, true) => " at the end of a word",
+                    (false, false) => "",
+                });
+                place
             }
         }
     };
-    let result = b.trim();
-    if a.trim().eq_ignore_ascii_case("stress") {
-        let place = match result.to_ascii_lowercase().as_str() {
-            "initial" => "on the first syllable",
-            "penult" => "on the next to last syllable",
-            "final" => "on the last syllable",
-            "weight" => "on a heavy next to last syllable, otherwise the one before it",
-            _ => "where each word has it",
-        };
-        return format!("stress falls {place}");
+    if nothing(a) {
+        return format!("{result} appears{context}");
     }
-    let shortened = a.trim().strip_suffix('ː') == Some(result);
-    let lengthened = result.strip_suffix('ː') == Some(a.trim());
-    // The zero is ∅, 0, or capital Ø, as `rewrites` reads it; ø is a vowel.
+    if let Some([first, second]) = pair(a) {
+        let said = |(phone, long): (PhonemeId, bool)| {
+            format!(
+                "{}{}",
+                CATALOG.get(phone).ipa(),
+                if long { "ː" } else { "" }
+            )
+        };
+        let (first, second) = (said(first), said(second));
+        return if sounds(result).is_ok_and(|found| found.len() == 2) {
+            format!("{first} and {second} trade places{context}")
+        } else {
+            format!("{first} and {second} become {result}{context}")
+        };
+    }
+    let shortened = a.strip_suffix('ː') == Some(result);
+    let lengthened = result.strip_suffix('ː') == Some(a);
     let outcome = match result.to_ascii_lowercase().as_str() {
         _ if shortened => "shortens".to_string(),
         _ if lengthened => "lengthens".to_string(),
-        _ if matches!(result, "∅" | "0" | "Ø") => "is lost".to_string(),
+        _ if nothing(result) => "is lost".to_string(),
         "[long]" => "lengthens".into(),
         "[short]" => "shortens".into(),
         "[lengthen before]" => "is lost and lengthens the vowel before it".into(),
         "[geminate next]" => "is lost and doubles the consonant after it".into(),
+        "[swap next]" => "trades places with the sound after it".into(),
         lower => match lower.strip_prefix('[').and_then(|t| t.strip_suffix(']')) {
             Some(terms) => format!("becomes {}", terms.trim()),
             None => format!("becomes {result}"),
@@ -521,12 +861,13 @@ fn matcher_vocalic(m: &Matcher) -> bool {
     }
 }
 fn rewrites(text: &str) -> Result<Vec<Rewrite>, Error> {
-    if matches!(text, "∅" | "0" | "Ø") {
+    if nothing(text) {
         return Ok(vec![Rewrite::Delete]);
     }
     match text.to_ascii_lowercase().as_str() {
         "[lengthen before]" => return Ok(vec![Rewrite::Compensate]),
         "[geminate next]" => return Ok(vec![Rewrite::GeminateNext]),
+        "[swap next]" => return Ok(vec![Rewrite::SwapNext]),
         _ => {}
     }
     if text == "C" {
@@ -545,6 +886,18 @@ fn rewrites(text: &str) -> Result<Vec<Rewrite>, Error> {
         }]);
     }
     if !text.starts_with('[') {
+        // One sound may become two, as e > je.
+        if CATALOG.id_by_ipa(text).is_none()
+            && let Ok(found) = sounds(text)
+            && let [(first, first_long), (second, second_long)] = found[..]
+        {
+            if first_long || second_long {
+                return Err(unsupported(
+                    "the two new sounds are short; lengthen one on its own line",
+                ));
+            }
+            return Ok(vec![Rewrite::Break(first, second)]);
+        }
         return Ok(vec![Rewrite::Phone(segment(text)?)]);
     }
     let c = Class::parse(text)?;
@@ -766,7 +1119,7 @@ fn segment(text: &str) -> Result<PhonemeId, Error> {
         return Ok(id);
     }
     if CATALOG.parse_ipa(text).is_some_and(|p| p.len() > 1) {
-        return Err(unsupported("only one segment each side is supported"));
+        return Err(unsupported("at most two sounds change at once"));
     }
     // An unknown symbol has no feature bundle. Use the longest recognizable
     // IPA prefix as evidence; score catalog neighbors by integer feature overlap.
@@ -953,6 +1306,9 @@ fn matcher_source(m: &Matcher) -> String {
             backness,
             rounded,
         } => vowel_source(*height, *backness, *rounded),
+        Matcher::Length { target, long: true } if matches!(**target, Matcher::Phone(_)) => {
+            format!("{}ː", matcher_source(target))
+        }
         Matcher::Length { target, long } => {
             wrap_source(target, if *long { "long" } else { "short" })
         }
@@ -964,15 +1320,97 @@ fn matcher_source(m: &Matcher) -> String {
         Matcher::RhythmicVowel { .. } => "[rhythmic vowel]".into(),
     }
 }
-fn environment_source(e: &Env) -> String {
+/// One side of the blank in reading order.
+fn environment_source(e: &Env, right: bool) -> String {
     match e {
         Env::Any => String::new(),
         Env::WordEdge => "#".into(),
         Env::Matcher(m) => matcher_source(m),
         Env::FollowingSyllableVowel(m) => format!(".. {}", matcher_source(m)),
+        Env::Not(inner) => format!("!{}", environment_source(inner, right)),
+        Env::Run(envs) => {
+            let mut parts: Vec<String> = envs
+                .iter()
+                .map(|env| environment_source(env, right))
+                .collect();
+            if !right {
+                parts.reverse();
+            }
+            parts.join(" ")
+        }
+    }
+}
+/// Two sounds side by side, set apart where the catalog would read the
+/// pair as one sound.
+fn beside(a: &str, b: &str) -> String {
+    if CATALOG.id_by_ipa(&format!("{a}{b}")).is_some() || a.ends_with('ː') {
+        format!("{a} {b}")
+    } else {
+        format!("{a}{b}")
     }
 }
 fn rule_source(rule: &SoundChange) -> String {
+    let ipa = |p: &PhonemeId| CATALOG.get(*p).ipa();
+    let target = matcher_source(&rule.target);
+    let (left, right) = (
+        environment_source(&rule.left, false),
+        environment_source(&rule.right, true),
+    );
+    let around = |left: &str, right: &str| {
+        if left.is_empty() && right.is_empty() {
+            String::new()
+        } else {
+            format!(" / {left} _ {right}")
+        }
+    };
+    let join = |a: &str, b: &str| {
+        [a, b]
+            .iter()
+            .filter(|s| !s.is_empty())
+            .copied()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    match &rule.result {
+        // The blank stands where the new sound appears, beside its anchor.
+        Rewrite::Insert {
+            phone,
+            after: false,
+        } => {
+            return format!(
+                "∅ > {}{}",
+                ipa(phone),
+                around(&left, &join(&target, &right))
+            );
+        }
+        Rewrite::Insert { phone, after: true } => {
+            return format!(
+                "∅ > {}{}",
+                ipa(phone),
+                around(&join(&left, &target), &right)
+            );
+        }
+        // The second sound of the pair is the first thing to the right.
+        Rewrite::Fuse(phone) => {
+            let (second, rest) = match &rule.right {
+                Env::Run(envs) => (
+                    envs.first().map(|env| environment_source(env, true)),
+                    environment_source(&Env::Run(envs[1..].to_vec()), true),
+                ),
+                Env::Any => (None, String::new()),
+                only => (Some(environment_source(only, true)), String::new()),
+            };
+            if let Some(second) = second {
+                return format!(
+                    "{} > {}{}",
+                    beside(&target, &second),
+                    ipa(phone),
+                    around(&left, &rest)
+                );
+            }
+        }
+        _ => {}
+    }
     let result = match &rule.result {
         Rewrite::Phone(p) => CATALOG.get(*p).ipa().into(),
         Rewrite::Consonant {
@@ -991,17 +1429,12 @@ fn rule_source(rule: &SoundChange) -> String {
         Rewrite::Compensate => "[lengthen before]".into(),
         Rewrite::GeminateNext => "[geminate next]".into(),
         Rewrite::Tone(tone) => format!("[tone {tone:?}]"),
+        Rewrite::SwapNext => "[swap next]".into(),
+        Rewrite::Break(first, second) => beside(ipa(first), ipa(second)),
+        Rewrite::Fuse(phone) => format!("[fuse {}]", ipa(phone)),
+        Rewrite::Insert { phone, .. } => format!("[insert {}]", ipa(phone)),
     };
-    let base = format!("{} > {result}", matcher_source(&rule.target));
-    if rule.left == Env::Any && rule.right == Env::Any {
-        base
-    } else {
-        format!(
-            "{base} / {} _ {}",
-            environment_source(&rule.left),
-            environment_source(&rule.right)
-        )
-    }
+    format!("{target} > {result}{}", around(&left, &right))
 }
 
 impl crate::World {
@@ -1140,7 +1573,7 @@ mod tests {
             ("p̰ > f", RuleStatus::BadSegment),
             ("[odd] > f", RuleStatus::UnknownTerm),
             ("p f", RuleStatus::BadShape),
-            ("pa > f", RuleStatus::Unsupported),
+            ("pat > f", RuleStatus::Unsupported),
             (
                 "stress > final\nstress > initial",
                 RuleStatus::DuplicateStress,
@@ -1156,7 +1589,15 @@ mod tests {
             "p > [stressed]",
             "a > [long front]",
             "[medial high] > ∅",
-            "p > f / _ ab",
+            "p > f / _ abab",
+            "p > f / ![labial] _",
+            "sk > ʃt",
+            "ai > eː",
+            "e > jeː",
+            "∅ > eː / # _ s",
+            "sk > ks / _ .. [front]",
+            "rV > Vr",
+            "r > Vr",
         ] {
             assert_eq!(
                 parse("Test", source).rules[0].status,
@@ -1164,7 +1605,17 @@ mod tests {
                 "{source}"
             );
         }
-        for source in ["[front stop] > e", "C > [front]", "p > [voiced voiceless]"] {
+        for source in [
+            "[front stop] > e",
+            "C > [front]",
+            "p > [voiced voiceless]",
+            "∅ > e",
+            "∅ > e / # _ #",
+            "∅ > e / !s _",
+            "p > f / _ # a",
+            "p > f / a # _",
+            "p > f / ! _",
+        ] {
             assert_eq!(
                 parse("Test", source).rules[0].status,
                 RuleStatus::BadShape,
@@ -1172,6 +1623,159 @@ mod tests {
             );
         }
     }
+    /// What each line makes of each word, under initial stress.
+    fn changed(source: &str, words: &[(&str, &str)]) {
+        let report = parse("Test", source);
+        let law = report
+            .law
+            .unwrap_or_else(|| panic!("{source}: {:?}", report.rules));
+        for (before, after) in words {
+            let form = crate::Form::from_ipa(before).unwrap();
+            let out = crate::change::apply_all(&form, &law.rules, StressRule::Initial);
+            assert_eq!(out.ipa(), *after, "{source} on {before}");
+        }
+    }
+
+    #[test]
+    fn a_sound_appears_beside_the_sounds_the_line_names() {
+        // Prothesis, as Latin schola gave Spanish escuela.
+        changed(
+            "∅ > e / # _ sC",
+            &[("skola", "eskola"), ("sala", "sala"), ("askola", "askola")],
+        );
+        // The same with the sounds set apart, and with a class.
+        changed(
+            "∅ > e / # _ s [stop]",
+            &[("skola", "eskola"), ("sma", "sma")],
+        );
+        // A vowel at the end, hung on the sound before the blank.
+        changed("∅ > e / C _ #", &[("pat", "pate"), ("pata", "pata")]);
+        // A cluster broken up, and a stop that grows between two sounds.
+        changed("∅ > ə / C _ C #", &[("libr", "libər"), ("libra", "libra")]);
+        changed("∅ > d / n _ r", &[("venra", "vendra"), ("vera", "vera")]);
+        // Every place that fits takes the sound at once.
+        changed("∅ > a / C _ C", &[("kstri", "kasatari")]);
+    }
+
+    #[test]
+    fn two_sounds_trade_places_or_become_one_and_one_becomes_two() {
+        changed("sk > ks", &[("aska", "aksa"), ("saka", "saka")]);
+        changed("sk > ks / _ #", &[("ask", "aks"), ("aska", "aska")]);
+        changed(
+            "[fricative] > [swap next] / _ [stop]",
+            &[("aspa", "apsa"), ("asa", "asa"), ("as", "as")],
+        );
+        changed("ai > e", &[("kaita", "keta"), ("kata", "kata")]);
+        changed("au > o / _ #", &[("tau", "to"), ("tauta", "tauta")]);
+        changed("nj > ɲ", &[("anja", "aɲa")]);
+        changed("e > je", &[("pera", "pjera")]);
+        changed("o > uo / _ C #", &[("bon", "buon"), ("bona", "bona")]);
+        // Of two overlapping pairs the one further left is taken.
+        changed("aa > e", &[("kaaa", "kea")]);
+        // A spelling the catalog reads as one sound stays that sound.
+        let affricate = parse("Test", "ts > s").law.unwrap();
+        assert!(matches!(affricate.rules[0].result, Rewrite::Phone(_)));
+        let apart = parse("Test", "t s > s").law.unwrap();
+        assert!(matches!(apart.rules[0].result, Rewrite::Fuse(_)));
+    }
+
+    #[test]
+    fn an_environment_rules_a_sound_out_or_reads_several() {
+        // "Not after s" holds at the start of a word too.
+        changed(
+            "t > d / !s _",
+            &[("sta", "sta"), ("ata", "ada"), ("ta", "da")],
+        );
+        changed(
+            "t > d / _ !i",
+            &[("ati", "ati"), ("ata", "ada"), ("at", "ad")],
+        );
+        changed("t > d / !# _", &[("tata", "tada")]);
+        changed("k > tʃ / _ i #", &[("kiki", "kitʃi")]);
+        changed("a > e / _ CC", &[("pasta", "pesta"), ("pata", "pata")]);
+        changed("a > e / # C _", &[("pata", "peta"), ("apa", "apa")]);
+        // Only the last position may be the word's edge, where "not s"
+        // holds as well.
+        changed("t > d / _ a !s", &[("tata", "dada"), ("tas", "tas")]);
+        changed(
+            "t > d / _ !s #",
+            &[("ta", "da"), ("at", "at"), ("tan", "tan")],
+        );
+        // One sound on a side is the same environment it always was.
+        let law = parse("Test", "p > f / V _ #").law.unwrap();
+        assert_eq!(law.rules[0].left, Env::Matcher(Matcher::AnyVowel));
+        assert_eq!(law.rules[0].right, Env::WordEdge);
+        // A class that expands does so at each position.
+        let law = parse("Test", "p > f / _ [labial] a").law.unwrap();
+        assert_eq!(law.rules.len(), 2);
+        assert!(matches!(&law.rules[1].right, Env::Run(run) if run.len() == 2));
+    }
+
+    #[test]
+    fn the_new_shapes_read_in_words_and_write_back() {
+        for (source, reading) in [
+            (
+                "∅ > e / # _ sC",
+                "e appears before s then a consonant at the start of a word",
+            ),
+            (
+                "∅ > e / C _ #",
+                "e appears after a consonant at the end of a word",
+            ),
+            ("∅ > d / n _ r", "d appears between n and r"),
+            ("sk > ks", "s and k trade places"),
+            ("ai > e / _ #", "a and i become e at the end of a word"),
+            ("e > je", "e becomes je"),
+            ("t > d / !s _", "t becomes d except after s"),
+            (
+                "t > d / V _ !i",
+                "t becomes d between a vowel and anything but i",
+            ),
+            (
+                "[fricative] > [swap next] / _ [stop]",
+                "a fricative sound trades places with the sound after it before a stop sound",
+            ),
+            ("a > e / # _ #", "a becomes e as a whole word"),
+            (
+                "p > f / # _ V",
+                "p becomes f before a vowel at the start of a word",
+            ),
+            (
+                "a > e / !s _ .. [front]",
+                "a becomes e except after s when the next syllable has a front sound",
+            ),
+        ] {
+            let report = parse("Test", source);
+            assert_eq!(
+                report.rules[0].reading.as_deref(),
+                Some(reading),
+                "{source}"
+            );
+            // The stored rules alone write a line that reads back as them.
+            let mut law = report.law.unwrap().law(0);
+            law.source = None;
+            let written = law
+                .writable_source()
+                .unwrap_or_else(|| panic!("{source} wrote {:?}", law.rule_sources()));
+            assert_eq!(
+                parse("Test", &written).law.unwrap().rules,
+                parse("Test", source).law.unwrap().rules,
+                "{written}"
+            );
+        }
+        // The new marks are notation, not a romanization to put right.
+        for source in ["t > d / !s _", "∅ > e / # _ sC", "sk > ks", "e > je"] {
+            assert_eq!(sound_hints(source, None, true), Vec::new(), "{source}");
+        }
+        // No catalog sound is spelled with the letters that name classes.
+        assert!(
+            CATALOG
+                .segments
+                .iter()
+                .all(|s| !s.ipa().contains(['C', 'V', '#', '!', '[']))
+        );
+    }
+
     #[test]
     fn labial_and_prosody_preserve_constraints() {
         let law = parse("Labials", "[labial voiceless] > [voiced]")

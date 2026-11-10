@@ -202,7 +202,9 @@ shape its speech:
 
 - **A sound change** previews every catalog law against the language's
   words and names, or takes a law written in notation (`h > ∅ / V _ V`,
-  `stress > penult`). Each rule is read back in plain words. Every changed
+  `stress > penult`). A law can also add a sound (`∅ > e / # _ sC`), swap
+  two (`sk > ks`), merge two (`ai > e`), split one (`e > je`), and rule a
+  neighbour out (`t > d / !s _`). Each rule is read back in plain words. Every changed
   word, grammatical form, and name is shown before applying it.
 - **A word of your own** gives a language a form for any meaning, in the
   catalog's sounds. Sound change wears it like any other word.

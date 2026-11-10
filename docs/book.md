@@ -385,7 +385,8 @@ time bar. It works as follows:
   - A language's *A sound change* takes a catalog law or one written in
     the classical notation (`p > f / _ #`,
     `[voiceless stop] > [voiced] / V _ V`, `a > e / _ .. [front]`,
-    `stress > initial`), read line by line by `checkLaw` and previewed on
+    `∅ > e / # _ sC`, `sk > ks`, `t > d / !s _`, `stress > initial`),
+    read line by line by `checkLaw` and previewed on
     every living word and name by `lawPreview` before it is applied.
     The language's sounds sit as keys beneath the rules, with a hint
     where the text writes a romanization (`sh`, `:`, doubled vowels) for

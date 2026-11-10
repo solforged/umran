@@ -6519,6 +6519,56 @@ mod tests {
     }
 
     #[test]
+    fn a_law_that_adds_sounds_previews_applies_and_replays() {
+        let mut bench = Bench::new(7, "small").unwrap();
+        bench.act(&found("Test", "familiar")).unwrap();
+        let law = umran_sim::notation::parse("Open endings", "∅ > e / C _ #\nt > d / !s _")
+            .law
+            .unwrap();
+        let point = to_json(&bench.chronicle.end()).unwrap();
+        let view: serde_json::Value = serde_json::from_str(
+            &bench
+                .law_preview(&point, 0, &serde_json::json!({"authored": law}).to_string())
+                .unwrap(),
+        )
+        .unwrap();
+        let rows = view["words"].as_array().unwrap();
+        assert!(!rows.is_empty());
+        assert_eq!(view["rules"][0]["source"], "∅ > e / C _ #");
+        assert!(view["rules"][0]["changed"].as_u64().unwrap() > 0);
+        let before = bench.chronicle.latest().varieties[0].lexicon.clone();
+        assert!(
+            before
+                .living()
+                .any(|w| !w.form.is_vowel(w.form.segs.len() - 1))
+        );
+        bench
+            .act(&serde_json::json!({"kind": "authored", "variety": 0, "law": law}).to_string())
+            .unwrap();
+        let speech = &bench.chronicle.latest().varieties[0];
+        for row in rows {
+            let concept = by_id(row["concept"].as_str().unwrap()).unwrap();
+            let word = speech.lexicon.word_for(concept).unwrap();
+            assert_eq!(row["after"], word.form.ipa_stressed(speech.stress()));
+        }
+        // Every word now ends in a vowel, and none lost a sound to get there.
+        for word in speech.lexicon.living() {
+            assert!(
+                word.form.is_vowel(word.form.segs.len() - 1),
+                "{}",
+                word.form.ipa()
+            );
+            assert!(word.form.segs.len() >= before.get(word.id).form.segs.len());
+        }
+        // The save holds the compiled rules, and they replay to the same words.
+        let reloaded = Bench::load(&bench.save().unwrap()).unwrap();
+        assert_eq!(
+            reloaded.chronicle.latest().varieties[0].lexicon,
+            speech.lexicon
+        );
+    }
+
+    #[test]
     fn authored_preview_matches_full_application_and_preserves_save() {
         let mut bench = Bench::new(7, "small").unwrap();
         bench.act(&found("Test", "familiar")).unwrap();
