@@ -192,7 +192,7 @@ function markerChoice(speech: Variety, category: "plural" | "past" | "object"): 
 function rootTrouble(root: RootCheck): string {
   switch (root.status) {
     case "unknown-meaning": return "no such meaning in the catalog";
-    case "bad-ipa": return !root.ipa.trim() ? "waits for its word" : root.detail === "no-vowel" ? "has no vowel" : root.detail ? `cannot be read at “${root.detail}”` : "cannot be read";
+    case "bad-ipa": return !root.ipa.trim() ? "waits for its word" : root.detail === "no-vowel" ? "has no vowel" : root.detail === "ˈ" || root.detail === "ˌ" ? "marks its stress, which follows this speech’s rule; leave the mark out" : root.detail ? `cannot be read at “${root.detail}”` : "cannot be read";
     case "outside-inventory": return `uses ${root.detail ?? "a sound"} this speech does not have`;
     case "duplicate": return root.detail ? `already given on line ${root.detail}` : "given twice";
     default: return "";

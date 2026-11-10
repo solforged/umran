@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { frequencyDesign, presetDesign, preview } from "../engine";
-import type { Catalog, LanguageDesign, LongVowelStyle, Naming, SoundInfo } from "../model";
+import type { Catalog, LanguageDesign, LongVowelStyle, Naming, SoundInfo, StressRule } from "../model";
 import { NamingSelect } from "./NamingSelect";
-import { PEOPLE_NAME } from "../lore";
+import { PEOPLE_NAME, STRESS_RULE } from "../lore";
 import { Explained } from "./Explained";
 
 export interface Founding {
@@ -229,8 +229,17 @@ export function Designer({
           {knob("Word length", design.wordLength, (v) => set({ wordLength: v }), "short", "long")}
           {knob("Final consonants", design.finalConsonants, (v) => set({ finalConsonants: v }), "open", "closed")}
           {knob("Long vowels", design.longVowels, (v) => set({ longVowels: v }), "none", "many")}
+          {knob("Long consonants", design.geminates ?? 0, (v) => set({ geminates: v }), "none", "many")}
+          <p className="muted small">A <Explained term="geminate">long consonant</Explained> inside a word, as in Italian fatto.</p>
           {knob("Consonants repeated across syllables", design.repetition, (v) => set({ repetition: v }), "avoided", "common")}
           <p className="muted small">As in mama; not a long consonant such as tt.</p>
+          <label>
+            <Explained term="stress">Stress</Explained> falls
+            <select value={design.stress ?? ""} onChange={(e) => set({ stress: e.target.value === "" ? null : e.target.value as StressRule })}>
+              <option value="">as their speech falls out</option>
+              {(Object.keys(STRESS_RULE) as StressRule[]).map((rule) => <option key={rule} value={rule}>{STRESS_RULE[rule]}</option>)}
+            </select>
+          </label>
           <label className="check">
             <input type="checkbox" checked={design.innerClusters} onChange={(e) => set({ innerClusters: e.target.checked })} />
             Consonants may meet inside words (kasta, not only kasata)

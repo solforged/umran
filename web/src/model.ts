@@ -26,6 +26,10 @@ export interface LanguageDesign {
   innerClusters: boolean;
   repetition: number;
   longVowels: number;
+  /// 0–1: how often a consonant inside a word is long. Absent in older designs.
+  geminates?: number;
+  /// Where stress falls; null or absent leaves it to the founding draw.
+  stress?: StressRule | null;
   building: "concatenative" | "root-pattern";
   suffixing: number;
   derivation: number;

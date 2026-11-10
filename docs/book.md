@@ -288,10 +288,13 @@ one draft on the real engine, saved on the shelf with *Resume*.
    words this people would have under it. This is the engine's own preview,
    using the founding seed, so the chosen card's words are the founded words.
    *Draw other words* draws another seed; *Shape the sounds by hand…*
-   opens the full sound chart. Grammar follows as phrases with sample
+   opens the full sound chart, with word shape, long consonants, and
+   where stress falls. Grammar follows as phrases with sample
    sentences. Related peoples share their ancestral sound and grammar
    choices. *Their own words* takes the author's roots, one `meaning
-   form` to a line in the catalog's sounds. The engine checks each line
+   form` to a line in the catalog's sounds. Pasted IPA in another
+   spelling of the same sound (ɡ, t͡ʃ, ʧ) is read as the catalog's. The
+   engine checks each line
    as it is typed (`checkRoots`). It rejects invalid input as a whole,
    gives a reason (no such meaning, unreadable sound, a sound this speech
    lacks, given twice), and offers the nearest meanings. It warns about
