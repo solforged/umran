@@ -157,6 +157,17 @@ impl Default for GrammarDesign {
     }
 }
 impl GrammarDesign {
+    /// Settles how `category` is marked.
+    pub fn set(&mut self, category: Category, choice: GrammarChoice) {
+        match category {
+            Category::Plural => self.plural = choice,
+            Category::Past => self.past = choice,
+            Category::Object => self.object = Some(choice),
+            Category::Future => self.future = Some(choice),
+            Category::Progressive => self.progressive = Some(choice),
+            Category::Genitive => self.genitive = Some(choice),
+        }
+    }
     pub fn choice(self, category: Category) -> GrammarChoice {
         match category {
             Category::Plural => self.plural,
@@ -298,7 +309,8 @@ impl MarkerKind {
         }
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Side {
     Prefix,
     Suffix,
@@ -314,6 +326,8 @@ impl Side {
 #[derive(Clone, Debug, PartialEq)]
 pub enum MarkerOrigin {
     Founding,
+    /// An affix the author gave the founding language, kept verbatim.
+    Authored,
     Grammaticalized {
         source: LexemeId,
         concept: crate::ConceptId,
@@ -634,6 +648,17 @@ impl Grammar {
                             source_form: source.form.clone(),
                         },
                     )
+                }
+                // The author's affix stands as given. The design settled
+                // its side, and no draw is made for it; each category draws
+                // on a stream of its own, so no other marker moves.
+                _ if let Some(form) = profile
+                    .affixes
+                    .iter()
+                    .find(|affix| affix.category == category)
+                    .and_then(|affix| affix.form().ok()) =>
+                {
+                    (MarkerKind::Bound, form, MarkerOrigin::Authored)
                 }
                 _ => {
                     let vowel = tactics.nuclei

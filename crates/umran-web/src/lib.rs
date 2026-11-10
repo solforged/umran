@@ -1265,10 +1265,15 @@ impl Bench {
                 continue;
             }
             let (meaning, ipa) = split_root_line(line);
+            if let Some(check) = affix_line(&mut design, i + 1, meaning, ipa, &roots) {
+                roots.push(check);
+                continue;
+            }
             let mut check = RootCheck {
                 line: i + 1,
                 meaning: meaning.to_string(),
                 ipa: ipa.to_string(),
+                affix: None,
                 concept: None,
                 gloss: None,
                 spelled: None,
@@ -3795,12 +3800,15 @@ struct RootCheck<'a> {
     meaning: String,
     /// The form as typed, without its `/…/` or `[…]`.
     ipa: String,
+    /// The grammatical category an affix line marks; `None` on a root's.
+    affix: Option<&'static str>,
     concept: Option<&'a str>,
     gloss: Option<&'a str>,
     /// The design's spelling of an accepted form.
     spelled: Option<String>,
     /// "ok", "warned", "unknown-meaning", "bad-ipa", "outside-inventory",
-    /// or "duplicate".
+    /// or "duplicate"; an affix line may also be "unknown-category" or
+    /// "no-side".
     status: &'static str,
     /// A fragment for the UI, never a sentence: the sound the catalog or
     /// the design lacks, "no-vowel", the ambiguous meanings joined by "|",
@@ -3817,6 +3825,102 @@ struct RootCheck<'a> {
 struct RootsReport<'a> {
     roots: Vec<RootCheck<'a>>,
     design: LanguageDesign,
+}
+
+/// The categories an affix line may name: each one's id, and the names a
+/// grammar would more often give two of them.
+fn affix_category(text: &str) -> Option<Category> {
+    let wanted = text.trim().to_lowercase();
+    Category::ALL
+        .into_iter()
+        .find(|category| category.id() == wanted)
+        .or(match wanted.as_str() {
+            "accusative" => Some(Category::Object),
+            "possessive" | "possessor" => Some(Category::Genitive),
+            _ => None,
+        })
+}
+
+/// A line that gives an affix, read against the design: `plural -s`, with
+/// the hyphen on the side that joins the word. Returns `None` for a line
+/// that gives a root. An accepted affix goes into `design`.
+fn affix_line<'a>(
+    design: &mut LanguageDesign,
+    line: usize,
+    meaning: &str,
+    ipa: &str,
+    earlier: &[RootCheck<'a>],
+) -> Option<RootCheck<'a>> {
+    let category = affix_category(meaning);
+    let (suffix, prefix) = (ipa.strip_prefix('-'), ipa.strip_suffix('-'));
+    if category.is_none() && suffix.is_none() && prefix.is_none() {
+        return None;
+    }
+    let mut check = RootCheck {
+        line,
+        meaning: meaning.to_string(),
+        ipa: ipa.to_string(),
+        affix: category.map(Category::id),
+        concept: None,
+        gloss: None,
+        spelled: None,
+        status: "unknown-category",
+        detail: None,
+        suggestions: Vec::new(),
+        warnings: Vec::new(),
+    };
+    let Some(category) = category else {
+        check.suggestions = Category::ALL.into_iter().map(Category::id).collect();
+        return Some(check);
+    };
+    let (side, bare) = match (suffix, prefix) {
+        (Some(bare), None) => (Side::Suffix, bare),
+        (None, Some(bare)) => (Side::Prefix, bare),
+        // No hyphen, or one at each end: which side it joins is not said.
+        _ => {
+            check.status = "no-side";
+            return Some(check);
+        }
+    };
+    let affix = umran_sim::Affix {
+        category,
+        side,
+        ipa: bare.trim().to_string(),
+    };
+    match design.check_affix(&affix) {
+        Err(umran_sim::AffixError::BadIpa(at)) => {
+            check.status = "bad-ipa";
+            check.detail = at;
+        }
+        Err(umran_sim::AffixError::OutsideInventory(ipa)) => {
+            check.status = "outside-inventory";
+            check.detail = Some(ipa);
+        }
+        Err(umran_sim::AffixError::Duplicate) => check.status = "duplicate",
+        Ok(form) => {
+            if let Some(first) = earlier
+                .iter()
+                .find(|other| other.affix == check.affix && other.spelled.is_some())
+            {
+                check.status = "duplicate";
+                check.detail = Some(first.line.to_string());
+            } else {
+                check.status = "ok";
+                let canonical = umran_sim::Affix {
+                    ipa: form.ipa(),
+                    ..affix
+                };
+                let spelled = design.spelling.write(&form);
+                check.spelled = Some(match side {
+                    Side::Suffix => format!("-{spelled}"),
+                    Side::Prefix => format!("{spelled}-"),
+                });
+                design.affixes.retain(|other| other.category != category);
+                design.affixes.push(canonical);
+            }
+        }
+    }
+    Some(check)
 }
 
 /// A root line's meaning and form: split at the first `:`, `=`, or tab;
@@ -5281,6 +5385,7 @@ fn grammar_origin_view(world: &World, variety: usize, marker: &GrammarMarker) ->
     let v = &world.varieties[variety];
     match &marker.origin {
         MarkerOrigin::Founding => GrammarOriginView::Founding,
+        MarkerOrigin::Authored => GrammarOriginView::Authored,
         MarkerOrigin::Grammaticalized {
             source,
             concept,
@@ -6053,6 +6158,8 @@ struct GrammarMarkerView {
 )]
 enum GrammarOriginView {
     Founding,
+    /// An affix the author gave at founding.
+    Authored,
     Grammaticalized {
         source: u32,
         concept: &'static str,
@@ -8565,6 +8672,7 @@ mod tests {
                     "line",
                     "meaning",
                     "ipa",
+                    "affix",
                     "concept",
                     "gloss",
                     "spelled",
@@ -8613,6 +8721,110 @@ mod tests {
         assert_eq!(root("sun"), None);
         assert_eq!(merged.validate(&umran_sim::ConceptTable::default()), Ok(()));
         assert!(Bench::check_roots("{}", text, "[]").is_err());
+    }
+
+    #[test]
+    fn affix_lines_sit_among_the_roots_and_found_the_grammar() {
+        let design = familiar_with(3, &["n", "a", "s", "t", "m", "i"]);
+        let text = "water /nasa/\n\
+                    plural -s\n\
+                    future: na-\n\
+                    past ta\n\
+                    dative -s\n\
+                    object -qa\n\
+                    plural -ta\n\
+                    Possessive = /-ni/\n\
+                    progressive -a-\n";
+        let report: serde_json::Value =
+            serde_json::from_str(&Bench::check_roots(&design.to_string(), text, "[]").unwrap())
+                .unwrap();
+        let roots = report["roots"].as_array().unwrap();
+        let row = |line: u64| roots.iter().find(|r| r["line"] == line).unwrap();
+        assert_eq!(roots.len(), 9);
+        // A root's line names no category; an affix's names its own.
+        assert_eq!(row(1)["affix"], serde_json::Value::Null);
+        assert_eq!(row(1)["status"], "ok");
+        assert_eq!(row(2)["affix"], "plural");
+        assert_eq!(row(2)["status"], "ok");
+        assert_eq!(row(2)["spelled"], "-s");
+        assert_eq!(row(3)["affix"], "future");
+        assert_eq!(row(3)["spelled"], "na-");
+        // Which side it joins must be said, and once.
+        assert_eq!(row(4)["status"], "no-side");
+        assert_eq!(row(9)["status"], "no-side");
+        // A hyphenated form marks a category, and only the six there are.
+        assert_eq!(row(5)["status"], "unknown-category");
+        assert_eq!(
+            row(5)["suggestions"],
+            serde_json::json!([
+                "plural",
+                "past",
+                "object",
+                "future",
+                "progressive",
+                "genitive"
+            ])
+        );
+        assert_eq!(row(6)["status"], "outside-inventory");
+        assert_eq!(row(6)["detail"], "q");
+        assert_eq!(row(7)["status"], "duplicate");
+        assert_eq!(row(7)["detail"], "2");
+        assert_eq!(row(8)["affix"], "genitive");
+        assert_eq!(row(8)["status"], "ok");
+        let merged: LanguageDesign = serde_json::from_value(report["design"].clone()).unwrap();
+        assert_eq!(merged.roots.len(), 1);
+        let written: Vec<(&str, String)> = merged
+            .affixes
+            .iter()
+            .map(|affix| (affix.category.id(), affix.written()))
+            .collect();
+        assert_eq!(
+            written,
+            [
+                ("plural", "-s".to_string()),
+                ("future", "na-".to_string()),
+                ("genitive", "-ni".to_string())
+            ]
+        );
+        assert_eq!(merged.validate(&umran_sim::ConceptTable::default()), Ok(()));
+
+        // The design founds a people whose grammar carries the affixes, and
+        // the years wear them like any marker.
+        let mut bench = Bench::new(5, "medium").unwrap();
+        let mut action: serde_json::Value =
+            serde_json::from_str(&found("Hill", "familiar")).unwrap();
+        action["design"] = report["design"].clone();
+        bench.act(&action.to_string()).unwrap();
+        let overview: serde_json::Value =
+            serde_json::from_str(&bench.overview(0).unwrap()).unwrap();
+        let markers = overview["varieties"][0]["grammar"]["markers"]
+            .as_array()
+            .unwrap();
+        let marker = |category: &str| {
+            markers
+                .iter()
+                .find(|marker| marker["category"] == category)
+                .unwrap()
+        };
+        assert_eq!(marker("plural")["origin"]["kind"], "authored");
+        assert_eq!(marker("plural")["side"], "suffix");
+        assert_eq!(marker("plural")["form"], "s");
+        assert_eq!(marker("future")["side"], "prefix");
+        assert_eq!(marker("future")["form"], "na");
+        assert_eq!(marker("genitive")["form"], "ni");
+        assert_ne!(marker("past")["origin"]["kind"], "authored");
+        bench.act(r#"{"kind":"run","generations":40}"#).unwrap();
+        let later: serde_json::Value = serde_json::from_str(&bench.overview(40).unwrap()).unwrap();
+        assert!(
+            later["varieties"][0]["grammar"]["markers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|marker| marker["origin"]["kind"] == "authored")
+        );
+        // The save replays to the same grammar.
+        let again = Bench::load(&bench.save().unwrap()).unwrap();
+        assert_eq!(again.chronicle.recipe(), bench.chronicle.recipe());
     }
 
     #[test]

@@ -36,6 +36,9 @@ export interface LanguageDesign {
   grammar?: GrammarDesign;
   /// The author's own words for catalog meanings, kept verbatim at founding.
   roots?: Root[];
+  /// The author's own affixes, kept verbatim at founding. Each settles its
+  /// category as an affix on its side, over `grammar`.
+  affixes?: Affix[];
   spelling: Spelling;
 }
 
@@ -44,15 +47,25 @@ export interface Root {
   ipa: string;
 }
 
-/// One line of the author's roots, checked against a design by the engine.
+/// An affix the author gives a grammatical category, without its hyphen.
+export interface Affix {
+  category: GrammarCategory;
+  side: "prefix" | "suffix";
+  ipa: string;
+}
+
+/// One line of the author's roots and affixes, checked against a design by
+/// the engine.
 export interface RootCheck {
   line: number;
   meaning: string;
   ipa: string;
+  /// The category an affix line marks (`plural -s`); null on a root's line.
+  affix: GrammarCategory | null;
   concept: string | null;
   gloss: string | null;
   spelled: string | null;
-  status: "ok" | "warned" | "unknown-meaning" | "bad-ipa" | "outside-inventory" | "duplicate";
+  status: "ok" | "warned" | "unknown-meaning" | "bad-ipa" | "outside-inventory" | "duplicate" | "unknown-category" | "no-side";
   detail: string | null;
   suggestions: string[];
   warnings: ("cluster" | "length" | "final")[];
@@ -1609,6 +1622,8 @@ export interface GrammarRendering {
 
 export type GrammarOrigin =
   | { kind: "founding" }
+  /// An affix the author gave at founding.
+  | { kind: "authored" }
   | { kind: "grammaticalized"; source: number; concept: string; gloss: string; sourceForm: { form: string; ipa: string } }
   | { kind: "fused"; particle: number }
   | { kind: "imported"; from: number; language: string; marker: number; source: { form: string; ipa: string } };

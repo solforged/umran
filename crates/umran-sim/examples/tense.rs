@@ -119,6 +119,7 @@ fn show(world: &World, label: &str) {
             {
                 let origin = match marker.origin {
                     MarkerOrigin::Founding => "founding".into(),
+                    MarkerOrigin::Authored => "the author's".into(),
                     MarkerOrigin::Grammaticalized { concept, .. } => {
                         format!("from {}", variety.lexicon.concepts[concept].id)
                     }

@@ -18,7 +18,7 @@ through five steps over the chart:
 3. Begin with one people, kin who parted with shared ancestral speech,
    or neighbours with languages of their own.
 4. Shape their speech. Every sound preset previews this people's words.
-   You can also supply roots of your own.
+   You can also supply roots and grammatical affixes of your own.
 5. Finish the title page and choose the year to write through.
 
 **Write the chronicle** runs the years to that date. An unfinished founding

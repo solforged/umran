@@ -2450,6 +2450,9 @@ fn grammar_changes(world: &World, shifts: &Shifts, names: &Names) -> Vec<Annal> 
                             }
                             _ => "This marker was part of the founding grammar.".into(),
                         },
+                        MarkerOrigin::Authored => {
+                            "The author gave this affix to the founding grammar.".into()
+                        }
                         MarkerOrigin::Grammaticalized {
                             concept,
                             source_form,

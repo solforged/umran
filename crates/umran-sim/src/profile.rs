@@ -28,6 +28,9 @@ pub struct SoundProfile {
     /// The author's own year-0 words, from the design; presets have none.
     #[serde(default)]
     pub roots: Vec<Root>,
+    /// The author's own year-0 affixes, from the design; presets have none.
+    #[serde(default)]
+    pub affixes: Vec<crate::design::Affix>,
 }
 
 /// How words are built from other words.
@@ -232,5 +235,6 @@ fn base() -> SoundProfile {
         },
         stress: None,
         roots: Vec::new(),
+        affixes: Vec::new(),
     }
 }

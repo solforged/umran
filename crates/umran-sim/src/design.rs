@@ -5,7 +5,7 @@
 
 use crate::concepts::{Concept, ConceptId, ConceptTable};
 use crate::form::Form;
-use crate::grammar::{GrammarDesign, GrammarPrior};
+use crate::grammar::{Category, GrammarChoice, GrammarDesign, GrammarPrior, Side};
 use crate::inventory::Inventory;
 use crate::phoneme::{CATALOG, PhonemeId};
 use crate::profile::{MorphologyKind, MorphologyPrior, PhonotacticPrior, SoundProfile, Spelling};
@@ -38,6 +38,68 @@ pub struct Sound {
 pub struct Root {
     pub concept: String,
     pub ipa: String,
+}
+
+/// An affix the author gives the language at founding: the category it
+/// marks, the side of the word it sits on, and its form in the catalog's
+/// IPA without the hyphen. Giving one settles that the category is marked
+/// by an affix on that side. Unlike a root it may be a lone consonant, as
+/// the plural *-s*.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Affix {
+    pub category: Category,
+    pub side: Side,
+    pub ipa: String,
+}
+
+/// Why an affix is refused. Like a root, it is taken whole or not at all.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AffixError {
+    /// The catalog cannot read the form: the fragment it stopped at, or
+    /// `None` for an empty form.
+    BadIpa(Option<String>),
+    /// A sound the design leaves out, by IPA.
+    OutsideInventory(String),
+    /// Another affix already marks this category.
+    Duplicate,
+}
+
+impl Affix {
+    /// The form as the author would write it: `-s`, `na-`.
+    pub fn written(&self) -> String {
+        match self.side {
+            Side::Suffix => format!("-{}", self.ipa),
+            Side::Prefix => format!("{}-", self.ipa),
+        }
+    }
+
+    /// Parse an authored affix without repairing it.
+    pub fn form(&self) -> Result<Form, AffixError> {
+        let raw = self.ipa.trim();
+        if raw.is_empty() {
+            return Err(AffixError::BadIpa(None));
+        }
+        if let Some(tone) = raw.chars().find(|c| matches!(c, '˥' | '˧' | '˩')) {
+            return Err(AffixError::BadIpa(Some(tone.to_string())));
+        }
+        Form::from_ipa(raw).ok_or_else(|| AffixError::BadIpa(Some(unread(raw))))
+    }
+}
+
+impl AffixError {
+    pub fn describe(&self, affix: &Affix) -> String {
+        let (written, category) = (affix.written(), affix.category.id());
+        match self {
+            Self::BadIpa(Some(at)) => {
+                format!("The {category} affix {written} cannot be read at “{at}”.")
+            }
+            Self::BadIpa(None) => format!("The {category} affix is empty."),
+            Self::OutsideInventory(ipa) => format!(
+                "The {category} affix {written} uses {ipa}, a sound these speakers do not have."
+            ),
+            Self::Duplicate => format!("The {category} is given two affixes."),
+        }
+    }
 }
 
 /// Why a root is refused. A root is taken whole or not at all: the engine
@@ -171,6 +233,11 @@ pub struct LanguageDesign {
     /// every other word is drawn. Absent in older designs.
     #[serde(default)]
     pub roots: Vec<Root>,
+    /// The author's own affixes for some grammatical categories, kept
+    /// verbatim at year 0; every other marker is drawn. Each one settles
+    /// its category's marking over `grammar`. Absent in older designs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub affixes: Vec<Affix>,
 }
 
 impl LanguageDesign {
@@ -234,6 +301,7 @@ impl LanguageDesign {
             grammar: profile.grammar.draw(seed, &profile.morphology),
             spelling: profile.spelling.clone(),
             roots: profile.roots.clone(),
+            affixes: profile.affixes.clone(),
         }
     }
 
@@ -281,7 +349,48 @@ impl LanguageDesign {
             }
             supplied.push(concept);
         }
+        let mut marked: Vec<Category> = Vec::new();
+        for affix in &self.affixes {
+            self.check_affix(affix).map_err(|e| e.describe(affix))?;
+            if marked.contains(&affix.category) {
+                return Err(AffixError::Duplicate.describe(affix));
+            }
+            marked.push(affix.category);
+        }
         Ok(())
+    }
+
+    /// The form `affix` founds in this design, or why it is refused: it
+    /// must read in the catalog and use only the design's sounds.
+    pub fn check_affix(&self, affix: &Affix) -> Result<Form, AffixError> {
+        let form = affix.form()?;
+        if let Some(seg) = form.segs.iter().find(|seg| {
+            !self
+                .sounds
+                .iter()
+                .any(|s| s.ipa == CATALOG.get(seg.phone).ipa())
+        }) {
+            return Err(AffixError::OutsideInventory(
+                CATALOG.get(seg.phone).ipa().to_string(),
+            ));
+        }
+        Ok(form)
+    }
+
+    /// The grammar choices with each given affix's category settled as an
+    /// affix on its side.
+    pub fn settled_grammar(&self) -> GrammarDesign {
+        let mut grammar = self.grammar;
+        for affix in &self.affixes {
+            grammar.set(
+                affix.category,
+                match affix.side {
+                    Side::Suffix => GrammarChoice::Suffix,
+                    Side::Prefix => GrammarChoice::Prefix,
+                },
+            );
+        }
+        grammar
     }
 
     /// The meaning and form `root` founds in this design, or why it is
@@ -354,8 +463,9 @@ impl LanguageDesign {
         };
         profile.spelling = self.spelling.clone();
         profile.roots = self.roots.clone();
+        profile.affixes = self.affixes.clone();
         profile.stress = self.stress;
-        profile.grammar = GrammarPrior::fixed(self.grammar);
+        profile.grammar = GrammarPrior::fixed(self.settled_grammar());
         profile
     }
 }
@@ -897,5 +1007,133 @@ mod tests {
                 assert_eq!(cell(&plain, id), cell(&rooted, id), "seed {seed}: {id}");
             }
         }
+    }
+
+    fn affix(category: Category, side: Side, ipa: &str) -> Affix {
+        Affix {
+            category,
+            side,
+            ipa: ipa.into(),
+        }
+    }
+
+    #[test]
+    fn affixes_found_verbatim_and_move_no_other_draw() {
+        for seed in [3, 11, 29] {
+            // The roots add the affixes' sounds to the design.
+            let plain = with_roots(seed, &[("water", "nasa")]);
+            let mut given = plain.clone();
+            given.affixes = vec![
+                affix(Category::Plural, Side::Suffix, "s"),
+                affix(Category::Future, Side::Prefix, "na"),
+            ];
+            assert_eq!(given.validate(&crate::ConceptTable::default()), Ok(()));
+            let (drawn, founded) = (found(&plain, seed), found(&given, seed));
+            let marker = |variety: &Variety, category: Category| {
+                variety
+                    .grammar
+                    .markers
+                    .iter()
+                    .find(|marker| marker.category == category)
+                    .unwrap()
+                    .clone()
+            };
+            let plural = marker(&founded, Category::Plural);
+            assert_eq!(plural.kind, MarkerKind::Bound);
+            assert_eq!(plural.side, Side::Suffix);
+            assert_eq!(plural.form, Form::from_ipa("s").unwrap());
+            assert_eq!(plural.origin, crate::grammar::MarkerOrigin::Authored);
+            let future = marker(&founded, Category::Future);
+            assert_eq!(
+                (future.kind, future.side),
+                (MarkerKind::Bound, Side::Prefix)
+            );
+            assert_eq!(future.form, Form::from_ipa("na").unwrap());
+            // Words inflect with them: a plural is its word and the -s.
+            let (word, plurals) = founded
+                .lexicon
+                .lexemes
+                .iter()
+                .find_map(|word| {
+                    let paradigm = word
+                        .paradigms
+                        .iter()
+                        .find(|paradigm| paradigm.category == Category::Plural)?;
+                    Some((word, paradigm.realizations.first()?.form.as_ref()?))
+                })
+                .expect("some noun has a plural");
+            assert_eq!(
+                plurals.ipa(),
+                format!("{}s", word.form.ipa()),
+                "seed {seed}"
+            );
+            // The categories left alone are marked as the seed drew them,
+            // and no word changes.
+            for category in [Category::Past, Category::Object, Category::Genitive] {
+                let (a, b) = (marker(&drawn, category), marker(&founded, category));
+                assert_eq!((a.kind, a.side, a.form), (b.kind, b.side, b.form));
+            }
+            for (a, b) in drawn.lexicon.lexemes.iter().zip(&founded.lexicon.lexemes) {
+                assert_eq!(a.form, b.form, "seed {seed}");
+            }
+        }
+    }
+
+    #[test]
+    fn affixes_are_refused_whole_with_a_reason() {
+        let mut design = with_roots(3, &[("water", "nasa")]);
+        assert!(!design.sounds.iter().any(|s| s.ipa == "q"));
+        let refused = |design: &LanguageDesign, affix: Affix| design.check_affix(&affix);
+        assert_eq!(
+            refused(&design, affix(Category::Plural, Side::Suffix, "")),
+            Err(AffixError::BadIpa(None))
+        );
+        assert_eq!(
+            refused(&design, affix(Category::Plural, Side::Suffix, "sñ")),
+            Err(AffixError::BadIpa(Some("ñ".into())))
+        );
+        assert_eq!(
+            refused(&design, affix(Category::Plural, Side::Suffix, "a˥")),
+            Err(AffixError::BadIpa(Some("˥".into())))
+        );
+        assert_eq!(
+            refused(&design, affix(Category::Plural, Side::Suffix, "qa")),
+            Err(AffixError::OutsideInventory("q".into()))
+        );
+        design.affixes = vec![
+            affix(Category::Object, Side::Suffix, "n"),
+            affix(Category::Object, Side::Prefix, "a"),
+        ];
+        assert_eq!(
+            design.validate(&crate::ConceptTable::default()),
+            Err("The object is given two affixes.".into())
+        );
+        design.affixes.truncate(1);
+        assert_eq!(design.validate(&crate::ConceptTable::default()), Ok(()));
+        // Giving one settles the category as an affix on its side, over
+        // whatever the grammar choices said.
+        design.grammar.object = Some(GrammarChoice::None);
+        assert_eq!(design.settled_grammar().object, Some(GrammarChoice::Suffix));
+        assert_eq!(design.affixes[0].written(), "-n");
+    }
+
+    #[test]
+    fn a_design_without_affixes_reads_and_writes_as_before() {
+        let design = LanguageDesign::preset("familiar", 3).unwrap();
+        let written = serde_json::to_value(&design).unwrap();
+        assert!(written.get("affixes").is_none());
+        let read: LanguageDesign = serde_json::from_value(written).unwrap();
+        assert_eq!(read, design);
+        let mut given = design.clone();
+        given.affixes = vec![affix(Category::Past, Side::Suffix, "ta")];
+        let written = serde_json::to_value(&given).unwrap();
+        assert_eq!(
+            written["affixes"],
+            serde_json::json!([{"category": "past", "side": "suffix", "ipa": "ta"}])
+        );
+        assert_eq!(
+            serde_json::from_value::<LanguageDesign>(written).unwrap(),
+            given
+        );
     }
 }

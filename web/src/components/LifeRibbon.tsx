@@ -41,6 +41,7 @@ export function ChangeCauseText({ cause, ctx }: { cause: ChangeCause | { kind: "
       return origin.kind === "grammaticalized" ? <>The word “{origin.gloss}” gained a grammatical job through <Explained term="grammaticalization">grammaticalization</Explained></>
         : origin.kind === "fused" ? <>A separate <Explained term="particle">particle</Explained> became attached through <Explained term="fusion">fusion</Explained></>
         : origin.kind === "imported" ? <>A marker imported from {language(origin.from)}</>
+        : origin.kind === "authored" ? <>An affix the author gave at founding</>
         : <>A founding grammatical marker</>;
     }
     case "founding": return <>Founding form</>;

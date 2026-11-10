@@ -79,6 +79,16 @@ This bookkeeping makes no random draws and does not itself change replay.
   treat it like the rest. The lexeme remembers it was `authored`.
   Founding lexical stress and geminates draw on a stream per word, so one
   word's shape never moves another's draws.
+- A design may also carry the author's own affixes
+  (`LanguageDesign.affixes`): a grammatical category, the side of the word
+  the affix joins, and its form. Giving one settles that the category is
+  marked by an affix on that side, over the design's grammar choices. The
+  form must read in the catalog and use only the design's sounds; unlike a
+  root it may be a lone consonant, as the plural *-s*. At founding it is
+  that category's marker verbatim (`MarkerOrigin::Authored`), and no draw
+  is made for it. Each category draws on its own stream, so every other
+  marker and every word stays as the seed gave it. From then on it is an
+  ordinary marker: sound law, erosion, and renewal treat it like the rest.
 - One preference score, taste plus cross-linguistic frequency from PHOIBLE
   (`typology.rs`), drives inventories, how often sounds are used, sound-law
   odds, and acceptance of foreign sounds. Sampled inventories favour

@@ -301,7 +301,10 @@ one draft on the real engine, saved on the shelf with *Resume*.
    shapes the sound settings would not draw but accepts them. Accepted
    roots are stored in the design: the chosen voice card and the founded
    words carry them, kin inherit them, and the recipe replays them.
-   Every other word is drawn as before.
+   Every other word is drawn as before. The same box takes affixes, one
+   `category affix` to a line with a hyphen on the side that joins the
+   word (`plural -s`, `future na-`). An accepted affix is that category's
+   founding marker, and the grammar phrase for it gives way to it.
 5. **The title page.** Set like a printed book's opening over the
    dimmed chart: the world's name, the author, the peoples, the seed, and
    the year the chronicle runs to (4000 by default). Its verb is *Write

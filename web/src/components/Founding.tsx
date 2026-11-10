@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, ChevronDown, Feather, LocateFixed, Plus, RefreshCw } from "lucide-react";
 import { attempt, checkRoots, concepts, createEngine, message, presetDesign, preview, writeHint } from "../engine";
-import type { Action, Catalog, Craft, Engine, EthosAxis, Forming, FoundingPreview, FoundingTraits, GrammarChoice, GrammarDesign, LakeNamesView, LanguageDesign, Livelihood, MapSize, Meaning, MeaningField, MeaningRelation, MeaningSet, MeaningTier, Naming, Overview, PossessorOrder, RiverNamesView, RootCheck, SoundHint, Variety, WordOrder, WorldMap } from "../model";
+import type { Action, Affix, Catalog, Craft, Engine, EthosAxis, Forming, FoundingPreview, FoundingTraits, GrammarChoice, GrammarDesign, LakeNamesView, LanguageDesign, Livelihood, MapSize, Meaning, MeaningField, MeaningRelation, MeaningSet, MeaningTier, Naming, Overview, PossessorOrder, RiverNamesView, RootCheck, SoundHint, Variety, WordOrder, WorldMap } from "../model";
 import { YEARS } from "../model";
 import { countWord, ETHOS_AXES, ETHOS_DRIVES, ETHOS_POLES, hue, landCardLabel, LIVELIHOOD_DRIVES, LIVELIHOOD_NAME, MARKING_PHRASE, MEANING_CLASS, MEANING_RELATION, MEANING_TIER, MILD, OPENNESS, OPENNESS_DRIVES, peopleLabel, POSSESSOR_PHRASE, STANDING, STANDING_DRIVES, STRONG, TERRAIN_NAME, WORD_ORDER_PHRASE } from "../lore";
 import { newBookId, readDraft, saveDraft, worldName, type DraftEntry } from "../shelf";
 import { Designer, randomSeed, type Founding as FoundingDesign } from "./Designer";
+import { Explained } from "./Explained";
 import { FormingChart } from "./FormingChart";
 import { MapView } from "./MapView";
 import { useMapProjection } from "./MapProjectionSwitch";
@@ -195,6 +196,8 @@ function rootTrouble(root: RootCheck): string {
     case "bad-ipa": return !root.ipa.trim() ? "waits for its word" : root.detail === "no-vowel" ? "has no vowel" : root.detail === "ˈ" || root.detail === "ˌ" ? "marks its stress, which follows this speech’s rule; leave the mark out" : root.detail ? `cannot be read at “${root.detail}”` : "cannot be read";
     case "outside-inventory": return `uses ${root.detail ?? "a sound"} this speech does not have`;
     case "duplicate": return root.detail ? `already given on line ${root.detail}` : "given twice";
+    case "unknown-category": return "an affix marks a grammatical category";
+    case "no-side": return "needs one hyphen on the side that joins the word: -s for a suffix, s- for a prefix";
     default: return "";
   }
 }
@@ -204,9 +207,14 @@ const ROOT_WARNING: Record<RootCheck["warnings"][number], string> = {
   final: "a final consonant this speech does not normally use",
 };
 
-/// The author's own words, one `meaning form` to a line, checked against
-/// the speech's sounds as they are typed. Accepted roots go into the design;
-/// the rest of the vocabulary is drawn around them.
+/// An affix as its line writes it: `-s`, `na-`.
+const affixWritten = (affix: Affix) => affix.side === "suffix" ? `-${affix.ipa}` : `${affix.ipa}-`;
+
+/// The author's own words and affixes, one to a line (`water nara`,
+/// `plural -s`), checked against the speech's sounds as they are typed.
+/// Accepted roots and affixes go into the design; the rest of the
+/// vocabulary and grammar is drawn around them.
+
 function RootsBox({ founder, meanings, update, renamed, kin }: {
   founder: Founder; meanings: Meaning[]; update: (key: number, patch: Partial<Founder>) => void;
   /// Peoples whose names the latest roots changed.
@@ -214,17 +222,21 @@ function RootsBox({ founder, meanings, update, renamed, kin }: {
   /// The kin who inherit these words from the same ancestral tongue.
   kin: string[];
 }) {
-  const [text, setText] = useState(() => (founder.design.roots ?? []).map((root) => `${root.concept} ${root.ipa}`).join("\n"));
-  const [open, setOpen] = useState(() => (founder.design.roots?.length ?? 0) > 0);
-  const bare = JSON.stringify({ ...founder.design, roots: [] });
+  const [text, setText] = useState(() => [
+    ...(founder.design.roots ?? []).map((root) => `${root.concept} ${root.ipa}`),
+    ...(founder.design.affixes ?? []).map((affix) => `${affix.category} ${affixWritten(affix)}`),
+  ].join("\n"));
+  const [open, setOpen] = useState(() => (founder.design.roots?.length ?? 0) + (founder.design.affixes?.length ?? 0) > 0);
+  const bare = JSON.stringify({ ...founder.design, roots: [], affixes: [] });
   const report = useMemo(() => text.trim() ? checkRoots(JSON.parse(bare) as LanguageDesign, text, meanings) : null, [bare, text, meanings]);
   const accepted = report?.design.roots ?? [];
+  const affixes = report?.design.affixes ?? [];
   useEffect(() => {
-    if (JSON.stringify(accepted) !== JSON.stringify(founder.design.roots ?? [])) {
-      const { roots: _, ...design } = founder.design;
-      update(founder.key, { design: accepted.length ? { ...design, roots: accepted } : design });
+    if (JSON.stringify(accepted) !== JSON.stringify(founder.design.roots ?? []) || JSON.stringify(affixes) !== JSON.stringify(founder.design.affixes ?? [])) {
+      const { roots: _, affixes: __, ...design } = founder.design;
+      update(founder.key, { design: { ...design, ...(accepted.length ? { roots: accepted } : {}), ...(affixes.length ? { affixes } : {}) } });
     }
-  }, [accepted, founder, update]);
+  }, [accepted, affixes, founder, update]);
   const trouble = report?.roots.filter((root) => root.status !== "ok" && root.status !== "warned") ?? [];
   const box = useRef<HTMLTextAreaElement>(null);
   const pickable = useMemo(() => [...concepts(), ...meanings.map((meaning) => ({ id: meaning.id, gloss: meaning.gloss, pronoun: false, custom: true }))], [meanings]);
@@ -243,8 +255,8 @@ function RootsBox({ founder, meanings, update, renamed, kin }: {
   return <section className="founding-roots">
     <h4>Their own words</h4>
     {open ? <>
-      <p>Give any meanings their words, one to a line, in the catalog’s sounds: <code>water nara</code>, <code>king kaːr</code>. The rest of the vocabulary is drawn around them, and sound change wears them like any word.{kin.length ? <> These are the words of their ancestral tongue, so the {kin.join(" and the ")} inherit them too.</> : null}</p>
-      <textarea ref={box} className="founding-roots-text" aria-label="The author’s roots" value={text} rows={Math.min(12, Math.max(3, text.split("\n").length + 1))}
+      <p>Give any meanings their words, one to a line, in the catalog’s sounds: <code>water nara</code>, <code>king kaːr</code>. Give a grammatical <Explained term="affix">affix</Explained> the same way, with a hyphen on the side that joins the word: <code>plural -s</code>, <code>future na-</code>; it can mark the plural, past, object, future, progressive, or genitive. The rest of the vocabulary and grammar is drawn around them, and sound change wears them like any word.{kin.length ? <> These are the words of their ancestral tongue, so the {kin.join(" and the ")} inherit them too.</> : null}</p>
+      <textarea ref={box} className="founding-roots-text" aria-label="The author’s roots and affixes" value={text} rows={Math.min(12, Math.max(3, text.split("\n").length + 1))}
         spellCheck={false} autoCapitalize="off" autoCorrect="off" onChange={(event) => setText(event.target.value)} />
       <SoundKeys sounds={founder.design.sounds.map((sound) => sound.ipa)} field={box} value={text}
         sounding={report?.roots.map((root) => root.ipa).join(" ")} onChange={setText} onHint={takeHint} />
@@ -256,10 +268,10 @@ function RootsBox({ founder, meanings, update, renamed, kin }: {
       {renamed.length ? <p className="muted small" role="status">Peoples are named from their words, so yours renamed {renamed.map((name, i) => <span key={i}>{i ? ", " : ""}the {name.before} the <b>{name.after}</b></span>)}.</p> : null}
       {report ? <>
         <p className={trouble.length ? "notice" : "muted small"}>
-          {accepted.length} {accepted.length === 1 ? "root" : "roots"} given{trouble.length ? ` · ${trouble.length} ${trouble.length === 1 ? "needs" : "need"} attention` : ""}
+          {accepted.length} {accepted.length === 1 ? "root" : "roots"}{affixes.length ? ` and ${affixes.length} ${affixes.length === 1 ? "affix" : "affixes"}` : ""} given{trouble.length ? ` · ${trouble.length} ${trouble.length === 1 ? "needs" : "need"} attention` : ""}
         </p>
         <ul className="founding-roots-check">{report.roots.map((root) => <li key={root.line} className={root.status === "ok" ? "ok" : root.status === "warned" ? "warned" : "trouble"}>
-          <span className="founding-roots-meaning">{root.gloss ?? root.meaning}</span>
+          <span className="founding-roots-meaning">{root.affix ? `${root.affix} affix` : root.gloss ?? root.meaning}</span>
           {root.spelled !== null ? <span><i className="word">{root.spelled}</i> <span className="muted">/{root.ipa}/</span></span> : <span className="muted">/{root.ipa}/</span>}
           {root.status === "warned" ? <span className="muted small">{root.warnings.map((warning) => ROOT_WARNING[warning]).join(", ")}</span> : null}
           {root.status !== "ok" && root.status !== "warned" ? <span className="small">{rootTrouble(root)}
@@ -673,6 +685,8 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
   const speechOwner = current?.source == null ? current : founders.find((founder) => founder.key === current.source);
   const inherited = !!current && current.source !== null;
   const drawn = speechOwner ? grammarDraws.current.get(speechOwner.key) : undefined;
+  // An object affix the author gave settles how the object is marked.
+  const objectAffix = speechOwner?.design.affixes?.find((affix) => affix.category === "object");
   const land = inspected === null ? undefined : map?.regions[inspected];
   const occupied = !!land && !!overview?.communities.some((community) => community.lands.includes(land.id));
   const defaultTitle = overview?.communities.length ? worldName(overview) : null;
@@ -798,9 +812,9 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
     const grammar = speechOwner.design.grammar ?? { plural: markerChoice(speech, "plural"), past: markerChoice(speech, "past") };
     update(speechOwner.key, { design: { ...speechOwner.design, grammar: { ...grammar, ...patch } } });
   };
-  /// A preset's sounds, keeping the grammar and roots the author chose.
+  /// A preset's sounds, keeping the grammar, roots, and affixes the author chose.
   const redesign = (owner: Founder, design: LanguageDesign): LanguageDesign =>
-    ({ ...design, ...(owner.design.grammar ? { grammar: owner.design.grammar } : {}), ...(owner.design.roots?.length ? { roots: owner.design.roots } : {}) });
+    ({ ...design, ...(owner.design.grammar ? { grammar: owner.design.grammar } : {}), ...(owner.design.roots?.length ? { roots: owner.design.roots } : {}), ...(owner.design.affixes?.length ? { affixes: owner.design.affixes } : {}) });
   const choosePreset = (owner: Founder, key: string) => {
     if (key === owner.preset) return;
     update(owner.key, { preset: key, design: redesign(owner, presetDesign(key, owner.seed)) });
@@ -1077,14 +1091,14 @@ export function Founding({ catalog, draft, onBegin, onChartRoom, onDraft }: {
             <p>They put <Phrase label="Word order" value={speechOwner.design.grammar?.order ?? ""}
               choices={[{ key: "", text: `${WORD_ORDER_PHRASE[drawn?.order ?? speech.grammar.order].choice}, as their speech falls out` },
                 ...(["SOV", "SVO", "VSO"] as WordOrder[]).map((order) => ({ key: order, text: WORD_ORDER_PHRASE[order].choice }))]}
-              onChange={(key) => setGrammar({ order: key === "" ? null : key as WordOrder })} />, <Phrase label="Object marking"
+              onChange={(key) => setGrammar({ order: key === "" ? null : key as WordOrder })} />, {objectAffix ? <span>mark the object with {affixWritten(objectAffix)}, as you gave it</span> : <Phrase label="Object marking"
               value={speechOwner.design.grammar?.object == null ? "" : speechOwner.design.grammar.object === "none" ? "order" : "case"}
               choices={[{ key: "", text: `${MARKING_PHRASE[(drawn?.object ?? markerChoice(speech, "object")) === "none" ? "order" : "case"].choice}, as their speech falls out` },
                 ...(["case", "order"] as const).map((marking) => ({ key: marking, text: MARKING_PHRASE[marking].choice }))]}
               onChange={(key) => {
                 const object = drawn?.object ?? markerChoice(speech, "object");
                 setGrammar({ object: key === "" ? null : key === "order" ? "none" : object !== "none" ? object : speechOwner.design.suffixing >= 0.5 ? "suffix" : "prefix" });
-              }} />, and put <Phrase label="Possessor placement" value={speechOwner.design.grammar?.possessor ?? ""}
+              }} />}, and put <Phrase label="Possessor placement" value={speechOwner.design.grammar?.possessor ?? ""}
               choices={[{ key: "", text: `${POSSESSOR_PHRASE[drawn?.possessor ?? speech.grammar.possessor].choice}, as their speech falls out` },
                 ...(["before", "after"] as PossessorOrder[]).map((possessor) => ({ key: possessor, text: POSSESSOR_PHRASE[possessor].choice }))]}
               onChange={(key) => setGrammar({ possessor: key === "" ? null : key as PossessorOrder })} />.</p>
