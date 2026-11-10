@@ -183,6 +183,26 @@ retain their recorded generators. V1–V3 keep their earlier lake-free maps,
 drainage, rivers, and climate. Missing geography still means `spherical-v1`,
 never the current default. For later revision mismatches, replay still
 works with a warning that the history may differ.
+
+A save keeps the stamp of the engine revision that wrote its history. A
+world loaded from another revision keeps that stamp while its action logs
+stand as loaded, so a new title, a note, or a renamed telling does not
+restamp it. Once this engine writes history into it (a run or a decision),
+`save` stamps the current revision and adds the old one to the document's
+`earlierRevisions`, oldest first. The overview's `savedRevision` is the
+stamp as loaded when it differs, for the warning in that session.
+`firstRevision` is the earliest revision known to have written the
+history, and the book's frontispiece keeps showing it afterwards.
+
+Before an engine of another revision overwrites a stored save, the shelf
+keeps that save as it stood under `langgen.kept.<id>.<revision>`
+(`saveBook` in `shelf.ts`). The first copy kept for a revision is never
+replaced. If it cannot be kept, the save fails visibly and the stored
+world is left alone. The warning offers the kept save for download, the
+book's last page lists every one, and recovery's *Download all* includes
+them. They leave the browser only when their world is removed for good.
+A kept save replays exactly only on its own revision, which no deployed
+build can yet supply.
 Shelf miniatures use the saved geography version for compatible spherical
 recipes (revision 33 through the running revision). Earlier revisions and
 unrecognized geography are not guessed onto a new map.
@@ -190,8 +210,8 @@ Resolved-state saves remain possible later work if exact preservation
 across versions matters.
 
 The save document flattens that recipe alongside the notebook and optional
-`title` and `author` strings. Old saves without these fields load with neither
-set. `title()` and `author()` read this document metadata; `setTitle` and
+`title` and `author` strings, and `earlierRevisions` when it has any. Old
+saves without these fields load with neither set. `title()` and `author()` read this document metadata; `setTitle` and
 `setAuthor` update it, with an empty string clearing the field. Export and
 import preserve both without changing actions, simulation state, or revision.
 

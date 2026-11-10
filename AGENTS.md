@@ -45,8 +45,9 @@ Read further when the task touches it:
   a new reading of the tip while old readings keep their answers.
 - `shelf.ts` stores saved worlds (still keyed as books, so old saves open),
   founding drafts, put-away worlds, and save revisions for cross-tab safety.
-  It names a world after its earliest-named continent unless the author
-  titled it.
+  Before another engine revision overwrites a save, it keeps that save as
+  it stood. It names a world after its earliest-named continent unless the
+  author titled it.
 - `route.ts` names hash routes for the chart room, founding drafts, worlds,
   and book chapters. `App.tsx` holds view state and actions.
 - `edition.ts` and `print.css` render editions from the book's own chapters.

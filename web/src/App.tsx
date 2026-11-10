@@ -15,7 +15,7 @@ import type { MapMotionReading } from "./components/MapView";
 import { Founding } from "./components/Founding";
 import { Pending } from "./components/Pending";
 import { sampleWorld } from "./sample";
-import { download } from "./takeout";
+import { download, fileName } from "./takeout";
 import { useLiftedValue } from "./motion";
 import { format as formatRoute, parse, push, replace, type Route } from "./route";
 import { EVENT_KIND } from "./lore";
@@ -24,6 +24,7 @@ import {
   bringBack,
   describe,
   discardDraft,
+  keptOriginals,
   loadShelf,
   newBookId,
   onShelfChange,
@@ -33,6 +34,7 @@ import {
   readPlace,
   rebuildShelf,
   removeForGood,
+  saveAsWritten,
   saveBook,
   savePlace,
   scanBooks,
@@ -168,7 +170,7 @@ export default function App() {
       }
       let kept;
       try {
-        kept = saveBook(entry, history, saved.revision);
+        kept = saveBook(entry, history, saved.revision, present.current.revision);
       } catch (e) {
         if (!(e instanceof StaleSave)) throw e;
         const id = newBookId();
@@ -176,7 +178,7 @@ export default function App() {
         const named = entry.named === true;
         const copy = { ...entry, id, title, named };
         const copyHistory = JSON.stringify({ ...JSON.parse(currentHistory), title }, null, 2);
-        kept = saveBook(copy, copyHistory, 0);
+        kept = saveBook(copy, copyHistory, 0, present.current.revision);
         saved.id = id;
         saved.keptTitle = { title, named };
         readyId.current = id;
@@ -659,7 +661,7 @@ export default function App() {
     await next.setTitle(title ?? "");
     await next.setAuthor(author ?? "");
     const tip = await next.tip().overview(next.latest());
-    const saved = saveBook(describe(id, tip, next.title(), next.author()), next.save(), 0);
+    const saved = saveBook(describe(id, tip, next.title(), next.author()), next.save(), 0, tip.revision);
     setShelf(saved.shelf);
     try { localStorage.setItem("umran.author", author ?? ""); }
     catch { /* The author is still kept in the world save. */ }
@@ -752,7 +754,7 @@ export default function App() {
           {!view.books.length ? <p>No saved worlds could be found.</p> : null}
           <p>Download all keeps the original saved data together in one file.</p>
           <div className="row">
-            <button type="button" onClick={() => download("umran-recovered-worlds.json", JSON.stringify({ shelf: view.raw, books: view.books }, null, 2))}>Download all</button>
+            <button type="button" onClick={() => download("umran-recovered-worlds.json", JSON.stringify({ shelf: view.raw, books: view.books, kept: keptOriginals() }, null, 2))}>Download all</button>
             <button type="button" className="primary" onClick={() => {
               try {
                 setShelf(rebuildShelf());
@@ -836,6 +838,12 @@ export default function App() {
         <p className="notice">
           This world was saved with engine revision {overview.savedRevision}; this is revision{" "}
           {overview.revision}, so its chronicle and languages may differ from when it was saved.
+          The save is kept as it stood.{" "}
+          <button type="button" className="link" onClick={() => {
+            const original = saveAsWritten(view.id, overview.savedRevision!);
+            if (original === null) setError("That save could not be found in this browser.");
+            else download(`${fileName(title, `revision-${overview.savedRevision}`)}.json`, original);
+          }}>Download it as it was saved</button>
         </p>
       ) : null}
       {error ? (

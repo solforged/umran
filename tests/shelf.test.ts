@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
-  bookLand, bringBack, discardDraft, loadShelf, onShelfChange, putAway, readBook, readDraft,
-  readPlace, rebuildShelf, removeForGood, saveBook, saveDraft, savePlace, scanBooks, setLast, StaleSave,
+  bookLand, bringBack, discardDraft, keptOriginals, loadShelf, onShelfChange, putAway, readBook, readDraft,
+  readPlace, rebuildShelf, removeForGood, saveAsWritten, saveBook, saveDraft, savePlace, scanBooks, setLast, StaleSave,
   type BookEntry, type DraftEntry, type ReadingPlace,
 } from "../web/src/shelf";
+
+/// The running engine's revision, as the workbench passes it to a save.
+const ENGINE = 66;
 
 let stored: Map<string, string>;
 let originalStorage: PropertyDescriptor | undefined;
@@ -120,9 +123,9 @@ describe("the manuscript shelf", () => {
   });
 
   test("every book save reads the current index and bumps only that world's revision", () => {
-    const first = saveBook(entry("a"), "a at first", 0);
-    const otherTab = saveBook(entry("b"), "b at first", 0);
-    const next = saveBook(entry("a"), "a at second", first.revision);
+    const first = saveBook(entry("a"), "a at first", 0, ENGINE);
+    const otherTab = saveBook(entry("b"), "b at first", 0, ENGINE);
+    const next = saveBook(entry("a"), "a at second", first.revision, ENGINE);
     expect(first.revision).toBe(1);
     expect(otherTab.revision).toBe(1);
     expect(next.revision).toBe(2);
@@ -133,11 +136,11 @@ describe("the manuscript shelf", () => {
   });
 
   test("a stale save cannot replace either the history or the index", () => {
-    saveBook(entry("a"), "a at first", 0);
-    saveBook(entry("a"), "a at second", 1);
+    saveBook(entry("a"), "a at first", 0, ENGINE);
+    saveBook(entry("a"), "a at second", 1, ENGINE);
     const rawIndex = stored.get(INDEX);
     let error: unknown;
-    try { saveBook(entry("a"), "a from a stale tab", 1); } catch (e) { error = e; }
+    try { saveBook(entry("a"), "a from a stale tab", 1, ENGINE); } catch (e) { error = e; }
     expect(error).toBeInstanceOf(StaleSave);
     expect((error as StaleSave).stored).toBe(2);
     expect((error as StaleSave).base).toBe(1);
@@ -147,12 +150,12 @@ describe("the manuscript shelf", () => {
 
   test("an old entry starts at revision zero", () => {
     stored.set(INDEX, JSON.stringify({ books: [entry("old")], last: "old" }));
-    expect(saveBook(entry("old"), "updated", 0).revision).toBe(1);
+    expect(saveBook(entry("old"), "updated", 0, ENGINE).revision).toBe(1);
   });
 
   test("draft changes preserve worlds and drafts added by another tab", () => {
     saveDraft(draft("a"), "first design");
-    saveBook(entry("world"), "intact history", 0);
+    saveBook(entry("world"), "intact history", 0, ENGINE);
     saveDraft(draft("b"), "second design");
     const updated = saveDraft({ ...draft("a"), step: 4 }, "revised design");
     expect(updated.books.map((book) => book.id)).toEqual(["world"]);
@@ -167,7 +170,7 @@ describe("the manuscript shelf", () => {
 
   test("beginning saves a book before discarding its draft of the same id", () => {
     saveDraft(draft("a"), "founding choices");
-    const saved = saveBook(entry("a"), "finished founding", 0);
+    const saved = saveBook(entry("a"), "finished founding", 0, ENGINE);
     expect(saved.shelf.drafts[0].id).toBe("a");
     expect(loadShelf().books[0].id).toBe("a");
     expect(discardDraft("a").drafts).toEqual([]);
@@ -175,7 +178,7 @@ describe("the manuscript shelf", () => {
   });
 
   test("put away and bring back preserve history, place, drafts, and other tabs' additions", () => {
-    saveBook(entry("a"), "a history", 0);
+    saveBook(entry("a"), "a history", 0, ENGINE);
     const place = { telling: null, point: null, viewing: 4, focus: { kind: "world" as const } };
     savePlace("a", place);
     saveDraft(draft("unfinished"), "founding choices");
@@ -186,7 +189,7 @@ describe("the manuscript shelf", () => {
     expect(away.putAway[0].putAway).toBeGreaterThan(0);
     expect(readBook("a")).toBe("a history");
     expect(readPlace("a")).toEqual(place);
-    saveBook(entry("b"), "b history", 0);
+    saveBook(entry("b"), "b history", 0, ENGINE);
     const restored = bringBack("a");
     expect(restored.books.map((book) => book.id)).toEqual(["a", "b"]);
     expect(restored.putAway).toEqual([]);
@@ -195,9 +198,9 @@ describe("the manuscript shelf", () => {
   });
 
   test("an open tab saving a put-away world does not bring it back", () => {
-    saveBook(entry("a"), "first", 0);
+    saveBook(entry("a"), "first", 0, ENGINE);
     putAway("a");
-    const saved = saveBook({ ...entry("a"), generation: 12 }, "second", 1);
+    const saved = saveBook({ ...entry("a"), generation: 12 }, "second", 1, ENGINE);
     expect(saved.shelf.books).toEqual([]);
     expect(saved.shelf.putAway[0].revision).toBe(2);
     expect(saved.shelf.putAway[0].generation).toBe(12);
@@ -206,8 +209,8 @@ describe("the manuscript shelf", () => {
   });
 
   test("permanent removal only deletes an explicitly put-away world and its place", () => {
-    saveBook(entry("active"), "keep", 0);
-    saveBook(entry("away"), "remove", 0);
+    saveBook(entry("active"), "keep", 0, ENGINE);
+    saveBook(entry("away"), "remove", 0, ENGINE);
     savePlace("away", { telling: null, point: null, viewing: null, focus: { kind: "world" } });
     removeForGood("active");
     expect(readBook("active")).toBe("keep");
@@ -222,8 +225,8 @@ describe("the manuscript shelf", () => {
   });
 
   test("setLast reads the latest shelf rather than an older tab's copy", () => {
-    saveBook(entry("a"), "a", 0);
-    saveBook(entry("b"), "b", 0);
+    saveBook(entry("a"), "a", 0, ENGINE);
+    saveBook(entry("b"), "b", 0, ENGINE);
     const shelf = setLast("a");
     expect(shelf.last).toBe("a");
     expect(shelf.books.map((book) => book.id)).toEqual(["b", "a"]);
@@ -236,7 +239,7 @@ describe("the manuscript shelf", () => {
     stored.set("langgen.book.a", "keep the history");
     stored.set("langgen.draft.a", "keep the choices");
     for (const change of [
-      () => saveBook(entry("a"), "replace", 0),
+      () => saveBook(entry("a"), "replace", 0, ENGINE),
       () => saveDraft(draft("a"), "replace"),
       () => discardDraft("a"), () => putAway("a"), () => bringBack("a"),
       () => removeForGood("a"), () => setLast(null),
@@ -248,7 +251,7 @@ describe("the manuscript shelf", () => {
 
   test("a refused index write cannot discard a draft or permanently delete a world", () => {
     saveDraft(draft("draft"), "keep choices");
-    saveBook(entry("book"), "keep history", 0);
+    saveBook(entry("book"), "keep history", 0, ENGINE);
     putAway("book");
     const original = localStorage.setItem;
     localStorage.setItem = (key, value) => {
@@ -313,7 +316,7 @@ describe("manuscript recovery", () => {
 
   test("a readable shelf is not replaced by rebuilding", () => {
     saveDraft(draft("draft"), "choices");
-    saveBook(entry("away"), JSON.stringify(history()), 0);
+    saveBook(entry("away"), JSON.stringify(history()), 0, ENGINE);
     putAway("away");
     const original = stored.get(INDEX);
     expect(rebuildShelf()).toEqual(loadShelf());
@@ -387,5 +390,66 @@ describe("the chart reading place", () => {
       telling: 1, point: { action: 2, offset: 0 }, viewing: 20, focus: { kind: "world" }, chart: {},
     });
     expect(stored.get("langgen.place.bad")).toBe(raw);
+  });
+});
+
+describe("saves kept as an earlier engine left them", () => {
+  const stamped = (revision: number, title = "An intact world") => JSON.stringify({ ...history(title), revision }, null, 2);
+
+  test("a save is kept as it stood before an engine of another revision first overwrites it", () => {
+    const original = save("world", { ...history(), revision: 60 });
+    // Only a title changed, so the engine left the stamp at 60. The bytes are still another engine's.
+    saveBook(entry("world"), stamped(60, "Retitled"), 0, ENGINE);
+    expect(keptOriginals("world")).toEqual([{ id: "world", revision: 60, raw: original }]);
+    expect(saveAsWritten("world", 60)).toBe(original);
+    // History written by this engine moves the stamp. The first copy is not replaced.
+    saveBook(entry("world"), stamped(ENGINE), 1, ENGINE);
+    saveBook(entry("world"), stamped(ENGINE, "Later"), 2, ENGINE);
+    expect(keptOriginals("world")).toEqual([{ id: "world", revision: 60, raw: original }]);
+    expect(readBook("world")).toBe(stamped(ENGINE, "Later"));
+    // The next engine keeps what this one wrote, oldest first.
+    saveBook(entry("world"), stamped(ENGINE + 1), 3, ENGINE + 1);
+    expect(keptOriginals("world").map((kept) => kept.revision)).toEqual([60, ENGINE]);
+    expect(saveAsWritten("world", ENGINE)).toBe(stamped(ENGINE, "Later"));
+  });
+
+  test("an engine saving its own world keeps nothing, and an unopened older save stands as its own original", () => {
+    saveBook(entry("mine"), stamped(ENGINE), 0, ENGINE);
+    saveBook(entry("mine"), stamped(ENGINE, "Again"), 1, ENGINE);
+    expect(keptOriginals()).toEqual([]);
+    const old = save("old", { ...history(), revision: 60 });
+    expect(saveAsWritten("old", 60)).toBe(old);
+    expect(saveAsWritten("old", 61)).toBeNull();
+  });
+
+  test("a newer save overwritten by a stale older build is kept too", () => {
+    const newer = save("world", { ...history(), revision: ENGINE + 1 });
+    saveBook(entry("world"), stamped(ENGINE), 0, ENGINE);
+    expect(saveAsWritten("world", ENGINE + 1)).toBe(newer);
+  });
+
+  test("when the original cannot be kept, the save it guards is not overwritten", () => {
+    const original = save("world", { ...history(), revision: 60 });
+    const setItem = localStorage.setItem.bind(localStorage);
+    localStorage.setItem = (key, value) => {
+      if (key.startsWith("langgen.kept.")) throw new Error("quota");
+      setItem(key, value);
+    };
+    expect(() => saveBook(entry("world"), stamped(ENGINE), 0, ENGINE)).toThrow("quota");
+    expect(readBook("world")).toBe(original);
+  });
+
+  test("kept originals are not taken for worlds, and leave only with their world", () => {
+    save("world", { ...history(), revision: 60 });
+    saveBook(entry("world"), stamped(ENGINE), 0, ENGINE);
+    save("other", { ...history(), revision: 60 });
+    saveBook(entry("other"), stamped(ENGINE), 0, ENGINE);
+    expect(scanBooks().map((book) => book.id)).toEqual(["other", "world"]);
+    stored.delete(INDEX);
+    expect(rebuildShelf().books.map((book) => book.id).sort()).toEqual(["other", "world"]);
+    saveBook(entry("world"), stamped(ENGINE, "Still here"), 0, ENGINE);
+    putAway("world");
+    removeForGood("world");
+    expect(keptOriginals().map((kept) => kept.id)).toEqual(["other"]);
   });
 });

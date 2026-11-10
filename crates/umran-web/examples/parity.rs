@@ -23,6 +23,9 @@ fn snapshot(bench: &mut Bench, generation: u32) -> Result<Value, String> {
     object.remove("point");
     object.remove("atTip");
     object.remove("tellings");
+    // Where a save came from is the document's record, not the world's state.
+    object.remove("savedRevision");
+    object.remove("firstRevision");
     let varieties = overview["varieties"]
         .as_array()
         .ok_or("Missing varieties")?;

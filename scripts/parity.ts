@@ -148,6 +148,10 @@ function snapshot(bench: WasmWorkbench, generation: number): JsonObject {
   delete overview.point;
   delete overview.atTip;
   delete overview.tellings;
+  // Where a save came from is the document's record, not the world's state:
+  // a legacy recipe keeps its stamp until this engine writes history into it.
+  delete overview.savedRevision;
+  delete overview.firstRevision;
   const competitors: JsonObject[] = [];
   const lexicons = array(overview.varieties).map(value => {
     const variety = object(value);

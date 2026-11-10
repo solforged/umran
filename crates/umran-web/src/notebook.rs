@@ -93,4 +93,13 @@ pub(crate) struct Document {
     pub title: Option<String>,
     #[serde(default)]
     pub author: Option<String>,
+    /// Engine revisions that wrote this history before the one in `revision`,
+    /// oldest first. Each replays a recipe differently, so the world may no
+    /// longer read as its author first read it.
+    #[serde(
+        default,
+        rename = "earlierRevisions",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub earlier_revisions: Vec<u32>,
 }

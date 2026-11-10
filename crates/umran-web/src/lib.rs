@@ -510,6 +510,16 @@ pub struct DecisionView {
     pub annals: Vec<String>,
 }
 
+/// A loaded save's stamp, the engine revisions that wrote its history
+/// before that one, and its action logs as loaded. A recipe replays exactly
+/// only on the revision that wrote it, so the stamp moves to this engine's
+/// only once this engine has written history into it.
+struct Provenance {
+    revision: u32,
+    earlier: Vec<u32>,
+    logs: Vec<(TellingId, Vec<Action>)>,
+}
+
 pub struct Bench {
     chronicle: Chronicle,
     notebook: Vec<Note>,
@@ -520,8 +530,8 @@ pub struct Bench {
     /// The last world requested, so repeated views of one generation do not
     /// replay it again.
     cached: Option<World>,
-    /// Engine revision a loaded recipe was saved with, if it differs.
-    saved_revision: Option<u32>,
+    /// Where a loaded save came from. A new world has none.
+    provenance: Option<Rc<Provenance>>,
     /// An exact, read-only view. All language and word queries share it.
     fixed: Option<(HistoryPoint, World)>,
     readings: RefCell<Vec<CachedReading>>,
@@ -554,7 +564,7 @@ impl Bench {
             author: None,
             mutation: 0,
             cached: None,
-            saved_revision: None,
+            provenance: None,
             fixed: None,
             readings: RefCell::default(),
         })
@@ -572,7 +582,7 @@ impl Bench {
             author: None,
             mutation: 0,
             cached: None,
-            saved_revision: self.saved_revision,
+            provenance: self.provenance.clone(),
             fixed: None,
             readings: RefCell::default(),
         })
@@ -584,6 +594,15 @@ impl Bench {
             serde_json::from_str(json).map_err(|e| format!("Not an Umran save: {e}"))?;
         let recipe = document.recipe;
         let chronicle = Chronicle::from_recipe(&recipe)?;
+        let provenance = Provenance {
+            revision: recipe.revision,
+            earlier: document.earlier_revisions,
+            logs: recipe
+                .tellings
+                .into_iter()
+                .map(|telling| (telling.id, telling.actions))
+                .collect(),
+        };
         Ok(Bench {
             chronicle,
             notebook: document.notebook,
@@ -591,20 +610,61 @@ impl Bench {
             author: document.author,
             mutation: 0,
             cached: None,
-            saved_revision: (recipe.revision != ENGINE_REVISION).then_some(recipe.revision),
+            provenance: Some(Rc::new(provenance)),
             fixed: None,
             readings: RefCell::default(),
         })
     }
 
     pub fn save(&self) -> Result<String, String> {
+        let mut recipe = self.chronicle.recipe();
+        let (revision, earlier_revisions) = self.stamp();
+        recipe.revision = revision;
         serde_json::to_string_pretty(&Document {
-            recipe: self.chronicle.recipe(),
+            recipe,
             notebook: self.notebook.clone(),
             title: self.title.clone(),
             author: self.author.clone(),
+            earlier_revisions,
         })
         .map_err(|e| e.to_string())
+    }
+
+    /// The revision a save made now is stamped with, and the revisions that
+    /// wrote its history before that one, oldest first. A save loaded from
+    /// another revision keeps its stamp while its action logs stand as
+    /// loaded: a title or a note changes nothing a replay reads. Once this
+    /// engine has written history into it, the stamp is this engine's and
+    /// the old one joins the earlier revisions.
+    fn stamp(&self) -> (u32, Vec<u32>) {
+        let Some(loaded) = &self.provenance else {
+            return (ENGINE_REVISION, Vec::new());
+        };
+        let mut earlier = loaded.earlier.clone();
+        if loaded.revision == ENGINE_REVISION {
+            return (ENGINE_REVISION, earlier);
+        }
+        let tellings = self.chronicle.tellings();
+        let unwritten = tellings.len() == loaded.logs.len()
+            && tellings
+                .iter()
+                .zip(&loaded.logs)
+                .all(|(now, (id, actions))| now.id == *id && now.actions == *actions);
+        if unwritten {
+            return (loaded.revision, earlier);
+        }
+        if earlier.last() != Some(&loaded.revision) {
+            earlier.push(loaded.revision);
+        }
+        (ENGINE_REVISION, earlier)
+    }
+
+    /// The revision the loaded save was stamped with, if not this engine's.
+    fn saved_revision(&self) -> Option<u32> {
+        self.provenance
+            .as_ref()
+            .map(|loaded| loaded.revision)
+            .filter(|revision| *revision != ENGINE_REVISION)
     }
 
     pub fn title(&self) -> Option<&str> {
@@ -1347,7 +1407,7 @@ impl Bench {
             author: self.author.clone(),
             mutation: self.mutation,
             cached: None,
-            saved_revision: self.saved_revision,
+            provenance: self.provenance.clone(),
             fixed,
             readings: RefCell::default(),
         })
@@ -1863,7 +1923,14 @@ impl Bench {
         let mutation = self.mutation;
         let timeline = self.timeline();
         let seed = self.chronicle.seed;
-        let saved_revision = self.saved_revision;
+        let saved_revision = self.saved_revision();
+        let first_revision = {
+            let (stamp, earlier) = self.stamp();
+            earlier
+                .first()
+                .copied()
+                .or((stamp != ENGINE_REVISION).then_some(stamp))
+        };
         let tellings = self.tellings();
         let telling = self.chronicle.active();
         let at_tip = self.chronicle.end() == point;
@@ -1927,6 +1994,7 @@ impl Bench {
             latest,
             revision: ENGINE_REVISION,
             saved_revision,
+            first_revision,
             timeline,
             communities: world
                 .communities
@@ -3955,7 +4023,11 @@ struct Overview<'a> {
     generation: u32,
     latest: u32,
     revision: u32,
+    /// The stamp of the save as loaded, when another revision wrote it.
     saved_revision: Option<u32>,
+    /// The earliest engine revision known to have written this history,
+    /// when it is not this one. It outlasts the session that first reread it.
+    first_revision: Option<u32>,
     timeline: Vec<Marker>,
     communities: Vec<CommunityView>,
     varieties: Vec<VarietyView<'a>>,
@@ -8731,6 +8803,67 @@ mod tests {
                 .is_err()
         );
         assert!(w.act("not json").is_err());
+    }
+
+    #[test]
+    fn a_save_keeps_its_stamp_until_this_engine_writes_history_into_it() {
+        let parsed = |save: &str| serde_json::from_str::<serde_json::Value>(save).unwrap();
+        let overview = |w: &mut Bench| parsed(&w.overview(w.latest()).unwrap());
+        // A new world is this engine's, with no earlier revisions.
+        let mut new = bench();
+        let fresh = parsed(&new.save().unwrap());
+        assert_eq!(fresh["revision"], ENGINE_REVISION);
+        assert!(fresh.get("earlierRevisions").is_none());
+        assert_eq!(overview(&mut new)["firstRevision"], serde_json::Value::Null);
+
+        let earlier = ENGINE_REVISION - 1;
+        let mut old = fresh.clone();
+        old["revision"] = earlier.into();
+        let mut w = Bench::load(&old.to_string()).unwrap();
+        assert_eq!(overview(&mut w)["savedRevision"], earlier);
+        assert_eq!(overview(&mut w)["firstRevision"], earlier);
+        // Reading, a title, a telling's name: none is history, so the stamp stays.
+        w.set_title("Kept as it was");
+        w.rename(0, "The first telling").unwrap();
+        let kept = parsed(&w.save().unwrap());
+        assert_eq!(kept["revision"], earlier);
+        assert!(kept.get("earlierRevisions").is_none());
+        assert_eq!(kept["title"], "Kept as it was");
+        assert_eq!(
+            kept["tellings"][0]["actions"],
+            old["tellings"][0]["actions"]
+        );
+
+        // Written on by this engine, it is this engine's, and says what it was.
+        w.act(r#"{"kind":"run","generations":1}"#).unwrap();
+        let written = parsed(&w.save().unwrap());
+        assert_eq!(written["revision"], ENGINE_REVISION);
+        assert_eq!(written["earlierRevisions"], serde_json::json!([earlier]));
+        assert_eq!(overview(&mut w)["firstRevision"], earlier);
+
+        // The record outlasts the session, without repeating itself.
+        let mut again = Bench::load(&written.to_string()).unwrap();
+        assert_eq!(
+            overview(&mut again)["savedRevision"],
+            serde_json::Value::Null
+        );
+        assert_eq!(overview(&mut again)["firstRevision"], earlier);
+        again.act(r#"{"kind":"run","generations":1}"#).unwrap();
+        let later = parsed(&again.save().unwrap());
+        assert_eq!(later["earlierRevisions"], serde_json::json!([earlier]));
+
+        // A second crossing joins the first, oldest first.
+        let mut twice = written.clone();
+        twice["revision"] = earlier.into();
+        twice["earlierRevisions"] = serde_json::json!([earlier - 1]);
+        let mut w = Bench::load(&twice.to_string()).unwrap();
+        w.act(r#"{"kind":"run","generations":1}"#).unwrap();
+        let chained = parsed(&w.save().unwrap());
+        assert_eq!(
+            chained["earlierRevisions"],
+            serde_json::json!([earlier - 1, earlier])
+        );
+        assert_eq!(overview(&mut w)["firstRevision"], earlier - 1);
     }
 
     #[test]

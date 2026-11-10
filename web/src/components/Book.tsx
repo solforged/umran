@@ -17,7 +17,7 @@ import { Renderings } from "./Renderings";
 import { Told } from "./Told";
 import { format } from "../route";
 import { Pending, useAnswer } from "./Pending";
-import { readPlace, savePlace, type ReadingPlace } from "../shelf";
+import { keptOriginals, readPlace, savePlace, type ReadingPlace } from "../shelf";
 import "./book.css";
 
 const CONTENTS = [
@@ -733,7 +733,7 @@ function FrontispieceMetadata({ overview, catalog, generation }: { overview: Ove
   return <div className="book-metadata">
     <p>Year read: {generation * YEARS}</p>
     <p>Seed {overview.seed} · engine revision {catalog.revision}
-      {overview.savedRevision !== null && overview.savedRevision !== catalog.revision ? ` · saved under revision ${overview.savedRevision}` : ""}
+      {overview.firstRevision !== null ? ` · first written under revision ${overview.firstRevision}` : ""}
     </p>
     {overview.tellings.length > 1 && telling ? <p>Telling: {telling.name}</p> : null}
     {complete ? <p>Edition made <time dateTime={made.toISOString()}>{made.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}</time>.</p> : null}
@@ -748,7 +748,9 @@ function EditionActions({ reading }: { reading: Parameters<typeof Book>[0] }) {
   const [error, setError] = useState<string | null>(null);
   const job = useRef<AbortController | null>(null);
   useEffect(() => () => { job.current?.abort(); }, []);
-  const { title, engine, generation, overview, catalog } = reading;
+  const { title, engine, generation, overview, catalog, worldId } = reading;
+  // Read when the page opens: a save made while it is open keeps at most one more.
+  const [kept] = useState(() => keptOriginals(worldId));
   const make = async (format: "print" | "html" | "markdown") => {
     if (job.current) return;
     const controller = new AbortController();
@@ -816,6 +818,7 @@ function EditionActions({ reading }: { reading: Parameters<typeof Book>[0] }) {
       <li><button type="button" disabled={progress !== null} onClick={() => void make("markdown")}>As text</button>{" "}<span className="muted">The same complete book as Markdown, with every recorded entry.</span></li>
       <li className="takeout-choice"><label><input type="checkbox" checked={apparatus} onChange={(event) => setApparatus(event.currentTarget.checked)} /> With every word’s evidence</label>{" "}<span className="muted">Origins, senses, paradigms, and cognates opened under every word of every language; the ledgers alone otherwise. Many times longer.</span></li>
       <li><button type="button" onClick={() => download(fileName(title, "json"), engine.save(), "application/json")}>As a save file</button>{" "}<span className="muted">The world, every telling, and all the author’s notes; open it from the chart room.</span></li>
+      {kept.map((original) => <li key={original.revision}><button type="button" onClick={() => download(`${fileName(title, `revision-${original.revision}`)}.json`, original.raw, "application/json")}>As it was saved under revision {original.revision}</button>{" "}<span className="muted">The save file before a later engine reread it. It replays exactly only on that revision.</span></li>)}
     </ul> : null}
     {error ? <p role="alert">{error}</p> : null}
     {progress ? createPortal(<dialog className="edition-progress" aria-labelledby="edition-progress-title"

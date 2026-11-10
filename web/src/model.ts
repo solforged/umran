@@ -650,7 +650,11 @@ export interface Overview {
   generation: number;
   latest: number;
   revision: number;
+  /// The stamp of the save as loaded, when another engine revision wrote it.
   savedRevision: number | null;
+  /// The earliest engine revision known to have written this history, when
+  /// it is not this one. It stays after this engine has written on.
+  firstRevision: number | null;
   timeline: Marker[];
   communities: Community[];
   varieties: Variety[];

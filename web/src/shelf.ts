@@ -61,6 +61,9 @@ export interface Shelf {
 const INDEX = "langgen.shelf.v1";
 const LEGACY = "langgen.sim.v1";
 const bookKey = (id: string) => `langgen.book.${id}`;
+// Not under `langgen.book.`, so a scan for worlds never takes one for a world.
+const KEPT = "langgen.kept.";
+const keptKey = (id: string, revision: number) => `${KEPT}${id}.${revision}`;
 const draftKey = (id: string) => `langgen.draft.${id}`;
 
 const indexNumber = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
@@ -198,9 +201,71 @@ function writeShelf(shelf: Shelf): Shelf {
   return shelf;
 }
 
+/// The engine revision a save is stamped with, if it can be read.
+function stamp(raw: string): number | null {
+  try {
+    const recipe: unknown = JSON.parse(raw);
+    return record(recipe) && indexNumber(recipe.revision) ? recipe.revision : null;
+  } catch {
+    return null;
+  }
+}
+
+/// A recipe replays exactly only on the engine revision that wrote it. So
+/// before an engine of another revision overwrites a save, keep the save as
+/// it stood. The first copy kept for a revision is never replaced. If it
+/// cannot be kept, this throws and the save it guards is left alone.
+function keepOriginal(id: string, engine: number) {
+  const standing = get(bookKey(id));
+  if (standing === null) return;
+  const revision = stamp(standing);
+  if (revision === null || revision === engine) return;
+  const key = keptKey(id, revision);
+  if (get(key) === null) localStorage.setItem(key, standing);
+}
+
+export interface KeptOriginal {
+  id: string;
+  revision: number;
+  raw: string;
+}
+
+/// Every save kept as an earlier engine revision left it, oldest first: one
+/// world's, or all of them for recovery.
+export function keptOriginals(id?: string): KeptOriginal[] {
+  const kept: KeptOriginal[] = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key?.startsWith(KEPT)) continue;
+      const cut = key.lastIndexOf(".");
+      if (cut < KEPT.length) continue;
+      const world = key.slice(KEPT.length, cut);
+      const revision = Number(key.slice(cut + 1));
+      const raw = localStorage.getItem(key);
+      if (raw === null || !indexNumber(revision) || (id !== undefined && world !== id)) continue;
+      kept.push({ id: world, revision, raw });
+    }
+  } catch {
+    return [];
+  }
+  return kept.sort((a, b) => a.id.localeCompare(b.id) || a.revision - b.revision);
+}
+
+/// A world's save as the engine of `revision` left it: the copy kept when a
+/// later engine first overwrote it, or the standing save if none has yet.
+export function saveAsWritten(id: string, revision: number): string | null {
+  const kept = get(keptKey(id, revision));
+  if (kept !== null) return kept;
+  const standing = get(bookKey(id));
+  return standing !== null && stamp(standing) === revision ? standing : null;
+}
+
 /// Read the stored shelf for every change, not an older copy held by a tab.
 /// A world put away elsewhere stays put away even if an open tab saves it.
-export function saveBook(entry: BookEntry, history: string, base: number): { shelf: Shelf; revision: number } {
+/// `engine` is the running engine's revision, which decides whether the
+/// save being replaced is first kept as it stood.
+export function saveBook(entry: BookEntry, history: string, base: number, engine: number): { shelf: Shelf; revision: number } {
   const shelf = loadShelf();
   const current = [...shelf.books, ...shelf.putAway].find((book) => book.id === entry.id);
   const stored = current?.revision ?? 0;
@@ -211,6 +276,7 @@ export function saveBook(entry: BookEntry, history: string, base: number): { she
   const next: Shelf = away
     ? { ...shelf, putAway: shelf.putAway.map((book) => book.id === entry.id ? { ...saved, putAway: book.putAway } : book) }
     : { ...shelf, books: [saved, ...shelf.books.filter((book) => book.id !== entry.id)], last: entry.id };
+  keepOriginal(entry.id, engine);
   localStorage.setItem(bookKey(entry.id), history);
   return { shelf: writeShelf(next), revision };
 }
@@ -280,6 +346,7 @@ export function removeForGood(id: string): Shelf {
   });
   localStorage.removeItem(bookKey(id));
   localStorage.removeItem(placeKey(id));
+  for (const kept of keptOriginals(id)) localStorage.removeItem(keptKey(id, kept.revision));
   return next;
 }
 

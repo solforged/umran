@@ -303,6 +303,12 @@ Reloading first saves the latest generation; if saving fails, the update
 waits so you can export the world. Other open windows wait for their own
 reload.
 
+The engine changes between editions, and a newer one can tell the same
+world differently. Umran warns when a world was saved by another engine
+revision and keeps that save as it stood. Download it from the warning or
+from **Take it elsewhere** in the book. The frontispiece records the
+revision the world was first written under.
+
 Worlds saved before engine revision 33 keep their original data and open
 recovery. Their old flat-map land IDs cannot be replayed on the new sphere.
 Spherical saves retain their recorded geography when opened, exported, or
