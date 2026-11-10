@@ -4008,7 +4008,18 @@ fn root_warnings(design: &LanguageDesign, form: &Form) -> Vec<&'static str> {
             && syllables
                 .get(i + 1)
                 .is_some_and(|n| n.onset.start == s.coda.start);
-        s.onset.len() > 1
+        // A cluster the design lists may begin a syllable.
+        let listed = || {
+            let onset: Vec<_> = form.segs[s.onset.clone()]
+                .iter()
+                .map(|seg| seg.phone)
+                .collect();
+            design
+                .clusters
+                .iter()
+                .any(|cluster| CATALOG.parse_ipa(cluster).as_ref() == Some(&onset))
+        };
+        (s.onset.len() > 1 && !listed())
             || s.coda.len() > 1
             || (!last && !design.inner_clusters && !s.coda.is_empty() && !shared)
     });
@@ -8825,6 +8836,48 @@ mod tests {
         // The save replays to the same grammar.
         let again = Bench::load(&bench.save().unwrap()).unwrap();
         assert_eq!(again.chronicle.recipe(), bench.chronicle.recipe());
+    }
+
+    #[test]
+    fn a_listed_cluster_is_no_longer_an_unusual_shape() {
+        let mut design = familiar_with(3, &["s", "t", "r", "k", "a", "i"]);
+        let text = "water /strata/\nstone /skara/";
+        let warnings = |design: &serde_json::Value, line: u64| {
+            let report: serde_json::Value =
+                serde_json::from_str(&Bench::check_roots(&design.to_string(), text, "[]").unwrap())
+                    .unwrap();
+            report["roots"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|root| root["line"] == line)
+                .unwrap()["warnings"]
+                .clone()
+        };
+        assert_eq!(warnings(&design, 1), serde_json::json!(["cluster"]));
+        design["clusters"] = serde_json::json!(["str"]);
+        design["onsetClusters"] = serde_json::json!(0.6);
+        assert_eq!(warnings(&design, 1), serde_json::json!([]));
+        assert_eq!(warnings(&design, 2), serde_json::json!(["cluster"]));
+        // The preview draws words that open on the cluster.
+        let preview: serde_json::Value = serde_json::from_str(
+            &Bench::preview(&design.to_string(), 7, r#"{"kind":"people"}"#).unwrap(),
+        )
+        .unwrap();
+        assert!(preview["words"].as_array().unwrap().iter().any(|word| {
+            word["ipa"]
+                .as_str()
+                .unwrap()
+                .replace('ˈ', "")
+                .starts_with("str")
+        }));
+        design["clusters"] = serde_json::json!(["sq"]);
+        let refused = Bench::preview(&design.to_string(), 7, r#"{"kind":"people"}"#);
+        assert!(
+            refused
+                .unwrap_err()
+                .contains("a sound these speakers do not have")
+        );
     }
 
     #[test]

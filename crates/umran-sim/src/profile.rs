@@ -99,6 +99,10 @@ pub struct PhonotacticPrior {
     /// Chance an internal consonant is long; disabled unless requested.
     #[serde(default)]
     pub geminates: f32,
+    /// Chance a drawn syllable begins with one of the preferred onset
+    /// clusters rather than a single consonant; disabled unless requested.
+    #[serde(default)]
+    pub onset_clusters: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -219,6 +223,7 @@ fn base() -> SoundProfile {
             identical_consonants: 0.1,
             long_vowels: 0.0,
             geminates: 0.0,
+            onset_clusters: 0.0,
         },
         morphology: MorphologyPrior {
             kind: MorphologyKind::Concatenative,

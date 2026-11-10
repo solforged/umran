@@ -76,6 +76,10 @@ const CHECKPOINT_EVERY: u32 = 10;
 const MAX_RUN: u32 = 2000;
 
 /// One thing a person did to the world.
+// A founding carries a whole language design, far more than any other
+// action. A recipe holds a few dozen actions, so the space is not worth a
+// box at every place one is built.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum Action {

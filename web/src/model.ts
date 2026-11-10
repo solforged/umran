@@ -28,6 +28,11 @@ export interface LanguageDesign {
   longVowels: number;
   /// 0–1: how often a consonant inside a word is long. Absent in older designs.
   geminates?: number;
+  /// Consonant clusters that may begin a syllable (`st`, `tr`), each two or
+  /// three of the design's consonants.
+  clusters?: string[];
+  /// 0–1: how often a drawn syllable begins with one of `clusters`.
+  onsetClusters?: number;
   /// Where stress falls; null or absent leaves it to the founding draw.
   stress?: StressRule | null;
   building: "concatenative" | "root-pattern";

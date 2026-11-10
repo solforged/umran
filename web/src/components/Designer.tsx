@@ -62,6 +62,8 @@ export function Designer({
     };
   }, []);
   const set = (patch: Partial<LanguageDesign>) => setDesign((d) => ({ ...d, ...patch }));
+  // The clusters as typed, so a space can be typed before the next one.
+  const [clusters, setClusters] = useState(() => (initial?.design.clusters ?? []).join(" "));
 
   const state = (ipa: string) => design.sounds.find((s) => s.ipa === ipa);
   const cycle = (ipa: string) => {
@@ -137,7 +139,7 @@ export function Designer({
               defaultValue=""
               onChange={(e) => {
                 const preset = e.target.value;
-                if (preset) setDesign((current) => ({ ...presetDesign(preset, seed), ...(current.grammar ? { grammar: current.grammar } : {}) }));
+                if (preset) { setDesign((current) => ({ ...presetDesign(preset, seed), ...(current.grammar ? { grammar: current.grammar } : {}) })); setClusters(""); }
                 e.target.value = "";
               }}
             >
@@ -161,7 +163,7 @@ export function Designer({
             <input type="range" min={2} max={10} value={vowels} onChange={(e) => setVowels(Number(e.target.value))} />
             <small>{chosenVowels} chosen now; the slider sets the redraw target.</small>
           </label>
-          <button type="button" onClick={() => setDesign((current) => ({ ...frequencyDesign(seed, consonants, vowels), ...(current.grammar ? { grammar: current.grammar } : {}) }))}>
+          <button type="button" onClick={() => { setDesign((current) => ({ ...frequencyDesign(seed, consonants, vowels), ...(current.grammar ? { grammar: current.grammar } : {}) })); setClusters(""); }}>
             Draw by world frequency
           </button>
         </section>
@@ -244,6 +246,18 @@ export function Designer({
             <input type="checkbox" checked={design.innerClusters} onChange={(e) => set({ innerClusters: e.target.checked })} />
             Consonants may meet inside words (kasta, not only kasata)
           </label>
+          <label>
+            Clusters that may begin a syllable
+            <input type="text" value={clusters} placeholder="st tr kw" spellCheck={false} autoCapitalize="off" autoCorrect="off"
+              onChange={(e) => {
+                setClusters(e.target.value);
+                const listed = e.target.value.split(/[\s,]+/).filter(Boolean);
+                // Listing the first cluster starts drawing them; clearing the list stops.
+                set({ clusters: listed, onsetClusters: listed.length ? design.onsetClusters || 0.2 : 0 });
+              }} />
+            <small>Two or three of the consonants above, with spaces between. Drawn words begin with them, and borrowed words may keep them.</small>
+          </label>
+          {design.clusters?.length ? knob("Words that begin with a cluster", design.onsetClusters ?? 0, (v) => set({ onsetClusters: v }), "none", "many") : null}
         </Section>
 
         <Section title="Word building">

@@ -218,6 +218,15 @@ pub struct LanguageDesign {
     /// 0–1: how often an internal consonant is long; off by default.
     #[serde(default)]
     pub geminates: f32,
+    /// Consonant clusters that may begin a syllable (`st`, `tr`, `kw`),
+    /// each two or three of the design's consonants. Drawn words use them
+    /// as often as `onset_clusters` says, and loans may keep them. Absent
+    /// in older designs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub clusters: Vec<String>,
+    /// 0–1: how often a drawn syllable begins with one of `clusters`.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub onset_clusters: f32,
     #[serde(default)]
     pub stress: Option<StressRule>,
     pub building: MorphologyKind,
@@ -238,6 +247,10 @@ pub struct LanguageDesign {
     /// its category's marking over `grammar`. Absent in older designs.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub affixes: Vec<Affix>,
+}
+
+fn is_zero(value: &f32) -> bool {
+    *value == 0.0
 }
 
 impl LanguageDesign {
@@ -294,6 +307,10 @@ impl LanguageDesign {
             repetition: tac.identical_consonants,
             long_vowels: tac.long_vowels,
             geminates: tac.geminates,
+            // A preset's preferred clusters are not carried over: a design
+            // has clusters only where its author lists them.
+            clusters: Vec::new(),
+            onset_clusters: 0.0,
             stress: profile.stress,
             building: profile.morphology.kind,
             suffixing: profile.morphology.suffixing,
@@ -333,6 +350,7 @@ impl LanguageDesign {
             self.repetition,
             self.long_vowels,
             self.geminates,
+            self.onset_clusters,
             self.suffixing,
             self.derivation,
         ];
@@ -348,6 +366,15 @@ impl LanguageDesign {
                 return Err(RootError::Duplicate.describe(root));
             }
             supplied.push(concept);
+        }
+        for (at, cluster) in self.clusters.iter().enumerate() {
+            let ids = self.check_cluster(cluster)?;
+            if self.clusters[..at]
+                .iter()
+                .any(|other| CATALOG.parse_ipa(other).as_ref() == Some(&ids))
+            {
+                return Err(format!("the cluster '{cluster}' is listed twice"));
+            }
         }
         let mut marked: Vec<Category> = Vec::new();
         for affix in &self.affixes {
@@ -375,6 +402,29 @@ impl LanguageDesign {
             ));
         }
         Ok(form)
+    }
+
+    /// The sounds of an onset cluster, or why it is refused: two or three
+    /// consonants, all among the design's sounds.
+    pub fn check_cluster(&self, cluster: &str) -> Result<Vec<PhonemeId>, String> {
+        let ids = CATALOG
+            .parse_ipa(cluster)
+            .ok_or_else(|| format!("the cluster '{cluster}' cannot be read"))?;
+        if !(2..=3).contains(&ids.len()) || ids.iter().any(|id| CATALOG.get(*id).is_vowel()) {
+            return Err(format!(
+                "'{cluster}' is not a cluster of two or three consonants"
+            ));
+        }
+        if let Some(id) = ids
+            .iter()
+            .find(|id| !self.sounds.iter().any(|s| s.ipa == CATALOG.get(**id).ipa()))
+        {
+            return Err(format!(
+                "the cluster '{cluster}' uses {}, a sound these speakers do not have",
+                CATALOG.get(*id).ipa()
+            ));
+        }
+        Ok(ids)
     }
 
     /// The grammar choices with each given affix's category settled as an
@@ -445,16 +495,22 @@ impl LanguageDesign {
             })
             .collect();
         profile.phonotactics = PhonotacticPrior {
-            max_onset: 2,
+            max_onset: self
+                .clusters
+                .iter()
+                .filter_map(|cluster| CATALOG.parse_ipa(cluster))
+                .map(|ids| ids.len() as u8)
+                .fold(2, u8::max),
             max_coda: 1,
             final_coda: self.final_consonants,
             open_medial: !self.inner_clusters,
-            preferred_onsets: Vec::new(),
+            preferred_onsets: self.clusters.clone(),
             preferred_codas: Vec::new(),
             disyllabic_roots: self.word_length,
             identical_consonants: self.repetition,
             long_vowels: self.long_vowels,
             geminates: self.geminates,
+            onset_clusters: self.onset_clusters,
         };
         profile.morphology = MorphologyPrior {
             kind: self.building,
@@ -1117,11 +1173,125 @@ mod tests {
         assert_eq!(design.affixes[0].written(), "-n");
     }
 
+    /// A design with s, t, r, and k among its sounds and no roots.
+    fn clustering(seed: u64) -> LanguageDesign {
+        let mut design = with_roots(seed, &[("water", "strika")]);
+        design.roots.clear();
+        design
+    }
+
+    #[test]
+    fn listed_clusters_open_drawn_words_and_none_are_drawn_unasked() {
+        for seed in [3, 11, 29] {
+            let plain = clustering(seed);
+            let mut listed = plain.clone();
+            listed.clusters = vec!["st".into(), "tr".into(), "str".into()];
+            assert_eq!(listed.validate(&crate::ConceptTable::default()), Ok(()));
+            // Listed but never drawn: loans may keep them, and every word
+            // is the one the seed drew before.
+            let (before, after) = (found(&plain, seed), found(&listed, seed));
+            for (a, b) in before.lexicon.lexemes.iter().zip(&after.lexicon.lexemes) {
+                assert_eq!(a.form, b.form, "seed {seed}");
+            }
+            for inner in [true, false] {
+                let mut drawn = listed.clone();
+                drawn.onset_clusters = 0.5;
+                drawn.inner_clusters = inner;
+                let variety = found(&drawn, seed);
+                let allowed: Vec<Vec<PhonemeId>> = drawn
+                    .clusters
+                    .iter()
+                    .map(|cluster| CATALOG.parse_ipa(cluster).unwrap())
+                    .collect();
+                let (mut opening, mut inside) = (0, 0);
+                for word in &variety.lexicon.lexemes {
+                    if word.origin != Origin::Founding {
+                        continue;
+                    }
+                    for (at, syllable) in word.form.syllables().iter().enumerate() {
+                        if syllable.onset.len() < 2 {
+                            continue;
+                        }
+                        let onset: Vec<PhonemeId> = word.form.segs[syllable.onset.clone()]
+                            .iter()
+                            .map(|seg| seg.phone)
+                            .collect();
+                        // A coda before it may have joined the syllable's
+                        // start; what was drawn is still one of the listed.
+                        assert!(
+                            allowed.iter().any(
+                                |cluster| onset.ends_with(cluster) || cluster.ends_with(&onset)
+                            ),
+                            "seed {seed}: /{}/",
+                            word.form.ipa()
+                        );
+                        if at == 0 {
+                            opening += 1;
+                        } else {
+                            inside += 1;
+                        }
+                    }
+                }
+                assert!(
+                    opening > 20,
+                    "seed {seed}: {opening} words open on a cluster"
+                );
+                // Where inner syllables stay open, a cluster only opens a word.
+                assert_eq!(inside > 0, inner, "seed {seed}: {inside} inside");
+            }
+        }
+    }
+
+    #[test]
+    fn clusters_are_refused_with_a_reason() {
+        let mut design = clustering(3);
+        assert!(!design.sounds.iter().any(|s| s.ipa == "q"));
+        let refused = |design: &mut LanguageDesign, cluster: &str| {
+            design.clusters = vec![cluster.into()];
+            design
+                .validate(&crate::ConceptTable::default())
+                .unwrap_err()
+        };
+        assert_eq!(
+            refused(&mut design, "sa"),
+            "'sa' is not a cluster of two or three consonants"
+        );
+        assert_eq!(
+            refused(&mut design, "s"),
+            "'s' is not a cluster of two or three consonants"
+        );
+        assert_eq!(
+            refused(&mut design, "strk"),
+            "'strk' is not a cluster of two or three consonants"
+        );
+        assert_eq!(
+            refused(&mut design, "sq"),
+            "the cluster 'sq' uses q, a sound these speakers do not have"
+        );
+        assert_eq!(
+            refused(&mut design, "s?"),
+            "the cluster 's?' cannot be read"
+        );
+        design.clusters = vec!["st".into(), "s t".into()];
+        assert_eq!(
+            design.validate(&crate::ConceptTable::default()),
+            Err("the cluster 's t' is listed twice".into())
+        );
+        design.clusters = vec!["st".into()];
+        design.onset_clusters = 1.5;
+        assert_eq!(
+            design.validate(&crate::ConceptTable::default()),
+            Err("knobs run from 0 to 1".into())
+        );
+    }
+
     #[test]
     fn a_design_without_affixes_reads_and_writes_as_before() {
         let design = LanguageDesign::preset("familiar", 3).unwrap();
         let written = serde_json::to_value(&design).unwrap();
         assert!(written.get("affixes").is_none());
+        assert!(written.get("clusters").is_none());
+        assert!(written.get("onsetClusters").is_none());
         let read: LanguageDesign = serde_json::from_value(written).unwrap();
         assert_eq!(read, design);
         let mut given = design.clone();

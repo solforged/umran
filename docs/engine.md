@@ -79,6 +79,13 @@ This bookkeeping makes no random draws and does not itself change replay.
   treat it like the rest. The lexeme remembers it was `authored`.
   Founding lexical stress and geminates draw on a stream per word, so one
   word's shape never moves another's draws.
+- A design may list onset clusters (`LanguageDesign.clusters`, with
+  `onset_clusters` for how often): two or three of its consonants that may
+  begin a syllable, as *st* or *tr*. Drawn words then open on them, an
+  inner syllable too where consonants may meet, and loan adaptation keeps
+  them as native. With none listed no cluster draw is made, so older
+  designs draw the words they always did. A preset's preferred clusters
+  are not carried into its design; only the author's are.
 - A design may also carry the author's own affixes
   (`LanguageDesign.affixes`): a grammatical category, the side of the word
   the affix joins, and its form. Giving one settles that the category is

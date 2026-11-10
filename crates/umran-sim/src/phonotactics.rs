@@ -42,6 +42,9 @@ pub struct Phonotactics {
     pub identical_consonants: f32,
     /// Chance each vowel of a new root is long.
     pub long_vowels: f32,
+    /// Chance a syllable of a new root begins with a cluster from `onsets`.
+    #[serde(default)]
+    pub onset_clusters: f32,
 }
 
 impl Phonotactics {
@@ -77,6 +80,7 @@ impl Phonotactics {
             disyllabic_roots: prior.disyllabic_roots.clamp(0.0, 1.0),
             identical_consonants: prior.identical_consonants.clamp(0.0, 1.0),
             long_vowels: prior.long_vowels.clamp(0.0, 1.0),
+            onset_clusters: prior.onset_clusters.clamp(0.0, 1.0),
         }
     }
 
@@ -98,7 +102,9 @@ impl Phonotactics {
 
     /// A root for `concept` with `syllables` syllables: open syllables, then
     /// an optional final consonant, onsets throughout while the language
-    /// has any. Parent words usually follow the nursery pattern; expressive
+    /// has any. Where the language draws onset clusters, one may open the
+    /// word, and an inner syllable too if consonants may meet there. Parent
+    /// words usually follow the nursery pattern; expressive
     /// meanings may reduplicate or repeat consonants, which other meanings
     /// avoid.
     pub fn root(&self, rng: &mut impl Rng, concept: &Concept, syllables: usize) -> Form {
@@ -118,13 +124,29 @@ impl Phonotactics {
         } else {
             self.identical_consonants * PLAIN_REPEATS
         };
+        // No cluster, no draw: a language without them keeps every draw
+        // it had before clusters could be drawn.
+        let clusters: Vec<&(Vec<PhonemeId>, f32)> = if self.onset_clusters > 0.0 {
+            self.onsets
+                .iter()
+                .filter(|(ids, _)| ids.len() > 1)
+                .collect()
+        } else {
+            Vec::new()
+        };
         let mut phones = Vec::with_capacity(2 * syllables + 1);
         for _ in 0..REPEAT_TRIES {
             phones.clear();
-            for _ in 0..syllables.max(1) {
-                // A language that has lost every initial consonant coins
-                // vowel-initial words.
-                if !onsets.is_empty() {
+            for syllable in 0..syllables.max(1) {
+                if !clusters.is_empty()
+                    && (syllable == 0 || !self.open_medial)
+                    && rng.r#gen::<f32>() < self.onset_clusters
+                {
+                    let (ids, _) = clusters[weighted_index(rng, clusters.iter().map(|(_, w)| *w))];
+                    phones.extend(ids);
+                } else if !onsets.is_empty() {
+                    // A language that has lost every initial consonant coins
+                    // vowel-initial words.
                     phones.push(pick(rng, &onsets, iconic));
                 }
                 phones.push(pick(rng, &self.nuclei, iconic));
@@ -232,6 +254,7 @@ impl Phonotactics {
             disyllabic_roots: if words > 0.0 { longer / words } else { 0.0 },
             identical_consonants: OBSERVED_REPEATS,
             long_vowels: if vowels > 0.0 { long / vowels } else { 0.0 },
+            onset_clusters: 0.0,
         }
     }
 
