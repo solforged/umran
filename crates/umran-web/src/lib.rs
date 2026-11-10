@@ -12,6 +12,7 @@ mod meanings;
 mod notebook;
 mod phrasebook;
 mod provenance;
+mod takeout;
 
 use annals::{Annal, annals};
 use notebook::{Document, Note, Subject};
@@ -2633,6 +2634,18 @@ pub(crate) fn lake_names(world: &World, id: usize) -> LakeNamesView {
     }
 }
 
+/// When a language no longer spoken fell silent: when its last speakers
+/// took up another language or came to an end.
+pub(crate) fn silent_since(world: &World, variety: usize) -> Option<u32> {
+    world.events.iter().rev().find_map(|(g, e)| match e {
+        WorldEvent::Shift { from, .. } if *from == variety => Some(*g),
+        WorldEvent::Ended { community, .. } if world.communities[*community].variety == variety => {
+            Some(*g)
+        }
+        _ => None,
+    })
+}
+
 /// The world as it stands in `world`'s generation, apart from the session
 /// reading it: every people, language, state, faith, craft, and named place,
 /// and the chronicle so far.
@@ -2767,19 +2780,7 @@ fn world_view(world: &World) -> WorldView<'_> {
                     born: born[id],
                     // When its last speakers took up another language
                     // or came to an end.
-                    silent_since: (!spoken[id])
-                        .then(|| {
-                            world.events.iter().rev().find_map(|(g, e)| match e {
-                                WorldEvent::Shift { from, .. } if *from == id => Some(*g),
-                                WorldEvent::Ended { community, .. }
-                                    if world.communities[*community].variety == id =>
-                                {
-                                    Some(*g)
-                                }
-                                _ => None,
-                            })
-                        })
-                        .flatten(),
+                    silent_since: (!spoken[id]).then(|| silent_since(world, id)).flatten(),
                     consonants: ipas(&consonants),
                     vowels: ipas(&vowels),
                     laws: v

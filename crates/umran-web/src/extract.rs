@@ -1,9 +1,10 @@
 //! Extraction reads: a meaning × language word table with root identity
 //! kept, and one language's whole stock of names, each in one call, so
 //! the workbench can show a quarry or export a table.
+use crate::takeout::{Sheet, year};
 use crate::{
     Bench, GivenView, NameView, OriginView, ReadView, Workbench, entity_id, fail, language_label,
-    origin_view, to_json,
+    origin_view, silent_since, to_json,
 };
 use serde::Serialize;
 use umran_sim::adapt::Adapter;
@@ -12,7 +13,7 @@ use umran_sim::{LexemeId, Name, PlaceName, PlaceOrigin, Variety, World};
 use wasm_bindgen::prelude::*;
 
 #[derive(Serialize)]
-struct WordTable<'a> {
+pub(crate) struct WordTable<'a> {
     generation: u32,
     /// In the order asked.
     varieties: Vec<TableVariety>,
@@ -22,9 +23,12 @@ struct WordTable<'a> {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct TableVariety {
     id: usize,
     name: String,
+    /// When it fell silent, if it has: its words stand as they were then.
+    silent_since: Option<u32>,
 }
 
 #[derive(Serialize)]
@@ -57,7 +61,7 @@ struct TableRoot {
     born: u32,
 }
 
-fn word_table<'a>(
+pub(crate) fn word_table<'a>(
     world: &'a World,
     varieties: &[usize],
     concepts: &[&str],
@@ -65,16 +69,14 @@ fn word_table<'a>(
     let spoken = world.spoken();
     let varieties: Vec<TableVariety> = varieties
         .iter()
-        .map(|&id| {
-            if !spoken.get(id).copied().unwrap_or(false) {
-                return Err(format!(
-                    "Language {id} is not spoken in year {}.",
-                    world.generation
-                ));
-            }
+        .map(|&id| -> Result<TableVariety, String> {
+            let spoken = *spoken
+                .get(id)
+                .ok_or_else(|| format!("Language {id} is not in this world."))?;
             Ok(TableVariety {
                 id,
                 name: language_label(world, id),
+                silent_since: (!spoken).then(|| silent_since(world, id)).flatten(),
             })
         })
         .collect::<Result<_, _>>()?;
@@ -385,6 +387,119 @@ fn place_rows(
             })
         })
         .collect()
+}
+
+/// A word table as CSV: one row per meaning. Each language has a column for
+/// its word and one for its sounds, then one for the word's root number and
+/// one for its origin. Words with the same root number are cognates. The
+/// last column gives each root in the row its first form: the founding or
+/// coined word it descends from, in the language that minted it.
+pub(crate) fn word_table_csv(world: &World, table: &WordTable) -> String {
+    let names: Vec<String> = table
+        .varieties
+        .iter()
+        .map(|variety| match variety.silent_since {
+            Some(since) => format!("{} (silent since year {})", variety.name, year(since)),
+            None => variety.name.clone(),
+        })
+        .collect();
+    let mut head = vec!["meaning".to_string()];
+    for name in &names {
+        head.push(name.clone());
+        head.push(format!("{name} (IPA)"));
+    }
+    head.extend(names.iter().map(|name| format!("{name} root")));
+    head.extend(names.iter().map(|name| format!("{name} origin")));
+    head.push("first forms".into());
+    let mut sheet = Sheet::default();
+    sheet.row(&head);
+    for row in &table.rows {
+        let mut line = vec![row.gloss.to_string()];
+        for cell in &row.cells {
+            line.push(
+                cell.as_ref()
+                    .map_or_else(String::new, |w| w.spelled.clone()),
+            );
+            line.push(cell.as_ref().map_or_else(String::new, |w| w.ipa.clone()));
+        }
+        line.extend(row.cells.iter().map(|cell| {
+            cell.as_ref()
+                .map_or_else(String::new, |word| (word.root + 1).to_string())
+        }));
+        line.extend(row.cells.iter().map(|cell| {
+            cell.as_ref().map_or_else(String::new, |word| {
+                if word.authored {
+                    "authored".into()
+                } else {
+                    word.origin.kind.to_string()
+                }
+            })
+        }));
+        let mut roots: Vec<usize> = row.cells.iter().flatten().map(|word| word.root).collect();
+        roots.sort_unstable();
+        roots.dedup();
+        line.push(
+            roots
+                .into_iter()
+                .map(|root| {
+                    let first = &table.roots[root];
+                    format!(
+                        "{}: {} /{}/, {}, year {}",
+                        root + 1,
+                        first.spelled,
+                        first.ipa,
+                        language_label(world, first.variety),
+                        year(first.born)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("; "),
+        );
+        sheet.row(&line);
+    }
+    sheet.text()
+}
+
+/// Every name a language uses as CSV: what kind of thing it names, the name,
+/// its sounds, what its parts meant, and since when.
+pub(crate) fn names_csv(quarry: &NameQuarry) -> String {
+    let mut sheet = Sheet::default();
+    sheet.row(["kind", "name", "ipa", "meaning", "since", "origin"]);
+    for name in &quarry.given {
+        let origin = if name.from.is_some() { "sacred" } else { "" };
+        sheet.row([
+            "given name",
+            &name.name,
+            &name.ipa,
+            &name.meaning,
+            "",
+            origin,
+        ]);
+    }
+    for name in &quarry.peoples {
+        let since = year(name.since);
+        sheet.row(["people", &name.name, &name.ipa, &name.meaning, &since, ""]);
+    }
+    for name in &quarry.places {
+        let since = year(name.since);
+        sheet.row([
+            name.feature,
+            &name.name,
+            &name.ipa,
+            &name.meaning,
+            &since,
+            name.origin,
+        ]);
+    }
+    let named = quarry
+        .states
+        .iter()
+        .map(|state| ("state", &state.name))
+        .chain(quarry.faiths.iter().map(|faith| ("faith", &faith.name)));
+    for (kind, name) in named {
+        sheet.row([kind, &name.name, &name.ipa, &name.meaning, "", ""]);
+    }
+    sheet.text()
 }
 
 fn ids(json: &str, what: &str) -> Result<Vec<usize>, String> {

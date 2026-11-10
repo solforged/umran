@@ -387,6 +387,94 @@ pub(crate) fn phrases(v: &Variety, generation: u32) -> Vec<Phrase> {
         .filter_map(|f| render(v, generation, f))
         .collect()
 }
+
+impl Note {
+    fn says(self) -> &'static str {
+        match self {
+            Note::PossessiveClitic => "the owner is a clitic on the noun",
+            Note::PossessiveAffix => "the owner is an affix on the noun",
+            Note::PronounDropped => "the pronoun is left unsaid",
+            Note::NounGenitive => "the noun takes the genitive",
+            Note::ObjectMarked => "the object is marked",
+            Note::Agreement => "the verb agrees",
+        }
+    }
+}
+
+/// Whether a character takes a column of its own in plain text. A mark that
+/// sits on the letter before it does not.
+pub(crate) fn wide(c: char) -> bool {
+    !matches!(
+        u32::from(c),
+        0x0300..=0x036F | 0x1AB0..=0x1AFF | 0x1DC0..=0x1DFF | 0x20D0..=0x20FF
+    )
+}
+
+fn width(text: &str) -> usize {
+    text.chars().filter(|&c| wide(c)).count()
+}
+
+/// A language's phrasebook as interlinear text, the layout linguists give
+/// examples in: the phrase, its sounds, and a gloss of each word, set word
+/// under word, then a free translation.
+pub(crate) fn interlinear(world: &World, variety: usize) -> Result<String, String> {
+    const INDENT: usize = 6;
+    let v = world
+        .varieties
+        .get(variety)
+        .ok_or("No such language variety.")?;
+    let mut out = format!(
+        "The phrasebook of {}, year {}\n",
+        language_label(world, variety),
+        world.generation * YEARS
+    );
+    let phrases = phrases(v, world.generation);
+    if phrases.is_empty() {
+        out.push_str("\nNo phrase can be said yet: the words are missing.\n");
+    }
+    for (number, phrase) in phrases.iter().enumerate() {
+        let said = &phrase.rendering;
+        let lines: [Vec<&str>; 3] = [
+            said.text.split_whitespace().collect(),
+            said.ipa.split_whitespace().collect(),
+            said.gloss.iter().map(String::as_str).collect(),
+        ];
+        let columns = lines.iter().map(Vec::len).max().unwrap_or(0);
+        let widths: Vec<usize> = (0..columns)
+            .map(|column| {
+                lines
+                    .iter()
+                    .filter_map(|line| line.get(column))
+                    .map(|word| width(word))
+                    .max()
+                    .unwrap_or(0)
+            })
+            .collect();
+        out.push('\n');
+        for (at, line) in lines.iter().enumerate() {
+            let tag = if at == 0 {
+                format!("({})", number + 1)
+            } else {
+                String::new()
+            };
+            let mut row = format!("{tag:<INDENT$}");
+            for (column, word) in line.iter().enumerate() {
+                row.push_str(word);
+                row.push_str(&" ".repeat(widths[column] - width(word) + 2));
+            }
+            out.push_str(row.trim_end());
+            out.push('\n');
+        }
+        let indent = " ".repeat(INDENT);
+        out.push_str(&format!("{indent}‘{}’\n", said.translation));
+        if !phrase.notes.is_empty() {
+            let notes: Vec<&str> = phrase.notes.iter().map(|note| note.says()).collect();
+            out.push_str(&format!("{indent}Here {}.\n", notes.join("; ")));
+        }
+    }
+    Ok(out)
+}
+
 #[wasm_bindgen]
 impl Workbench {
     pub fn phrasebook(&mut self, generation: u32, variety: f64) -> Result<String, JsValue> {

@@ -1304,6 +1304,106 @@ fn builder_examples(world: &World, variety: usize) -> Result<Vec<BuilderExample<
     Ok(examples)
 }
 
+/// Every application of every law in `variety`'s ledger, in ledger order,
+/// inherited ones included.
+fn law_ledger(world: &World, variety: usize) -> Result<Vec<LawOccurrence<'_>>, String> {
+    let mut ids: Vec<&str> = Vec::new();
+    for (_, law) in &speech(world, variety)?.laws {
+        if !ids.contains(&&**law) {
+            ids.push(law);
+        }
+    }
+    let mut ledger = Vec::new();
+    for id in ids {
+        ledger.extend(law_occurrences(world, variety, id)?);
+    }
+    ledger.sort_by_key(|occurrence| occurrence.order);
+    Ok(ledger)
+}
+
+/// A language's sound laws as a text file, earliest first. Each law is in
+/// the notation the law form reads, so one can be pasted there and applied
+/// to another language. Everything else is a `#` comment, which that
+/// notation passes over. A law the notation cannot write is given as
+/// recorded, in comments.
+pub(crate) fn laws_text(world: &World, variety: usize) -> Result<String, String> {
+    let ledger = law_ledger(world, variety)?;
+    let name = |variety: usize| crate::language_label(world, variety);
+    let mut out = format!(
+        "# The sound laws of {}, earliest first, as read in year {}.\n\
+         # Written by Umran, engine revision {}.\n\
+         # Each law is in the notation Umran's law form reads.\n\
+         # A line that starts with # is a comment.\n",
+        name(variety),
+        world.generation * crate::YEARS,
+        umran_sim::ENGINE_REVISION,
+    );
+    if ledger.is_empty() {
+        out.push_str("\n# No sound laws yet.\n");
+    }
+    for law in &ledger {
+        out.push_str(&format!(
+            "\n# Year {}: {}\n",
+            law.reference.generation * crate::YEARS,
+            law.label
+        ));
+        let arrival = match law.arrival {
+            Arrival::Own => "This language's own change.".into(),
+            Arrival::Wave { from } => format!("A wave from {}.", name(from)),
+            Arrival::Inherited { ancestor } => format!("Inherited from {}.", name(ancestor)),
+            Arrival::Authored { decision } => format!("The author's decision {}.", decision + 1),
+            Arrival::Substrate => "Substrate: traces of the speakers' earlier tongue.".into(),
+            Arrival::Unrecorded => "How it arrived is not recorded.".to_string(),
+        };
+        out.push_str(&format!("# {arrival}\n"));
+        match &law.source {
+            Some(source) => {
+                out.push_str(source.trim_end());
+                out.push('\n');
+            }
+            None if law.rules.is_empty() => out.push_str("# No rule is recorded for it.\n"),
+            None => {
+                out.push_str("# The notation cannot write this law. As recorded:\n");
+                let mut seen: Vec<&str> = Vec::new();
+                for rule in &law.rules {
+                    if !seen.contains(&rule.as_str()) {
+                        seen.push(rule);
+                        out.push_str(&format!("#   {rule}\n"));
+                    }
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The same ledger as data: every application as the workbench reads it,
+/// with each word, grammatical form, and name before and after.
+pub(crate) fn laws_data(world: &World, variety: usize) -> Result<String, String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Ledger<'a> {
+        language: String,
+        variety: usize,
+        generation: u32,
+        years_per_generation: u32,
+        /// The engine revision that read it.
+        revision: u32,
+        laws: Vec<LawOccurrence<'a>>,
+    }
+    let mut text = serde_json::to_string_pretty(&Ledger {
+        language: crate::language_label(world, variety),
+        variety,
+        generation: world.generation,
+        years_per_generation: crate::YEARS,
+        revision: umran_sim::ENGINE_REVISION,
+        laws: law_ledger(world, variety)?,
+    })
+    .map_err(|e| e.to_string())?;
+    text.push('\n');
+    Ok(text)
+}
+
 impl Bench {
     pub fn law_occurrences(
         &mut self,
