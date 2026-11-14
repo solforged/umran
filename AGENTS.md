@@ -138,6 +138,8 @@ All linguistic logic runs in Rust. Presentation code never mints or changes
 words, and there is no backend or second implementation of linguistic
 rules. Bun manages frontend dependencies. Rust is pinned in
 `rust-toolchain.toml`, and generated WASM bindings are ignored in Git.
+The devenv shell (`devenv.nix`, loaded by direnv) supplies Bun, Vale and
+rustup; outside it, prefix a command with `direnv exec .`.
 
 ## Rules that must hold
 

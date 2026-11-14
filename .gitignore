@@ -7,3 +7,7 @@
 /brand/fonts
 /.vale/styles/ai-tells/
 /.vale/styles/config/
+/.devenv*
+/.direnv/
+/devenv.local.nix
+/devenv.local.yaml

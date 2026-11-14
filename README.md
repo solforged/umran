@@ -39,8 +39,9 @@ one online visit, Umran can run offline and be installed as an app. See
 
 ## Develop it
 
-Install [rustup](https://rustup.rs/) and [Bun](https://bun.sh/). The Rust
-version is pinned in `rust-toolchain.toml`.
+Install [devenv](https://devenv.sh/) and direnv, then run `direnv allow` in
+the checkout. The shell holds Bun, Vale and rustup, which takes the Rust
+version pinned in `rust-toolchain.toml`.
 
 ```sh
 bun install
